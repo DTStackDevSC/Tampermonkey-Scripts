@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Short Description Helper
-// @namespace    https://gitlab.com/-/snippets/4896559
-// @version      3.0.8.1
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      3.0.9
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -18,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.0.8.1';
-    const CHANGELOG = `Version 3.0.8.1:
+    const SCRIPT_VERSION = '3.0.9';
+    const CHANGELOG = `Version 3.0.9:
+- Update URL Changed
+    
+Version 3.0.8.1:
 - Minor changes on fields
 - Added Tenant field on Short Description`;
 

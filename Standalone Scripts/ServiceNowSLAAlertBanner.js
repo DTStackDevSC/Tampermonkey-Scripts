@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         ServiceNow SLA Alert Banner
-// @namespace    https://gitlab.com/-/snippets/4896559
-// @version      1.1
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.2
 // @description  Display color-coded SLA warning banner based on days remaining
 // @author       You
 // @match        https://*.service-now.com/sc_req_item.do*

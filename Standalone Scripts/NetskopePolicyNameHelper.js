@@ -1,6 +1,8 @@
 // ==UserScript==
 // @name         Real-time Protection Policy Naming Helper
-// @namespace    https://gitlab.com/-/snippets/4896559
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @version      1.2.1
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
@@ -28,24 +30,15 @@
      * ==========================================================*/
 
     const SCRIPT_VERSION = '1.2.0';
-    const CHANGELOG = `Version 1.2.0 (Current):
+    const CHANGELOG = `Version 1.2.1:
+- Update URL Changed
+    
+Version 1.2.0:
 - Added Saved Presets system — save any form state under a custom name
 - Preset dropdown at the top of the panel for one-click loading
 - Manage Presets panel to view, inspect, and delete presets
 - Each preset displays a human-readable summary of its configuration
-- Presets persist across sessions via GM storage
-
-Version 1.1.0 (Old):
-- Added changelog notification system with GM storage
-- Improved version tracking and user notifications
-- Enhanced UI with version indicator
-- Added automatic update notifications
-
-Version 1.0.1 (Old):
-- Initial release
-- CASB/Web policy generation
-- DLP policy generation with criteria
-- Tabbed interface for policy types`;
+- Presets persist across sessions via GM storage`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT

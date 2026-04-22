@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Netskope Ticket Subject Helper
-// @namespace    https://gitlab.com/-/snippets/4896559
-// @version      1.0.2
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.0.3
 // @description  Adds a helper button to the Netskope support ticket form to quickly build a formatted Subject line
 // @author       J.R.
 // @match        https://support.netskope.com/*
@@ -17,8 +19,11 @@
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.0.0';
-    const CHANGELOG = `Version 1.0.0:
+    const SCRIPT_VERSION = '1.0.3';
+    const CHANGELOG = `Version 1.0.3:
+- Changed Update URL
+
+Version 1.0.0:
 - Initial Release`;
 
     function getStoredVersion()    { return GM_getValue('nsTktVersion', null); }

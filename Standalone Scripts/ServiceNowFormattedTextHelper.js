@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Formatted Text Helper
-// @namespace    https://gitlab.com/-/snippets/4896559
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.0.1.2
+// @version      1.0.3
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -19,12 +21,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.1';
-    const CHANGELOG = `Version 1.0.1:
-- Migrated all storage from browser localStorage to Tampermonkey GM storage
+    const SCRIPT_VERSION = '1.0.3';
+    const CHANGELOG = `Version 1.0.3:
+- Update URL Changed
 
-Version 1.0.0:
-- Initial release`;
+Version 1.0.1:
+- Migrated all storage from browser localStorage to Tampermonkey GM storage`;
 
     /* ==========================================================
      *  VERSION CONTROL FUNCTIONS
