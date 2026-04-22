@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| ServiceNow Row Highlighter
-// @namespace    https://gitlab.com/-/snippets/4904912
-// @version      2.1.3
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      2.1.4
 // @description  Highlight rows in ServiceNow based on Updated By column with configurable username and theme (Updated for new UI)
 // @author       J.R.
 // @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards/
@@ -23,19 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.3';
-    const CHANGELOG = `Version 2.1.3:
-- Added first-run popup prompting for username when none is configured
-
-Version 2.1.1:
-- Migrated all storage from browser localStorage to Tampermonkey GM storage
-
-Version 2.0:
-- Updated to work with new ServiceNow UI structure
-- Now targets custom elements (now-list, now-table)
-- Enhanced Shadow DOM support
-- Improved row detection and highlighting
-- Added support for dynamic content loading`;
+    const SCRIPT_VERSION = '2.1.4';
+    const CHANGELOG = `Version 2.1.4:
+- Update URL Changed
+    
+Version 2.1.3:
+- Added first-run popup prompting for username when none is configured`;
 
     /* ==========================================================
      *  CONFIGURATION

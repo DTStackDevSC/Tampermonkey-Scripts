@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| Domain Security Check
-// @namespace    https://gitlab.com/-/snippets/4904912
-// @version      1.2.2
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.2.4
 // @description  Toolbar button to check domain on VirusTotal, IBM X-Force Exchange & Netskope
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -22,20 +24,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.0';
-    const CHANGELOG = `Version 1.2.0:
+    const SCRIPT_VERSION = '1.2.4';
+    const CHANGELOG = `Version 1.2.4:
+- Update URL Changed
+    
+Version 1.2.0:
 - ServiceNow SPM Request URL is no longer hardcoded
 - URL is now prompted on first use and saved to GM storage
-- URL can be reconfigured at any time via the modal settings
-
-Version 1.1.1:
-- Migrated all storage from browser localStorage to Tampermonkey GM storage
-
-Version 1.1:
-- Added optional checkbox to open an SPM Request form
-
-Version 1.0:
-- Initial release`;
+- URL can be reconfigured at any time via the modal settings`;
 
     /* ==========================================================
      *  GM STORAGE KEYS

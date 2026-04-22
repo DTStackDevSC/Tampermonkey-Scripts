@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| Netskope Policies Toolkit
-// @namespace    https://gitlab.com/-/snippets/4896559
-// @version      1.2
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.3
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, and Save reminder checklist. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -34,24 +36,14 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.2';
-    const CHANGELOG = `Version 1.2 (Current):
+    const SCRIPT_VERSION = '1.3';
+    const CHANGELOG = `Version 1.3:
+- Update URL Changed
+
+Version 1.2:
 - Added Save Reminder: intercepts the policy Save button and shows a
   checklist modal reminding you to fill in RITM number, creator name
-  & date, and editor name & modification date before saving.
-
-Version 1.1 (Old):
-- Added changelog notification system
-- Added persistent reload notice inside settings modal
-- Added GM_deleteValue grant for storage debugging
-
-Version 1.0 (Old):
-- Initial release
-- Chirp copy buttons on all .ns-picker-tag elements
-- DLP Profile open-in-new-tab buttons
-- SMTP header auto-fill button
-- Toolbar v2 integration with settings modal
-- Per-feature toggles persisted via GM storage`;
+  & date, and editor name & modification date before saving.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }

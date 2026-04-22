@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| IOC Batch Copier
-// @namespace    https://gitlab.com/-/snippets/4904912
-// @version      1.0.2
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-IOCBatchCopy.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-IOCBatchCopy.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.0.3
 // @description  Batch copy IOC URLs
 // @author       J.R.
 // @match        https://*.goskope.com/ns*
@@ -22,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0';
-    const CHANGELOG = `Version 1.0 (Current):
+    const SCRIPT_VERSION = '1.0.3';
+    const CHANGELOG = `Version 1.0.3:
+- Update URL Changed.    
+    
+Version 1.0:
 - Initial Release`;
 
     /* ==========================================================

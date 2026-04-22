@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| Mini Summary Sidebar
-// @namespace    https://gitlab.com/-/snippets/4904912
-// @version      1.0.1.1
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.0.2
 // @description  Quick overview panel for ServiceNow tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,12 +22,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.1';
-    const CHANGELOG = `Version 1.0.1:
-- Migrated all storage from browser localStorage to Tampermonkey GM storage
+    const SCRIPT_VERSION = '1.0.2';
+    const CHANGELOG = `Version 1.0.2:
+- Update URL Changed
 
-Version 1.0:
-- Initial release`;
+Version 1.0.1:
+- Migrated all storage from browser localStorage to Tampermonkey GM storage`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS

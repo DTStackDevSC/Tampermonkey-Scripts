@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| Policy Deletion Reminder
-// @namespace    https://gitlab.com/-/snippets/4904912
-// @version      0.9
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyDeletionScheduler.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyDeletionScheduler.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      0.9.1
 // @description  Registers a policy deletion reminder by opening a pre-filled form with the policy URL, name, and expiry date - Integrated with Toolbar
 // @author       J.R.
 // @match        https://*.goskope.com/*

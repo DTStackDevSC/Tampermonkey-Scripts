@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| Ticket Assignment Tool
-// @namespace    https://gitlab.com/-/snippets/4904912
-// @version      1.0.8
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.0.9
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,23 +25,16 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.7';
-    const CHANGELOG = `Version 1.0.7:
+    const SCRIPT_VERSION = '1.0.9';
+    const CHANGELOG = `Version 1.0.9:
+- Update URL Changed
+    
+Version 1.0.7:
 - Replaced static team configuration with dynamic member setup
 - Team members are now entered at first run and stored in GM storage
 - Added member management (add/remove) from modal footer
 - Added Import/Export (JSON) in Manage Members modal
-- Added Import (JSON) in first-run setup wizard
-
-Version 1.0.6:
-- Migrated from localStorage to Tampermonkey native storage (GM_setValue, GM_getValue)
-
-Version 1.0.5:
-- Changed template texts in EMEA team
-
-Version 1.0.3:
-- Added "Product Freeze Reminder" checkbox with customizable date/time/timezone picker
-- Several fixes`;
+- Added Import (JSON) in first-run setup wizard`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS

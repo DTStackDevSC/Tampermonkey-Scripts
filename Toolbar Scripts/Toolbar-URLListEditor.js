@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         |Toolbar| Netskope URL List Manager
-// @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
+// @version      1.3.1
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,24 +25,15 @@
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Update URL Changed
+    
+Version 1.3.0:
 - Added Domain Lookup feature: search for a domain across all URL lists
 - Supports exact, partial, and wildcard matching
 - Results show list name, ID, URL count, and matched entries
-- Click a result to jump directly to the Update form for that list
-
-Version 1.2.0:
-- Tenant hostnames are now configurable and stored in Tampermonkey GM storage
-- Added Tenant Host setup modal on first run (or when hosts are missing)
-- Added "Configure Hosts" option in modal header
-- Changed @connect to wildcard (*) to support configurable hostnames
-
-Version 1.1.0:
-- Added encryption mechanisms to more securely store API tokens
-
-Version 1.0.0:
-- Initial release`;
+- Click a result to jump directly to the Update form for that list`;
 
     const TOOL_ICON = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>`;
     const MAX_REGISTRATION_ATTEMPTS = 10;
