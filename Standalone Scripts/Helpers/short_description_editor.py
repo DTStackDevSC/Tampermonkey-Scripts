@@ -364,10 +364,14 @@ def str_editor(parent, title, items, height=5, hint=''):
 # ══════════════════════════════════════════════════════════════════════════════
 class ScrollCanvas(tk.Frame):
     """
-    A canvas+scrollbar container whose .inner frame can be fully replaced
-    via .rebuild(callback) without re-creating the canvas or scrollbar.
-    This eliminates the layout glitch that happens when packing/unpacking
-    the whole ScrollFrame widget.
+    Scroll routing strategy:
+      - One global <MouseWheel> handler on the root window.
+      - Walks up widget hierarchy from event.widget:
+          * cursor over a Treeview  -> scroll that Treeview
+          * cursor elsewhere inside this panel -> scroll the main canvas
+          * cursor outside this panel -> do nothing
+    This ensures the main canvas always scrolls, while Treeview rows
+    still scroll their own list when hovered directly.
     """
     def __init__(self, master, **kw):
         super().__init__(master, bg=C['bg'], **kw)
@@ -381,22 +385,29 @@ class ScrollCanvas(tk.Frame):
         self.inner = None
         self._win  = None
         self._canvas.bind('<Configure>', self._on_canvas_resize)
-        # Bind wheel on the canvas itself (covers empty space)
-        self._canvas.bind('<MouseWheel>', self._on_wheel)
+        self.after(100, self._register_global_wheel)
 
-    def _on_wheel(self, event):
-        self._canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+    def _register_global_wheel(self):
+        self.winfo_toplevel().bind('<MouseWheel>', self._global_wheel, add='+')
 
-    def _bind_wheel_recursive(self, widget):
-        """
-        Bind <MouseWheel> on every widget in the inner tree so scrolling works
-        regardless of which child the cursor is hovering over.
-        Treeview widgets are skipped so their own internal scroll still works.
-        """
-        if not isinstance(widget, ttk.Treeview):
-            widget.bind('<MouseWheel>', self._on_wheel)
-        for child in widget.winfo_children():
-            self._bind_wheel_recursive(child)
+    def _global_wheel(self, event):
+        steps = int(-1 * (event.delta / 120))
+        w = event.widget
+        treeview_hit = None
+        inside_panel = False
+        while w is not None:
+            if isinstance(w, ttk.Treeview):
+                treeview_hit = w
+            if w is self:
+                inside_panel = True
+                break
+            w = getattr(w, 'master', None)
+        if not inside_panel:
+            return
+        if treeview_hit is not None:
+            treeview_hit.yview_scroll(steps, 'units')
+        else:
+            self._canvas.yview_scroll(steps, 'units')
 
     def _on_canvas_resize(self, event):
         if self._win:
@@ -404,32 +415,22 @@ class ScrollCanvas(tk.Frame):
 
     def _on_inner_configure(self, _=None):
         self._canvas.configure(scrollregion=self._canvas.bbox('all'))
-        # scroll back to top whenever content is (re)built
         self._canvas.yview_moveto(0)
 
     def rebuild(self, build_fn):
-        """
-        Destroy existing inner frame, create a fresh one, call build_fn(inner),
-        and re-attach it to the canvas window.
-        """
         if self._win:
             self._canvas.delete(self._win)
             self._win = None
         if self.inner and self.inner.winfo_exists():
             self.inner.destroy()
-
         self.inner = tk.Frame(self._canvas, bg=C['bg'])
         build_fn(self.inner)
-
         self._win = self._canvas.create_window(
             (0, 0), window=self.inner, anchor='nw')
         self.inner.bind('<Configure>', self._on_inner_configure)
-        # Force an immediate layout update
         self.inner.update_idletasks()
         self._on_canvas_resize(type('E', (), {'width': self._canvas.winfo_width()})())
         self._on_inner_configure()
-        # Bind scroll wheel on every child widget (except treeviews)
-        self._bind_wheel_recursive(self.inner)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

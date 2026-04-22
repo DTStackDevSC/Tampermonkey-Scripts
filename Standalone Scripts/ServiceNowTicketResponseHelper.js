@@ -1,11 +1,14 @@
 // ==UserScript==
 // @name         Ticket Response Helper
-// @namespace    https://gitlab.com/-/snippets/4896559
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
+// @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.10.2
+// @version      2.10.3.1
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
+// @match        https://*.service-now.com/sc_task.do*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
@@ -22,18 +25,17 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.10.2';
-    const CHANGELOG = `Version 2.10.0:
+    const SCRIPT_VERSION = '2.10.3';
+    const CHANGELOG = `Version 2.10.3:
+- Updated Update URL to GitHub.
+    
+Version 2.10.0:
 - NEW!: Field type routing. Each response now declares whether it targets
   "Work notes" or "Additional comments (Customer visible)"
 - When ServiceNow's dual-input mode is active (both fields visible), responses
   are automatically inserted into the correct textarea
 - When single-input mode is active the behaviour is unchanged (one textarea)
-- Custom responses now include a "Target field" selector (Work Notes / Comments)
-
-Version 2.9.1:
-- REFACTOR: Response metadata and section order are now team-specific
-  Each team has its own responseMetadata and defaultSectionOrder configuration`;
+- Custom responses now include a "Target field" selector (Work Notes / Comments)`;
 
     /* ==========================================================
      *  TEAM CONFIGURATIONS
