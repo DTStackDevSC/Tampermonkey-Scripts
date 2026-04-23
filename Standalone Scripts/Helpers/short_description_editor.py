@@ -1,98 +1,141 @@
 #!/usr/bin/env python3
 """
 Short Description Helper — Team Config Editor
-Zero external dependencies (stdlib tkinter only).
-Run: python team_config_editor.py [optional_path_to_script.js]
+Requires: pip install PyQt5
+Run:      python team_config_editor.py [optional_path.js]
+"""
+import re, os, copy, sys
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QLineEdit, QCheckBox, QTableWidget,
+    QTableWidgetItem, QHeaderView, QScrollArea, QFrame, QSplitter,
+    QFileDialog, QMessageBox, QInputDialog, QSizePolicy, QAbstractItemView,
+    QStatusBar
+)
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QPalette, QColor, QFont
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  THEME
+# ══════════════════════════════════════════════════════════════════════════════
+STYLE = """
+QWidget {
+    background: #1e1e2e;
+    color: #e8e8f0;
+    font-family: 'Segoe UI';
+    font-size: 10pt;
+}
+QMainWindow, QSplitter {
+    background: #1e1e2e;
+}
+QSplitter::handle { background: #44446a; width: 1px; }
+
+/* ── Scroll ── */
+QScrollArea { border: none; background: #1e1e2e; }
+QScrollBar:vertical {
+    background: #26263a; width: 12px; margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #44446a; min-height: 24px; border-radius: 6px;
+}
+QScrollBar::handle:vertical:hover { background: #7c6af7; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+/* ── Buttons ── */
+QPushButton {
+    background: #363652; color: #e8e8f0;
+    border: none; border-radius: 5px;
+    padding: 5px 12px;
+}
+QPushButton:hover  { background: #46466a; }
+QPushButton:pressed { background: #2d2d4a; }
+QPushButton#accent  { background: #7c6af7; }
+QPushButton#accent:hover  { background: #6455e0; }
+QPushButton#danger  { background: #e05555; }
+QPushButton#danger:hover  { background: #c04040; }
+
+/* ── Inputs ── */
+QLineEdit {
+    background: #252538; color: #e8e8f0;
+    border: 1px solid #44446a; border-radius: 5px;
+    padding: 4px 8px;
+}
+QLineEdit:focus { border-color: #7c6af7; }
+
+/* ── Table ── */
+QTableWidget {
+    background: #26263a; color: #e8e8f0;
+    gridline-color: #3a3a58;
+    border: 1px solid #44446a; border-radius: 5px;
+    selection-background-color: #3d3d60;
+    selection-color: #ffffff;
+}
+QTableWidget::item { padding: 4px 8px; }
+QTableWidget::item:selected { background: #3d3d60; }
+QHeaderView::section {
+    background: #2f2f48; color: #9090b0;
+    border: none; border-bottom: 1px solid #44446a;
+    padding: 5px 8px; font-weight: bold;
+}
+QTableCornerButton::section { background: #2f2f48; }
+
+/* ── Checkboxes ── */
+QCheckBox { spacing: 8px; }
+QCheckBox::indicator {
+    width: 16px; height: 16px;
+    border: 1px solid #44446a; border-radius: 3px;
+    background: #252538;
+}
+QCheckBox::indicator:checked {
+    background: #7c6af7; border-color: #7c6af7;
+    image: url('data:,');
+}
+
+/* ── Sidebar team buttons ── */
+QPushButton#team_btn {
+    background: transparent; color: #9090b0;
+    border: none; border-radius: 0;
+    text-align: left; padding: 9px 16px;
+    font-size: 10pt;
+}
+QPushButton#team_btn:hover  { background: #2f2f48; color: #e8e8f0; }
+QPushButton#team_btn[selected=true] {
+    background: #3d3d60; color: #ffffff;
+    border-left: 3px solid #7c6af7; padding-left: 13px;
+}
+
+/* ── Labels ── */
+QLabel#section_title { font-size: 13pt; font-weight: bold; color: #e8e8f0; }
+QLabel#field_label   { color: #9090b0; min-width: 130px; }
+QLabel#hint          { color: #666688; font-size: 9pt; }
+QLabel#top_path      { color: #9090b0; font-size: 9pt; }
+
+/* ── Frames ── */
+QFrame#separator { background: #3a3a58; max-height: 1px; }
+QFrame#topbar    { background: #26263a; }
+QFrame#sidebar   { background: #26263a; }
+QFrame#statusbar_frame { background: #26263a; }
+
+/* ── Status bar ── */
+QStatusBar { background: #26263a; color: #9090b0; font-size: 9pt; }
 """
 
-import re, os, copy, sys
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PALETTE & HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-C = {
-    'bg':       '#1e1e2e', 'surface':  '#26263a', 'surface2': '#2f2f48',
-    'border':   '#44446a', 'accent':   '#7c6af7',  'accent_h': '#6455e0',
-    'danger':   '#e05555', 'danger_h': '#c04040',  'success':  '#4ade80',
-    'text':     '#e8e8f0', 'text_dim': '#8888aa',  'sel_bg':   '#3d3d60',
-    'entry_bg': '#252538', 'btn_bg':   '#363652',  'btn_h':    '#46466a',
-    'white':    '#ffffff',
-}
-FU = ('Segoe UI', 10)
-FB = ('Segoe UI', 10, 'bold')
-FS = ('Segoe UI', 9)
-FH = ('Segoe UI', 12, 'bold')
-FM = ('Consolas', 10)
-
-
-def apply_style():
-    s = ttk.Style()
-    s.theme_use('clam')
-    s.configure('.', background=C['bg'], foreground=C['text'], font=FU,
-                borderwidth=0, relief='flat')
-    s.configure('TFrame', background=C['bg'])
-    s.configure('TLabel', background=C['bg'], foreground=C['text'])
-    s.configure('Dim.TLabel', background=C['bg'], foreground=C['text_dim'], font=FS)
-    s.configure('TCheckbutton', background=C['bg'], foreground=C['text'],
-                indicatorcolor=C['accent'], indicatorbackground=C['entry_bg'])
-    s.map('TCheckbutton', background=[('active', C['bg'])],
-          indicatorcolor=[('selected', C['accent'])])
-    s.configure('TSeparator', background=C['border'])
-    s.configure('Treeview', background=C['surface2'], fieldbackground=C['surface2'],
-                foreground=C['text'], rowheight=26, font=FU, borderwidth=0)
-    s.configure('Treeview.Heading', background=C['surface'], foreground=C['text_dim'],
-                font=FB, relief='flat', borderwidth=0)
-    s.map('Treeview', background=[('selected', C['sel_bg'])],
-          foreground=[('selected', C['white'])])
-    s.configure('Vertical.TScrollbar', background=C['surface2'], troughcolor=C['surface'],
-                arrowcolor=C['text_dim'], borderwidth=0, width=12)
-    s.map('Vertical.TScrollbar', background=[('active', C['border'])])
-
-
-def btn(parent, text, cmd, bg=None, hbg=None, small=False, **kw):
-    obg = bg or C['btn_bg']
-    ohbg = hbg or C['btn_h']
-    b = tk.Button(parent, text=text, command=cmd,
-                  bg=obg, fg=C['text'], activebackground=ohbg,
-                  activeforeground=C['white'], relief='flat',
-                  cursor='hand2', padx=10, pady=5,
-                  font=FS if small else FU,
-                  bd=0, highlightthickness=0, **kw)
-    b.bind('<Enter>', lambda _: b.config(bg=ohbg))
-    b.bind('<Leave>', lambda _: b.config(bg=obg))
-    return b
-
-
-def entry(parent, var=None, width=32, mono=False):
-    return tk.Entry(parent, textvariable=var, width=width,
-                    bg=C['entry_bg'], fg=C['text'],
-                    insertbackground=C['text'], relief='flat', bd=0,
-                    highlightthickness=1, highlightbackground=C['border'],
-                    highlightcolor=C['accent'],
-                    font=FM if mono else FU)
-
-
-def lbl(parent, text, dim=False, bold=False, head=False, **kw):
-    font = FH if head else (FB if bold else (FS if dim else FU))
-    fg   = C['text_dim'] if dim else C['text']
-    return tk.Label(parent, text=text, bg=C['bg'], fg=fg, font=font, **kw)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  JS PARSER
+#  JS PARSER / SERIALIZER  (unchanged from previous version)
 # ══════════════════════════════════════════════════════════════════════════════
 def _bal(text, oc, cc, start):
     d = 0
     for i in range(start, len(text)):
-        if   text[i] == oc: d += 1
+        if text[i] == oc:   d += 1
         elif text[i] == cc:
             d -= 1
             if d == 0: return text[start:i+1], i+1
     return None, start
 
-def _str_arr(s):  return [m.group(1) for m in re.finditer(r"'((?:[^'\\]|\\.)*)'", s)]
+def _str_arr(s):
+    return [m.group(1) for m in re.finditer(r"'((?:[^'\\]|\\.)*)'", s)]
+
 def _mf_arr(s):
     out, pos = [], 0
     while pos < len(s):
@@ -113,51 +156,47 @@ def _arr(text, name):
     blk, _ = _bal(text, '[', ']', b)
     return blk[1:-1] if blk else None
 
-def _bool(text, name, default=True):
+def _pbool(text, name, default=True):
     m = re.search(r'\b'+re.escape(name)+r'\s*:\s*(true|false)', text)
-    return (m.group(1)=='true') if m else default
+    return (m.group(1) == 'true') if m else default
 
-def _str(text, name):
+def _pstr(text, name):
     m = re.search(r'\b'+re.escape(name)+r"""\s*:\s*'((?:[^'\\]|\\.)*)'""", text)
     return m.group(1) if m else ''
 
 def parse_teams(js):
     m = re.search(r'const\s+TEAMS\s*=\s*\{', js)
     if not m: return None, None, None
-    cs  = m.start()
-    bp  = js.index('{', m.start())
+    cs = m.start()
+    bp = js.index('{', m.start())
     outer, _ = _bal(js, '{', '}', bp)
     if not outer: return None, None, None
     re_ = bp + len(outer)
     semi = re.match(r'\s*;', js[re_:re_+10])
-    be   = re_ + (len(semi.group()) if semi else 0)
+    be = re_ + (len(semi.group()) if semi else 0)
     inner, teams, pos = outer[1:-1], [], 0
     while pos < len(inner):
         km = re.search(r'\b([a-zA-Z_]\w*)\s*:\s*\{', inner[pos:])
         if not km: break
         key = km.group(1)
-        ab  = inner.index('{', pos + km.start())
+        ab = inner.index('{', pos + km.start())
         blk, end = _bal(inner, '{', '}', ab)
         if not blk: break
         ti = blk[1:-1]
         teams.append({
-            'key': key, 'name': _str(ti, 'name') or key,
-            'mfOptions':         _mf_arr(_arr(ti,'mfOptions') or ''),
-            'productOptions':    _str_arr(_arr(ti,'productOptions') or ''),
-            'statusOptions':     _str_arr(_arr(ti,'statusOptions') or ''),
-            'typeOptions':       _str_arr(_arr(ti,'typeOptions') or ''),
-            'complexityOptions': _str_arr(_arr(ti,'complexityOptions') or ''),
-            'showVendor':        _bool(ti, 'showVendor'),
-            'showPER':           _bool(ti, 'showPER'),
-            'complexityNote':    _str(ti, 'complexityNote'),
+            'key': key, 'name': _pstr(ti, 'name') or key,
+            'mfOptions':         _mf_arr(_arr(ti, 'mfOptions') or ''),
+            'productOptions':    _str_arr(_arr(ti, 'productOptions') or ''),
+            'statusOptions':     _str_arr(_arr(ti, 'statusOptions') or ''),
+            'typeOptions':       _str_arr(_arr(ti, 'typeOptions') or ''),
+            'complexityOptions': _str_arr(_arr(ti, 'complexityOptions') or ''),
+            'showVendor':        _pbool(ti, 'showVendor'),
+            'showPER':           _pbool(ti, 'showPER'),
+            'complexityNote':    _pstr(ti, 'complexityNote'),
         })
         pos = end
     return teams, cs, be
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  JS SERIALIZER
-# ══════════════════════════════════════════════════════════════════════════════
 def _esc(s): return "'" + s.replace('\\','\\\\').replace("'","\\'") + "'"
 
 def build_teams_block(teams):
@@ -188,581 +227,534 @@ def splice_teams(original, teams, start, end):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  DIALOGS
+#  REUSABLE LIST EDITOR WIDGET
 # ══════════════════════════════════════════════════════════════════════════════
-class _Dlg(tk.Toplevel):
-    def __init__(self, parent, title, w=460):
+class ListEditor(QWidget):
+    """
+    A label + full-height QTableWidget + CRUD buttons.
+    No internal scrollbar — grows to show all rows.
+    """
+    def __init__(self, title, columns, hint='', two_col=False, parent=None):
         super().__init__(parent)
-        self.title(title); self.configure(bg=C['bg'])
-        self.resizable(False, False); self.result = None
-        self.transient(parent); self.grab_set()
-        self.geometry(f'+{parent.winfo_rootx()+60}+{parent.winfo_rooty()+60}')
-        self.bind('<Escape>', lambda _: self.destroy())
-        self.after(60, self.lift)
+        self._two_col = two_col   # True = MF editor (label+value), False = single string
+        self._data    = []
 
-    def _ok_cancel(self, on_ok):
-        f = tk.Frame(self, bg=C['bg']); f.pack(fill='x', padx=16, pady=(6, 16))
-        btn(f,'  OK  ', on_ok, bg=C['accent'], hbg=C['accent_h']).pack(side='left', padx=(0,8))
-        btn(f,'Cancel', self.destroy).pack(side='left')
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 8, 0, 4)
+        root.setSpacing(4)
 
-    def wait(self):
-        self.wait_window(self); return self.result
+        # Header row
+        hrow = QHBoxLayout()
+        t = QLabel(title); t.setFont(QFont('Segoe UI', 10, QFont.Bold))
+        hrow.addWidget(t)
+        if hint:
+            h = QLabel(hint); h.setObjectName('hint'); hrow.addWidget(h)
+        hrow.addStretch()
+        root.addLayout(hrow)
 
-
-class MFDialog(_Dlg):
-    def __init__(self, parent, label='', value=''):
-        super().__init__(parent, 'Edit MF Option')
-        self._lv = tk.StringVar(value=label)
-        self._vv = tk.StringVar(value=value)
-        p = tk.Frame(self, bg=C['bg']); p.pack(fill='x', padx=16, pady=(16,4))
-        for text, var, hint in [
-            ('Label (display text)', self._lv, 'e.g.  "Deloitte Spain - ES"'),
-            ('Value  (short code)',  self._vv, 'e.g.  "ES"'),
-        ]:
-            lbl(p, text, bold=True).pack(anchor='w', pady=(8,2))
-            entry(p, var=var, width=50).pack(fill='x')
-            lbl(p, hint, dim=True).pack(anchor='w', pady=(1,0))
-        self._ok_cancel(self._ok)
-        self.bind('<Return>', lambda _: self._ok())
-
-    def _ok(self):
-        l, v = self._lv.get().strip(), self._vv.get().strip()
-        if not l or not v:
-            messagebox.showwarning('Required','Both fields required.', parent=self); return
-        self.result = {'label': l, 'value': v}; self.destroy()
-
-
-class StrDialog(_Dlg):
-    def __init__(self, parent, title, value='', hint=None):
-        super().__init__(parent, title)
-        self._var = tk.StringVar(value=value)
-        p = tk.Frame(self, bg=C['bg']); p.pack(fill='x', padx=16, pady=(16,4))
-        lbl(p, 'Value', bold=True).pack(anchor='w', pady=(0,4))
-        entry(p, var=self._var, width=50).pack(fill='x')
-        if hint: lbl(p, hint, dim=True).pack(anchor='w', pady=(2,0))
-        self._ok_cancel(self._ok)
-        self.bind('<Return>', lambda _: self._ok())
-
-    def _ok(self):
-        v = self._var.get().strip()
-        if not v:
-            messagebox.showwarning('Required','Value cannot be empty.', parent=self); return
-        self.result = v; self.destroy()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  LIST EDITOR  (reusable treeview + CRUD buttons)
-# ══════════════════════════════════════════════════════════════════════════════
-class ListEditor(tk.Frame):
-    def __init__(self, master, title, items, columns, row_fn,
-                 add_fn, edit_fn, height=6, hint='', **kw):
-        super().__init__(master, bg=C['bg'], **kw)
-        self._items  = list(items)
-        self._row_fn = row_fn
-        self._add_fn = add_fn
-        self._edit_fn = edit_fn
-
-        # Header
-        hf = tk.Frame(self, bg=C['bg']); hf.pack(fill='x', pady=(10,3))
-        lbl(hf, title, bold=True).pack(side='left')
-        if hint: lbl(hf, f'  {hint}', dim=True).pack(side='left')
-
-        # Treeview
-        tf = tk.Frame(self, bg=C['surface2'], bd=1, relief='flat')
-        tf.pack(fill='both', expand=True)
-        cols = [c[0] for c in columns]
-        self._tv = ttk.Treeview(tf, columns=cols, show='headings',
-                                height=height, selectmode='browse')
-        for cid, head, w in columns:
-            self._tv.heading(cid, text=head)
-            self._tv.column(cid, width=w, anchor='w', stretch=True)
-        vsb = ttk.Scrollbar(tf, orient='vertical', command=self._tv.yview)
-        self._tv.configure(yscrollcommand=vsb.set)
-        self._tv.grid(row=0, column=0, sticky='nsew')
-        vsb.grid(row=0, column=1, sticky='ns')
-        tf.grid_columnconfigure(0, weight=1); tf.grid_rowconfigure(0, weight=1)
-        self._tv.bind('<Double-1>', lambda _: self._edit())
+        # Table
+        ncols = 2 if two_col else 1
+        self._table = QTableWidget(0, ncols)
+        self._table.setHorizontalHeaderLabels(columns)
+        self._table.verticalHeader().setVisible(False)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._table.horizontalHeader().setStretchLastSection(True)
+        if two_col:
+            self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+            self._table.setColumnWidth(1, 110)
+        self._table.setSizeAdjustPolicy(QTableWidget.AdjustToContents)
+        self._table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self._table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._table.itemDoubleClicked.connect(self._edit)
+        root.addWidget(self._table)
 
         # Buttons
-        bf = tk.Frame(self, bg=C['bg']); bf.pack(fill='x', pady=(4,0))
-        specs = [('＋ Add',    self._add,    C['accent'],  C['accent_h']),
-                 ('✏ Edit',   self._edit,   C['btn_bg'],  C['btn_h']),
-                 ('✕ Delete', self._delete, C['danger'],  C['danger_h']),
-                 ('↑',        self._up,     C['btn_bg'],  C['btn_h']),
-                 ('↓',        self._down,   C['btn_bg'],  C['btn_h'])]
-        for t, c, bg, hbg in specs:
-            btn(bf, t, c, bg=bg, hbg=hbg, small=True).pack(side='left', padx=2)
+        brow = QHBoxLayout(); brow.setSpacing(6)
+        specs = [
+            ('＋  Add',    '#7c6af7', '#6455e0', self._add),
+            ('✏  Edit',   '#363652', '#46466a', self._edit),
+            ('✕  Delete', '#e05555', '#c04040', self._delete),
+            ('↑',          '#363652', '#46466a', self._up),
+            ('↓',          '#363652', '#46466a', self._down),
+        ]
+        for txt, bg, hbg, fn in specs:
+            b = QPushButton(txt)
+            b.setStyleSheet(
+                f'QPushButton{{background:{bg};border-radius:5px;padding:4px 10px;}}'
+                f'QPushButton:hover{{background:{hbg};}}'
+            )
+            b.clicked.connect(fn)
+            brow.addWidget(b)
+        brow.addStretch()
+        root.addLayout(brow)
+
+    # ── data ──────────────────────────────────────────────────────────────────
+    def load(self, items):
+        self._data = list(items)
         self._refresh()
 
+    def get(self):
+        return copy.deepcopy(self._data)
+
     def _refresh(self):
-        for r in self._tv.get_children(): self._tv.delete(r)
-        for i, item in enumerate(self._items):
-            self._tv.insert('', 'end', iid=str(i), values=self._row_fn(item))
+        self._table.setRowCount(len(self._data))
+        for i, item in enumerate(self._data):
+            if self._two_col:
+                self._table.setItem(i, 0, QTableWidgetItem(item['label']))
+                self._table.setItem(i, 1, QTableWidgetItem(item['value']))
+            else:
+                self._table.setItem(i, 0, QTableWidgetItem(item))
+        self._table.resizeRowsToContents()
+        # Make table exactly tall enough to show all rows without internal scroll
+        hh = self._table.horizontalHeader().height()
+        rh = sum(self._table.rowHeight(r) for r in range(self._table.rowCount()))
+        self._table.setFixedHeight(hh + rh + 4)
 
     def _sel(self):
-        s = self._tv.selection(); return int(s[0]) if s else None
+        rows = self._table.selectedItems()
+        return self._table.currentRow() if rows else -1
 
     def _resel(self, idx):
-        if 0 <= idx < len(self._items):
-            self._tv.selection_set(str(idx)); self._tv.see(str(idx))
+        if 0 <= idx < len(self._data):
+            self._table.selectRow(idx)
 
+    # ── CRUD ──────────────────────────────────────────────────────────────────
     def _add(self):
-        item = self._add_fn()
-        if item is not None:
-            self._items.append(item); self._refresh()
-            self._resel(len(self._items)-1)
+        if self._two_col:
+            label, ok = QInputDialog.getText(self, 'Add MF Option', 'Label (display text):')
+            if not ok or not label.strip(): return
+            value, ok = QInputDialog.getText(self, 'Add MF Option', f'Value (short code) for\n"{label}":')
+            if not ok or not value.strip(): return
+            self._data.append({'label': label.strip(), 'value': value.strip()})
+        else:
+            val, ok = QInputDialog.getText(self, 'Add Option', 'Value:')
+            if not ok or not val.strip(): return
+            self._data.append(val.strip())
+        self._refresh()
+        self._resel(len(self._data)-1)
 
     def _edit(self):
         idx = self._sel()
-        if idx is None: return
-        result = self._edit_fn(self._items[idx])
-        if result is not None:
-            self._items[idx] = result; self._refresh(); self._resel(idx)
+        if idx < 0: return
+        if self._two_col:
+            item = self._data[idx]
+            label, ok = QInputDialog.getText(self, 'Edit MF Option', 'Label:', text=item['label'])
+            if not ok or not label.strip(): return
+            value, ok = QInputDialog.getText(self, 'Edit MF Option', 'Value:', text=item['value'])
+            if not ok or not value.strip(): return
+            self._data[idx] = {'label': label.strip(), 'value': value.strip()}
+        else:
+            val, ok = QInputDialog.getText(self, 'Edit Option', 'Value:', text=self._data[idx])
+            if not ok or not val.strip(): return
+            self._data[idx] = val.strip()
+        self._refresh(); self._resel(idx)
 
     def _delete(self):
         idx = self._sel()
-        if idx is None: return
-        lv = self._row_fn(self._items[idx])[0]
-        if messagebox.askyesno('Delete', f'Delete  "{lv}" ?', parent=self):
-            self._items.pop(idx); self._refresh()
-            self._resel(min(idx, len(self._items)-1))
+        if idx < 0: return
+        name = self._data[idx]['label'] if self._two_col else self._data[idx]
+        r = QMessageBox.question(self, 'Delete', f'Delete  "{name}" ?')
+        if r == QMessageBox.Yes:
+            self._data.pop(idx); self._refresh()
+            self._resel(min(idx, len(self._data)-1))
 
     def _up(self):
         idx = self._sel()
-        if idx is None or idx == 0: return
-        self._items[idx-1], self._items[idx] = self._items[idx], self._items[idx-1]
+        if idx <= 0: return
+        self._data[idx-1], self._data[idx] = self._data[idx], self._data[idx-1]
         self._refresh(); self._resel(idx-1)
 
     def _down(self):
         idx = self._sel()
-        if idx is None or idx >= len(self._items)-1: return
-        self._items[idx], self._items[idx+1] = self._items[idx+1], self._items[idx]
+        if idx < 0 or idx >= len(self._data)-1: return
+        self._data[idx], self._data[idx+1] = self._data[idx+1], self._data[idx]
         self._refresh(); self._resel(idx+1)
 
-    def get(self): return copy.deepcopy(self._items)
-
-
-def mf_editor(parent, items):
-    return ListEditor(parent, 'MF Options', items,
-        columns=[('l','Label (display text)',340),('v','Value (code)',100)],
-        row_fn=lambda x:(x['label'],x['value']),
-        add_fn=lambda: MFDialog(parent).wait(),
-        edit_fn=lambda item: MFDialog(parent, item['label'], item['value']).wait(),
-        height=8, hint='— display name → short code')
-
-def str_editor(parent, title, items, height=5, hint=''):
-    return ListEditor(parent, title, items,
-        columns=[('v','Option',460)], row_fn=lambda x:(x,),
-        add_fn=lambda: StrDialog(parent, f'Add – {title}').wait(),
-        edit_fn=lambda item: StrDialog(parent, f'Edit – {title}', value=item).wait(),
-        height=height, hint=hint)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  SCROLLABLE CANVAS WRAPPER
-#  — one persistent canvas; inner frame is destroyed/rebuilt on team switch
+#  TEAM EDITOR  (the scrollable content for one team)
 # ══════════════════════════════════════════════════════════════════════════════
-class ScrollCanvas(tk.Frame):
-    """
-    Scroll routing strategy:
-      - One global <MouseWheel> handler on the root window.
-      - Walks up widget hierarchy from event.widget:
-          * cursor over a Treeview  -> scroll that Treeview
-          * cursor elsewhere inside this panel -> scroll the main canvas
-          * cursor outside this panel -> do nothing
-    This ensures the main canvas always scrolls, while Treeview rows
-    still scroll their own list when hovered directly.
-    """
-    def __init__(self, master, **kw):
-        super().__init__(master, bg=C['bg'], **kw)
-        self._canvas = tk.Canvas(self, bg=C['bg'], bd=0,
-                                 highlightthickness=0, yscrollincrement=8)
-        self._vsb = ttk.Scrollbar(self, orient='vertical',
-                                  command=self._canvas.yview)
-        self._canvas.configure(yscrollcommand=self._vsb.set)
-        self._vsb.pack(side='right', fill='y')
-        self._canvas.pack(side='left', fill='both', expand=True)
-        self.inner = None
-        self._win  = None
-        self._canvas.bind('<Configure>', self._on_canvas_resize)
-        self.after(100, self._register_global_wheel)
+def _sep():
+    f = QFrame(); f.setObjectName('separator')
+    f.setFrameShape(QFrame.HLine)
+    return f
 
-    def _register_global_wheel(self):
-        self.winfo_toplevel().bind('<MouseWheel>', self._global_wheel, add='+')
+def _section(title):
+    l = QLabel(title); l.setObjectName('section_title')
+    return l
 
-    def _global_wheel(self, event):
-        steps = int(-1 * (event.delta / 120))
-        w = event.widget
-        treeview_hit = None
-        inside_panel = False
-        while w is not None:
-            if isinstance(w, ttk.Treeview):
-                treeview_hit = w
-            if w is self:
-                inside_panel = True
-                break
-            w = getattr(w, 'master', None)
-        if not inside_panel:
-            return
-        if treeview_hit is not None:
-            treeview_hit.yview_scroll(steps, 'units')
-        else:
-            self._canvas.yview_scroll(steps, 'units')
+class TeamEditor(QWidget):
+    def __init__(self, team_data, on_name_change=None, parent=None):
+        super().__init__(parent)
+        self._on_name_change = on_name_change
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 16, 28, 32)
+        layout.setSpacing(0)
 
-    def _on_canvas_resize(self, event):
-        if self._win:
-            self._canvas.itemconfig(self._win, width=event.width)
-
-    def _on_inner_configure(self, _=None):
-        self._canvas.configure(scrollregion=self._canvas.bbox('all'))
-        self._canvas.yview_moveto(0)
-
-    def rebuild(self, build_fn):
-        if self._win:
-            self._canvas.delete(self._win)
-            self._win = None
-        if self.inner and self.inner.winfo_exists():
-            self.inner.destroy()
-        self.inner = tk.Frame(self._canvas, bg=C['bg'])
-        build_fn(self.inner)
-        self._win = self._canvas.create_window(
-            (0, 0), window=self.inner, anchor='nw')
-        self.inner.bind('<Configure>', self._on_inner_configure)
-        self.inner.update_idletasks()
-        self._on_canvas_resize(type('E', (), {'width': self._canvas.winfo_width()})())
-        self._on_inner_configure()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  TEAM EDITOR  — builds into whatever frame is passed
-# ══════════════════════════════════════════════════════════════════════════════
-class TeamEditor:
-    """
-    Builds all editor widgets into `parent` and exposes .collect().
-    Does NOT own a frame — the caller owns it.
-    """
-    def __init__(self, parent, team_data, on_name_change=None):
-        self._t  = copy.deepcopy(team_data)
-        self._cb = on_name_change
-        self._build(parent)
-
-    def _sep(self, p):
-        ttk.Separator(p, orient='horizontal').pack(fill='x', padx=0, pady=(14,6))
-
-    def _build(self, p):
-        PAD = dict(padx=22)
+        def row(label_text, widget):
+            f = QWidget(); h = QHBoxLayout(f)
+            h.setContentsMargins(0,3,0,3); h.setSpacing(12)
+            lbl = QLabel(label_text); lbl.setObjectName('field_label')
+            h.addWidget(lbl); h.addWidget(widget, 1)
+            return f
 
         # ── Identity ─────────────────────────────────────────────────────────
-        lbl(p, 'Team Identity', head=True).pack(anchor='w', **PAD, pady=(18,8))
+        layout.addWidget(_section('Team Identity'))
+        layout.addSpacing(10)
 
-        self._name_var = tk.StringVar(value=self._t['name'])
-        self._key_var  = tk.StringVar(value=self._t['key'])
-
-        for label_text, var, wid, mono in [
-            ('Team Name',    self._name_var, 38, False),
-            ('Internal Key', self._key_var,  26, True),
-        ]:
-            row = tk.Frame(p, bg=C['bg']); row.pack(fill='x', **PAD, pady=2)
-            lbl(row, label_text, dim=True, width=14, anchor='w').pack(side='left')
-            entry(row, var=var, width=wid, mono=mono).pack(side='left')
-            if mono:
-                lbl(row, '  camelCase JS key', dim=True).pack(side='left')
-
-        self._name_var.trace_add('write', lambda *_: self._cb and self._cb(self._name_var.get()))
+        self._name = QLineEdit(team_data['name'])
+        self._key  = QLineEdit(team_data['key'])
+        self._key.setFont(QFont('Consolas', 10))
+        layout.addWidget(row('Team Name',    self._name))
+        krow = QWidget(); kh = QHBoxLayout(krow)
+        kh.setContentsMargins(0,3,0,3); kh.setSpacing(12)
+        kh.addWidget(QLabel('Internal Key'))
+        kh.addWidget(self._key, 1)
+        hint = QLabel('camelCase JS key'); hint.setObjectName('hint')
+        kh.addWidget(hint)
+        layout.addWidget(krow)
+        self._name.textChanged.connect(lambda t: on_name_change and on_name_change(t))
 
         # ── MF Options ───────────────────────────────────────────────────────
-        self._sep(p)
-        self._mf = mf_editor(p, self._t['mfOptions'])
-        self._mf.pack(fill='x', **PAD)
+        layout.addSpacing(8); layout.addWidget(_sep()); layout.addSpacing(4)
+        self._mf = ListEditor('MF Options',
+            ['Label (display text)', 'Value (code)'],
+            hint='— display name → short code', two_col=True)
+        self._mf.load(team_data['mfOptions'])
+        layout.addWidget(self._mf)
 
         # ── Product ──────────────────────────────────────────────────────────
-        self._sep(p)
-        self._prod = str_editor(p,'Product Options', self._t['productOptions'],
-                                height=4, hint='— e.g. DLP, SWG, CASB')
-        self._prod.pack(fill='x', **PAD)
+        layout.addWidget(_sep()); layout.addSpacing(4)
+        self._prod = ListEditor('Product Options', ['Option'],
+            hint='— e.g. DLP, SWG, CASB')
+        self._prod.load(team_data['productOptions'])
+        layout.addWidget(self._prod)
 
         # ── Status ───────────────────────────────────────────────────────────
-        self._sep(p)
-        self._stat = str_editor(p,'Status Options', self._t['statusOptions'],
-                                height=5, hint='— e.g. WIP, Waiting Requester')
-        self._stat.pack(fill='x', **PAD)
+        layout.addWidget(_sep()); layout.addSpacing(4)
+        self._stat = ListEditor('Status Options', ['Option'],
+            hint='— e.g. WIP, Waiting Requester')
+        self._stat.load(team_data['statusOptions'])
+        layout.addWidget(self._stat)
 
         # ── Type ─────────────────────────────────────────────────────────────
-        self._sep(p)
-        self._type = str_editor(p,'Type Options', self._t['typeOptions'],
-                                height=9, hint='— e.g. Access, Config, Policy')
-        self._type.pack(fill='x', **PAD)
+        layout.addWidget(_sep()); layout.addSpacing(4)
+        self._type = ListEditor('Type Options', ['Option'],
+            hint='— e.g. Access, Config, Policy')
+        self._type.load(team_data['typeOptions'])
+        layout.addWidget(self._type)
 
         # ── Complexity ───────────────────────────────────────────────────────
-        self._sep(p)
-        self._comp = str_editor(p,'Complexity Options', self._t['complexityOptions'],
-                                height=3, hint='— typically N/A, 1, 2, 3')
-        self._comp.pack(fill='x', **PAD)
+        layout.addWidget(_sep()); layout.addSpacing(4)
+        self._comp = ListEditor('Complexity Options', ['Option'],
+            hint='— typically N/A, 1, 2, 3')
+        self._comp.load(team_data['complexityOptions'])
+        layout.addWidget(self._comp)
 
         # ── Complexity Note ──────────────────────────────────────────────────
-        self._sep(p)
-        lbl(p,'Complexity Note', bold=True).pack(anchor='w', **PAD, pady=(2,4))
-        self._note_var = tk.StringVar(value=self._t['complexityNote'])
-        nf = tk.Frame(p, bg=C['bg']); nf.pack(fill='x', **PAD)
-        entry(nf, var=self._note_var, width=60).pack(fill='x')
+        layout.addWidget(_sep()); layout.addSpacing(4)
+        layout.addWidget(_section('Complexity Note'))
+        layout.addSpacing(6)
+        self._note = QLineEdit(team_data['complexityNote'])
+        layout.addWidget(self._note)
 
         # ── Optional fields ──────────────────────────────────────────────────
-        self._sep(p)
-        lbl(p,'Optional Fields', bold=True).pack(anchor='w', **PAD, pady=(2,6))
-        cf = tk.Frame(p, bg=C['bg']); cf.pack(fill='x', **PAD, pady=(0,28))
-        self._vendor_var = tk.BooleanVar(value=self._t['showVendor'])
-        self._per_var    = tk.BooleanVar(value=self._t['showPER'])
-        ttk.Checkbutton(cf, text='Show  Vendor Case  field',
-                        variable=self._vendor_var).pack(side='left', padx=(0,28))
-        ttk.Checkbutton(cf, text='Show  PER Number  field',
-                        variable=self._per_var).pack(side='left')
+        layout.addSpacing(8); layout.addWidget(_sep()); layout.addSpacing(4)
+        layout.addWidget(_section('Optional Fields'))
+        layout.addSpacing(8)
+        chk_row = QWidget(); ch = QHBoxLayout(chk_row)
+        ch.setContentsMargins(0,0,0,0); ch.setSpacing(32)
+        self._vendor = QCheckBox('Show  Vendor Case  field')
+        self._per    = QCheckBox('Show  PER Number  field')
+        self._vendor.setChecked(team_data['showVendor'])
+        self._per.setChecked(team_data['showPER'])
+        ch.addWidget(self._vendor); ch.addWidget(self._per); ch.addStretch()
+        layout.addWidget(chk_row)
+        layout.addStretch()
 
     def collect(self):
         return {
-            'key':               self._key_var.get().strip(),
-            'name':              self._name_var.get().strip(),
+            'key':               self._key.text().strip(),
+            'name':              self._name.text().strip(),
             'mfOptions':         self._mf.get(),
             'productOptions':    self._prod.get(),
             'statusOptions':     self._stat.get(),
             'typeOptions':       self._type.get(),
             'complexityOptions': self._comp.get(),
-            'complexityNote':    self._note_var.get().strip(),
-            'showVendor':        self._vendor_var.get(),
-            'showPER':           self._per_var.get(),
+            'complexityNote':    self._note.text().strip(),
+            'showVendor':        self._vendor.isChecked(),
+            'showPER':           self._per.isChecked(),
         }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  MAIN APPLICATION
+#  SIDEBAR BUTTON
 # ══════════════════════════════════════════════════════════════════════════════
-class App(tk.Tk):
+class TeamButton(QPushButton):
+    def __init__(self, name, idx, on_click):
+        super().__init__(name)
+        self.setObjectName('team_btn')
+        self.setCheckable(False)
+        self._idx = idx
+        self.clicked.connect(lambda: on_click(idx))
+        self.setCursor(Qt.PointingHandCursor)
+
+    def set_selected(self, yes):
+        self.setProperty('selected', 'true' if yes else 'false')
+        self.style().unpolish(self); self.style().polish(self)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  MAIN WINDOW
+# ══════════════════════════════════════════════════════════════════════════════
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title('Short Description Helper — Team Config Editor')
-        self.geometry('1180x760'); self.minsize(860, 540)
-        self.configure(bg=C['bg'])
-        apply_style()
+        self.setWindowTitle('Short Description Helper — Team Config Editor')
+        self.resize(1200, 780)
+        self.setMinimumSize(860, 540)
 
         self._js_path  = None
         self._js_src   = ''
         self._teams    = []
         self._blk_s    = None
         self._blk_e    = None
-        self._sel      = None   # selected index
-        self._editor   = None  # TeamEditor instance
+        self._sel      = None
+        self._editor   = None
+        self._team_btns = []
 
         self._build_ui()
-        self.bind('<Control-s>', lambda _: self._save())
 
     # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        # Top bar
-        top = tk.Frame(self, bg=C['surface'], height=52)
-        top.pack(fill='x', side='top'); top.pack_propagate(False)
-        btn(top,'📂  Open .js File', self._open,
-            bg=C['accent'], hbg=C['accent_h']).pack(side='left', padx=14, pady=10)
-        self._path_lbl = tk.Label(top, text='No file loaded.',
-                                  bg=C['surface'], fg=C['text_dim'], font=FU, anchor='w')
-        self._path_lbl.pack(side='left', padx=6, fill='x', expand=True)
+        central = QWidget(); self.setCentralWidget(central)
+        root = QVBoxLayout(central); root.setContentsMargins(0,0,0,0); root.setSpacing(0)
 
-        # Bottom bar
-        bot = tk.Frame(self, bg=C['surface'], height=44)
-        bot.pack(fill='x', side='bottom'); bot.pack_propagate(False)
-        self._status_lbl = tk.Label(bot, text='Open a .js file to begin.',
-                                    bg=C['surface'], fg=C['text_dim'], font=FU, anchor='w')
-        self._status_lbl.pack(side='left', padx=14, fill='x', expand=True)
-        self._save_btn = btn(bot,'💾  Save to File', self._save,
-                             bg=C['accent'], hbg=C['accent_h'])
-        self._save_btn.pack(side='right', padx=14, pady=7)
-        self._save_btn.config(state='disabled', cursor='arrow')
+        # ── Top bar ───────────────────────────────────────────────────────────
+        topbar = QFrame(); topbar.setObjectName('topbar'); topbar.setFixedHeight(52)
+        tl = QHBoxLayout(topbar); tl.setContentsMargins(14,0,14,0); tl.setSpacing(12)
+        open_btn = QPushButton('📂  Open .js File'); open_btn.setObjectName('accent')
+        open_btn.clicked.connect(self._open)
+        tl.addWidget(open_btn)
+        self._path_lbl = QLabel('No file loaded — click Open to begin.')
+        self._path_lbl.setObjectName('top_path')
+        tl.addWidget(self._path_lbl, 1)
+        root.addWidget(topbar)
 
-        # Main area
-        main = tk.Frame(self, bg=C['bg']); main.pack(fill='both', expand=True)
+        # ── Main split ────────────────────────────────────────────────────────
+        split = QSplitter(Qt.Horizontal)
+        split.setHandleWidth(1)
+        root.addWidget(split, 1)
 
-        # ── Sidebar ───────────────────────────────────────────────────────────
-        sb = tk.Frame(main, bg=C['surface'], width=205)
-        sb.pack(side='left', fill='y'); sb.pack_propagate(False)
+        # Sidebar
+        sidebar = QFrame(); sidebar.setObjectName('sidebar')
+        sidebar.setFixedWidth(210)
+        sl = QVBoxLayout(sidebar); sl.setContentsMargins(0,0,0,0); sl.setSpacing(0)
 
-        tk.Label(sb, text='Teams', bg=C['surface'], fg=C['text'],
-                 font=FH).pack(anchor='w', padx=14, pady=(14,2))
-        tk.Label(sb, text='Click a team to edit.',
-                 bg=C['surface'], fg=C['text_dim'], font=FS).pack(anchor='w', padx=14, pady=(0,8))
+        hdr = QWidget(); hl = QVBoxLayout(hdr); hl.setContentsMargins(14,14,14,6)
+        t = QLabel('Teams'); t.setFont(QFont('Segoe UI', 13, QFont.Bold)); hl.addWidget(t)
+        s = QLabel('Click a team to edit.'); s.setObjectName('hint'); hl.addWidget(s)
+        sl.addWidget(hdr)
 
-        # Scrollable team list
-        tc = tk.Canvas(sb, bg=C['surface'], bd=0, highlightthickness=0)
-        tv = ttk.Scrollbar(sb, orient='vertical', command=tc.yview)
-        tc.configure(yscrollcommand=tv.set)
-        tv.pack(side='right', fill='y')
-        tc.pack(side='top', fill='both', expand=True)
-        self._team_frame = tk.Frame(tc, bg=C['surface'])
-        _tw = tc.create_window((0,0), window=self._team_frame, anchor='nw')
-        self._team_frame.bind('<Configure>',
-            lambda _: tc.configure(scrollregion=tc.bbox('all')))
-        tc.bind('<Configure>', lambda e: tc.itemconfig(_tw, width=e.width))
+        # Team list (scrollable)
+        self._team_scroll = QScrollArea()
+        self._team_scroll.setWidgetResizable(True)
+        self._team_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._team_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._team_scroll.setFrameShape(QFrame.NoFrame)
+        self._team_container = QWidget()
+        self._team_layout = QVBoxLayout(self._team_container)
+        self._team_layout.setContentsMargins(0,0,0,0); self._team_layout.setSpacing(0)
+        self._team_layout.addStretch()
+        self._team_scroll.setWidget(self._team_container)
+        sl.addWidget(self._team_scroll, 1)
 
         # Sidebar action buttons
-        sbf = tk.Frame(sb, bg=C['surface']); sbf.pack(fill='x', padx=8, pady=8)
-        btn(sbf,'＋  New Team',   self._new_team,
-            bg=C['accent'], hbg=C['accent_h']).pack(fill='x', pady=2)
-        btn(sbf,'⧉  Duplicate',  self._dup_team).pack(fill='x', pady=2)
-        btn(sbf,'✕  Delete',     self._del_team,
-            bg=C['danger'], hbg=C['danger_h']).pack(fill='x', pady=2)
+        sb_btns = QWidget(); bbl = QVBoxLayout(sb_btns)
+        bbl.setContentsMargins(8,8,8,8); bbl.setSpacing(4)
+        for txt, fn, obj in [
+            ('＋  New Team',  self._new_team, 'accent'),
+            ('⧉  Duplicate', self._dup_team, ''),
+            ('✕  Delete',    self._del_team, 'danger'),
+        ]:
+            b = QPushButton(txt); b.setObjectName(obj); b.clicked.connect(fn)
+            bbl.addWidget(b)
+        sl.addWidget(sb_btns)
+        split.addWidget(sidebar)
 
-        # ── Content (persistent scroll canvas) ───────────────────────────────
-        self._scroll = ScrollCanvas(main)
-        self._scroll.pack(side='left', fill='both', expand=True)
-        self._show_placeholder('Open a .js file, then select a team from the sidebar.')
+        # ── Content (QScrollArea — native, reliable scroll) ───────────────────
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+
+        self._placeholder = QLabel('Open a .js file, then select a team from the sidebar.')
+        self._placeholder.setAlignment(Qt.AlignCenter)
+        self._placeholder.setObjectName('hint')
+        self._placeholder.setFont(QFont('Segoe UI', 13))
+        self._scroll.setWidget(self._placeholder)
+        split.addWidget(self._scroll)
+        split.setStretchFactor(0, 0); split.setStretchFactor(1, 1)
+
+        # ── Status bar ────────────────────────────────────────────────────────
+        self._status = QStatusBar()
+        self.setStatusBar(self._status)
+        save_btn = QPushButton('💾  Save to File (Ctrl+S)')
+        save_btn.setObjectName('accent')
+        save_btn.clicked.connect(self._save)
+        self._status.addPermanentWidget(save_btn)
+        self._status.showMessage('Open a .js file to begin.')
+
+        # Keyboard shortcut
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
+        QShortcut(QKeySequence('Ctrl+S'), self).activated.connect(self._save)
 
     # ── helpers ───────────────────────────────────────────────────────────────
-    def _status(self, msg, color=None):
-        self._status_lbl.config(text=msg, fg=color or C['text_dim'])
-
     def _rebuild_sidebar(self):
-        for w in self._team_frame.winfo_children(): w.destroy()
+        # Remove old buttons (but not the stretch at the end)
+        for b in self._team_btns: b.setParent(None)
+        self._team_btns.clear()
         for i, t in enumerate(self._teams):
-            selected = (i == self._sel)
-            obg = C['sel_bg'] if selected else C['surface']
-            ofg = C['white']  if selected else C['text_dim']
-            b = tk.Button(self._team_frame, text=t['name'],
-                          anchor='w', bg=obg, fg=ofg,
-                          activebackground=C['sel_bg'], activeforeground=C['white'],
-                          relief='flat', bd=0, padx=14, pady=8, font=FU,
-                          cursor='hand2',
-                          command=lambda idx=i: self._select(idx))
-            b.pack(fill='x')
-            b.bind('<Enter>', lambda e, b2=b: b2.config(bg=C['sel_bg'], fg=C['white']))
-            b.bind('<Leave>', lambda e, b2=b, bg=obg, fg=ofg: b2.config(bg=bg, fg=fg))
-
-    def _show_placeholder(self, msg):
-        def _build(inner):
-            tk.Label(inner, text=msg, bg=C['bg'], fg=C['text_dim'],
-                     font=('Segoe UI', 13)).pack(expand=True, pady=200)
-        self._scroll.rebuild(_build)
-        self._editor = None
+            b = TeamButton(t['name'], i, self._select)
+            b.set_selected(i == self._sel)
+            self._team_layout.insertWidget(i, b)
+            self._team_btns.append(b)
 
     def _flush(self):
-        """Save current editor state back into self._teams."""
         if self._editor is not None and self._sel is not None:
             self._teams[self._sel] = self._editor.collect()
 
     # ── file ops ──────────────────────────────────────────────────────────────
     def _open(self, path=None):
         if not path:
-            path = filedialog.askopenfilename(
-                title='Select the Short Description Helper .js file',
-                filetypes=[('JavaScript', '*.js'), ('All files', '*.*')])
+            path, _ = QFileDialog.getOpenFileName(
+                self, 'Select the Short Description Helper .js file',
+                '', 'JavaScript (*.js);;All files (*.*)')
         if not path: return
         try:
             with open(path, encoding='utf-8') as f: src = f.read()
         except Exception as e:
-            messagebox.showerror('Error', f'Could not read file:\n{e}'); return
+            QMessageBox.critical(self, 'Error', f'Could not read file:\n{e}'); return
         teams, start, end = parse_teams(src)
         if teams is None:
-            messagebox.showerror('Parse Error',
+            QMessageBox.critical(self, 'Parse Error',
                 'Could not find  const TEAMS = {...}  in this file.\n'
-                'Make sure you selected the correct userscript.'); return
+                'Make sure you selected the correct userscript.')
+            return
         self._js_path = path; self._js_src = src
-        self._teams   = teams; self._blk_s = start; self._blk_e = end
+        self._teams = teams; self._blk_s = start; self._blk_e = end
         self._sel = None; self._editor = None
         fname = os.path.basename(path)
-        self._path_lbl.config(
-            text=f'{fname}   ({len(teams)} team{"s" if len(teams)!=1 else ""} found)',
-            fg=C['text'])
-        self._save_btn.config(state='normal', cursor='hand2')
-        self._status(f'✅  Loaded {fname}', C['success'])
+        n = len(teams)
+        self._path_lbl.setText(f'{fname}   ({n} team{"s" if n!=1 else ""} found)')
+        self._status.showMessage(f'✅  Loaded {fname}')
         self._rebuild_sidebar()
         if teams: self._select(0)
-        else: self._show_placeholder('No teams found — use "New Team" to create one.')
+        else:
+            self._placeholder.setText('No teams found — use "New Team" to create one.')
+            self._scroll.setWidget(self._placeholder)
 
     def _save(self):
         if not self._js_path: return
         self._flush()
         if not self._teams:
-            messagebox.showwarning('Nothing to save','No teams defined.'); return
+            QMessageBox.warning(self, 'Nothing to save', 'No teams defined.'); return
         try:
             new_src = splice_teams(self._js_src, self._teams, self._blk_s, self._blk_e)
             with open(self._js_path, 'w', encoding='utf-8') as f: f.write(new_src)
             self._js_src = new_src
             _, s, e = parse_teams(new_src)
             if s is not None: self._blk_s, self._blk_e = s, e
-            self._status(f'💾  Saved → {os.path.basename(self._js_path)}', C['success'])
+            self._status.showMessage(f'💾  Saved → {os.path.basename(self._js_path)}')
         except Exception as e:
-            messagebox.showerror('Save Error', f'Could not save:\n{e}')
+            QMessageBox.critical(self, 'Save Error', f'Could not save:\n{e}')
 
     # ── team management ───────────────────────────────────────────────────────
     def _select(self, idx):
         self._flush()
         self._sel = idx
-        self._rebuild_sidebar()
-
-        team = self._teams[idx]
-
-        def _build(inner):
-            # TeamEditor writes all widgets into `inner`
-            self._editor = TeamEditor(
-                inner, team,
-                on_name_change=lambda name: self._on_name_change(idx, name))
-
-        self._scroll.rebuild(_build)
+        for b in self._team_btns: b.set_selected(b._idx == idx)
+        self._editor = TeamEditor(
+            self._teams[idx],
+            on_name_change=lambda name, i=idx: self._on_name_change(i, name))
+        self._scroll.setWidget(self._editor)
 
     def _on_name_change(self, idx, name):
         if idx < len(self._teams):
             self._teams[idx]['name'] = name
-            self._rebuild_sidebar()
+            if idx < len(self._team_btns):
+                self._team_btns[idx].setText(name)
 
     def _new_team(self):
         if not self._js_path:
-            messagebox.showinfo('No File','Open a .js file first.'); return
+            QMessageBox.information(self, 'No File', 'Open a .js file first.'); return
         self._flush()
-        d = StrDialog(self,'New Team — Enter Name', value='New Team',
-                      hint='e.g. "APAC Team", "LATAM Team" …')
-        d.wait()
-        if not d.result: return
-        name  = d.result.strip()
-        parts = re.sub(r'[^a-zA-Z0-9 ]','',name).split()
-        key   = (parts[0].lower()+''.join(p.capitalize() for p in parts[1:])+'Team') if parts else 'newTeam'
+        name, ok = QInputDialog.getText(self, 'New Team', 'Team name:',
+                                        text='New Team')
+        if not ok or not name.strip(): return
+        name = name.strip()
+        parts = re.sub(r'[^a-zA-Z0-9 ]', '', name).split()
+        key = (parts[0].lower()+''.join(p.capitalize() for p in parts[1:])+'Team') if parts else 'newTeam'
         existing = {t['key'] for t in self._teams}
-        base,n = key,2
-        while key in existing: key=f'{base}{n}'; n+=1
-        self._teams.append({'key':key,'name':name,
-            'mfOptions':[{'label':'N/A','value':'N/A'}],
-            'productOptions':['N/A','DLP','SWG','CASB'],
-            'statusOptions':['N/A','Waiting Requester','WIP','Closed'],
-            'typeOptions':['N/A','Access','Config','Policy'],
-            'complexityOptions':['N/A','1','2','3'],
-            'complexityNote':'1 = Low, 2 = Medium, 3 = High',
-            'showVendor':True,'showPER':True})
+        base, n = key, 2
+        while key in existing: key = f'{base}{n}'; n += 1
+        self._teams.append({
+            'key': key, 'name': name,
+            'mfOptions': [{'label':'N/A','value':'N/A'}],
+            'productOptions': ['N/A','DLP','SWG','CASB'],
+            'statusOptions':  ['N/A','Waiting Requester','WIP','Closed'],
+            'typeOptions':    ['N/A','Access','Config','Policy'],
+            'complexityOptions': ['N/A','1','2','3'],
+            'complexityNote': '1 = Low, 2 = Medium, 3 = High',
+            'showVendor': True, 'showPER': True,
+        })
+        self._rebuild_sidebar()
         self._select(len(self._teams)-1)
-        self._status(f'➕  Added: {name}')
+        self._status.showMessage(f'➕  Added team: {name}')
 
     def _dup_team(self):
         if self._sel is None: return
         self._flush()
         orig = copy.deepcopy(self._teams[self._sel])
         orig['name'] += ' (Copy)'
-        base = orig['key']+'Copy'; existing={t['key'] for t in self._teams}
-        key,n = base,2
-        while key in existing: key=f'{base}{n}'; n+=1
-        orig['key']=key; self._teams.append(orig)
+        base = orig['key']+'Copy'; existing = {t['key'] for t in self._teams}
+        key, n = base, 2
+        while key in existing: key = f'{base}{n}'; n += 1
+        orig['key'] = key
+        self._teams.append(orig)
+        self._rebuild_sidebar()
         self._select(len(self._teams)-1)
-        self._status(f'⧉  Duplicated as: {orig["name"]}')
+        self._status.showMessage(f'⧉  Duplicated: {orig["name"]}')
 
     def _del_team(self):
         if self._sel is None:
-            messagebox.showinfo('Nothing selected','Select a team first.'); return
+            QMessageBox.information(self, 'Nothing selected', 'Select a team first.')
+            return
         name = self._teams[self._sel]['name']
-        if not messagebox.askyesno('Delete',f'Delete  "{name}" ?\n\nThis cannot be undone.'): return
+        r = QMessageBox.question(self, 'Delete Team',
+            f'Delete  "{name}" ?\n\nThis cannot be undone.')
+        if r != QMessageBox.Yes: return
         self._teams.pop(self._sel)
         self._editor = None; self._sel = None
         self._rebuild_sidebar()
         if self._teams: self._select(0)
-        else: self._show_placeholder('No teams left — use "New Team" to add one.')
-        self._status(f'🗑  Deleted: {name}')
+        else:
+            self._placeholder.setText('No teams left — use "New Team" to add one.')
+            self._scroll.setWidget(self._placeholder)
+        self._status.showMessage(f'🗑  Deleted: {name}')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == '__main__':
-    app = App()
+    app = QApplication(sys.argv)
+    app.setStyleSheet(STYLE)
+    win = MainWindow()
+    win.show()
     if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
-        app.after(150, lambda: app._open(sys.argv[1]))
-    app.mainloop()
+        win._open(sys.argv[1])
+    sys.exit(app.exec_())
