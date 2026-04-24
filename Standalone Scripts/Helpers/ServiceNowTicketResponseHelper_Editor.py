@@ -338,9 +338,27 @@ class ResponseDialog(QDialog):
         body_lbl.setObjectName('section_title')
         root.addWidget(body_lbl)
 
-        hint = QLabel('Use  ${vars.openedByName}  and  ${vars.pageType}  as template variables.')
+        hint = QLabel('Use the buttons to insert variables at the cursor position.')
         hint.setObjectName('hint')
         root.addWidget(hint)
+
+        var_row = QHBoxLayout(); var_row.setSpacing(6)
+        VARS = [
+            ('@[${vars.openedByName}]', '👤  @Mention Opened By'),
+            ('${vars.pageType}',        '📄  Page Type'),
+        ]
+        for value, label in VARS:
+            b = QPushButton(label)
+            b.setStyleSheet(
+                'QPushButton{background:#2d2d50;border:1px solid #7c6af7;'
+                'color:#c0b0ff;border-radius:4px;padding:3px 10px;font-size:9pt;}'
+                'QPushButton:hover{background:#3d3d70;}'
+            )
+            # capture value in default arg to avoid closure issue
+            b.clicked.connect(lambda _, v=value: self._insert_var(v))
+            var_row.addWidget(b)
+        var_row.addStretch()
+        root.addLayout(var_row)
 
         self._body = QTextEdit()
         self._body.setPlainText(body or '')
@@ -360,6 +378,11 @@ class ResponseDialog(QDialog):
     def _on_submenu_toggle(self, checked):
         self._body.setEnabled(not checked)
         self._body.setStyleSheet('' if not checked else 'QTextEdit { color:#555; }')
+
+    def _insert_var(self, text):
+        cur = self._body.textCursor()
+        cur.insertText(text)
+        self._body.setFocus()
 
     def result_data(self):
         return {

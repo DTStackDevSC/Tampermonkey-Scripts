@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.10.3.1
+// @version      2.10.4
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,17 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.10.3';
-    const CHANGELOG = `Version 2.10.3:
-- Updated Update URL to GitHub.
-    
-Version 2.10.0:
-- NEW!: Field type routing. Each response now declares whether it targets
-  "Work notes" or "Additional comments (Customer visible)"
-- When ServiceNow's dual-input mode is active (both fields visible), responses
-  are automatically inserted into the correct textarea
-- When single-input mode is active the behaviour is unchanged (one textarea)
-- Custom responses now include a "Target field" selector (Work Notes / Comments)`;
+    const SCRIPT_VERSION = '2.10.4';
+    const CHANGELOG = `Version 2.10.4:
+- Added several new options for EMEA Team.
+
+Version 2.10.3:
+- Updated Update URL to GitHub.`;
 
     /* ==========================================================
      *  TEAM CONFIGURATIONS
@@ -43,80 +38,287 @@ Version 2.10.0:
 
     const TEAMS = {
 
-        /// EMEA TEAM ///
+    /// EMEA TEAM ///
 
-        emeaTeam: {
-            name: 'EMEA Team',
+    emeaTeam: {
+        name: 'EMEA Team',
 
-            defaultSectionOrder: [
-                'first_contact',
-                'responses',
-                'reminders',
-                'closures',
-                'workcomments',
-                'other',
-                'custom'
-            ],
+        defaultSectionOrder: [
+            'first_contact',
+            'responses',
+            'reminders',
+            'closures',
+            'workcomments',
+            'other',
+            'custom',
+        ],
 
-            responseMetadata: {
-                urlcheck:            { label: '# URL Check',                       category: 'workcomments', fieldType: 'work_notes' },
-                initial:             { label: 'Initial Contact',                   category: 'first_contact', fieldType: 'comments' },
-                initialmiss:         { label: 'Initial Contact (Missing Info)',    category: 'first_contact', fieldType: 'comments' },
-                bypass:              { label: 'SSL/Domain/App Bypass',             category: 'responses', hasSubmenu: true, fieldType: 'comments' },
-                bypassssl:           { label: 'SSL Bypass',                        category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                bypassdomain:        { label: 'Domain Bypass',                     category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                ssltodomain:         { label: 'SSL Bypass > Domain Bypass',        category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                bypassapp:           { label: 'Application Bypass',                category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                teststeps:           { label: 'Initial Troubleshooting Steps',     category: 'responses', fieldType: 'comments' },
-                unknownreq:          { label: 'Unknown Requestor',                 category: 'responses', fieldType: 'comments' },
-                vendorcaseloaded:    { label: 'Vendor Case Opened',                category: 'responses', fieldType: 'comments' },
-                policymgmt:          { label: 'Policy Managment',                  category: 'responses', hasSubmenu: true, fieldType: 'comments' },
-                policycreate:        { label: 'Create',                            category: 'responses', parentItem: 'policymgmt', fieldType: 'comments' },
-                policymodify:        { label: 'Modify',                            category: 'responses', parentItem: 'policymgmt', fieldType: 'comments' },
-                policydelete:        { label: 'Delete',                            category: 'responses', parentItem: 'policymgmt', fieldType: 'comments' },
-                first:               { label: 'First reminder',                    category: 'reminders', fieldType: 'comments' },
-                second:              { label: 'Second Reminder',                   category: 'reminders', fieldType: 'comments' },
-                third:               { label: 'Third Reminder',                    category: 'reminders', fieldType: 'comments' },
-                solved:              { label: 'Solved Closure',                    category: 'closures', fieldType: 'comments' },
-                timeout:             { label: 'Timeout Closure',                   category: 'closures', fieldType: 'comments' },
-                enduser:             { label: 'End User Closure',                  category: 'closures', fieldType: 'comments' },
-                bypasscomments:      { label: '# SSL/Domain/App Bypass',           category: 'workcomments', hasSubmenu: true, fieldType: 'work_notes' },
-                bypasssslcomment:    { label: '# SSL Bypass Comment',              category: 'workcomments', parentItem: 'bypasscomments', fieldType: 'work_notes' },
-                bypassdomaincomment: { label: '# Domain Bypass Comment',           category: 'workcomments', parentItem: 'bypasscomments', fieldType: 'work_notes' },
-                bypassappcomment:    { label: '# Application Bypass Comment',      category: 'workcomments', parentItem: 'bypasscomments', fieldType: 'work_notes' },
-                moreinfo:            { label: 'More Information Request',          category: 'other', fieldType: 'comments' },
-                vpninfo:             { label: 'VPN Info & Req.',                   category: 'other', fieldType: 'comments' }
+        responseMetadata: {
+            urlcheck: {
+                label: '# URL Check',
+                category: 'workcomments',
+                fieldType: 'work_notes'
             },
+            initial: {
+                label: 'Initial Contact',
+                category: 'first_contact',
+                fieldType: 'comments'
+            },
+            initialmiss: {
+                label: 'Initial Contact (Missing Info)',
+                category: 'first_contact',
+                fieldType: 'comments'
+            },
+            bypass: {
+                label: 'SSL/Domain/App Bypass',
+                category: 'responses',
+                hasSubmenu: true,
+                fieldType: 'comments'
+            },
+            bypassssl: {
+                label: 'SSL Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            bypassdomain: {
+                label: 'Domain Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            ssltodomain: {
+                label: 'SSL Bypass > Domain Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            bypassapp: {
+                label: 'Application Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            teststeps: {
+                label: 'Initial Troubleshooting Steps',
+                category: 'responses',
+                fieldType: 'comments'
+            },
+            unknownreq: {
+                label: 'Unknown Requestor',
+                category: 'responses',
+                fieldType: 'comments'
+            },
+            vendorcaseloaded: {
+                label: 'Vendor Case Opened',
+                category: 'responses',
+                fieldType: 'comments'
+            },
+            policymgmt: {
+                label: 'Policy Managment',
+                category: 'responses',
+                hasSubmenu: true,
+                fieldType: 'comments'
+            },
+            policycreate: {
+                label: 'Create',
+                category: 'responses',
+                parentItem: 'policymgmt',
+                fieldType: 'comments'
+            },
+            policymodify: {
+                label: 'Modify',
+                category: 'responses',
+                parentItem: 'policymgmt',
+                fieldType: 'comments'
+            },
+            policydelete: {
+                label: 'Delete',
+                category: 'responses',
+                parentItem: 'policymgmt',
+                fieldType: 'comments'
+            },
+            first: {
+                label: 'First reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            second: {
+                label: 'Second Reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            third: {
+                label: 'Third Reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            solved: {
+                label: 'Solved Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            timeout: {
+                label: 'Timeout Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            enduser: {
+                label: 'End User Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            bypasscomments: {
+                label: '# SSL/Domain/App Bypass',
+                category: 'workcomments',
+                hasSubmenu: true,
+                fieldType: 'work_notes'
+            },
+            bypasssslcomment: {
+                label: '# SSL Bypass Comment',
+                category: 'workcomments',
+                parentItem: 'bypasscomments',
+                fieldType: 'work_notes'
+            },
+            bypassdomaincomment: {
+                label: '# Domain Bypass Comment',
+                category: 'workcomments',
+                parentItem: 'bypasscomments',
+                fieldType: 'work_notes'
+            },
+            bypassappcomment: {
+                label: '# Application Bypass Comment',
+                category: 'workcomments',
+                parentItem: 'bypasscomments',
+                fieldType: 'work_notes'
+            },
+            moreinfo: {
+                label: 'More Information Request',
+                category: 'other',
+                fieldType: 'comments'
+            },
+            vpninfo: {
+                label: 'VPN Info & Req.',
+                category: 'other',
+                fieldType: 'comments'
+            },
+            slackAddComment: {
+                label: 'Slack URL Added',
+                category: 'responses',
+                fieldType: 'comments'
+            },
+            tier2SOCreq: {
+                label: 'SOC Tier 2 Task Request',
+                category: 'other',
+                fieldType: 'comments'
+            },
+            recatRequest: {
+                label: 'Recategorization Request',
+                category: 'responses',
+                fieldType: 'comments'
+            },
+            ideaFeatureRequest: {
+                label: 'IDEA Request Opened',
+                category: 'responses',
+                fieldType: 'comments'
+            },
+            configMgmt: {
+                label: 'Configuration Managment',
+                category: 'responses',
+                hasSubmenu: true,
+                fieldType: 'comments'
+            },
+            configSteering: {
+                label: 'Steering/Client Configuration',
+                category: 'responses',
+                parentItem: 'configMgmt',
+                fieldType: 'comments'
+            },
+            configMgmtWorknotes: {
+                label: '# Configuration Managment',
+                category: 'workcomments',
+                hasSubmenu: true,
+                fieldType: 'work_notes'
+            },
+            configSteeringWorknotes: {
+                label: '# Steering/Client Configuration',
+                category: 'workcomments',
+                parentItem: 'configMgmtWorknotes',
+                fieldType: 'work_notes'
+            },
+            policyMgmtWorknote: {
+                label: '# Policy Managment',
+                category: 'workcomments',
+                hasSubmenu: true,
+                fieldType: 'work_notes'
+            },
+            policyCreateWorknote: {
+                label: '# Create',
+                category: 'workcomments',
+                parentItem: 'policyMgmtWorknote',
+                fieldType: 'work_notes'
+            },
+            policyModifyWorknote: {
+                label: '# Modify',
+                category: 'workcomments',
+                parentItem: 'policyMgmtWorknote',
+                fieldType: 'work_notes'
+            },
+            policyDeleteWorknote: {
+                label: '# Delete',
+                category: 'workcomments',
+                parentItem: 'policyMgmtWorknote',
+                fieldType: 'work_notes'
+            },
+            workingOnReminder: {
+                label: 'Working on the request Reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            }
+        },
 
-            enabledResponses: [
-                'teststeps',
-                'unknownreq',
-                'policymgmt',
-                'policycreate',
-                'policymodify',
-                'policydelete',
-                'vendorcaseloaded',
-                'bypass',
-                'bypassssl',
-                'ssltodomain',
-                'bypassdomain',
-                'bypassapp',
-                'first',
-                'second',
-                'third',
-                'solved',
-                'timeout',
-                'enduser',
-                'bypasscomments',
-                'bypasssslcomment',
-                'bypassdomaincomment',
-                'bypassappcomment',
-                'urlcheck',
-                'moreinfo',
-                'vpninfo'
-            ],
+        enabledResponses: [
+            'teststeps',
+            'unknownreq',
+            'policymgmt',
+            'policycreate',
+            'policymodify',
+            'policydelete',
+            'configMgmt',
+            'configSteering',
+            'bypass',
+            'bypassssl',
+            'ssltodomain',
+            'bypassdomain',
+            'bypassapp',
+            'vendorcaseloaded',
+            'slackAddComment',
+            'recatRequest',
+            'ideaFeatureRequest',
+            'first',
+            'second',
+            'third',
+            'workingOnReminder',
+            'solved',
+            'timeout',
+            'enduser',
+            'bypasscomments',
+            'bypasssslcomment',
+            'bypassdomaincomment',
+            'bypassappcomment',
+            'policyMgmtWorknote',
+            'policyCreateWorknote',
+            'policyModifyWorknote',
+            'policyDeleteWorknote',
+            'configMgmtWorknotes',
+            'configSteeringWorknotes',
+            'urlcheck',
+            'moreinfo',
+            'vpninfo',
+            'tier2SOCreq',
+        ],
 
-            responses: {
+        responses: {
                 urlcheck: (vars) => `#
 
 IBM-XF:
@@ -317,6 +519,7 @@ We've created the following Netskope policy to help address the issue:
 - Destination:
 - Policy description:
 - Group position:
+- Action:
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.
 
@@ -344,322 +547,525 @@ We've scheduled for deletion the following Netskope policy to help address the i
 This policy has been disabled and scheduled for deletion in 30 days.
 
 Best regards,
+Global Data Security Enablement`,
+                slackAddComment: (vars) => `Hello @[${vars.openedByName}],
+
+Slack URL:
+>
+
+Has been added to the requested MF Slack Allow list.
+
+Kind regards,`,
+                tier2SOCreq: (vars) => `Hello,
+
+A MF has requested access to a URL that was blocked by SOC. Could you please take a look?
+The URL is:
+
+>
+
+Thanks!`,
+                recatRequest: (vars) => `Hello @[${vars.openedByName}],
+
+A recategorization request has been submitted to Netskope. Please allow 24–48 hours for them to review it and apply any necessary changes.
+
+Kind regards,`,
+                ideaFeatureRequest: (vars) => `Hello @[${vars.openedByName}],
+
+An IDEA #### feature request has been opened with Netskope for this functionality. We will update you directly once there is any progress or feedback.
+In the meantime, we will proceed with closing this request.
+
+Kind regards,`,
+                configMgmt: (vars) => ``,
+                configSteering: (vars) => `Hello @[${vars.openedByName}],
+
+We have created/updated/deleted the following Netskope Steering/Client Configuration to meet the requested requirements:
+
+Steering name:
+AD group:
+Partner Tenant Access configured:
+
+1 –
+
+
+
+Kind regards,`,
+                configMgmtWorknotes: (vars) => ``,
+                configSteeringWorknotes: (vars) => `Created/updated/deleted Netskope Steering/Client Configuration:
+
+Steering name:
+AD group:
+Partner Tenant Access configured:
+
+1 -`,
+                policyMgmtWorknote: (vars) => ``,
+                policyCreateWorknote: (vars) => `Netskope Policy has been created:
+- Policy name:
+- AD group:
+- Destination:
+- Policy description:
+- Group position:
+- Action:`,
+                policyModifyWorknote: (vars) => `Netskope Policy has been modified:
+- Policy name:
+- AD group:
+- Destination:
+- Policy description:
+- Group position:
+- Action:`,
+                policyDeleteWorknote: (vars) => `Netskope Policy has been scheduled to be deleted (currently disabled):
+- Policy name:`,
+                workingOnReminder: (vars) => `Hello @[${vars.openedByName}],
+
+Just a quick note to let you know that we are currently working on your request and the ticket is actively in progress.
+
+We’ll keep you updated as we move forward.
+
+Kind regards,
 Global Data Security Enablement`
-            }
-        },
-
-        /// AME TEAM ///
-
-        ameTeam: {
-            name: 'AME Team',
-
-            defaultSectionOrder: [
-                'first_contact',
-                'responses',
-                'reminders',
-                'closures',
-                'workcomments',
-                'other',
-                'custom'
-            ],
-
-            responseMetadata: {
-                urlcheck:    { label: '# URL Check',                    category: 'workcomments', fieldType: 'work_notes' },
-                initial:     { label: 'Initial Contact',                category: 'first_contact', fieldType: 'comments' },
-                initialmiss: { label: 'Initial Contact (Missing Info)', category: 'first_contact', fieldType: 'comments' },
-                bypass:      { label: 'SSL/Domain/App Bypass',          category: 'responses', hasSubmenu: true, fieldType: 'comments' },
-                bypassssl:   { label: 'SSL Bypass',                     category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                bypassdomain:{ label: 'Domain Bypass',                  category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                bypassapp:   { label: 'Application Bypass',             category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                first:       { label: 'First reminder',                 category: 'reminders', fieldType: 'comments' },
-                second:      { label: 'Second Reminder',                category: 'reminders', fieldType: 'comments' },
-                third:       { label: 'Third Reminder',                 category: 'reminders', fieldType: 'comments' },
-                solved:      { label: 'Solved Closure',                 category: 'closures', fieldType: 'comments' },
-                timeout:     { label: 'Timeout Closure',                category: 'closures', fieldType: 'comments' },
-                enduser:     { label: 'End User Closure',               category: 'closures', fieldType: 'comments' },
-                moreinfo:    { label: 'More Information Request',       category: 'other', fieldType: 'comments' },
-                vpninfo:     { label: 'VPN Info & Req.',                category: 'other', fieldType: 'comments' }
-            },
-
-            enabledResponses: [
-                'urlcheck',
-                'initial',
-                'initialmiss',
-                'bypass',
-                'bypassssl',
-                'bypassdomain',
-                'bypassapp',
-                'first',
-                'second',
-                'third',
-                'solved',
-                'timeout',
-                'enduser',
-                'moreinfo',
-                'vpninfo'
-            ],
-
-            responses: {
-                urlcheck: (vars) => `#
-
-IBM-XF:
-VT:
-Netskope: `,
-                initial: (vars) => `Hi @[${vars.openedByName}],
-Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
-Please expect an update within the next two business days.
-
-If this is an urgent request, please let us know.`,
-                initialmiss: (vars) => `Hi @[${vars.openedByName}],
-Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
-Please expect an update within the next two business days.
-
-If this is an urgent request, please respond to this email to let us know.
-
-Additionally, please provide all missing mandatory information that was not loaded with the ticket:
-
-- How many users affected?
-- When did the issue started?
-- Screenshot of the error with capture of the system clock to check the timestamp when the issue happened.
-- Netskope Logs
-- HAR logs if the problem is happening on browser
-- Netskope Client Configuration screenshot
-- What troubleshooting has been performed?
-- Have you tried reproducing the issue with Netskope disabled?
-- Business justification – Clear description of the issue/request`,
-                bypassssl: (vars) => `Hi @[${vars.openedByName}],
-We've added the following bypasses to help address the issue:
-- SSL bypass for:
-
->
-
-When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
-
-Best regards,
-Global Data Security Enablement`,
-                bypassdomain: (vars) => `Hi @[${vars.openedByName}],
-We've added the following bypasses to help address the issue:
-- Domain bypass for:
-
->
-
-When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
-
-Best regards,
-Global Data Security Enablement`,
-                bypassapp: (vars) => `Hi @[${vars.openedByName}],
-We've added the following bypasses to help address the issue:
-- Application bypass for:
-
->
-
-When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
-
-Best regards,
-Global Data Security Enablement`,
-                first: (vars) => `Hello @[${vars.openedByName}],
-I'm contacting you to recall we need the following information to continue working on your ${vars.pageType}:
-
->`,
-                second: (vars) => `Hello @[${vars.openedByName}],
-This is a second reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
-
->
-
-If we don't have a response by end of tomorrow, we will have to close the ticket following our procedure.`,
-                third: (vars) => `Hello @[${vars.openedByName}],
-This is the third reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
-
->
-
-If we don't have a response by end of the day, we will have to close the ticket following our procedure.
-
-@MF CISO`,
-                solved: (vars) => `Hello @[${vars.openedByName}],
-We have carried out the following actions to meet your requirements:
-
->
-
-Since we have completed your ${vars.pageType}, we are closing the ticket.
-In case you detect that the ${vars.pageType} is not fully attended, please open a new ${vars.pageType} and refer to this ticket.`,
-                timeout: (vars) => `Hello @[${vars.openedByName}],
-After several contacts asking for additional information, we have not enough information to continue working on this ticket, so we are closing.
-
-Once you have the required information, please open a new ${vars.pageType} and refer to this ticket.`,
-                enduser: (vars) => `Hi @[${vars.openedByName}], hope you are doing fine.
-We noticed a ${vars.pageType} was directly raised by you and not by your local Member Firm IT Contact.
-To speed up your ${vars.pageType} we encourage you to contact your MF IT Contact providing all necessary evidence.
-We will proceed to close this case.
-Regards.`,
-                moreinfo: (vars) => `- Screenshot of the error (if new) with capture of the system clock to check the timestamp when the issue happened.
-- New set of Netskope Logs & HAR Logs
-- New set of Netskope Logs
-- Netskope Client Configuration screenshot
-- Timestamp of when the test has been done`,
-                vpninfo: (vars) => `- Confirm VPN IP/URL
-- Screenshot error of the VPN (If you have logs from the VPN itself would be great)
-- If the VPN uses IP Ranges, what are those
-- Confirmation that Netskope IPs were added from their end:
-	https://docs.netskope.com/en/bypass-netskope-from-your-vpn/`
-            }
-        },
-
-        /// APAC TEAM ///
-
-        apacTeam: {
-            name: 'APAC Team',
-
-            defaultSectionOrder: [
-                'first_contact',
-                'responses',
-                'reminders',
-                'closures',
-                'workcomments',
-                'other',
-                'custom'
-            ],
-
-            responseMetadata: {
-                urlcheck:    { label: '# URL Check',                    category: 'workcomments', fieldType: 'work_notes' },
-                initial:     { label: 'Initial Contact',                category: 'first_contact', fieldType: 'comments' },
-                initialmiss: { label: 'Initial Contact (Missing Info)', category: 'first_contact', fieldType: 'comments' },
-                bypass:      { label: 'SSL/Domain/App Bypass',          category: 'responses', hasSubmenu: true, fieldType: 'comments' },
-                bypassssl:   { label: 'SSL Bypass',                     category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                bypassdomain:{ label: 'Domain Bypass',                  category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                bypassapp:   { label: 'Application Bypass',             category: 'responses', parentItem: 'bypass', fieldType: 'comments' },
-                first:       { label: 'First reminder',                 category: 'reminders', fieldType: 'comments' },
-                second:      { label: 'Second Reminder',                category: 'reminders', fieldType: 'comments' },
-                third:       { label: 'Third Reminder',                 category: 'reminders', fieldType: 'comments' },
-                solved:      { label: 'Solved Closure',                 category: 'closures', fieldType: 'comments' },
-                timeout:     { label: 'Timeout Closure',                category: 'closures', fieldType: 'comments' },
-                enduser:     { label: 'End User Closure',               category: 'closures', fieldType: 'comments' },
-                moreinfo:    { label: 'More Information Request',       category: 'other', fieldType: 'comments' },
-                vpninfo:     { label: 'VPN Info & Req.',                category: 'other', fieldType: 'comments' }
-            },
-
-            enabledResponses: [
-                'urlcheck',
-                'initial',
-                'initialmiss',
-                'bypass',
-                'bypassssl',
-                'bypassdomain',
-                'bypassapp',
-                'first',
-                'second',
-                'third',
-                'solved',
-                'timeout',
-                'enduser',
-                'moreinfo',
-                'vpninfo'
-            ],
-
-            responses: {
-                urlcheck: (vars) => `#
-
-IBM-XF:
-VT:
-Netskope: `,
-                initial: (vars) => `Hi @[${vars.openedByName}],
-Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
-Please expect an update within the next two business days.
-
-If this is an urgent request, please let us know.`,
-                initialmiss: (vars) => `Hi @[${vars.openedByName}],
-Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
-Please expect an update within the next two business days.
-
-If this is an urgent request, please respond to this email to let us know.
-
-Additionally, please provide all missing mandatory information that was not loaded with the ticket:
-
-- How many users affected?
-- When did the issue started?
-- Screenshot of the error with capture of the system clock to check the timestamp when the issue happened.
-- Netskope Logs
-- HAR logs if the problem is happening on browser
-- Netskope Client Configuration screenshot
-- What troubleshooting has been performed?
-- Have you tried reproducing the issue with Netskope disabled?
-- Business justification – Clear description of the issue/request`,
-                bypassssl: (vars) => `Hi @[${vars.openedByName}],
-We've added the following bypasses to help address the issue:
-- SSL bypass for:
-
->
-
-When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
-
-Best regards,
-Global Data Security Enablement`,
-                bypassdomain: (vars) => `Hi @[${vars.openedByName}],
-We've added the following bypasses to help address the issue:
-- Domain bypass for:
-
->
-
-When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
-
-Best regards,
-Global Data Security Enablement`,
-                bypassapp: (vars) => `Hi @[${vars.openedByName}],
-We've added the following bypasses to help address the issue:
-- Application bypass for:
-
->
-
-When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
-
-Best regards,
-Global Data Security Enablement`,
-                first: (vars) => `Hello @[${vars.openedByName}],
-I'm contacting you to recall we need the following information to continue working on your ${vars.pageType}:
-
->`,
-                second: (vars) => `Hello @[${vars.openedByName}],
-This is a second reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
-
->
-
-If we don't have a response by end of tomorrow, we will have to close the ticket following our procedure.`,
-                third: (vars) => `Hello @[${vars.openedByName}],
-This is the third reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
-
->
-
-If we don't have a response by end of the day, we will have to close the ticket following our procedure.
-
-@MF CISO`,
-                solved: (vars) => `Hello @[${vars.openedByName}],
-We have carried out the following actions to meet your requirements:
-
->
-
-Since we have completed your ${vars.pageType}, we are closing the ticket.
-In case you detect that the ${vars.pageType} is not fully attended, please open a new ${vars.pageType} and refer to this ticket.`,
-                timeout: (vars) => `Hello @[${vars.openedByName}],
-After several contacts asking for additional information, we have not enough information to continue working on this ticket, so we are closing.
-
-Once you have the required information, please open a new ${vars.pageType} and refer to this ticket.`,
-                enduser: (vars) => `Hi @[${vars.openedByName}], hope you are doing fine.
-We noticed a ${vars.pageType} was directly raised by you and not by your local Member Firm IT Contact.
-To speed up your ${vars.pageType} we encourage you to contact your MF IT Contact providing all necessary evidence.
-We will proceed to close this case.
-Regards.`,
-                moreinfo: (vars) => `- Screenshot of the error (if new) with capture of the system clock to check the timestamp when the issue happened.
-- New set of Netskope Logs & HAR Logs
-- New set of Netskope Logs
-- Netskope Client Configuration screenshot
-- Timestamp of when the test has been done`,
-                vpninfo: (vars) => `- Confirm VPN IP/URL
-- Screenshot error of the VPN (If you have logs from the VPN itself would be great)
-- If the VPN uses IP Ranges, what are those
-- Confirmation that Netskope IPs were added from their end:
-	https://docs.netskope.com/en/bypass-netskope-from-your-vpn/`
-            }
         }
-    };
+    },
+
+    /// AME TEAM ///
+
+    ameTeam: {
+        name: 'AME Team',
+
+        defaultSectionOrder: [
+            'first_contact',
+            'responses',
+            'reminders',
+            'closures',
+            'workcomments',
+            'other',
+            'custom',
+        ],
+
+        responseMetadata: {
+            urlcheck: {
+                label: '# URL Check',
+                category: 'workcomments',
+                fieldType: 'work_notes'
+            },
+            initial: {
+                label: 'Initial Contact',
+                category: 'first_contact',
+                fieldType: 'comments'
+            },
+            initialmiss: {
+                label: 'Initial Contact (Missing Info)',
+                category: 'first_contact',
+                fieldType: 'comments'
+            },
+            bypass: {
+                label: 'SSL/Domain/App Bypass',
+                category: 'responses',
+                hasSubmenu: true,
+                fieldType: 'comments'
+            },
+            bypassssl: {
+                label: 'SSL Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            bypassdomain: {
+                label: 'Domain Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            bypassapp: {
+                label: 'Application Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            first: {
+                label: 'First reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            second: {
+                label: 'Second Reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            third: {
+                label: 'Third Reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            solved: {
+                label: 'Solved Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            timeout: {
+                label: 'Timeout Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            enduser: {
+                label: 'End User Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            moreinfo: {
+                label: 'More Information Request',
+                category: 'other',
+                fieldType: 'comments'
+            },
+            vpninfo: {
+                label: 'VPN Info & Req.',
+                category: 'other',
+                fieldType: 'comments'
+            }
+        },
+
+        enabledResponses: [
+            'urlcheck',
+            'initial',
+            'initialmiss',
+            'bypass',
+            'bypassssl',
+            'bypassdomain',
+            'bypassapp',
+            'first',
+            'second',
+            'third',
+            'solved',
+            'timeout',
+            'enduser',
+            'moreinfo',
+            'vpninfo',
+        ],
+
+        responses: {
+                urlcheck: (vars) => `#
+
+IBM-XF:
+VT:
+Netskope: `,
+                initial: (vars) => `Hi @[${vars.openedByName}],
+Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
+Please expect an update within the next two business days.
+
+If this is an urgent request, please let us know.`,
+                initialmiss: (vars) => `Hi @[${vars.openedByName}],
+Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
+Please expect an update within the next two business days.
+
+If this is an urgent request, please respond to this email to let us know.
+
+Additionally, please provide all missing mandatory information that was not loaded with the ticket:
+
+- How many users affected?
+- When did the issue started?
+- Screenshot of the error with capture of the system clock to check the timestamp when the issue happened.
+- Netskope Logs
+- HAR logs if the problem is happening on browser
+- Netskope Client Configuration screenshot
+- What troubleshooting has been performed?
+- Have you tried reproducing the issue with Netskope disabled?
+- Business justification – Clear description of the issue/request`,
+                bypassssl: (vars) => `Hi @[${vars.openedByName}],
+We've added the following bypasses to help address the issue:
+- SSL bypass for:
+
+>
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+
+Best regards,
+Global Data Security Enablement`,
+                bypassdomain: (vars) => `Hi @[${vars.openedByName}],
+We've added the following bypasses to help address the issue:
+- Domain bypass for:
+
+>
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+
+Best regards,
+Global Data Security Enablement`,
+                bypassapp: (vars) => `Hi @[${vars.openedByName}],
+We've added the following bypasses to help address the issue:
+- Application bypass for:
+
+>
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+
+Best regards,
+Global Data Security Enablement`,
+                first: (vars) => `Hello @[${vars.openedByName}],
+I'm contacting you to recall we need the following information to continue working on your ${vars.pageType}:
+
+>`,
+                second: (vars) => `Hello @[${vars.openedByName}],
+This is a second reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
+
+>
+
+If we don't have a response by end of tomorrow, we will have to close the ticket following our procedure.`,
+                third: (vars) => `Hello @[${vars.openedByName}],
+This is the third reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
+
+>
+
+If we don't have a response by end of the day, we will have to close the ticket following our procedure.
+
+@MF CISO`,
+                solved: (vars) => `Hello @[${vars.openedByName}],
+We have carried out the following actions to meet your requirements:
+
+>
+
+Since we have completed your ${vars.pageType}, we are closing the ticket.
+In case you detect that the ${vars.pageType} is not fully attended, please open a new ${vars.pageType} and refer to this ticket.`,
+                timeout: (vars) => `Hello @[${vars.openedByName}],
+After several contacts asking for additional information, we have not enough information to continue working on this ticket, so we are closing.
+
+Once you have the required information, please open a new ${vars.pageType} and refer to this ticket.`,
+                enduser: (vars) => `Hi @[${vars.openedByName}], hope you are doing fine.
+We noticed a ${vars.pageType} was directly raised by you and not by your local Member Firm IT Contact.
+To speed up your ${vars.pageType} we encourage you to contact your MF IT Contact providing all necessary evidence.
+We will proceed to close this case.
+Regards.`,
+                moreinfo: (vars) => `- Screenshot of the error (if new) with capture of the system clock to check the timestamp when the issue happened.
+- New set of Netskope Logs & HAR Logs
+- New set of Netskope Logs
+- Netskope Client Configuration screenshot
+- Timestamp of when the test has been done`,
+                vpninfo: (vars) => `- Confirm VPN IP/URL
+- Screenshot error of the VPN (If you have logs from the VPN itself would be great)
+- If the VPN uses IP Ranges, what are those
+- Confirmation that Netskope IPs were added from their end:
+	https://docs.netskope.com/en/bypass-netskope-from-your-vpn/`
+        }
+    },
+
+    /// APAC TEAM ///
+
+    apacTeam: {
+        name: 'APAC Team',
+
+        defaultSectionOrder: [
+            'first_contact',
+            'responses',
+            'reminders',
+            'closures',
+            'workcomments',
+            'other',
+            'custom',
+        ],
+
+        responseMetadata: {
+            urlcheck: {
+                label: '# URL Check',
+                category: 'workcomments',
+                fieldType: 'work_notes'
+            },
+            initial: {
+                label: 'Initial Contact',
+                category: 'first_contact',
+                fieldType: 'comments'
+            },
+            initialmiss: {
+                label: 'Initial Contact (Missing Info)',
+                category: 'first_contact',
+                fieldType: 'comments'
+            },
+            bypass: {
+                label: 'SSL/Domain/App Bypass',
+                category: 'responses',
+                hasSubmenu: true,
+                fieldType: 'comments'
+            },
+            bypassssl: {
+                label: 'SSL Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            bypassdomain: {
+                label: 'Domain Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            bypassapp: {
+                label: 'Application Bypass',
+                category: 'responses',
+                parentItem: 'bypass',
+                fieldType: 'comments'
+            },
+            first: {
+                label: 'First reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            second: {
+                label: 'Second Reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            third: {
+                label: 'Third Reminder',
+                category: 'reminders',
+                fieldType: 'comments'
+            },
+            solved: {
+                label: 'Solved Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            timeout: {
+                label: 'Timeout Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            enduser: {
+                label: 'End User Closure',
+                category: 'closures',
+                fieldType: 'comments'
+            },
+            moreinfo: {
+                label: 'More Information Request',
+                category: 'other',
+                fieldType: 'comments'
+            },
+            vpninfo: {
+                label: 'VPN Info & Req.',
+                category: 'other',
+                fieldType: 'comments'
+            }
+        },
+
+        enabledResponses: [
+            'urlcheck',
+            'initial',
+            'initialmiss',
+            'bypass',
+            'bypassssl',
+            'bypassdomain',
+            'bypassapp',
+            'first',
+            'second',
+            'third',
+            'solved',
+            'timeout',
+            'enduser',
+            'moreinfo',
+            'vpninfo',
+        ],
+
+        responses: {
+                urlcheck: (vars) => `#
+
+IBM-XF:
+VT:
+Netskope: `,
+                initial: (vars) => `Hi @[${vars.openedByName}],
+Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
+Please expect an update within the next two business days.
+
+If this is an urgent request, please let us know.`,
+                initialmiss: (vars) => `Hi @[${vars.openedByName}],
+Our team has taken ownership of your request and @[${vars.openedByName}] will be working on it with you. Once the ticket details have been reviewed, they will reach out if there are any questions or if any additional information is needed.
+Please expect an update within the next two business days.
+
+If this is an urgent request, please respond to this email to let us know.
+
+Additionally, please provide all missing mandatory information that was not loaded with the ticket:
+
+- How many users affected?
+- When did the issue started?
+- Screenshot of the error with capture of the system clock to check the timestamp when the issue happened.
+- Netskope Logs
+- HAR logs if the problem is happening on browser
+- Netskope Client Configuration screenshot
+- What troubleshooting has been performed?
+- Have you tried reproducing the issue with Netskope disabled?
+- Business justification – Clear description of the issue/request`,
+                bypassssl: (vars) => `Hi @[${vars.openedByName}],
+We've added the following bypasses to help address the issue:
+- SSL bypass for:
+
+>
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+
+Best regards,
+Global Data Security Enablement`,
+                bypassdomain: (vars) => `Hi @[${vars.openedByName}],
+We've added the following bypasses to help address the issue:
+- Domain bypass for:
+
+>
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+
+Best regards,
+Global Data Security Enablement`,
+                bypassapp: (vars) => `Hi @[${vars.openedByName}],
+We've added the following bypasses to help address the issue:
+- Application bypass for:
+
+>
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+
+Best regards,
+Global Data Security Enablement`,
+                first: (vars) => `Hello @[${vars.openedByName}],
+I'm contacting you to recall we need the following information to continue working on your ${vars.pageType}:
+
+>`,
+                second: (vars) => `Hello @[${vars.openedByName}],
+This is a second reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
+
+>
+
+If we don't have a response by end of tomorrow, we will have to close the ticket following our procedure.`,
+                third: (vars) => `Hello @[${vars.openedByName}],
+This is the third reminder to recall you that we need the following information to continue working on your ${vars.pageType}:
+
+>
+
+If we don't have a response by end of the day, we will have to close the ticket following our procedure.
+
+@MF CISO`,
+                solved: (vars) => `Hello @[${vars.openedByName}],
+We have carried out the following actions to meet your requirements:
+
+>
+
+Since we have completed your ${vars.pageType}, we are closing the ticket.
+In case you detect that the ${vars.pageType} is not fully attended, please open a new ${vars.pageType} and refer to this ticket.`,
+                timeout: (vars) => `Hello @[${vars.openedByName}],
+After several contacts asking for additional information, we have not enough information to continue working on this ticket, so we are closing.
+
+Once you have the required information, please open a new ${vars.pageType} and refer to this ticket.`,
+                enduser: (vars) => `Hi @[${vars.openedByName}], hope you are doing fine.
+We noticed a ${vars.pageType} was directly raised by you and not by your local Member Firm IT Contact.
+To speed up your ${vars.pageType} we encourage you to contact your MF IT Contact providing all necessary evidence.
+We will proceed to close this case.
+Regards.`,
+                moreinfo: (vars) => `- Screenshot of the error (if new) with capture of the system clock to check the timestamp when the issue happened.
+- New set of Netskope Logs & HAR Logs
+- New set of Netskope Logs
+- Netskope Client Configuration screenshot
+- Timestamp of when the test has been done`,
+                vpninfo: (vars) => `- Confirm VPN IP/URL
+- Screenshot error of the VPN (If you have logs from the VPN itself would be great)
+- If the VPN uses IP Ranges, what are those
+- Confirmation that Netskope IPs were added from their end:
+	https://docs.netskope.com/en/bypass-netskope-from-your-vpn/`
+        }
+    }
+
+};
 
     /* ==========================================================
      *  DUAL / SINGLE INPUT MODE DETECTION & TEXTAREA ROUTING
