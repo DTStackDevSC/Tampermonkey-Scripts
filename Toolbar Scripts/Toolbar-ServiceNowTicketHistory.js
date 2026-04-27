@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         |Toolbar| Change Tracker
-// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTracker.js
-// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTracker.js
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @version      1.2.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets
@@ -24,11 +24,15 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.7';
-    const CHANGELOG = `Version 1.2.7:
+    const SCRIPT_VERSION = '1.2.8';
+    const CHANGELOG = `Version 1.2.8:
+- Added Custom Categories group: Created / URL Lists Added / URL Lists Removed / Removed
+  - Fully reconciled in Worknote summary (same net-change model as URL Lists)
+  - Fields: category name + URL Lists textarea
+
+Version 1.2.7:
 - Added Network Locations group: Created / IPs Added / IPs Removed / Removed
-  - Fully reconciled in Grouped Summary (same net-change model as URL Lists)
-- Renamed "Grouped" button to "Worknote" — copies all ticket changes ready to paste before closing
+- Renamed "Grouped" button to "Worknote"
 
 Version 1.2.6:
 - Grouped Summary reconciles ALL entry type groups (Steering Exceptions, App Exceptions,
@@ -111,6 +115,10 @@ Version 1.0.0:
             { key: 'locationName', label: 'Network Location name', type: 'text'     },
             { key: 'ips',          label: 'IPs',                   type: 'textarea' },
         ],
+        custom_category: [
+            { key: 'categoryName', label: 'Custom Category name', type: 'text'     },
+            { key: 'urlLists',     label: 'URL Lists',            type: 'textarea' },
+        ],
     };
 
     /* ==========================================================
@@ -144,6 +152,15 @@ Version 1.0.0:
                 { label: 'Network Location — IPs Added',    value: 'Network Location — IPs Added',    color: '#17a2b8', schema: 'network_location' },
                 { label: 'Network Location — IPs Removed',  value: 'Network Location — IPs Removed',  color: '#fd7e14', schema: 'network_location' },
                 { label: 'Network Location Removed',        value: 'Network Location Removed',        color: '#dc3545', schema: 'network_location' },
+            ],
+        },
+        {
+            group: 'Custom Categories',
+            items: [
+                { label: 'Custom Category Created',                value: 'Custom Category Created',                color: '#28a745', schema: 'custom_category' },
+                { label: 'Custom Category — URL Lists Added',      value: 'Custom Category — URL Lists Added',      color: '#20c997', schema: 'custom_category' },
+                { label: 'Custom Category — URL Lists Removed',    value: 'Custom Category — URL Lists Removed',    color: '#fd7e14', schema: 'custom_category' },
+                { label: 'Custom Category Removed',                value: 'Custom Category Removed',                color: '#dc3545', schema: 'custom_category' },
             ],
         },
         {
@@ -230,6 +247,7 @@ Version 1.0.0:
         { label: 'Policy Changes',              types: ['Policy Created', 'Policy Modified', 'Policy Deleted'] },
         { label: 'URL Lists',                   types: ['URL List Created', 'URL List — URLs Added', 'URL List — URLs Removed', 'URL List Removed'] },
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
+        { label: 'Custom Categories',           types: ['Custom Category Created', 'Custom Category — URL Lists Added', 'Custom Category — URL Lists Removed', 'Custom Category Removed'] },
         { label: 'SSL Decryption Policies',     types: ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added', 'SSL Decryption — URLs Removed', 'SSL Decryption Policy Removed'] },
         { label: 'Steering Exceptions',         types: ['Steering Exception Added', 'Steering Exception Removed'] },
         { label: 'App Exceptions',              types: ['App Exception Added', 'App Exception Removed'] },
@@ -650,6 +668,13 @@ Version 1.0.0:
             addTypes:    ['Network Location Created', 'Network Location — IPs Added'],
             removeTypes: ['Network Location — IPs Removed'],
             deleteTypes: ['Network Location Removed'],
+        },
+        'Custom Categories': {
+            nameKey:     'categoryName',
+            domainKey:   'urlLists',
+            addTypes:    ['Custom Category Created', 'Custom Category — URL Lists Added'],
+            removeTypes: ['Custom Category — URL Lists Removed'],
+            deleteTypes: ['Custom Category Removed'],
         },
     };
 
