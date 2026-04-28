@@ -35,6 +35,11 @@
 - Templates adapted from the Ticket Response Helper, with new ones for URL Lists,
   Network Locations, Custom Categories, SSL Decryption variants, and Removed/
   Modified Steering/App exceptions.
+- Single-input mode (one journal textarea, toggled between Work Notes and
+  Additional Comments) is now detected via placeholder/toggle-button signals
+  so the correct template is used.
+- New "Auto-write entries to ticket" toggle in the Configure modal — on by
+  default, lets you disable the auto-write at any time.
 
 Version 1.4.0:
 - Shared team model: every authenticated user reads and writes the same
@@ -291,6 +296,13 @@ Version 1.0.0:
     function saveVersion(v)        { GM_setValue('changeTrackerVersion', v); }
     function hasSeenChangelog()    { return GM_getValue('changeTrackerChangelogSeen', null) === SCRIPT_VERSION; }
     function markChangelogAsSeen() { GM_setValue('changeTrackerChangelogSeen', SCRIPT_VERSION); }
+
+    // Auto-write toggle: when enabled, adding an entry also writes the
+    // equivalent text into the SNow ticket worknote/comments fields.
+    // Default ON. Stored as boolean in GM.
+    const AUTO_WRITE_KEY = 'changeTrackerAutoWriteEnabled';
+    function getAutoWriteEnabled()  { return GM_getValue(AUTO_WRITE_KEY, true) !== false; }
+    function setAutoWriteEnabled(v) { GM_setValue(AUTO_WRITE_KEY, !!v); }
 
     function compareVersions(v1, v2) {
         if (!v1) return true;
@@ -596,6 +608,44 @@ Version 1.0.0:
         }
 
         /**
+         * In single-input mode SNow shows ONE textarea (#activity-stream-textarea)
+         * and lets the analyst toggle it between Work Notes and Additional
+         * Comments. We detect the active journal type from multiple signals:
+         *   1. The textarea's placeholder (most reliable across SNow versions)
+         *   2. An "active"/"selected"/"pressed" toggle button in the journal bar
+         *   3. A class hint on the textarea's container
+         * Returns 'work_notes' | 'comments' | null.
+         */
+        function detectSingleInputJournal(textarea) {
+            const ph = ((textarea && textarea.placeholder) || '').toLowerCase();
+            if (ph.includes('work note')) return 'work_notes';
+            if (ph.includes('additional comment') || ph.includes('comment')) return 'comments';
+
+            const activeBtn = document.querySelector(
+                '[id*="show-work_notes"].active, ' +
+                'button[data-input-stream-type="work_notes"].active, ' +
+                'button[data-input-stream-type="work_notes"][aria-pressed="true"], ' +
+                'button[data-input-stream-type="work_notes"][aria-selected="true"]'
+            );
+            if (activeBtn) return 'work_notes';
+
+            const activeCmBtn = document.querySelector(
+                '[id*="show-comments"].active, ' +
+                'button[data-input-stream-type="comments"].active, ' +
+                'button[data-input-stream-type="comments"][aria-pressed="true"], ' +
+                'button[data-input-stream-type="comments"][aria-selected="true"]'
+            );
+            if (activeCmBtn) return 'comments';
+
+            const container = textarea && (textarea.closest('[id*="activity-stream"]') || textarea.parentElement);
+            const cls = (container && container.className) || '';
+            if (/work[_-]?notes/i.test(cls)) return 'work_notes';
+            if (/comments/i.test(cls))       return 'comments';
+
+            return null;
+        }
+
+        /**
          * Returns one of:
          *   { mode: 'both',          workNotes, comments }
          *   { mode: 'workNotesOnly', workNotes, comments: null }
@@ -617,7 +667,14 @@ Version 1.0.0:
 
             const generic = document.querySelector('#activity-stream-textarea')
                          || document.querySelector('[data-stream-text-input]');
-            if (generic) return { mode: 'unknown', workNotes: null, comments: generic };
+            if (generic) {
+                // Single-input mode — figure out which journal it is currently
+                // showing so we pick the right template.
+                const which = detectSingleInputJournal(generic);
+                if (which === 'work_notes') return { mode: 'workNotesOnly', workNotes: generic, comments: null };
+                if (which === 'comments')   return { mode: 'commentsOnly',  workNotes: null,    comments: generic };
+                return { mode: 'unknown', workNotes: null, comments: generic };
+            }
 
             return { mode: 'none', workNotes: null, comments: null };
         }
@@ -2153,7 +2210,7 @@ Version 1.0.0:
         // Auto-write the equivalent text into the SNow worknote/comments
         // textareas based on which are visible. Custom entries (no template)
         // are skipped silently. Errors here must not block the entry save.
-        if (ticketWriter.hasTemplate(type)) {
+        if (getAutoWriteEnabled() && ticketWriter.hasTemplate(type)) {
             const lastEntry = entries[entries.length - 1];
             ticketWriter.writeEntry(lastEntry).catch(err => {
                 console.warn('CT: ticket auto-write failed', err);
@@ -2389,6 +2446,30 @@ Version 1.0.0:
         help.appendChild(document.createTextNode(' to request access.'));
         modal.appendChild(help);
 
+        // Auto-write toggle — copies entry text into ticket worknote/comments
+        const autoWriteRow = css(mk('label', { htmlFor:'ct-setup-autowrite' }), {
+            display:'flex', alignItems:'flex-start', gap:'8px',
+            padding:'8px 10px', marginBottom:'14px',
+            background:'#f6f8fa', border:'1px solid #e1e4e8', borderRadius:'4px',
+            cursor:'pointer', fontFamily:'Arial, sans-serif'
+        });
+        const autoWriteInput = css(mk('input', { id:'ct-setup-autowrite', type:'checkbox' }), {
+            marginTop:'2px', cursor:'pointer'
+        });
+        autoWriteInput.checked = getAutoWriteEnabled();
+
+        const autoWriteText = css(mk('div'), { fontSize:'12px', color:'#333', lineHeight:'1.4' });
+        const autoWriteTitle = css(mk('div'), { fontWeight:'bold', marginBottom:'2px' });
+        autoWriteTitle.textContent = 'Auto-write entries to ticket';
+        const autoWriteDesc = css(mk('div'), { fontSize:'11px', color:'#666' });
+        autoWriteDesc.textContent =
+            'When adding an entry, also paste the equivalent worknote/comment ' +
+            'into the SNow ticket fields (with @mention to the requester).';
+        autoWriteText.append(autoWriteTitle, autoWriteDesc);
+
+        autoWriteRow.append(autoWriteInput, autoWriteText);
+        modal.appendChild(autoWriteRow);
+
         // Inline error area
         const errEl = css(mk('div', { id:'ct-setup-error' }), {
             display:'none', marginBottom:'10px', padding:'7px 10px',
@@ -2459,6 +2540,7 @@ Version 1.0.0:
 
             GM_setValue('changeTrackerWorkerUrl', url);
             GM_setValue('changeTrackerToken',     token);
+            setAutoWriteEnabled(autoWriteInput.checked);
 
             // Try to connect using the current ticket
             const ticket = getTicketNumber();
