@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.2
+// @version      1.0.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,94 +24,8 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.2';
-    const CHANGELOG = `Version 1.5.2:
-- Each entry card now has a "↪ Write" button that re-pastes that specific
-  entry into the visible ticket worknote/comments fields. Useful when you
-  want to resend an old entry, or when auto-write is disabled and you want
-  to push a single one on demand. Custom entries don't show the button.
-- Auto-write feedback now reports which field(s) received the text
-  (Work Notes, Comments, or both).
-
-Version 1.5.1:
-- Fixed: in single-input mode (one journal textarea toggled between Work Notes
-  and Additional Comments), the comment template was being written even when
-  Work Notes was the active field. The active journal type is now detected
-  from the placeholder + toggle-button signals so the correct template is used.
-- New "Auto-write entries to ticket" toggle in the Configure modal — on by
-  default, lets you disable the auto-write at any time.
-
-Version 1.5.0:
-- Adding a new entry now also writes the equivalent text into the ticket:
-  · Both Work Notes and Comments visible → technical worknote + customer-facing
-    comment with @mention to the requester.
-  · Only Work Notes visible → worknote only.
-  · Only Comments visible → comment only with @mention.
-- Custom (freeform) entries are excluded — only structured types auto-write.
-- Templates adapted from the Ticket Response Helper, with new ones for URL Lists,
-  Network Locations, Custom Categories, SSL Decryption variants, and Removed/
-  Modified Steering/App exceptions.
-
-Version 1.4.0:
-- Shared team model: every authenticated user reads and writes the same
-  entries. Each entry shows who last wrote it ("by <Author>").
-- New Configure button (top-right ⚙) reopens the setup modal so you can
-  change the Worker URL or token at any time.
-- Removed the Notes Browser — entries now load directly from D1 per ticket.
-- Clear-all wording strengthened (it now wipes everyone's entries on the ticket).
-
-Version 1.3.0:
-- Cloud sync via Cloudflare Worker + D1 (optional, configured on first run)
-- GM storage used as local read cache — sidebar always loads instantly
-- Offline mode: read-only with reconnect button; auto-reconnect on sidebar open
-- Five connectivity states: INIT / ONLINE / OFFLINE / INVALID_TOKEN / SETUP
-- First-run setup prompt for Worker URL + token (one-time, stored in GM)
-- Token invalid (401) surfaced separately from network errors
-- Notes Browser fetches ticket list from D1 when online
-
-Version 1.2.8:
-- Added Custom Categories group: Created / URL Lists Added / URL Lists Removed / Removed
-  - Fully reconciled in Worknote summary (same net-change model as URL Lists)
-  - Fields: category name + URL Lists textarea
-
-Version 1.2.7:
-- Added Network Locations group: Created / IPs Added / IPs Removed / Removed
-- Renamed "Grouped" button to "Worknote"
-
-Version 1.2.6:
-- Grouped Summary reconciles ALL entry type groups (Steering Exceptions, App Exceptions,
-  Policies, Steering/Client Configs now fully reconciled)
-
-Version 1.2.3:
-- Grouped Summary now reconciles domain-bearing entries (URL Lists, SSL Decryption)
-  - Entries for the same named entity are merged into a single net state
-  - Domains added and later removed are excluded from the summary output
-  - Fully removed entities are shown as [REMOVED] with no domain list
-
-Version 1.2.2:
-- "URL List Updated" split into "URLs Added" and "URLs Removed" variants
-- SSL Decryption group now mirrors URL Lists: Created / URLs Added / URLs Removed / Removed
-- SSL Decryption schema updated to match URL List structure (Policy name + Domains)
-
-Version 1.2.1:
-- Replaced old URL type options with URL List Created / Updated / Removed (structured fields)
-- Removed generic "Exception added", "Assignment updated", "Note / Comment" types
-- Dropdown now uses grouped optgroups for easier navigation (Policies, URL Lists, SSL, etc.)
-
-Version 1.2.0:
-- Structured field forms per change type (Policy, SSL, Steering, App Exception, etc.)
-- Empty type selection now defaults to "Custom" instead of blocking
-- Edit button on every entry — change type or update any field
-- Grouped Summary: copies all entries sorted by category for worknote pasting
-- Export to JSON + Import from JSON (merge by ID, shareable with colleagues)
-- Two-row action buttons: Copy | Summary | TXT | JSON / Import | Browse | Clear
-
-Version 1.1.0:
-- Structured append-only log replacing freeform textarea
-- Predefined snippet dropdown, Copy All, Download TXT, Notes Browser
-- Per-entry two-click inline delete
-
-Version 1.0.0:
+    const SCRIPT_VERSION = '1.0.0';
+    const CHANGELOG = `Version 1.0.0:
 - Initial release`;
 
     /* ==========================================================
