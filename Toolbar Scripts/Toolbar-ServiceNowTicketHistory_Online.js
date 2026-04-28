@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.1
+// @version      1.5.2
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,8 +24,16 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.1';
-    const CHANGELOG = `Version 1.5.1:
+    const SCRIPT_VERSION = '1.5.2';
+    const CHANGELOG = `Version 1.5.2:
+- Each entry card now has a "↪ Write" button that re-pastes that specific
+  entry into the visible ticket worknote/comments fields. Useful when you
+  want to resend an old entry, or when auto-write is disabled and you want
+  to push a single one on demand. Custom entries don't show the button.
+- Auto-write feedback now reports which field(s) received the text
+  (Work Notes, Comments, or both).
+
+Version 1.5.1:
 - Fixed: in single-input mode (one journal textarea toggled between Work Notes
   and Additional Comments), the comment template was being written even when
   Work Notes was the active field. The active journal type is now detected
@@ -1087,12 +1095,17 @@ Version 1.0.0:
 
         // ── Public entry-point ───────────────────────────────────
 
+        /**
+         * Returns one of:
+         *   { ok: true,  wrote: 'both' | 'workNotes' | 'comments' }
+         *   { ok: false, reason: 'no-template' | 'no-field' | 'error', error? }
+         */
         async function writeEntry(entry) {
-            if (!NOTE_TEMPLATES[entry.type]) return;       // Custom etc.
+            if (!NOTE_TEMPLATES[entry.type]) return { ok: false, reason: 'no-template' };
             const vis = detectVisibility();
             if (vis.mode === 'none') {
                 console.warn('CT: no SNow worknote/comments field visible — skipping ticket write');
-                return;
+                return { ok: false, reason: 'no-field' };
             }
 
             const openedByName = await getOpenedByName().catch(() => null);
@@ -1103,18 +1116,22 @@ Version 1.0.0:
                     const cmText = buildCommentsText(entry, openedByName);
                     if (wnText) appendText(vis.workNotes, wnText);
                     if (cmText) await insertTextWithMention(vis.comments, cmText, 'comments');
+                    return { ok: true, wrote: 'both' };
 
                 } else if (vis.mode === 'workNotesOnly') {
                     const text = buildWorkNoteText(entry);
                     if (text) appendText(vis.workNotes, text);
+                    return { ok: true, wrote: 'workNotes' };
 
                 } else { // 'commentsOnly' or 'unknown' (assume comments-style)
                     const text = buildCommentsText(entry, openedByName);
                     if (text) await insertTextWithMention(vis.comments, text, 'comments');
+                    return { ok: true, wrote: 'comments' };
                 }
             } catch (e) {
                 console.warn('CT: ticket write failed', e);
                 hideBlocker();
+                return { ok: false, reason: 'error', error: e };
             }
         }
 
@@ -1716,6 +1733,39 @@ Version 1.0.0:
         editBtn.textContent = '✎ Edit';
         editBtn.onclick = () => openEditModal(ticket, entry, onMutated);
 
+        // Rewrite-to-ticket button (only shown for entries with a template)
+        let writeBtn = null;
+        if (ticketWriter.hasTemplate(entry.type)) {
+            writeBtn = css(mk('button'), {
+                background:'#17a2b8', color:'#fff', border:'none', borderRadius:'3px',
+                cursor:'pointer', padding:'2px 8px', fontSize:'10px', fontFamily:'Arial, sans-serif', fontWeight:'bold'
+            });
+            writeBtn.textContent = '↪ Write';
+            writeBtn.title = 'Rewrite this entry into the ticket worknote/comments';
+            writeBtn.onclick = async () => {
+                if (writeBtn.disabled) return;
+                writeBtn.disabled = true;
+                const prev = writeBtn.textContent;
+                writeBtn.textContent = '…';
+                try {
+                    const res = await ticketWriter.writeEntry(entry);
+                    if (res && res.ok) {
+                        const where = res.wrote === 'both'      ? 'Work Notes + Comments'
+                                    : res.wrote === 'workNotes' ? 'Work Notes'
+                                    :                             'Comments';
+                        flashStatus(`✓ Written to ${where}`);
+                    } else if (res && res.reason === 'no-field') {
+                        flashStatus('⚠️ No worknote/comments field visible.', '#e67e22');
+                    } else if (res && res.reason === 'error') {
+                        flashStatus('✗ Write failed (see console).', '#dc3545');
+                    }
+                } finally {
+                    writeBtn.textContent = prev;
+                    writeBtn.disabled = false;
+                }
+            };
+        }
+
         // Delete button
         const delBtn = css(mk('button'), {
             background:'#e9ecef', color:'#6c757d', border:'none', borderRadius:'3px',
@@ -1732,7 +1782,8 @@ Version 1.0.0:
             }, 200);
         });
 
-        btnGroup.append(editBtn, delBtn);
+        if (writeBtn) btnGroup.append(editBtn, writeBtn, delBtn);
+        else          btnGroup.append(editBtn, delBtn);
         topRow.append(badge, btnGroup);
         card.appendChild(topRow);
 
