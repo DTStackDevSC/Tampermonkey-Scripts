@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.0
+// @version      1.5.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,8 +24,16 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.0';
-    const CHANGELOG = `Version 1.5.0:
+    const SCRIPT_VERSION = '1.5.1';
+    const CHANGELOG = `Version 1.5.1:
+- Fixed: in single-input mode (one journal textarea toggled between Work Notes
+  and Additional Comments), the comment template was being written even when
+  Work Notes was the active field. The active journal type is now detected
+  from the placeholder + toggle-button signals so the correct template is used.
+- New "Auto-write entries to ticket" toggle in the Configure modal — on by
+  default, lets you disable the auto-write at any time.
+
+Version 1.5.0:
 - Adding a new entry now also writes the equivalent text into the ticket:
   · Both Work Notes and Comments visible → technical worknote + customer-facing
     comment with @mention to the requester.
@@ -35,11 +43,6 @@
 - Templates adapted from the Ticket Response Helper, with new ones for URL Lists,
   Network Locations, Custom Categories, SSL Decryption variants, and Removed/
   Modified Steering/App exceptions.
-- Single-input mode (one journal textarea, toggled between Work Notes and
-  Additional Comments) is now detected via placeholder/toggle-button signals
-  so the correct template is used.
-- New "Auto-write entries to ticket" toggle in the Configure modal — on by
-  default, lets you disable the auto-write at any time.
 
 Version 1.4.0:
 - Shared team model: every authenticated user reads and writes the same
