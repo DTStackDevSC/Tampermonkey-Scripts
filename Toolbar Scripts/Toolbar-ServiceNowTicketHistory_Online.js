@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.0
-// @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1
+// @version      1.5.0
+// @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -24,8 +24,19 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
+    const SCRIPT_VERSION = '1.5.0';
+    const CHANGELOG = `Version 1.5.0:
+- Adding a new entry now also writes the equivalent text into the ticket:
+  · Both Work Notes and Comments visible → technical worknote + customer-facing
+    comment with @mention to the requester.
+  · Only Work Notes visible → worknote only.
+  · Only Comments visible → comment only with @mention.
+- Custom (freeform) entries are excluded — only structured types auto-write.
+- Templates adapted from the Ticket Response Helper, with new ones for URL Lists,
+  Network Locations, Custom Categories, SSL Decryption variants, and Removed/
+  Modified Steering/App exceptions.
+
+Version 1.4.0:
 - Shared team model: every authenticated user reads and writes the same
   entries. Each entry shows who last wrote it ("by <Author>").
 - New Configure button (top-right ⚙) reopens the setup modal so you can
@@ -549,6 +560,510 @@ Version 1.0.0:
                 `/entries/${encodeURIComponent(ticket)}/${encodeURIComponent(id)}`);
         },
     };
+
+    /* ==========================================================
+     *  TICKET WRITER  (auto-write entries into SNow worknote/comments)
+     *
+     *  Three scenarios driven by which textareas SNow is showing:
+     *    - 'both'           → write technical text to work_notes,
+     *                         customer-facing text + @mention to comments
+     *    - 'workNotesOnly'  → write technical text to work_notes
+     *    - 'commentsOnly'   → write customer-facing text + @mention to comments
+     *
+     *  Mention-insertion machinery is adapted from
+     *  Standalone Scripts/ServiceNowTicketResponseHelper.js. Custom (freeform)
+     *  entries don't auto-write (no template defined for them).
+     * ==========================================================*/
+
+    const ticketWriter = (() => {
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        // ── Field visibility detection ────────────────────────────
+
+        function isDualInputMode() {
+            const container = document.getElementById('multiple-input-journal-entry');
+            if (container && container.getAttribute('aria-hidden') === 'false') {
+                const wn = document.getElementById('activity-stream-work_notes-textarea');
+                const cm = document.getElementById('activity-stream-comments-textarea');
+                return !!(wn && cm);
+            }
+            return false;
+        }
+
+        function isVisible(el) {
+            return !!(el && el.offsetParent !== null);
+        }
+
+        /**
+         * Returns one of:
+         *   { mode: 'both',          workNotes, comments }
+         *   { mode: 'workNotesOnly', workNotes, comments: null }
+         *   { mode: 'commentsOnly',  workNotes: null, comments }
+         *   { mode: 'unknown',       workNotes: null, comments: <generic textarea> }
+         *   { mode: 'none',          workNotes: null, comments: null }
+         */
+        function detectVisibility() {
+            const wn = document.getElementById('activity-stream-work_notes-textarea');
+            const cm = document.getElementById('activity-stream-comments-textarea');
+
+            if (isDualInputMode()) return { mode: 'both', workNotes: wn, comments: cm };
+
+            const wnVisible = isVisible(wn);
+            const cmVisible = isVisible(cm);
+            if (wnVisible && cmVisible) return { mode: 'both',          workNotes: wn, comments: cm };
+            if (wnVisible)              return { mode: 'workNotesOnly', workNotes: wn, comments: null };
+            if (cmVisible)              return { mode: 'commentsOnly',  workNotes: null, comments: cm };
+
+            const generic = document.querySelector('#activity-stream-textarea')
+                         || document.querySelector('[data-stream-text-input]');
+            if (generic) return { mode: 'unknown', workNotes: null, comments: generic };
+
+            return { mode: 'none', workNotes: null, comments: null };
+        }
+
+        // ── "Opened by" name detection (for @mention target) ──────
+
+        let _cachedOpenedByName = null;
+
+        async function getOpenedByName(retries = 3, delay = 200) {
+            if (_cachedOpenedByName) return _cachedOpenedByName;
+
+            const selectors = [
+                'sc_req_item.opened_by_label',
+                'sys_display.sc_req_item.opened_by',
+                'incident.opened_by_label',
+                'sys_display.incident.opened_by',
+                'sc_req_item.caller_id_label',
+                'sys_display.sc_req_item.caller_id',
+                'incident.caller_id_label',
+                'sys_display.incident.caller_id',
+            ];
+
+            for (let attempt = 0; attempt < retries; attempt++) {
+                for (const sel of selectors) {
+                    const f = document.getElementById(sel);
+                    if (f) {
+                        const v = (f.value || f.textContent || '').trim();
+                        if (v.length > 2) { _cachedOpenedByName = v; return v; }
+                    }
+                }
+                const labelFields = document.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
+                for (const f of labelFields) {
+                    const v = (f.value || f.textContent || '').trim();
+                    if (v.length > 2 && !v.includes('_')) { _cachedOpenedByName = v; return v; }
+                }
+                if (attempt < retries - 1) await sleep(delay);
+            }
+            return null;
+        }
+
+        // ── Plain text insertion ─────────────────────────────────
+
+        function insertTextDirectly(textarea, text) {
+            const start = textarea.selectionStart || 0;
+            const end   = textarea.selectionEnd   || 0;
+            const cur   = textarea.value;
+            textarea.value = cur.substring(0, start) + text + cur.substring(end);
+            textarea.selectionStart = textarea.selectionEnd = start + text.length;
+            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        }
+
+        function appendText(textarea, text) {
+            const existing = textarea.value.trim();
+            textarea.value = existing ? existing + '\n\n' + text : text;
+            textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // ── @mention insertion (best-effort: API → keystroke fallback) ──
+
+        async function insertMentionViaAPI(textarea, name) {
+            try {
+                if (typeof $ !== 'undefined' && $(textarea).data('atwho')) {
+                    const atwho = $(textarea).data('atwho');
+                    if (atwho && atwho.insert) { atwho.insert('@', name); return true; }
+                }
+                if (typeof angular !== 'undefined') {
+                    try {
+                        const scope = angular.element(textarea).scope();
+                        if (scope && scope.insertMention) { await scope.insertMention(name); return true; }
+                    } catch {}
+                }
+                if (textarea.mentionPlugin || textarea._mentionApi) {
+                    const apiObj = textarea.mentionPlugin || textarea._mentionApi;
+                    if (apiObj.insert || apiObj.addMention) { (apiObj.insert || apiObj.addMention).call(apiObj, name); return true; }
+                }
+                if (typeof window.SNMention !== 'undefined' && window.SNMention.insert) {
+                    window.SNMention.insert(textarea, name); return true;
+                }
+                if (typeof window.GlideMention !== 'undefined' && window.GlideMention.insert) {
+                    window.GlideMention.insert(textarea, name); return true;
+                }
+            } catch {}
+            return false;
+        }
+
+        async function triggerMentionPicker(textarea, name) {
+            textarea.focus();
+            await sleep(80);
+            insertTextDirectly(textarea, '@');
+            await sleep(120);
+            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: '@', inputType: 'insertText' }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup', { key: '@', code: 'Digit2', keyCode: 50, which: 50, shiftKey: true, bubbles: true }));
+            await sleep(350);
+
+            for (const ch of name) {
+                insertTextDirectly(textarea, ch);
+                textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: ch, inputType: 'insertText' }));
+                textarea.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+                await sleep(45);
+            }
+
+            await sleep(350);
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            await sleep(180);
+
+            const suggestionSelectors = [
+                '.mention-suggestion', '.at-view-ul li', '[role="option"]',
+                '.atwho-view li', '.atwho-view-ul li', '.mentions-autocomplete li', '[data-mention-item]',
+            ];
+            for (const sel of suggestionSelectors) {
+                const node = document.querySelector(sel);
+                if (node && node.offsetParent !== null) { node.click(); await sleep(180); return true; }
+            }
+            return false;
+        }
+
+        // ── Mention blocker (prevents accidental clicks during keystroke flow) ──
+
+        let _blockerActive = false;
+        let _focusGuardTextarea = null;
+        let _focusGuardHandler  = null;
+
+        function showBlocker(fieldType, textarea) {
+            hideBlocker();
+            _blockerActive = true;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'ct-mention-blocker-overlay';
+            Object.assign(overlay.style, {
+                position:'fixed', inset:'0', zIndex:'2147483646',
+                pointerEvents:'all', cursor:'not-allowed', background:'rgba(0,0,0,0.10)',
+            });
+            const eat = e => { e.preventDefault(); e.stopImmediatePropagation(); };
+            ['mousedown','mouseup','click','pointerdown','pointerup'].forEach(t => overlay.addEventListener(t, eat, true));
+
+            if (textarea) {
+                _focusGuardTextarea = textarea;
+                _focusGuardHandler  = () => {
+                    if (_blockerActive) setTimeout(() => { if (_blockerActive) textarea.focus(); }, 0);
+                };
+                textarea.addEventListener('focusout', _focusGuardHandler, true);
+            }
+
+            const fieldLabel = fieldType === 'work_notes' ? '🔒 Work Notes' : '💬 Comments';
+            const toast = document.createElement('div');
+            toast.id = 'ct-mention-blocker-toast';
+            Object.assign(toast.style, {
+                position:'fixed', top:'18px', left:'50%', transform:'translateX(-50%)',
+                zIndex:'2147483647', background:'linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)',
+                color:'#fff', padding:'10px 18px', borderRadius:'8px',
+                boxShadow:'0 6px 24px rgba(0,0,0,.5)', fontFamily:'Arial,sans-serif',
+                fontSize:'13px', whiteSpace:'nowrap', pointerEvents:'none',
+                border:'1px solid rgba(102,126,234,0.55)',
+            });
+            toast.innerHTML = `Inserting @mention → <span style="color:#67e8f9">${fieldLabel}</span>` +
+                              `<span style="color:#fca5a5;margin-left:10px;font-size:12px">⛔ do not click</span>`;
+            document.body.appendChild(overlay);
+            document.body.appendChild(toast);
+        }
+
+        function hideBlocker() {
+            _blockerActive = false;
+            if (_focusGuardTextarea && _focusGuardHandler) {
+                _focusGuardTextarea.removeEventListener('focusout', _focusGuardHandler, true);
+            }
+            _focusGuardTextarea = null;
+            _focusGuardHandler  = null;
+            document.getElementById('ct-mention-blocker-overlay')?.remove();
+            document.getElementById('ct-mention-blocker-toast')?.remove();
+        }
+
+        async function insertTextWithMention(textarea, text, fieldType) {
+            const mentionRegex = /@\[([^\]]+)\]/g;
+            const matches = text.match(mentionRegex);
+
+            // No mentions → straight append
+            if (!matches || matches.length === 0) {
+                appendText(textarea, text);
+                return;
+            }
+
+            const mentions = [];
+            let m; mentionRegex.lastIndex = 0;
+            while ((m = mentionRegex.exec(text)) !== null) {
+                mentions.push({ placeholder: m[0], name: m[1], index: m.index });
+            }
+            const parts = text.split(mentionRegex);
+
+            showBlocker(fieldType, textarea);
+            try {
+                const existing = textarea.value.trim();
+                textarea.value = existing ? existing + '\n\n' : '';
+                textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+                textarea.focus();
+                await sleep(80);
+
+                let pi = 0;
+                for (let i = 0; i < mentions.length; i++) {
+                    if (parts[pi]) {
+                        insertTextDirectly(textarea, parts[pi]);
+                        await sleep(80);
+                    }
+                    pi++;
+                    const apiOk = await insertMentionViaAPI(textarea, mentions[i].name);
+                    if (!apiOk) await triggerMentionPicker(textarea, mentions[i].name);
+                    await sleep(150);
+                    pi++;
+                }
+                if (pi < parts.length && parts[pi]) {
+                    insertTextDirectly(textarea, parts[pi]);
+                }
+                textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+                textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            } finally {
+                hideBlocker();
+            }
+        }
+
+        // ── Templates per entry type ──────────────────────────────
+        //
+        // Each template defines:
+        //   workNoteHeader  : header line for the technical worknote
+        //   commentsHeader  : header line for the customer-facing comment
+        //   commentsCloser  : optional sentence appended before the sign-off
+        //
+        // The body is auto-built from the entry's FIELD_SCHEMA, so adding new
+        // entry types only requires registering a template here.
+
+        const SIGN_OFF = 'Best regards,\nGlobal Data Security Enablement';
+
+        const NOTE_TEMPLATES = {
+            // ── Policies ───────────────────────────────────────
+            'Policy Created': {
+                workNoteHeader: 'Netskope Policy has been created:',
+                commentsHeader: "We've created the following Netskope policy to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'Policy Modified': {
+                workNoteHeader: 'Netskope Policy has been modified:',
+                commentsHeader: "We've modified the following Netskope policy to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'Policy Deleted': {
+                workNoteHeader: 'Netskope Policy has been scheduled to be deleted (currently disabled):',
+                commentsHeader: "We've scheduled for deletion the following Netskope policy to help address the issue:",
+                commentsCloser: 'This policy has been disabled and scheduled for deletion in 30 days.',
+            },
+
+            // ── URL Lists ──────────────────────────────────────
+            'URL List Created': {
+                workNoteHeader: 'Netskope URL List has been created:',
+                commentsHeader: "We've created the following Netskope URL List to support the requested change:",
+            },
+            'URL List — URLs Added': {
+                workNoteHeader: 'URLs have been added to the following Netskope URL List:',
+                commentsHeader: "We've added the following URLs to the requested Netskope URL List:",
+            },
+            'URL List — URLs Removed': {
+                workNoteHeader: 'URLs have been removed from the following Netskope URL List:',
+                commentsHeader: "We've removed the following URLs from the requested Netskope URL List:",
+            },
+            'URL List Removed': {
+                workNoteHeader: 'Netskope URL List has been removed:',
+                commentsHeader: "We've removed the following Netskope URL List as requested:",
+            },
+
+            // ── Network Locations ──────────────────────────────
+            'Network Location Created': {
+                workNoteHeader: 'Netskope Network Location has been created:',
+                commentsHeader: "We've created the following Netskope Network Location:",
+            },
+            'Network Location — IPs Added': {
+                workNoteHeader: 'IPs have been added to the following Netskope Network Location:',
+                commentsHeader: "We've added the following IPs to the requested Netskope Network Location:",
+            },
+            'Network Location — IPs Removed': {
+                workNoteHeader: 'IPs have been removed from the following Netskope Network Location:',
+                commentsHeader: "We've removed the following IPs from the requested Netskope Network Location:",
+            },
+            'Network Location Removed': {
+                workNoteHeader: 'Netskope Network Location has been removed:',
+                commentsHeader: "We've removed the following Netskope Network Location as requested:",
+            },
+
+            // ── Custom Categories ──────────────────────────────
+            'Custom Category Created': {
+                workNoteHeader: 'Netskope Custom Category has been created:',
+                commentsHeader: "We've created the following Netskope Custom Category:",
+            },
+            'Custom Category — URL Lists Added': {
+                workNoteHeader: 'URL Lists have been added to the following Netskope Custom Category:',
+                commentsHeader: "We've added the following URL Lists to the requested Netskope Custom Category:",
+            },
+            'Custom Category — URL Lists Removed': {
+                workNoteHeader: 'URL Lists have been removed from the following Netskope Custom Category:',
+                commentsHeader: "We've removed the following URL Lists from the requested Netskope Custom Category:",
+            },
+            'Custom Category Removed': {
+                workNoteHeader: 'Netskope Custom Category has been removed:',
+                commentsHeader: "We've removed the following Netskope Custom Category as requested:",
+            },
+
+            // ── SSL Decryption ─────────────────────────────────
+            'SSL Decryption Policy Created': {
+                workNoteHeader: '# Added to SSL Decryption policy:',
+                commentsHeader: "We've added the following SSL Decryption bypasses to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
+            },
+            'SSL Decryption — URLs Added': {
+                workNoteHeader: '# URLs added to SSL Decryption policy:',
+                commentsHeader: "We've added the following URLs to the existing SSL Decryption policy:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test.',
+            },
+            'SSL Decryption — URLs Removed': {
+                workNoteHeader: '# URLs removed from SSL Decryption policy:',
+                commentsHeader: "We've removed the following URLs from the SSL Decryption policy as requested:",
+            },
+            'SSL Decryption Policy Removed': {
+                workNoteHeader: '# SSL Decryption policy has been removed:',
+                commentsHeader: "We've removed the following SSL Decryption policy as requested:",
+            },
+
+            // ── Steering Exceptions ────────────────────────────
+            'Steering Exception Added': {
+                workNoteHeader: '# Added Steering Exception:',
+                commentsHeader: "We've added the following Steering Exception (Domain bypass) to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
+            },
+            'Steering Exception Removed': {
+                workNoteHeader: '# Removed Steering Exception:',
+                commentsHeader: "We've removed the following Steering Exception as requested:",
+            },
+
+            // ── App Exceptions ─────────────────────────────────
+            'App Exception Added': {
+                workNoteHeader: '# Added App Bypass:',
+                commentsHeader: "We've added the following Application bypass to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
+            },
+            'App Exception Removed': {
+                workNoteHeader: '# Removed App Bypass:',
+                commentsHeader: "We've removed the following Application bypass as requested:",
+            },
+
+            // ── Steering / Client Configs ──────────────────────
+            'Steering/Client Config Created': {
+                workNoteHeader: 'Created Netskope Steering/Client Configuration:',
+                commentsHeader: 'We have created the following Netskope Steering/Client Configuration to meet the requested requirements:',
+            },
+            'Steering/Client Config Modified': {
+                workNoteHeader: 'Modified Netskope Steering/Client Configuration:',
+                commentsHeader: 'We have updated the following Netskope Steering/Client Configuration to meet the requested requirements:',
+            },
+            'Steering/Client Config Deleted': {
+                workNoteHeader: 'Deleted Netskope Steering/Client Configuration:',
+                commentsHeader: 'We have deleted the following Netskope Steering/Client Configuration as requested:',
+            },
+
+            // 'Custom' is intentionally absent — freeform notes don't auto-write.
+        };
+
+        // ── Builders ─────────────────────────────────────────────
+
+        function fieldLines(entry) {
+            const schema = getSchema(entry.type);
+            if (!schema || !entry.fields) return [];
+            const out = [];
+            schema.forEach(f => {
+                const raw = entry.fields[f.key];
+                if (!raw) return;
+                if (/\r?\n/.test(raw)) {
+                    // Multi-line value (e.g. URL/IP lists) — list label on its
+                    // own line, indent each value below.
+                    out.push(`- ${f.label}:`);
+                    raw.split(/\r?\n/).forEach(v => {
+                        const t = v.trim();
+                        if (t) out.push(`  ${t}`);
+                    });
+                } else {
+                    out.push(`- ${f.label}: ${raw}`);
+                }
+            });
+            return out;
+        }
+
+        function buildWorkNoteText(entry) {
+            const tpl = NOTE_TEMPLATES[entry.type];
+            if (!tpl) return null;
+            const lines = [tpl.workNoteHeader, ...fieldLines(entry)];
+            return lines.join('\n');
+        }
+
+        function buildCommentsText(entry, openedByName) {
+            const tpl = NOTE_TEMPLATES[entry.type];
+            if (!tpl) return null;
+            const greeting = openedByName ? `Hi @[${openedByName}],` : 'Hi,';
+            const parts = [greeting, '', tpl.commentsHeader, ...fieldLines(entry)];
+            if (tpl.commentsCloser) parts.push('', tpl.commentsCloser);
+            parts.push('', SIGN_OFF);
+            return parts.join('\n');
+        }
+
+        // ── Public entry-point ───────────────────────────────────
+
+        async function writeEntry(entry) {
+            if (!NOTE_TEMPLATES[entry.type]) return;       // Custom etc.
+            const vis = detectVisibility();
+            if (vis.mode === 'none') {
+                console.warn('CT: no SNow worknote/comments field visible — skipping ticket write');
+                return;
+            }
+
+            const openedByName = await getOpenedByName().catch(() => null);
+
+            try {
+                if (vis.mode === 'both') {
+                    const wnText = buildWorkNoteText(entry);
+                    const cmText = buildCommentsText(entry, openedByName);
+                    if (wnText) appendText(vis.workNotes, wnText);
+                    if (cmText) await insertTextWithMention(vis.comments, cmText, 'comments');
+
+                } else if (vis.mode === 'workNotesOnly') {
+                    const text = buildWorkNoteText(entry);
+                    if (text) appendText(vis.workNotes, text);
+
+                } else { // 'commentsOnly' or 'unknown' (assume comments-style)
+                    const text = buildCommentsText(entry, openedByName);
+                    if (text) await insertTextWithMention(vis.comments, text, 'comments');
+                }
+            } catch (e) {
+                console.warn('CT: ticket write failed', e);
+                hideBlocker();
+            }
+        }
+
+        return {
+            writeEntry,
+            detectVisibility,                              // exposed for diagnostics
+            hasTemplate: type => Boolean(NOTE_TEMPLATES[type]),
+        };
+    })();
 
     /* ==========================================================
      *  CONNECTIVITY STATE TRANSITIONS
@@ -1634,6 +2149,16 @@ Version 1.0.0:
 
         refreshLog(ticket);
         flashStatus(`✓ Entry added  (${entries.length} total)`);
+
+        // Auto-write the equivalent text into the SNow worknote/comments
+        // textareas based on which are visible. Custom entries (no template)
+        // are skipped silently. Errors here must not block the entry save.
+        if (ticketWriter.hasTemplate(type)) {
+            const lastEntry = entries[entries.length - 1];
+            ticketWriter.writeEntry(lastEntry).catch(err => {
+                console.warn('CT: ticket auto-write failed', err);
+            });
+        }
     }
 
     /* ==========================================================
