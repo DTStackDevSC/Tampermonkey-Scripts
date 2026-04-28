@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.0
-// @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — with optional Cloudflare Worker + D1 cloud sync
+// @version      1.4.0
+// @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -24,8 +24,16 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
+    const SCRIPT_VERSION = '1.4.0';
+    const CHANGELOG = `Version 1.4.0:
+- Shared team model: every authenticated user reads and writes the same
+  entries. Each entry shows who last wrote it ("by <Author>").
+- New Configure button (top-right ⚙) reopens the setup modal so you can
+  change the Worker URL or token at any time.
+- Removed the Notes Browser — entries now load directly from D1 per ticket.
+- Clear-all wording strengthened (it now wipes everyone's entries on the ticket).
+
+Version 1.3.0:
 - Cloud sync via Cloudflare Worker + D1 (optional, configured on first run)
 - GM storage used as local read cache — sidebar always loads instantly
 - Offline mode: read-only with reconnect button; auto-reconnect on sidebar open
@@ -324,8 +332,7 @@ Version 1.0.0:
         /* ── Z-INDEX NOTES ──────────────────────────────────────
          * Toolbar / Mini Summary Sidebar : 999997–999998
          * Change Tracker sidebar         : 999997  (peer)
-         * Notes Browser modal            : 999999
-         * Edit modal                     : 1050000
+         * Edit / Setup modal             : 1050000
          * Confirm modal                  : 1100000
          * Changelog overlay/modal        : 20000/20001
          * ─────────────────────────────────────────────────────*/
@@ -382,20 +389,6 @@ Version 1.0.0:
         #ct-changelog-overlay {
             position: fixed !important; inset: 0 !important;
             background: rgba(0,0,0,.5) !important; z-index: 20000 !important;
-        }
-        #ct-browser-overlay {
-            position: fixed !important; inset: 0 !important;
-            background: rgba(0,0,0,.55) !important; z-index: 999999 !important;
-        }
-        #ct-browser-modal {
-            position: fixed !important; top: 50% !important; left: 50% !important;
-            transform: translate(-50%,-50%) !important; z-index: 1000000 !important;
-            background: #f9f9f9 !important; border: 1px solid #ccc !important;
-            border-radius: 10px !important; padding: 20px !important;
-            width: 580px !important; max-width: 90vw !important;
-            max-height: 80vh !important; overflow-y: auto !important;
-            font-family: Arial, sans-serif !important;
-            box-shadow: 0 6px 24px rgba(0,0,0,.25) !important;
         }
     `;
     document.head.appendChild(styleEl);
@@ -555,10 +548,6 @@ Version 1.0.0:
             return api.request('DELETE',
                 `/entries/${encodeURIComponent(ticket)}/${encodeURIComponent(id)}`);
         },
-
-        async fetchTickets() {
-            return api.request('GET', '/tickets');
-        },
     };
 
     /* ==========================================================
@@ -652,46 +641,6 @@ Version 1.0.0:
         } else {
             handleApiResponse(res);
         }
-    }
-
-    /* ==========================================================
-     *  ALL-TICKET DATA  (Notes Browser)
-     *  Online: list of tickets comes from D1, with cached entries used
-     *  for the preview rows. Offline: fall back to scanning GM keys.
-     * ==========================================================*/
-
-    function allTicketData() {
-        const results = [];
-        try {
-            GM_listValues().forEach(key => {
-                if (!key.startsWith(PREFIX)) return;
-                const ticket = key.slice(PREFIX.length);
-                if (ticket) results.push({ ticket, entries: loadEntries(ticket) });
-            });
-        } catch (e) { console.warn('CT: GM_listValues failed', e); }
-        results.sort((a, b) => {
-            const la = a.entries.length ? a.entries[a.entries.length-1].ts : '';
-            const lb = b.entries.length ? b.entries[b.entries.length-1].ts : '';
-            return lb.localeCompare(la);
-        });
-        return results;
-    }
-
-    async function getAllTicketData() {
-        if (connState === 'ONLINE') {
-            const res = await api.fetchTickets();
-            if (res.ok) {
-                return (res.data.tickets || []).map(({ ticket, count, last_ts }) => ({
-                    ticket,
-                    entries: loadEntries(ticket),  // use cache for preview rows
-                    count,
-                    last_ts,
-                }));
-            }
-            handleApiResponse(res);
-        }
-        // Fallback: scan GM keys
-        return allTicketData();
     }
 
     /* ==========================================================
@@ -1220,8 +1169,9 @@ Version 1.0.0:
         contentEl.textContent = formatEntryContent(entry);
         card.appendChild(contentEl);
 
-        // Timestamp
-        card.appendChild(css(Object.assign(mk('div'), { textContent: entry.ts }), {
+        // Timestamp + author
+        const author = entry.author_label || entry.author_user_id || '(unknown)';
+        card.appendChild(css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}` }), {
             fontSize:'10px', color:'#bbb', marginTop:'6px', fontFamily:'monospace'
         }));
 
@@ -1412,6 +1362,22 @@ Version 1.0.0:
             dot.append(d, l); dot.onclick = showChangelogModal;
             verRow.appendChild(dot);
         }
+
+        // Configure button — opens setup modal pre-filled with current values
+        const cfgBtn = css(mk('button', { id:'ct-configure-btn', type:'button' }), {
+            background:'transparent', color:'#666', border:'none', cursor:'pointer',
+            padding:'2px 6px', marginLeft:'auto', fontSize:'11px',
+            textDecoration:'underline', fontFamily:'Arial, sans-serif'
+        });
+        cfgBtn.textContent = '⚙ Configure';
+        cfgBtn.title       = 'Change the Worker URL or API token';
+        cfgBtn.onclick     = () => {
+            const previousToken = GM_getValue('changeTrackerToken', '');
+            const previousState = connState;
+            openSetupPrompt({ previousToken, previousState });
+        };
+        verRow.appendChild(cfgBtn);
+
         sidebar.appendChild(verRow);
 
         // ── Ticket badge ─────────────────────────────────────────
@@ -1520,8 +1486,7 @@ Version 1.0.0:
         ]));
         logHeader.appendChild(rowOf([
             ['📥 Import JSON',  '#e67e22', handleImportClick,   'Import entries from a .json export file'],
-            ['🗂️ Browse',      '#fd7e14', openNotesBrowser,    'Browse notes across all tickets'],
-            ['🗑️ Clear',       '#dc3545', handleClearAll,      'Delete all entries for this ticket'],
+            ['🗑️ Clear',       '#dc3545', handleClearAll,      'Delete all entries for this ticket (everyone)'],
         ]));
 
         sidebar.appendChild(logHeader);
@@ -1757,136 +1722,15 @@ Version 1.0.0:
     function handleClearAll() {
         const ticket = getTicketNumber(), entries = loadEntries(ticket);
         if (!entries.length) { flashStatus('⚠️ Nothing to clear.', '#e67e22'); return; }
-        confirmModal(
-            `Delete all ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} for ${ticket}?\nThis cannot be undone.`,
-            async () => {
-                await clearEntries(ticket);
-                refreshLog(ticket);
-                flashStatus('✓ All entries cleared.');
-            }
-        );
-    }
-
-    /* ==========================================================
-     *  NOTES BROWSER MODAL
-     * ==========================================================*/
-
-    async function openNotesBrowser() {
-        document.getElementById('ct-browser-overlay')?.remove();
-        document.getElementById('ct-browser-modal')?.remove();
-
-        const overlay = mk('div', { id:'ct-browser-overlay' });
-        const modal   = mk('div', { id:'ct-browser-modal'   });
-
-        // Header
-        const hdr = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' });
-        const hTitle = css(mk('div'), { fontSize:'15px', fontWeight:'bold', color:'#333', fontFamily:'Arial, sans-serif' });
-        hTitle.textContent = '🗂️ Notes Browser';
-        const closeX = css(mk('button'), { background:'red', color:'#fff', border:'none', borderRadius:'4px', cursor:'pointer', padding:'4px 10px', fontWeight:'bold', fontSize:'18px', lineHeight:'1' });
-        closeX.textContent = '×'; closeX.onclick = () => { overlay.remove(); modal.remove(); };
-        hdr.append(hTitle, closeX); modal.appendChild(hdr);
-
-        // Subtitle
-        const sub = css(mk('div'), { fontSize:'11px', color:'#999', marginBottom:'12px', fontFamily:'Arial, sans-serif', borderBottom:'1px solid #e0e0e0', paddingBottom:'10px' });
-        sub.textContent = 'All tickets with saved change logs. Expand to preview. Deleting is permanent.';
-        modal.appendChild(sub);
-
-        const data = await getAllTicketData();
-
-        if (!data.length) {
-            modal.appendChild(
-                css(Object.assign(mk('div'), { textContent:'No saved notes found for any ticket.' }), {
-                    textAlign:'center', padding:'30px 0', color:'#bbb',
-                    fontFamily:'Arial, sans-serif', fontSize:'13px', fontStyle:'italic'
-                })
-            );
-        } else {
-            const totalEntries = data.reduce((s, d) => s + d.entries.length, 0);
-            const summary = css(mk('div'), {
-                background:'#e8f5e9', border:'1px solid #a5d6a7', borderRadius:'4px',
-                padding:'6px 10px', marginBottom:'10px', fontSize:'11px',
-                color:'#444', fontFamily:'Arial, sans-serif'
-            });
-            summary.textContent = `${data.length} ticket${data.length !== 1 ? 's' : ''} · ${totalEntries} total ${totalEntries === 1 ? 'entry' : 'entries'}`;
-            modal.appendChild(summary);
-
-            data.forEach(({ ticket, entries }) =>
-                modal.appendChild(buildBrowserRow(ticket, entries, () => {
-                    openNotesBrowser();
-                    if (ticket === getTicketNumber()) refreshLog(ticket);
-                }))
-            );
-        }
-
-        document.body.append(overlay, modal);
-        overlay.onclick = () => closeX.click();
-    }
-
-    function buildBrowserRow(ticket, entries, onDeleted) {
-        const row = css(mk('div'), {
-            background:'#fff', border:'1px solid #e0e0e0', borderRadius:'6px',
-            padding:'10px 12px', marginBottom:'8px', fontFamily:'Arial, sans-serif'
+        const msg =
+            `Delete all ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} for ${ticket}?\n` +
+            `This wipes the log for EVERYONE on the team — including entries you didn't author.\n` +
+            `This cannot be undone.`;
+        confirmModal(msg, async () => {
+            await clearEntries(ticket);
+            refreshLog(ticket);
+            flashStatus('✓ All entries cleared.');
         });
-
-        const topLine = css(mk('div'), { display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'3px' });
-
-        const left = css(mk('div'), { display:'flex', alignItems:'center', gap:'6px' });
-        const ticketLbl = css(mk('span'), { fontWeight:'bold', fontSize:'13px', color:'#333', fontFamily:'monospace' });
-        ticketLbl.textContent = ticket;
-        const countBadge = css(mk('span'), { fontSize:'11px', color:'#666', background:'#f0f0f0', borderRadius:'3px', padding:'2px 7px' });
-        countBadge.textContent = `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`;
-        left.append(ticketLbl, countBadge);
-
-        const right = css(mk('div'), { display:'flex', gap:'5px' });
-        const expandBtn = css(mk('button'), { background:'#667eea', color:'#fff', border:'none', borderRadius:'3px', cursor:'pointer', padding:'3px 9px', fontSize:'11px', fontWeight:'bold', fontFamily:'Arial, sans-serif' });
-        expandBtn.textContent = '▶ Preview';
-        const delBtn = css(mk('button'), { background:'#dc3545', color:'#fff', border:'none', borderRadius:'3px', cursor:'pointer', padding:'3px 9px', fontSize:'11px', fontWeight:'bold', fontFamily:'Arial, sans-serif' });
-        delBtn.textContent = 'Delete All';
-        delBtn.onclick = () => confirmModal(
-            `Delete all ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'} for ${ticket}?\nThis cannot be undone.`,
-            async () => { await clearEntries(ticket); onDeleted(); }
-        );
-        right.append(expandBtn, delBtn);
-        topLine.append(left, right); row.appendChild(topLine);
-
-        if (entries.length) {
-            const last = entries[entries.length-1];
-            row.appendChild(
-                css(Object.assign(mk('div'), { textContent:`Last: ${last.ts} — ${last.type}` }), {
-                    fontSize:'10px', color:'#bbb', fontFamily:'monospace', marginBottom:'2px'
-                })
-            );
-        }
-
-        // Expandable preview
-        const preview = css(mk('div'), { display:'none', marginTop:'8px', borderTop:'1px solid #eee', paddingTop:'8px' });
-        const previewEntries = [...entries].reverse().slice(0, 5);
-        previewEntries.forEach(entry => {
-            const pRow = css(mk('div'), { marginBottom:'7px', paddingLeft:'8px', borderLeft:`3px solid ${typeColor(entry.type)}` });
-            const pType = css(mk('div'), { fontSize:'11px', fontWeight:'bold', color:typeColor(entry.type), fontFamily:'Arial, sans-serif' });
-            pType.textContent = entry.type;
-            const pContent = css(mk('div'), { fontSize:'11px', color:'#555', fontFamily:'Arial, sans-serif', wordBreak:'break-word', whiteSpace:'pre-wrap' });
-            pContent.textContent = formatEntryContent(entry);
-            const pTs = css(mk('div'), { fontSize:'10px', color:'#bbb', fontFamily:'monospace' });
-            pTs.textContent = entry.ts;
-            pRow.append(pType, pContent, pTs); preview.appendChild(pRow);
-        });
-        if (entries.length > 5) {
-            preview.appendChild(
-                css(Object.assign(mk('div'), { textContent:`…and ${entries.length - 5} more` }), {
-                    fontSize:'11px', color:'#999', fontStyle:'italic', fontFamily:'Arial, sans-serif', marginTop:'4px'
-                })
-            );
-        }
-        row.appendChild(preview);
-
-        expandBtn.onclick = () => {
-            const open = preview.style.display !== 'none';
-            preview.style.display = open ? 'none' : 'block';
-            expandBtn.textContent  = open ? '▶ Preview' : '▼ Hide';
-        };
-
-        return row;
     }
 
     /* ==========================================================
@@ -2002,6 +1846,7 @@ Version 1.0.0:
             outline:'none', marginBottom:'12px'
         });
         tokenInput.placeholder = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
+        tokenInput.value       = GM_getValue('changeTrackerToken', '');
         modal.appendChild(tokenInput);
 
         // Help text
