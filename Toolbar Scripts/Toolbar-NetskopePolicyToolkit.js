@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.10
+// @version      1.12
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, and URL list history. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,6 +29,7 @@
         saveReminder:   'toolkit_saveReminder',
         descriptionLog: 'toolkit_descriptionLog',
         urlListHistory: 'toolkit_urlListHistory',
+        sslDomainLog:   'toolkit_sslDomainLog',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -38,17 +39,16 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.10';
-    const CHANGELOG = `Version 1.10:
-- Fixed URL list history buttons not appearing: page detection regex now
-  matches #/url-list (hyphenated hash route). Added targeted selectors for
-  the "Enter URL or IP Address" textarea used in Netskope URL list modals.
+    const SCRIPT_VERSION = '1.12';
+    const CHANGELOG = `Version 1.12:
+- Both log viewers (Description Log and URL List History) now have a
+  "Remove Older Than" button. A confirmation modal shows how many entries
+  will be deleted before committing.
 
-Version 1.9:
-- URL List History: new buttons on URL list edit pages (+ Log Entry,
-  Delete Selected Domains, View History). Log format: #RITM | Date | Name.
-  Deleted domains are commented-out with a | Deleted marker.
-- All log viewers now support Filter by RITM and Date range (From / To).`;
+Version 1.11:
+- SSL Decryption Domain Log: adds "+ Add Removal Entry" button to the
+  domains field on SSL decryption policy pages. Inserts a #RITM | Date |
+  Name | Removed marker at cursor position. Toggle in Feature Settings.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -287,6 +287,11 @@ Version 1.9:
             label:       '📜 URL List History Buttons',
             description: 'On URL list edit pages, adds "+ Log Entry", "Delete Selected", and "View History" buttons. Log format: #RITM | Date | Name. Deleted domains are commented out.',
         },
+        {
+            key:         'sslDomainLog',
+            label:       '🔒 SSL Decryption Domain Log Button',
+            description: 'On SSL Decryption policy pages, adds an "+ Add Removal Entry" button to the domains field. Inserts a #RITM | Date | Name | Removed marker at the cursor position.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -414,6 +419,12 @@ Version 1.9:
                         removeAll('.' + URL_LIST_BTN_CONTAINER_CLASS);
                         document.querySelectorAll('[data-nstk-url-log-injected]').forEach(ta => {
                             delete ta.dataset.nstkUrlLogInjected;
+                        });
+                    }
+                    if (key === 'sslDomainLog') {
+                        removeAll('.' + SSL_DOMAIN_BTN_CONTAINER_CLASS);
+                        document.querySelectorAll('[data-nstk-ssl-injected]').forEach(ta => {
+                            delete ta.dataset.nstkSslInjected;
                         });
                     }
                 }
@@ -1077,7 +1088,12 @@ Version 1.9:
     function getDescriptionTextareas() {
         const seen = new Set();
         DESCRIPTION_TA_SELECTORS.forEach(sel => {
-            document.querySelectorAll(sel).forEach(el => seen.add(el));
+            document.querySelectorAll(sel).forEach(el => {
+                // Skip the domains picker on SSL decryption pages — it gets its own button
+                if (el.closest('[data-test-id="domains_picker"]')) return;
+                if (/comma[\s-]?separated/i.test(el.placeholder || '')) return;
+                seen.add(el);
+            });
         });
         return [...seen];
     }
@@ -1462,25 +1478,378 @@ Version 1.9:
         dateToFilter.addEventListener('change', renderEntries);
         renderEntries();
 
+        const footerRow = document.createElement('div');
+        Object.assign(footerRow.style, { display: 'flex', gap: '8px', flexShrink: '0' });
+
+        const removeOlderBtn = document.createElement('button');
+        removeOlderBtn.textContent = '🗑 Remove Older Than';
+        Object.assign(removeOlderBtn.style, {
+            flex: '0 0 auto', padding: '10px 14px', background: '#fff', color: '#c62828',
+            border: '1px solid #e53935', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        removeOlderBtn.addEventListener('mouseenter', () => { removeOlderBtn.style.background = '#ffebee'; });
+        removeOlderBtn.addEventListener('mouseleave', () => { removeOlderBtn.style.background = '#fff'; });
+        removeOlderBtn.addEventListener('click', () => {
+            showRemoveOlderConfirm(
+                (cutoff) => logEntries.filter(e => e.date && e.date < cutoff).length,
+                (cutoff) => {
+                    const newLines = textarea.value.split('\n').filter(line => {
+                        const parts = line.split('|').map(p => p.trim());
+                        if (parts.length >= 4) {
+                            const date = parts[1];
+                            return !date || date >= cutoff;
+                        }
+                        return true;
+                    });
+                    setAngularValue(textarea, newLines.join('\n').replace(/\n{3,}/g, '\n\n').trim());
+                    overlay.remove(); modal.remove();
+                }
+            );
+        });
+
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Close';
         Object.assign(closeBtn.style, {
-            width: '100%', padding: '10px', background: '#4caf50', color: '#fff',
+            flex: '1', padding: '10px', background: '#4caf50', color: '#fff',
             border: 'none', borderRadius: '6px', cursor: 'pointer',
-            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif', flexShrink: '0',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
         });
         closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#388e3c'; });
         closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#4caf50'; });
         closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
 
-        modal.appendChild(closeBtn);
+        footerRow.appendChild(removeOlderBtn);
+        footerRow.appendChild(closeBtn);
+        modal.appendChild(footerRow);
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
         overlay.onclick = (e) => { if (e.target === overlay) closeBtn.click(); };
     }
 
+    function showRemoveOlderConfirm(previewFn, onConfirm) {
+        if (document.getElementById('ns-remove-older-confirm')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-remove-older-confirm-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0',
+            width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.55)',
+            zIndex: '2000002',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-remove-older-confirm';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: '2000003',
+            background: '#ffffff',
+            border: '2px solid #e53935',
+            borderRadius: '10px',
+            padding: '24px',
+            boxShadow: '0 6px 28px rgba(0,0,0,0.3)',
+            fontFamily: 'Arial, sans-serif',
+            maxWidth: '400px',
+            width: '90vw',
+            boxSizing: 'border-box',
+            color: '#333',
+        });
+
+        const title = document.createElement('div');
+        title.textContent = '🗑 Remove Logs Older Than';
+        Object.assign(title.style, {
+            fontSize: '15px', fontWeight: 'bold',
+            color: '#c62828', marginBottom: '6px', fontFamily: 'Arial, sans-serif',
+        });
+
+        const subtitle = document.createElement('div');
+        subtitle.textContent = 'All log entries strictly before this date will be permanently deleted from the textarea.';
+        Object.assign(subtitle.style, {
+            fontSize: '12px', color: '#666', marginBottom: '16px', lineHeight: '1.4',
+        });
+
+        const dateLabel = document.createElement('label');
+        dateLabel.textContent = 'Remove entries before:';
+        Object.assign(dateLabel.style, {
+            fontSize: '12px', fontWeight: 'bold', color: '#555',
+            display: 'block', marginBottom: '4px',
+        });
+
+        const dateInput = document.createElement('input');
+        dateInput.type = 'date';
+        Object.assign(dateInput.style, {
+            width: '100%', padding: '8px 10px',
+            border: '1px solid #ccc', borderRadius: '5px',
+            fontSize: '13px', boxSizing: 'border-box', marginBottom: '12px',
+        });
+
+        const previewEl = document.createElement('div');
+        Object.assign(previewEl.style, {
+            fontSize: '12px', minHeight: '18px', marginBottom: '16px',
+            padding: '8px 12px', borderRadius: '5px',
+            background: '#fff8e1', border: '1px solid #ffe082', color: '#795548',
+            display: 'none',
+        });
+
+        dateInput.addEventListener('change', () => {
+            const cutoff = dateInput.value;
+            if (!cutoff) { previewEl.style.display = 'none'; return; }
+            const count = previewFn(cutoff);
+            previewEl.style.display = 'block';
+            if (count === 0) {
+                previewEl.textContent = 'No entries are older than this date.';
+                previewEl.style.background = '#f1f8e9';
+                previewEl.style.borderColor = '#aed581';
+                previewEl.style.color = '#558b2f';
+            } else {
+                previewEl.textContent = `⚠️  ${count} entr${count === 1 ? 'y' : 'ies'} will be permanently removed.`;
+                previewEl.style.background = '#fff8e1';
+                previewEl.style.borderColor = '#ffe082';
+                previewEl.style.color = '#795548';
+            }
+        });
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Confirm Delete';
+        Object.assign(confirmBtn.style, {
+            flex: '1', padding: '10px', background: '#e53935', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        confirmBtn.addEventListener('mouseenter', () => { confirmBtn.style.background = '#b71c1c'; });
+        confirmBtn.addEventListener('mouseleave', () => { confirmBtn.style.background = '#e53935'; });
+        confirmBtn.onclick = () => {
+            const cutoff = dateInput.value;
+            if (!cutoff) { dateInput.style.borderColor = '#e53935'; dateInput.focus(); return; }
+            if (previewFn(cutoff) === 0) return;
+            overlay.remove(); modal.remove();
+            onConfirm(cutoff);
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(confirmBtn);
+
+        modal.appendChild(title);
+        modal.appendChild(subtitle);
+        modal.appendChild(dateLabel);
+        modal.appendChild(dateInput);
+        modal.appendChild(previewEl);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => dateInput.focus(), 50);
+    }
+
     // ─────────────────────────────────────────────────────────────
-    // FEATURE 6 — URL LIST HISTORY
+    // FEATURE 6 — SSL DECRYPTION DOMAIN LOG
+    // ─────────────────────────────────────────────────────────────
+
+    const SSL_DOMAIN_BTN_CONTAINER_CLASS = 'ns-ssl-domain-btn-container';
+
+    const SSL_DOMAINS_TA_SELECTORS = [
+        '[data-test-id="domains_picker"] textarea',
+        'textarea[placeholder*="comma separated" i]',
+        'textarea[placeholder*="List of domains" i]',
+    ];
+
+    function getSslDomainTextareas() {
+        const seen = new Set();
+        SSL_DOMAINS_TA_SELECTORS.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => seen.add(el));
+        });
+        return [...seen];
+    }
+
+    function injectSslDomainButtons() {
+        if (!getSetting('sslDomainLog')) return;
+
+        getSslDomainTextareas().forEach(textarea => {
+            if (textarea.dataset.nstkSslInjected) return;
+            textarea.dataset.nstkSslInjected = '1';
+
+            // Remove any description log buttons that may have already been injected
+            // on this element before the skip-guard was in place
+            const existing = textarea.nextElementSibling;
+            if (existing && existing.classList.contains('ns-log-btn-container')) {
+                existing.remove();
+                delete textarea.dataset.nstkLogInjected;
+            }
+
+            const container = document.createElement('div');
+            container.className = SSL_DOMAIN_BTN_CONTAINER_CLASS;
+            Object.assign(container.style, { display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' });
+
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = '+ Add Removal Entry';
+            removeBtn.title = 'Insert a #RITM | Date | Name | Removed marker at the cursor position';
+            removeBtn.style.cssText = `
+                padding: 4px 10px; border: 1px solid #e53935;
+                border-radius: 4px; background: #e53935;
+                color: #fff; cursor: pointer; font-size: 12px;
+                font-weight: 600; line-height: 1.4;
+            `;
+            removeBtn.addEventListener('mouseenter', () => { removeBtn.style.background = '#b71c1c'; });
+            removeBtn.addEventListener('mouseleave', () => { removeBtn.style.background = '#e53935'; });
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); e.preventDefault();
+                showAddRemovalEntryModal(textarea);
+            });
+
+            container.appendChild(removeBtn);
+            textarea.insertAdjacentElement('afterend', container);
+            console.log('[NS Toolkit] SSL domain removal button injected.');
+        });
+    }
+
+    function showAddRemovalEntryModal(textarea) {
+        if (document.getElementById('ns-ssl-removal-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-ssl-removal-overlay';
+        Object.assign(overlay.style, {
+            position:   'fixed',
+            top:        '0', left: '0',
+            width:      '100%', height: '100%',
+            background: 'rgba(0,0,0,0.45)',
+            zIndex:     '2000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-ssl-removal-modal';
+        Object.assign(modal.style, {
+            position:     'fixed',
+            top:          '50%', left: '50%',
+            transform:    'translate(-50%, -50%)',
+            zIndex:       '2000001',
+            background:   '#ffffff',
+            border:       '2px solid #e53935',
+            borderRadius: '10px',
+            padding:      '24px',
+            boxShadow:    '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily:   'Arial, sans-serif',
+            maxWidth:     '460px',
+            width:        '90vw',
+            boxSizing:    'border-box',
+            color:        '#333',
+        });
+
+        const mkLabel = (text) => {
+            const el = document.createElement('label');
+            el.textContent = text;
+            Object.assign(el.style, {
+                fontSize: '12px', fontWeight: 'bold', color: '#555',
+                display: 'block', marginBottom: '4px', fontFamily: 'Arial, sans-serif',
+            });
+            return el;
+        };
+
+        const mkInput = (placeholder, value, readOnly) => {
+            const el = document.createElement('input');
+            el.type = 'text';
+            el.placeholder = placeholder || '';
+            el.value = value || '';
+            el.readOnly = !!readOnly;
+            Object.assign(el.style, {
+                width: '100%', padding: '8px 10px',
+                border: '1px solid #ccc', borderRadius: '5px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                boxSizing: 'border-box', marginBottom: '12px',
+                background: readOnly ? '#f5f5f5' : '#fff',
+                color: readOnly ? '#666' : '#333',
+            });
+            return el;
+        };
+
+        const title = document.createElement('div');
+        title.textContent = '🗑 Add Removal Entry';
+        Object.assign(title.style, {
+            fontSize: '15px', fontWeight: 'bold',
+            color: '#e53935', marginBottom: '16px', fontFamily: 'Arial, sans-serif',
+        });
+
+        const ritmLabel = mkLabel('RITM Number');
+        const ritmInput = mkInput('e.g. RITM1234567');
+        const dateLabel = mkLabel('Date (auto-filled)');
+        const dateInput = mkInput('', getTodayDate(), true);
+        const userLabel = mkLabel('Your Name');
+        const userInput = mkInput('Your name', GM_getValue('toolkit_username', ''));
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const insertBtn = document.createElement('button');
+        insertBtn.textContent = 'Insert Entry';
+        Object.assign(insertBtn.style, {
+            flex: '1', padding: '10px', background: '#e53935', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        insertBtn.addEventListener('mouseenter', () => { insertBtn.style.background = '#b71c1c'; });
+        insertBtn.addEventListener('mouseleave', () => { insertBtn.style.background = '#e53935'; });
+        insertBtn.onclick = () => {
+            const ritm = ritmInput.value.trim();
+            const date = dateInput.value.trim();
+            const user = userInput.value.trim();
+
+            if (!ritm) { ritmInput.style.borderColor = '#e53935'; ritmInput.focus(); return; }
+
+            if (user && user !== GM_getValue('toolkit_username', '')) {
+                GM_setValue('toolkit_username', user);
+            }
+
+            const entry = `#${ritm.replace(/^#+/, '')} | ${date} | ${user || 'Unknown'} | Removed`;
+            insertAtCursor(textarea, entry);
+
+            overlay.remove();
+            modal.remove();
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(insertBtn);
+
+        modal.appendChild(title);
+        modal.appendChild(ritmLabel); modal.appendChild(ritmInput);
+        modal.appendChild(dateLabel); modal.appendChild(dateInput);
+        modal.appendChild(userLabel); modal.appendChild(userInput);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => ritmInput.focus(), 50);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FEATURE 7 — URL LIST HISTORY
     // ─────────────────────────────────────────────────────────────
 
     const URL_LIST_TA_SELECTORS = [
@@ -2076,17 +2445,50 @@ Version 1.9:
         dateToFilter.addEventListener('change', applyFilters);
         applyFilters();
 
+        const footerRow = document.createElement('div');
+        Object.assign(footerRow.style, { display: 'flex', gap: '8px', flexShrink: '0' });
+
+        const removeOlderBtn = document.createElement('button');
+        removeOlderBtn.textContent = '🗑 Remove Older Than';
+        Object.assign(removeOlderBtn.style, {
+            flex: '0 0 auto', padding: '10px 14px', background: '#fff', color: '#c62828',
+            border: '1px solid #e53935', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        removeOlderBtn.addEventListener('mouseenter', () => { removeOlderBtn.style.background = '#ffebee'; });
+        removeOlderBtn.addEventListener('mouseleave', () => { removeOlderBtn.style.background = '#fff'; });
+        removeOlderBtn.addEventListener('click', () => {
+            showRemoveOlderConfirm(
+                (cutoff) => allGroups.filter(g => !g.isOrphan && g.date && g.date < cutoff).length,
+                (cutoff) => {
+                    const groups = parseUrlListLog(textarea.value);
+                    const keepLines = [];
+                    groups.forEach(group => {
+                        if (group.isOrphan || !group.date || group.date >= cutoff) {
+                            if (group.raw) keepLines.push(group.raw);
+                            group.domains.forEach(d => keepLines.push(d.raw));
+                        }
+                    });
+                    setAngularValue(textarea, keepLines.join('\n').trim());
+                    overlay.remove(); modal.remove();
+                }
+            );
+        });
+
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Close';
         Object.assign(closeBtn.style, {
-            width: '100%', padding: '10px', background: '#0073e6', color: '#fff',
+            flex: '1', padding: '10px', background: '#0073e6', color: '#fff',
             border: 'none', borderRadius: '6px', cursor: 'pointer',
-            fontWeight: 'bold', fontSize: '13px', flexShrink: '0',
+            fontWeight: 'bold', fontSize: '13px',
         });
         closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#005bb5'; });
         closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#0073e6'; });
         closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
-        modal.appendChild(closeBtn);
+
+        footerRow.appendChild(removeOlderBtn);
+        footerRow.appendChild(closeBtn);
+        modal.appendChild(footerRow);
 
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
@@ -2191,6 +2593,7 @@ Version 1.9:
         checkSmtp();
         interceptSaveButtons();
         injectDescriptionLogButtons();
+        injectSslDomainButtons();
         injectUrlListHistoryButtons();
     }
 
@@ -2227,6 +2630,7 @@ Version 1.9:
                     n.querySelector?.('button.ns-btn-primary') ||
                     n.querySelector?.('textarea.ns-form-textarea') ||
                     n.querySelector?.('textarea#category-description') ||
+                    SSL_DOMAINS_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel)) ||
                     URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel))
                 );
             })
