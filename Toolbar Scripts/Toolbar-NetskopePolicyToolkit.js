@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.13
+// @version      1.14
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, and URL list history. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -39,15 +39,15 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.13';
-    const CHANGELOG = `Version 1.13:
+    const SCRIPT_VERSION = '1.14';
+    const CHANGELOG = `Version 1.14:
+- SSL Removal Entry modal now has an optional "Domains Removed" field.
+  When filled, the inserted entry becomes: #RITM | Date | Name | Removed | domains.
+
+Version 1.13:
 - Fixed SSL Decryption buttons: "+ Add Removal Entry" now appears on the
   policy description textarea (bottom), not the domains picker (top).
-  "Add Log Entry" modal now shows "Domain Changes" label on SSL pages.
-
-Version 1.12:
-- Both log viewers now have a "Remove Older Than" button. A confirmation
-  modal shows how many entries will be deleted before committing.`;
+  "Add Log Entry" modal now shows "Domain Changes" label on SSL pages.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -1759,6 +1759,17 @@ Version 1.12:
         const dateInput = mkInput('', getTodayDate(), true);
         const userLabel = mkLabel('Your Name');
         const userInput = mkInput('Your name', GM_getValue('toolkit_username', ''));
+        const domainsLabel = mkLabel('Domains Removed (optional)');
+
+        const domainsInput = document.createElement('textarea');
+        domainsInput.placeholder = 'e.g. domain1.com, domain2.com';
+        domainsInput.rows = 3;
+        Object.assign(domainsInput.style, {
+            width: '100%', padding: '8px 10px',
+            border: '1px solid #ccc', borderRadius: '5px',
+            fontSize: '13px', fontFamily: 'Arial, sans-serif',
+            boxSizing: 'border-box', marginBottom: '16px', resize: 'vertical',
+        });
 
         const btnRow = document.createElement('div');
         Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
@@ -1794,7 +1805,8 @@ Version 1.12:
                 GM_setValue('toolkit_username', user);
             }
 
-            const entry = `#${ritm.replace(/^#+/, '')} | ${date} | ${user || 'Unknown'} | Removed`;
+            const domains = domainsInput.value.trim();
+            const entry = `#${ritm.replace(/^#+/, '')} | ${date} | ${user || 'Unknown'} | Removed${domains ? ' | ' + domains : ''}`;
             insertAtCursor(textarea, entry);
 
             overlay.remove();
@@ -1805,9 +1817,10 @@ Version 1.12:
         btnRow.appendChild(insertBtn);
 
         modal.appendChild(title);
-        modal.appendChild(ritmLabel); modal.appendChild(ritmInput);
-        modal.appendChild(dateLabel); modal.appendChild(dateInput);
-        modal.appendChild(userLabel); modal.appendChild(userInput);
+        modal.appendChild(ritmLabel);    modal.appendChild(ritmInput);
+        modal.appendChild(dateLabel);    modal.appendChild(dateInput);
+        modal.appendChild(userLabel);    modal.appendChild(userInput);
+        modal.appendChild(domainsLabel); modal.appendChild(domainsInput);
         modal.appendChild(btnRow);
 
         document.body.appendChild(overlay);
