@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.8
-// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, and description log entry tools. Integrated with Toolbar v2.
+// @version      1.9
+// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, and URL list history. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
 // @grant        GM_getValue
@@ -28,6 +28,7 @@
         smtpAutofill:   'toolkit_smtpAutofill',
         saveReminder:   'toolkit_saveReminder',
         descriptionLog: 'toolkit_descriptionLog',
+        urlListHistory: 'toolkit_urlListHistory',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -37,17 +38,18 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.8';
-    const CHANGELOG = `Version 1.8:
+    const SCRIPT_VERSION = '1.9';
+    const CHANGELOG = `Version 1.9:
+- URL List History: new buttons on URL list edit pages (+ Log Entry,
+  Delete Selected Domains, View History). Log format: #RITM | Date | Name.
+  Deleted domains are commented-out with a | Deleted marker.
+- All log viewers now support Filter by RITM and Date range (From / To).
+
+Version 1.8:
 - Fixed log buttons not appearing on Custom Categories pages — the
   textarea there uses class "ps-textarea" (not "ns-form-textarea"), so
   selectors now match by ID and aria-label instead of requiring a
-  specific class.
-
-Version 1.7:
-- Description Log buttons now appear on Custom Categories pages as well
-  as policy pages. Injection is tracked per-textarea so multiple
-  description fields on the same page each get their own buttons.`;
+  specific class.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -281,6 +283,11 @@ Version 1.7:
             label:       '📝 Description Log Buttons',
             description: 'Adds "Add Log Entry" and "View Log" buttons below the policy description textarea for structured change tracking (RITM | Date | User | Description).',
         },
+        {
+            key:         'urlListHistory',
+            label:       '📜 URL List History Buttons',
+            description: 'On URL list edit pages, adds "+ Log Entry", "Delete Selected", and "View History" buttons. Log format: #RITM | Date | Name. Deleted domains are commented out.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -402,6 +409,12 @@ Version 1.7:
                         removeAll('.' + LOG_BTN_CONTAINER_CLASS);
                         document.querySelectorAll('[data-nstk-log-injected]').forEach(ta => {
                             delete ta.dataset.nstkLogInjected;
+                        });
+                    }
+                    if (key === 'urlListHistory') {
+                        removeAll('.' + URL_LIST_BTN_CONTAINER_CLASS);
+                        document.querySelectorAll('[data-nstk-url-log-injected]').forEach(ta => {
+                            delete ta.dataset.nstkUrlLogInjected;
                         });
                     }
                 }
@@ -1044,7 +1057,8 @@ Version 1.7:
     // FEATURE 5 — DESCRIPTION LOG ENTRY
     // ─────────────────────────────────────────────────────────────
 
-    const LOG_BTN_CONTAINER_CLASS = 'ns-log-btn-container';
+    const LOG_BTN_CONTAINER_CLASS      = 'ns-log-btn-container';
+    const URL_LIST_BTN_CONTAINER_CLASS = 'ns-url-log-btn-container';
 
     // Selectors that identify description textareas across Netskope pages:
     //   1. Specific class used on policy pages
@@ -1313,7 +1327,7 @@ Version 1.7:
             fontFamily:    'Arial, sans-serif',
             maxWidth:      '600px',
             width:         '90vw',
-            maxHeight:     '80vh',
+            maxHeight:     '85vh',
             boxSizing:     'border-box',
             color:         '#333',
             display:       'flex',
@@ -1324,23 +1338,85 @@ Version 1.7:
         title.textContent = `📋 Policy Change Log  (${logEntries.length} ${logEntries.length === 1 ? 'entry' : 'entries'})`;
         Object.assign(title.style, {
             fontSize: '15px', fontWeight: 'bold',
-            color: '#2e7d32', marginBottom: '16px',
+            color: '#2e7d32', marginBottom: '12px',
             fontFamily: 'Arial, sans-serif', flexShrink: '0',
         });
+        modal.appendChild(title);
+
+        /* ── Filter row ── */
+        const filterRow = document.createElement('div');
+        Object.assign(filterRow.style, {
+            display: 'flex', gap: '8px', flexWrap: 'wrap',
+            marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end',
+        });
+
+        const mkFilterBlock = (labelText, inputType) => {
+            const wrap = document.createElement('div');
+            const lbl  = document.createElement('div');
+            lbl.textContent = labelText;
+            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
+            const inp  = document.createElement('input');
+            inp.type        = inputType || 'text';
+            inp.placeholder = inputType === 'date' ? '' : 'All';
+            Object.assign(inp.style, {
+                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
+                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px',
+                boxSizing: 'border-box',
+            });
+            wrap.appendChild(lbl); wrap.appendChild(inp);
+            return { wrap, inp };
+        };
+
+        const { wrap: ritmWrap, inp: ritmFilter }     = mkFilterBlock('Filter by RITM');
+        const { wrap: fromWrap, inp: dateFromFilter }  = mkFilterBlock('Date From', 'date');
+        const { wrap: toWrap,   inp: dateToFilter }    = mkFilterBlock('Date To',   'date');
+
+        const clearFiltersBtn = document.createElement('button');
+        clearFiltersBtn.textContent = 'Clear';
+        Object.assign(clearFiltersBtn.style, {
+            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
+            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
+        });
+        clearFiltersBtn.onclick = () => {
+            ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = '';
+            renderEntries();
+        };
+
+        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
+        modal.appendChild(filterRow);
 
         const scrollArea = document.createElement('div');
         Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '16px' });
+        modal.appendChild(scrollArea);
 
-        if (logEntries.length === 0) {
-            const empty = document.createElement('div');
-            empty.textContent = 'No log entries found in the policy description.';
-            Object.assign(empty.style, {
-                fontSize: '13px', color: '#999', textAlign: 'center',
-                padding: '24px 0', fontFamily: 'Arial, sans-serif',
+        function renderEntries() {
+            const ritmVal  = ritmFilter.value.trim().toLowerCase();
+            const dateFrom = dateFromFilter.value;
+            const dateTo   = dateToFilter.value;
+
+            const filtered = logEntries.filter(entry => {
+                if (ritmVal  && !entry.ritm.toLowerCase().includes(ritmVal)) return false;
+                if (dateFrom && entry.date && entry.date < dateFrom) return false;
+                if (dateTo   && entry.date && entry.date > dateTo)   return false;
+                return true;
             });
-            scrollArea.appendChild(empty);
-        } else {
-            logEntries.forEach((entry, i) => {
+
+            scrollArea.innerHTML = '';
+
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = logEntries.length === 0
+                    ? 'No log entries found in the policy description.'
+                    : 'No entries match the current filters.';
+                Object.assign(empty.style, {
+                    fontSize: '13px', color: '#999', textAlign: 'center',
+                    padding: '24px 0', fontFamily: 'Arial, sans-serif',
+                });
+                scrollArea.appendChild(empty);
+                return;
+            }
+
+            filtered.forEach((entry, i) => {
                 const card = document.createElement('div');
                 Object.assign(card.style, {
                     background:   i % 2 === 0 ? '#f8fff8' : '#ffffff',
@@ -1382,6 +1458,11 @@ Version 1.7:
             });
         }
 
+        ritmFilter.addEventListener('input', renderEntries);
+        dateFromFilter.addEventListener('change', renderEntries);
+        dateToFilter.addEventListener('change', renderEntries);
+        renderEntries();
+
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Close';
         Object.assign(closeBtn.style, {
@@ -1393,9 +1474,619 @@ Version 1.7:
         closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#4caf50'; });
         closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
 
-        modal.appendChild(title);
-        modal.appendChild(scrollArea);
         modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) closeBtn.click(); };
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FEATURE 6 — URL LIST HISTORY
+    // ─────────────────────────────────────────────────────────────
+
+    const URL_LIST_TA_SELECTORS = [
+        'textarea.ns-form-textarea:not(.policy-description-container)',
+        'textarea[aria-label*="url list" i]',
+        'textarea[aria-label*="urls" i]:not([aria-label*="description" i])',
+        'textarea[placeholder*="domain" i]',
+        'textarea[placeholder*="url" i]:not([aria-label*="description" i])',
+    ];
+
+    function isOnUrlListPage() {
+        return /urllist/i.test((window.location.hash || '') + (window.location.pathname || ''));
+    }
+
+    function getUrlListTextareas() {
+        if (!isOnUrlListPage()) return [];
+        const seen = new Set();
+        URL_LIST_TA_SELECTORS.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => {
+                if (el.dataset.nstkLogInjected)    return; // already has description log buttons
+                if (el.dataset.nstkUrlLogInjected) return;
+                seen.add(el);
+            });
+        });
+        return [...seen];
+    }
+
+    function injectUrlListHistoryButtons() {
+        if (!getSetting('urlListHistory')) return;
+
+        getUrlListTextareas().forEach(textarea => {
+            if (textarea.dataset.nstkUrlLogInjected) return;
+            textarea.dataset.nstkUrlLogInjected = '1';
+
+            const container = document.createElement('div');
+            container.className = URL_LIST_BTN_CONTAINER_CLASS;
+            Object.assign(container.style, { display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' });
+
+            const addBtn = document.createElement('button');
+            addBtn.textContent = '+ Log Entry';
+            addBtn.title = 'Insert a #RITM | Date | Name header at the cursor position';
+            addBtn.style.cssText = `
+                padding: 4px 10px; border: 1px solid #0073e6;
+                border-radius: 4px; background: #0073e6;
+                color: #fff; cursor: pointer; font-size: 12px;
+                font-weight: 600; line-height: 1.4;
+            `;
+            addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
+            addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
+            addBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); e.preventDefault();
+                showAddUrlLogEntryModal(textarea);
+            });
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = '🗑 Delete Selected';
+            deleteBtn.title = 'Select domains in the textarea first, then click to comment them out and add a Deleted log header';
+            deleteBtn.style.cssText = `
+                padding: 4px 10px; border: 1px solid #e53935;
+                border-radius: 4px; background: #e53935;
+                color: #fff; cursor: pointer; font-size: 12px;
+                font-weight: 600; line-height: 1.4;
+            `;
+            deleteBtn.addEventListener('mouseenter', () => { deleteBtn.style.background = '#c62828'; });
+            deleteBtn.addEventListener('mouseleave', () => { deleteBtn.style.background = '#e53935'; });
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); e.preventDefault();
+                showDeleteSelectionModal(textarea);
+            });
+
+            const viewBtn = document.createElement('button');
+            viewBtn.textContent = '📜 View History';
+            viewBtn.style.cssText = `
+                padding: 4px 10px; border: 1px solid #4caf50;
+                border-radius: 4px; background: #4caf50;
+                color: #fff; cursor: pointer; font-size: 12px;
+                font-weight: 600; line-height: 1.4;
+            `;
+            viewBtn.addEventListener('mouseenter', () => { viewBtn.style.background = '#388e3c'; });
+            viewBtn.addEventListener('mouseleave', () => { viewBtn.style.background = '#4caf50'; });
+            viewBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); e.preventDefault();
+                showUrlListLogViewer(textarea);
+            });
+
+            container.appendChild(addBtn);
+            container.appendChild(deleteBtn);
+            container.appendChild(viewBtn);
+            textarea.insertAdjacentElement('afterend', container);
+            console.log('[NS Toolkit] URL list history buttons injected for textarea:', textarea.id || textarea.className);
+        });
+    }
+
+    /* ── Parse URL list content into groups ── */
+    function parseUrlListLog(text) {
+        if (!text) return [];
+        const lines = text.split('\n');
+        const groups = [];
+        let current = null;
+        const orphanDomains = [];
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            // Log header: starts with # followed immediately by a word character (#RITM...)
+            if (/^#\w/.test(trimmed)) {
+                if (orphanDomains.length > 0) {
+                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
+                    orphanDomains.length = 0;
+                }
+                const parts = trimmed.slice(1).split('|').map(p => p.trim());
+                current = {
+                    ritm:      '#' + parts[0],
+                    date:      parts[1] || '',
+                    name:      parts[2] || '',
+                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
+                    domains:   [],
+                    raw:       line,
+                };
+                groups.push(current);
+            } else if (trimmed) {
+                // Domain line — may be commented with "# " prefix
+                const isCommented = /^#/.test(trimmed);
+                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
+                const entry = { raw: line, domain, isCommented };
+                if (current) current.domains.push(entry);
+                else orphanDomains.push(entry);
+            }
+        }
+
+        if (orphanDomains.length > 0) {
+            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
+        }
+
+        return groups;
+    }
+
+    /* ── Insert text at cursor position in a textarea ── */
+    function insertAtCursor(textarea, text) {
+        const start  = textarea.selectionStart;
+        const end    = textarea.selectionEnd;
+        const value  = textarea.value;
+        const before = value.slice(0, start);
+        const after  = value.slice(end);
+        const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
+        const suffix = (after  && !after.startsWith('\n')) ? '\n' : '';
+        setAngularValue(textarea, before + prefix + text + suffix + after);
+        const newPos = before.length + prefix.length + text.length + suffix.length;
+        textarea.setSelectionRange(newPos, newPos);
+        textarea.focus();
+    }
+
+    /* ── Add URL Log Entry modal ── */
+    function showAddUrlLogEntryModal(textarea) {
+        if (document.getElementById('ns-url-log-add-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-url-log-add-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.45)', zIndex: '2000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-url-log-add-modal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '2000001', background: '#ffffff', border: '2px solid #0073e6',
+            borderRadius: '10px', padding: '24px', boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily: 'Arial, sans-serif', maxWidth: '440px', width: '90vw',
+            boxSizing: 'border-box', color: '#333',
+        });
+
+        const mkLbl = (text) => {
+            const el = document.createElement('label');
+            el.textContent = text;
+            Object.assign(el.style, { fontSize: '12px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '4px' });
+            return el;
+        };
+        const mkInp = (placeholder, value, readOnly) => {
+            const el = document.createElement('input');
+            el.type = 'text'; el.placeholder = placeholder || ''; el.value = value || ''; el.readOnly = !!readOnly;
+            Object.assign(el.style, {
+                width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '5px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif', boxSizing: 'border-box', marginBottom: '12px',
+                background: readOnly ? '#f5f5f5' : '#fff', color: readOnly ? '#666' : '#333',
+            });
+            return el;
+        };
+
+        const titleEl = document.createElement('div');
+        titleEl.textContent = '📜 Add URL List Log Entry';
+        Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '16px' });
+
+        const ritmLbl  = mkLbl('RITM Number');
+        const ritmInp  = mkInp('e.g. RITM1234567');
+        const dateLbl  = mkLbl('Date (auto-filled)');
+        const dateInp  = mkInp('', getTodayDate(), true);
+        const userLbl  = mkLbl('Your Name');
+        const userInp  = mkInp('Your name', GM_getValue('toolkit_username', ''));
+
+        const tipEl = document.createElement('div');
+        Object.assign(tipEl.style, {
+            background: '#e8f4fd', border: '1px solid #90caf9', borderRadius: '6px',
+            padding: '8px 12px', marginBottom: '16px', fontSize: '12px', color: '#1a4f7a',
+        });
+        tipEl.textContent = 'The log header (#RITM | Date | Name) will be inserted at the current cursor position. Type your domains below it.';
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const addBtn = document.createElement('button');
+        addBtn.textContent = 'Insert Log Header';
+        Object.assign(addBtn.style, {
+            flex: '1', padding: '10px', background: '#0073e6', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
+        addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
+        addBtn.onclick = () => {
+            const ritm = ritmInp.value.trim();
+            const date = dateInp.value.trim();
+            const user = userInp.value.trim();
+            if (!ritm) { ritmInp.style.borderColor = '#e53935'; ritmInp.focus(); return; }
+            if (user && user !== GM_getValue('toolkit_username', '')) GM_setValue('toolkit_username', user);
+            const ritmClean = ritm.startsWith('#') ? ritm : '#' + ritm;
+            const logLine = `${ritmClean} | ${date} | ${user || 'Unknown'}`;
+            insertAtCursor(textarea, logLine);
+            overlay.remove(); modal.remove();
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(addBtn);
+
+        modal.appendChild(titleEl);
+        modal.appendChild(ritmLbl); modal.appendChild(ritmInp);
+        modal.appendChild(dateLbl); modal.appendChild(dateInp);
+        modal.appendChild(userLbl); modal.appendChild(userInp);
+        modal.appendChild(tipEl);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => ritmInp.focus(), 50);
+    }
+
+    /* ── Delete Selection modal ── */
+    function showDeleteSelectionModal(textarea) {
+        const start    = textarea.selectionStart;
+        const end      = textarea.selectionEnd;
+        const selected = textarea.value.slice(start, end).trim();
+
+        if (!selected) {
+            const msg = document.createElement('div');
+            msg.textContent = 'Select the domains you want to mark as deleted first.';
+            Object.assign(msg.style, {
+                position: 'fixed', bottom: '20px', right: '20px',
+                background: '#e65100', color: '#fff', padding: '10px 16px',
+                borderRadius: '6px', zIndex: '2000002', fontSize: '13px',
+                fontFamily: 'Arial, sans-serif', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            });
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 2500);
+            return;
+        }
+
+        if (document.getElementById('ns-url-del-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-url-del-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.45)', zIndex: '2000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-url-del-modal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '2000001', background: '#ffffff', border: '2px solid #e53935',
+            borderRadius: '10px', padding: '24px', boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily: 'Arial, sans-serif', maxWidth: '480px', width: '90vw',
+            boxSizing: 'border-box', color: '#333',
+        });
+
+        const mkLbl = (text) => {
+            const el = document.createElement('label');
+            el.textContent = text;
+            Object.assign(el.style, { fontSize: '12px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '4px' });
+            return el;
+        };
+        const mkInp = (placeholder, value, readOnly) => {
+            const el = document.createElement('input');
+            el.type = 'text'; el.placeholder = placeholder || ''; el.value = value || ''; el.readOnly = !!readOnly;
+            Object.assign(el.style, {
+                width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '5px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif', boxSizing: 'border-box', marginBottom: '12px',
+                background: readOnly ? '#f5f5f5' : '#fff', color: readOnly ? '#666' : '#333',
+            });
+            return el;
+        };
+
+        const titleEl = document.createElement('div');
+        titleEl.textContent = '🗑 Mark Selected Domains as Deleted';
+        Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#e53935', marginBottom: '8px' });
+
+        const preview = document.createElement('div');
+        Object.assign(preview.style, {
+            background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: '6px',
+            padding: '8px 12px', marginBottom: '8px', fontSize: '11px', color: '#555',
+            fontFamily: 'monospace', maxHeight: '80px', overflowY: 'auto',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+        });
+        preview.textContent = selected.length > 300 ? selected.slice(0, 300) + '…' : selected;
+
+        const domainCount = selected.split('\n').filter(l => l.trim()).length;
+        const countLine = document.createElement('div');
+        countLine.textContent = `${domainCount} line${domainCount !== 1 ? 's' : ''} selected — they will be commented out and marked as deleted.`;
+        Object.assign(countLine.style, { fontSize: '12px', color: '#666', marginBottom: '14px' });
+
+        const ritmLbl  = mkLbl('RITM Number');
+        const ritmInp  = mkInp('e.g. RITM1234567');
+        const dateLbl  = mkLbl('Date (auto-filled)');
+        const dateInp  = mkInp('', getTodayDate(), true);
+        const userLbl  = mkLbl('Your Name');
+        const userInp  = mkInp('Your name', GM_getValue('toolkit_username', ''));
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px', marginTop: '4px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Mark as Deleted';
+        Object.assign(confirmBtn.style, {
+            flex: '1', padding: '10px', background: '#e53935', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        confirmBtn.addEventListener('mouseenter', () => { confirmBtn.style.background = '#c62828'; });
+        confirmBtn.addEventListener('mouseleave', () => { confirmBtn.style.background = '#e53935'; });
+        confirmBtn.onclick = () => {
+            const ritm = ritmInp.value.trim();
+            const date = dateInp.value.trim();
+            const user = userInp.value.trim();
+            if (!ritm) { ritmInp.style.borderColor = '#e53935'; ritmInp.focus(); return; }
+            if (user && user !== GM_getValue('toolkit_username', '')) GM_setValue('toolkit_username', user);
+
+            const ritmClean = ritm.startsWith('#') ? ritm : '#' + ritm;
+            const logLine   = `${ritmClean} | ${date} | ${user || 'Unknown'} | Deleted`;
+
+            // Comment out selected lines (skip blank lines and already-commented lines)
+            const selLines  = textarea.value.slice(start, end).split('\n');
+            const commented = selLines.map(l => {
+                const t = l.trim();
+                if (!t || /^#/.test(t)) return l;
+                return '# ' + l;
+            }).join('\n');
+
+            const before = textarea.value.slice(0, start);
+            const after  = textarea.value.slice(end);
+            const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
+            setAngularValue(textarea, before + prefix + logLine + '\n' + commented + after);
+
+            overlay.remove(); modal.remove();
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(confirmBtn);
+
+        modal.appendChild(titleEl);
+        modal.appendChild(preview);
+        modal.appendChild(countLine);
+        modal.appendChild(ritmLbl); modal.appendChild(ritmInp);
+        modal.appendChild(dateLbl); modal.appendChild(dateInp);
+        modal.appendChild(userLbl); modal.appendChild(userInp);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => ritmInp.focus(), 50);
+    }
+
+    /* ── URL List Log Viewer ── */
+    function showUrlListLogViewer(textarea) {
+        if (document.getElementById('ns-url-log-view-modal')) return;
+
+        const allGroups = parseUrlListLog(textarea.value).filter(g =>
+            g.ritm || g.domains.some(d => d.domain)
+        );
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-url-log-view-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.45)', zIndex: '2000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-url-log-view-modal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '2000001', background: '#ffffff', border: '2px solid #0073e6',
+            borderRadius: '10px', padding: '24px', boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily: 'Arial, sans-serif', maxWidth: '640px', width: '92vw',
+            maxHeight: '85vh', boxSizing: 'border-box', color: '#333',
+            display: 'flex', flexDirection: 'column',
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.textContent = `📜 URL List Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
+        Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
+        modal.appendChild(titleEl);
+
+        /* ── Filter row ── */
+        const filterRow = document.createElement('div');
+        Object.assign(filterRow.style, {
+            display: 'flex', gap: '8px', flexWrap: 'wrap',
+            marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end',
+        });
+
+        const mkFilterBlock = (labelText, inputType) => {
+            const wrap = document.createElement('div');
+            const lbl  = document.createElement('div');
+            lbl.textContent = labelText;
+            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
+            const inp  = document.createElement('input');
+            inp.type        = inputType || 'text';
+            inp.placeholder = inputType === 'date' ? '' : 'All';
+            Object.assign(inp.style, {
+                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
+                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px',
+                boxSizing: 'border-box',
+            });
+            wrap.appendChild(lbl); wrap.appendChild(inp);
+            return { wrap, inp };
+        };
+
+        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
+        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
+        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
+
+        const clearFiltersBtn = document.createElement('button');
+        clearFiltersBtn.textContent = 'Clear';
+        Object.assign(clearFiltersBtn.style, {
+            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
+            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
+        });
+        clearFiltersBtn.onclick = () => {
+            ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = '';
+            applyFilters();
+        };
+
+        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
+        modal.appendChild(filterRow);
+
+        const scrollArea = document.createElement('div');
+        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
+        modal.appendChild(scrollArea);
+
+        function buildGroupCard(group) {
+            const isDeleted = group.isDeleted;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
+                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
+                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px', fontSize: '13px',
+                fontFamily: 'Arial, sans-serif',
+            });
+
+            const mkBadge = (text, bg, color, border) => {
+                const s = document.createElement('span');
+                s.textContent = text;
+                Object.assign(s.style, {
+                    display: 'inline-block', background: bg, color, borderRadius: '4px',
+                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px',
+                    border: border || 'none',
+                });
+                return s;
+            };
+
+            const headerRow = document.createElement('div');
+            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
+
+            if (group.ritm) {
+                headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
+            }
+            if (group.date) {
+                headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
+            }
+            if (group.name) {
+                headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
+            }
+            if (isDeleted) {
+                headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
+            }
+            if (group.isOrphan) {
+                headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
+            }
+
+            card.appendChild(headerRow);
+
+            const activeDomains = group.domains.filter(d => d.domain);
+            if (activeDomains.length > 0) {
+                const domainList = document.createElement('div');
+                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
+
+                activeDomains.forEach(d => {
+                    const dEl = document.createElement('div');
+                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
+                    Object.assign(dEl.style, {
+                        color: d.isCommented ? '#aaa' : '#333',
+                        textDecoration: d.isCommented ? 'line-through' : 'none',
+                    });
+                    domainList.appendChild(dEl);
+                });
+
+                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
+                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
+                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
+                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
+                const countEl = document.createElement('div');
+                countEl.textContent = countText;
+                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
+
+                card.appendChild(domainList);
+                card.appendChild(countEl);
+            } else {
+                const emptyEl = document.createElement('div');
+                emptyEl.textContent = '(no domains in this group)';
+                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
+                card.appendChild(emptyEl);
+            }
+
+            return card;
+        }
+
+        function applyFilters() {
+            const ritmVal  = ritmFilter.value.trim().toLowerCase();
+            const dateFrom = dateFromFilter.value;
+            const dateTo   = dateToFilter.value;
+
+            const filtered = allGroups.filter(group => {
+                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
+                if (dateFrom && group.date && group.date < dateFrom) return false;
+                if (dateTo   && group.date && group.date > dateTo)   return false;
+                return true;
+            });
+
+            scrollArea.innerHTML = '';
+
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = allGroups.length === 0
+                    ? 'No log entries found in this URL list.'
+                    : 'No entries match the current filters.';
+                Object.assign(empty.style, {
+                    fontSize: '13px', color: '#999', textAlign: 'center',
+                    padding: '24px 0', fontStyle: 'italic',
+                });
+                scrollArea.appendChild(empty);
+            } else {
+                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
+            }
+        }
+
+        ritmFilter.addEventListener('input', applyFilters);
+        dateFromFilter.addEventListener('change', applyFilters);
+        dateToFilter.addEventListener('change', applyFilters);
+        applyFilters();
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            width: '100%', padding: '10px', background: '#0073e6', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', flexShrink: '0',
+        });
+        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#005bb5'; });
+        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#0073e6'; });
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        modal.appendChild(closeBtn);
+
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
         overlay.onclick = (e) => { if (e.target === overlay) closeBtn.click(); };
@@ -1499,6 +2190,7 @@ Version 1.7:
         checkSmtp();
         interceptSaveButtons();
         injectDescriptionLogButtons();
+        injectUrlListHistoryButtons();
     }
 
     let burst = 0;
@@ -1533,7 +2225,8 @@ Version 1.7:
                     n.querySelector?.('a.trigger')    ||
                     n.querySelector?.('button.ns-btn-primary') ||
                     n.querySelector?.('textarea.ns-form-textarea') ||
-                    n.querySelector?.('textarea#category-description')
+                    n.querySelector?.('textarea#category-description') ||
+                    URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel))
                 );
             })
         );
