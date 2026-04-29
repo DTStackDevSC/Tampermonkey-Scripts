@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.0
+// @version      1.2.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,13 +24,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
-- Added User Notification entry types (Add, Edit, Remove)
-- Added Custom App entry types (Add, Edit, Remove) with name, type, and domains fields
+    const SCRIPT_VERSION = '1.2.0';
+    const CHANGELOG = `Version 1.2.0:
+- Removed Save to TXT, Export to JSON, and Import JSON options (superseded by online sync)
 
-Version 1.0.0:
-- Initial release`;
+Version 1.1.0:
+- Added User Notification entry types (Add, Edit, Remove)
+- Added Custom App entry types (Add, Edit, Remove) with name, type, and domains fields`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -1331,7 +1331,7 @@ Version 1.0.0:
     }
 
     /* ==========================================================
-     *  EXPORT / IMPORT
+     *  CLIPBOARD / TEXT HELPERS
      * ==========================================================*/
 
     function entriesToText(ticket, entries) {
@@ -1345,14 +1345,6 @@ Version 1.0.0:
 
     async function copyToClipboard(text) {
         try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
-    }
-
-    function triggerDownload(filename, content, mime) {
-        const blob = new Blob([content], { type: mime });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href = url; a.download = filename; a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
     }
 
     /* ==========================================================
@@ -2107,11 +2099,6 @@ Version 1.0.0:
         logHeader.appendChild(rowOf([
             ['📋 Copy All',     '#667eea', handleCopyAll,       'Copy full log to clipboard'],
             ['📝 Worknote',     '#5a6268', handleGroupedSummary,'Copy all ticket changes as a closing worknote summary'],
-            ['💾 .txt',         '#17a2b8', handleDownloadTxt,   'Download as plain-text file'],
-            ['{ } .json',       '#495057', handleExportJSON,    'Export structured JSON (shareable)'],
-        ]));
-        logHeader.appendChild(rowOf([
-            ['📥 Import JSON',  '#e67e22', handleImportClick,   'Import entries from a .json export file'],
             ['🗑️ Clear',       '#dc3545', handleClearAll,      'Delete all entries for this ticket (everyone)'],
         ]));
 
@@ -2122,16 +2109,6 @@ Version 1.0.0:
 
         // Log container
         sidebar.appendChild(mk('div', { id:'ct-log-container' }));
-
-        // Hidden file input for import
-        const fileInput = mk('input', { id:'ct-file-import', type:'file', accept:'.json' });
-        css(fileInput, { display:'none' });
-        fileInput.addEventListener('change', e => {
-            const file = e.target.files[0];
-            if (file) processImport(file);
-            fileInput.value = ''; // reset so same file can be re-selected
-        });
-        sidebar.appendChild(fileInput);
 
         document.body.appendChild(sidebar);
 
@@ -2290,69 +2267,6 @@ Version 1.0.0:
         (await copyToClipboard(buildGroupedSummary(ticket, entries)))
             ? flashStatus('✓ Worknote summary copied!')
             : flashStatus('✗ Copy failed.', '#dc3545');
-    }
-
-    function handleDownloadTxt() {
-        const ticket = getTicketNumber(), entries = loadEntries(ticket);
-        if (!entries.length) { flashStatus('⚠️ No entries to download.', '#e67e22'); return; }
-        triggerDownload(`ChangeLog_${ticket}.txt`, entriesToText(ticket, entries), 'text/plain');
-        flashStatus('✓ Download started!');
-    }
-
-    function handleExportJSON() {
-        const ticket = getTicketNumber(), entries = loadEntries(ticket);
-        if (!entries.length) { flashStatus('⚠️ No entries to export.', '#e67e22'); return; }
-        const data = { ticket, exported: nowStamp(), version: SCRIPT_VERSION, entries };
-        triggerDownload(`ChangeLog_${ticket}.json`, JSON.stringify(data, null, 2), 'application/json');
-        flashStatus('✓ JSON export started!');
-    }
-
-    function handleImportClick() {
-        document.getElementById('ct-file-import')?.click();
-    }
-
-    function processImport(file) {
-        const reader = new FileReader();
-        reader.onload = async e => {
-            try {
-                const data          = JSON.parse(e.target.result);
-                const importEntries = Array.isArray(data) ? data : (Array.isArray(data.entries) ? data.entries : null);
-                if (!importEntries) throw new Error('No entries array found in file.');
-
-                const ticket      = getTicketNumber();
-                const existing    = loadEntries(ticket);
-                const existingIds = new Set(existing.map(e => e.id));
-                let added = 0;
-
-                importEntries.forEach(entry => {
-                    if (entry.id && entry.ts && entry.type && !existingIds.has(entry.id)) {
-                        existing.push(entry); added++;
-                    }
-                });
-
-                existing.sort((a, b) => a.ts.localeCompare(b.ts));
-                _cacheEntries(ticket, existing);
-                refreshLog(ticket);
-                flashStatus(`✓ Imported ${added} new ${added === 1 ? 'entry' : 'entries'}.`);
-
-                // Push newly added entries to D1 if connected
-                if (added > 0 && connState === 'ONLINE') {
-                    const newEntries = existing
-                        .filter(e => !existingIds.has(e.id))
-                        .map(e => ({ ...e, ticket }));
-                    // Worker enforces max 50 entries per request — chunk for larger imports
-                    for (let i = 0; i < newEntries.length; i += 50) {
-                        const chunk = newEntries.slice(i, i + 50);
-                        const res   = await api.pushEntries(chunk);
-                        handleApiResponse(res);
-                        if (!res.ok) break;
-                    }
-                }
-            } catch (err) {
-                flashStatus(`✗ Import failed: ${err.message}`, '#dc3545', 4000);
-            }
-        };
-        reader.readAsText(file);
     }
 
     function handleClearAll() {
