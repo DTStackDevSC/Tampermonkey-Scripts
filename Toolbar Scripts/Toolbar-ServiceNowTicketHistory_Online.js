@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,8 +24,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.0';
-    const CHANGELOG = `Version 1.0.0:
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Added User Notification entry types (Add, Edit, Remove)
+- Added Custom App entry types (Add, Edit, Remove) with name, type, and domains fields
+
+Version 1.0.0:
 - Initial release`;
 
     /* ==========================================================
@@ -76,6 +80,17 @@
         custom_category: [
             { key: 'categoryName', label: 'Custom Category name', type: 'text'     },
             { key: 'urlLists',     label: 'URL Lists',            type: 'textarea' },
+        ],
+        user_notification: [
+            { key: 'notificationName', label: 'Notification name', type: 'text' },
+        ],
+        custom_app_full: [
+            { key: 'appName',  label: 'App name',  type: 'text'     },
+            { key: 'appType',  label: 'App type',  type: 'select',  options: ['Predefined', 'Universal Connector', 'Custom Connector'] },
+            { key: 'domains',  label: 'Domains',   type: 'textarea' },
+        ],
+        custom_app_deleted: [
+            { key: 'appName', label: 'App name', type: 'text' },
         ],
     };
 
@@ -153,6 +168,22 @@
             ],
         },
         {
+            group: 'User Notifications',
+            items: [
+                { label: 'User Notification Added',    value: 'User Notification Added',    color: '#28a745', schema: 'user_notification' },
+                { label: 'User Notification Modified', value: 'User Notification Modified', color: '#6610f2', schema: 'user_notification' },
+                { label: 'User Notification Removed',  value: 'User Notification Removed',  color: '#dc3545', schema: 'user_notification' },
+            ],
+        },
+        {
+            group: 'Custom Apps',
+            items: [
+                { label: 'Custom App Added',   value: 'Custom App Added',   color: '#007bff', schema: 'custom_app_full'    },
+                { label: 'Custom App Edited',  value: 'Custom App Edited',  color: '#6f42c1', schema: 'custom_app_full'    },
+                { label: 'Custom App Removed', value: 'Custom App Removed', color: '#c0392b', schema: 'custom_app_deleted' },
+            ],
+        },
+        {
             group: 'General',
             items: [
                 { label: 'Custom', value: 'Custom', color: '#343a40', schema: null },
@@ -210,6 +241,8 @@
         { label: 'Steering Exceptions',         types: ['Steering Exception Added', 'Steering Exception Removed'] },
         { label: 'App Exceptions',              types: ['App Exception Added', 'App Exception Removed'] },
         { label: 'Steering / Client Configs',   types: ['Steering/Client Config Created', 'Steering/Client Config Modified', 'Steering/Client Config Deleted'] },
+        { label: 'User Notifications',          types: ['User Notification Added', 'User Notification Modified', 'User Notification Removed'] },
+        { label: 'Custom Apps',                 types: ['Custom App Added', 'Custom App Edited', 'Custom App Removed'] },
         { label: 'Other',                       types: ['Custom'] },
     ];
 
@@ -963,6 +996,36 @@
                 commentsHeader: 'We have deleted the following Netskope Steering/Client Configuration as requested:',
             },
 
+            // ── User Notifications ─────────────────────────────
+            'User Notification Added': {
+                workNoteHeader: 'Netskope User Notification has been added:',
+                commentsHeader: "We've added the following Netskope User Notification:",
+            },
+            'User Notification Modified': {
+                workNoteHeader: 'Netskope User Notification has been modified:',
+                commentsHeader: "We've modified the following Netskope User Notification:",
+            },
+            'User Notification Removed': {
+                workNoteHeader: 'Netskope User Notification has been removed:',
+                commentsHeader: "We've removed the following Netskope User Notification as requested:",
+            },
+
+            // ── Custom Apps ────────────────────────────────────
+            'Custom App Added': {
+                workNoteHeader: 'Netskope Custom App has been added:',
+                commentsHeader: "We've added the following Netskope Custom App to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'Custom App Edited': {
+                workNoteHeader: 'Netskope Custom App has been edited:',
+                commentsHeader: "We've edited the following Netskope Custom App to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'Custom App Removed': {
+                workNoteHeader: 'Netskope Custom App has been removed:',
+                commentsHeader: "We've removed the following Netskope Custom App as requested:",
+            },
+
             // 'Custom' is intentionally absent — freeform notes don't auto-write.
         };
 
@@ -1180,6 +1243,17 @@
                     padding: '6px', border: '1px solid #ccc', borderRadius: '4px',
                     background: '#fafafa', color: '#333', boxSizing: 'border-box', outline: 'none'
                 });
+            } else if (f.type === 'select') {
+                input = css(mk('select'), {
+                    width: '100%', padding: '6px 8px', border: '1px solid #ccc',
+                    borderRadius: '4px', fontSize: '12px', fontFamily: 'Arial, sans-serif',
+                    background: '#fafafa', color: '#333', boxSizing: 'border-box', outline: 'none'
+                });
+                (f.options || []).forEach(opt => {
+                    const o = mk('option');
+                    o.value = opt; o.textContent = opt;
+                    input.appendChild(o);
+                });
             } else {
                 input = css(mk('input'), {
                     width: '100%', padding: '6px 8px', border: '1px solid #ccc',
@@ -1188,8 +1262,8 @@
                 });
                 input.type = 'text';
             }
-            input.id          = `${prefix}-${f.key}`;
-            input.placeholder = f.label;
+            input.id = `${prefix}-${f.key}`;
+            if (f.type !== 'select') input.placeholder = f.label;
             if (values && values[f.key]) input.value = values[f.key];
 
             wrap.append(lbl, input);
@@ -1353,6 +1427,18 @@
             createTypes: ['Steering/Client Config Created'],
             modifyTypes: ['Steering/Client Config Modified'],
             deleteTypes: ['Steering/Client Config Deleted'],
+        },
+        'User Notifications': {
+            nameKey:     'notificationName',
+            createTypes: ['User Notification Added'],
+            modifyTypes: ['User Notification Modified'],
+            deleteTypes: ['User Notification Removed'],
+        },
+        'Custom Apps': {
+            nameKey:     'appName',
+            createTypes: ['Custom App Added'],
+            modifyTypes: ['Custom App Edited'],
+            deleteTypes: ['Custom App Removed'],
         },
     };
 
