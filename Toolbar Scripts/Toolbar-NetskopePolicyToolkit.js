@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.9
+// @version      1.10
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, and URL list history. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -38,18 +38,17 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.9';
-    const CHANGELOG = `Version 1.9:
+    const SCRIPT_VERSION = '1.10';
+    const CHANGELOG = `Version 1.10:
+- Fixed URL list history buttons not appearing: page detection regex now
+  matches #/url-list (hyphenated hash route). Added targeted selectors for
+  the "Enter URL or IP Address" textarea used in Netskope URL list modals.
+
+Version 1.9:
 - URL List History: new buttons on URL list edit pages (+ Log Entry,
   Delete Selected Domains, View History). Log format: #RITM | Date | Name.
   Deleted domains are commented-out with a | Deleted marker.
-- All log viewers now support Filter by RITM and Date range (From / To).
-
-Version 1.8:
-- Fixed log buttons not appearing on Custom Categories pages — the
-  textarea there uses class "ps-textarea" (not "ns-form-textarea"), so
-  selectors now match by ID and aria-label instead of requiring a
-  specific class.`;
+- All log viewers now support Filter by RITM and Date range (From / To).`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -1486,6 +1485,8 @@ Version 1.8:
 
     const URL_LIST_TA_SELECTORS = [
         'textarea.ns-form-textarea:not(.policy-description-container)',
+        'textarea[aria-label*="IP Address" i]',
+        'textarea[placeholder*="IP Address" i]',
         'textarea[aria-label*="url list" i]',
         'textarea[aria-label*="urls" i]:not([aria-label*="description" i])',
         'textarea[placeholder*="domain" i]',
@@ -1493,7 +1494,7 @@ Version 1.8:
     ];
 
     function isOnUrlListPage() {
-        return /urllist/i.test((window.location.hash || '') + (window.location.pathname || ''));
+        return /url-?list/i.test((window.location.hash || '') + (window.location.pathname || ''));
     }
 
     function getUrlListTextareas() {
