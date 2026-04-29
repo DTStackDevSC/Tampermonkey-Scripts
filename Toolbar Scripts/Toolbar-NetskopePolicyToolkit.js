@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.7
+// @version      1.8
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, and description log entry tools. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -37,15 +37,17 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.7';
-    const CHANGELOG = `Version 1.7:
+    const SCRIPT_VERSION = '1.8';
+    const CHANGELOG = `Version 1.8:
+- Fixed log buttons not appearing on Custom Categories pages — the
+  textarea there uses class "ps-textarea" (not "ns-form-textarea"), so
+  selectors now match by ID and aria-label instead of requiring a
+  specific class.
+
+Version 1.7:
 - Description Log buttons now appear on Custom Categories pages as well
   as policy pages. Injection is tracked per-textarea so multiple
-  description fields on the same page each get their own buttons.
-
-Version 1.6:
-- Save Reminder now shows a tip pointing to the "+ Add Log Entry" button
-  so users know they can fill in the required info without typing manually.`;
+  description fields on the same page each get their own buttons.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -1046,11 +1048,12 @@ Version 1.6:
 
     // Selectors that identify description textareas across Netskope pages:
     //   1. Specific class used on policy pages
-    //   2. Placeholder / aria-label fallback for custom categories and other pages
+    //   2. Exact ID used on Custom Categories page
+    //   3. aria-label fallback for other pages (no class restriction)
     const DESCRIPTION_TA_SELECTORS = [
         'textarea.policy-description-container.ns-form-textarea',
-        'textarea.ns-form-textarea[placeholder*="description" i]',
-        'textarea.ns-form-textarea[aria-label*="description" i]',
+        'textarea#category-description',
+        'textarea[aria-label*="description" i]',
     ];
 
     function getTodayDate() {
@@ -1529,7 +1532,8 @@ Version 1.6:
                     n.querySelector?.('.criteria-title')    ||
                     n.querySelector?.('a.trigger')    ||
                     n.querySelector?.('button.ns-btn-primary') ||
-                    n.querySelector?.('textarea.ns-form-textarea')
+                    n.querySelector?.('textarea.ns-form-textarea') ||
+                    n.querySelector?.('textarea#category-description')
                 );
             })
         );
