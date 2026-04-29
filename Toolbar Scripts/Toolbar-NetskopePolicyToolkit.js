@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4
+// @version      1.6
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, and description log entry tools. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -37,17 +37,15 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.4';
-    const CHANGELOG = `Version 1.4:
-- Added Description Log Buttons: "Add Log Entry" and "View Log" buttons
-  appear below the policy description textarea. Entries are formatted as
-  RITM | Date | User | Description and the log viewer displays them as
-  colour-coded cards.
-- First-boot name prompt: on first run the script asks for your name,
-  which is then auto-filled into every new log entry.
+    const SCRIPT_VERSION = '1.6';
+    const CHANGELOG = `Version 1.6:
+- Save Reminder now shows a tip pointing to the "+ Add Log Entry" button
+  so users know they can fill in the required info without typing manually.
 
-Version 1.3:
-- Update URL Changed`;
+Version 1.5:
+- Fixed Save Reminder firing inside Netskope's own dialogs (e.g. the
+  "where to place this policy" modal). The reminder now only intercepts
+  the main policy Save button, not buttons inside overlays or dialogs.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -947,9 +945,37 @@ Version 1.3:
         btnRow.appendChild(goBackBtn);
         btnRow.appendChild(saveBtn);
 
+        /* ── Log-entry tip ── */
+        const tip = document.createElement('div');
+        Object.assign(tip.style, {
+            display:      'flex',
+            alignItems:   'flex-start',
+            gap:          '8px',
+            background:   '#e8f4fd',
+            border:       '1px solid #90caf9',
+            borderRadius: '6px',
+            padding:      '9px 12px',
+            marginBottom: '16px',
+            fontSize:     '12px',
+            lineHeight:   '1.5',
+            color:        '#1a4f7a',
+            fontFamily:   'Arial, sans-serif',
+        });
+
+        const tipIcon = document.createElement('span');
+        tipIcon.textContent = '💡';
+        Object.assign(tipIcon.style, { flexShrink: '0', fontSize: '14px' });
+
+        const tipText = document.createElement('span');
+        tipText.innerHTML = 'Use the <strong>+ Add Log Entry</strong> button below the policy description to quickly add the RITM, date, and your name in the correct format.';
+
+        tip.appendChild(tipIcon);
+        tip.appendChild(tipText);
+
         modal.appendChild(title);
         modal.appendChild(subtitle);
         modal.appendChild(checklist);
+        modal.appendChild(tip);
         modal.appendChild(btnRow);
 
         document.body.appendChild(overlay);
@@ -963,6 +989,17 @@ Version 1.3:
         return hash.includes('/inline-policy-page') || hash.includes('/endpoint-dlp-page');
     }
 
+    // Returns true when the element lives inside a Netskope dialog/overlay
+    // (e.g. the "where to place this policy" modal that appears after the first Save).
+    function isInsideDialog(el) {
+        return !!(
+            el.closest('[role="dialog"]')   ||
+            el.closest('.cdk-overlay-pane') ||
+            el.closest('.ns-modal')         ||
+            el.closest('.modal-dialog')
+        );
+    }
+
     function interceptSaveButtons() {
         if (!getSetting('saveReminder')) return;
         if (!isOnPolicyPage()) return;
@@ -970,6 +1007,8 @@ Version 1.3:
         document.querySelectorAll('button.ns-btn.ns-btn-primary').forEach((btn) => {
             if (btn.dataset.nstkSaveIntercepted) return;
             if (!btn.textContent.trim().toLowerCase().includes('save')) return;
+            // Skip Save buttons that belong to Netskope's own dialogs
+            if (isInsideDialog(btn)) return;
 
             btn.dataset.nstkSaveIntercepted = '1';
 
@@ -977,6 +1016,8 @@ Version 1.3:
                 if (!getSetting('saveReminder')) return;
                 if (!isOnPolicyPage()) return;
                 if (saveProceedFlag) return;
+                // Guard at click-time too, in case Angular moved the button into a dialog
+                if (isInsideDialog(btn)) return;
 
                 e.stopImmediatePropagation();
                 e.preventDefault();
