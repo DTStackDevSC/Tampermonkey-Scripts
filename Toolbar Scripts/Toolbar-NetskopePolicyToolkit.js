@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3
-// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, and Save reminder checklist. Integrated with Toolbar v2.
+// @version      1.4
+// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, and description log entry tools. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
 // @grant        GM_getValue
@@ -23,10 +23,11 @@
     // ─────────────────────────────────────────────────────────────
 
     const SETTING_KEYS = {
-        copyButtons:   'toolkit_copyButtons',
-        openButtons:   'toolkit_openButtons',
-        smtpAutofill:  'toolkit_smtpAutofill',
-        saveReminder:  'toolkit_saveReminder',
+        copyButtons:    'toolkit_copyButtons',
+        openButtons:    'toolkit_openButtons',
+        smtpAutofill:   'toolkit_smtpAutofill',
+        saveReminder:   'toolkit_saveReminder',
+        descriptionLog: 'toolkit_descriptionLog',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -36,14 +37,17 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.3';
-    const CHANGELOG = `Version 1.3:
-- Update URL Changed
+    const SCRIPT_VERSION = '1.4';
+    const CHANGELOG = `Version 1.4:
+- Added Description Log Buttons: "Add Log Entry" and "View Log" buttons
+  appear below the policy description textarea. Entries are formatted as
+  RITM | Date | User | Description and the log viewer displays them as
+  colour-coded cards.
+- First-boot name prompt: on first run the script asks for your name,
+  which is then auto-filled into every new log entry.
 
-Version 1.2:
-- Added Save Reminder: intercepts the policy Save button and shows a
-  checklist modal reminding you to fill in RITM number, creator name
-  & date, and editor name & modification date before saving.`;
+Version 1.3:
+- Update URL Changed`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -272,6 +276,11 @@ Version 1.2:
             label:       '💾 Save Reminder Checklist',
             description: 'Intercepts the Save button on policy pages and shows a reminder to add RITM number, creator name & date, and editor name & modification date.',
         },
+        {
+            key:         'descriptionLog',
+            label:       '📝 Description Log Buttons',
+            description: 'Adds "Add Log Entry" and "View Log" buttons below the policy description textarea for structured change tracking (RITM | Date | User | Description).',
+        },
     ];
 
     function buildSettingsModal() {
@@ -386,9 +395,10 @@ Version 1.2:
                 updateRowStyle(row, toggle.checked);
                 console.log(`[NS Toolkit] ${key} → ${toggle.checked}`);
                 if (!toggle.checked) {
-                    if (key === 'copyButtons')  removeAll('.dlp-copy-btn');
-                    if (key === 'openButtons')  removeAll('.dlp-open-btn');
-                    if (key === 'smtpAutofill') removeAll('#' + SMTP_BTN_ID);
+                    if (key === 'copyButtons')    removeAll('.dlp-copy-btn');
+                    if (key === 'openButtons')    removeAll('.dlp-open-btn');
+                    if (key === 'smtpAutofill')   removeAll('#' + SMTP_BTN_ID);
+                    if (key === 'descriptionLog') removeAll('#' + LOG_BTN_CONTAINER_ID);
                 }
                 showReloadNotice();
             });
@@ -983,6 +993,444 @@ Version 1.2:
     }
 
     // ─────────────────────────────────────────────────────────────
+    // FEATURE 5 — DESCRIPTION LOG ENTRY
+    // ─────────────────────────────────────────────────────────────
+
+    const LOG_BTN_CONTAINER_ID = 'ns-log-btn-container';
+
+    function getTodayDate() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function getDescriptionTextarea() {
+        return document.querySelector('textarea.policy-description-container.ns-form-textarea');
+    }
+
+    function injectDescriptionLogButtons() {
+        if (!getSetting('descriptionLog')) return;
+
+        const textarea = getDescriptionTextarea();
+        if (!textarea) {
+            const existing = document.getElementById(LOG_BTN_CONTAINER_ID);
+            if (existing) existing.remove();
+            return;
+        }
+
+        if (document.getElementById(LOG_BTN_CONTAINER_ID)) return;
+
+        const container = document.createElement('div');
+        container.id = LOG_BTN_CONTAINER_ID;
+        Object.assign(container.style, {
+            display:   'flex',
+            gap:       '8px',
+            marginTop: '6px',
+        });
+
+        const addBtn = document.createElement('button');
+        addBtn.textContent = '+ Add Log Entry';
+        addBtn.style.cssText = `
+            padding: 4px 10px; border: 1px solid #0073e6;
+            border-radius: 4px; background: #0073e6;
+            color: #fff; cursor: pointer; font-size: 12px;
+            font-weight: 600; line-height: 1.4;
+        `;
+        addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
+        addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
+        addBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            showAddLogEntryModal(textarea);
+        });
+
+        const viewBtn = document.createElement('button');
+        viewBtn.textContent = '📋 View Log';
+        viewBtn.style.cssText = `
+            padding: 4px 10px; border: 1px solid #4caf50;
+            border-radius: 4px; background: #4caf50;
+            color: #fff; cursor: pointer; font-size: 12px;
+            font-weight: 600; line-height: 1.4;
+        `;
+        viewBtn.addEventListener('mouseenter', () => { viewBtn.style.background = '#388e3c'; });
+        viewBtn.addEventListener('mouseleave', () => { viewBtn.style.background = '#4caf50'; });
+        viewBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            showViewLogModal(textarea);
+        });
+
+        container.appendChild(addBtn);
+        container.appendChild(viewBtn);
+        textarea.insertAdjacentElement('afterend', container);
+        console.log('[NS Toolkit] Description log buttons injected.');
+    }
+
+    function showAddLogEntryModal(textarea) {
+        if (document.getElementById('ns-add-log-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-add-log-overlay';
+        Object.assign(overlay.style, {
+            position:   'fixed',
+            top:        '0', left: '0',
+            width:      '100%', height: '100%',
+            background: 'rgba(0,0,0,0.45)',
+            zIndex:     '2000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-add-log-modal';
+        Object.assign(modal.style, {
+            position:     'fixed',
+            top:          '50%', left: '50%',
+            transform:    'translate(-50%, -50%)',
+            zIndex:       '2000001',
+            background:   '#ffffff',
+            border:       '2px solid #0073e6',
+            borderRadius: '10px',
+            padding:      '24px',
+            boxShadow:    '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily:   'Arial, sans-serif',
+            maxWidth:     '460px',
+            width:        '90vw',
+            boxSizing:    'border-box',
+            color:        '#333',
+        });
+
+        const mkLabel = (text) => {
+            const el = document.createElement('label');
+            el.textContent = text;
+            Object.assign(el.style, {
+                fontSize: '12px', fontWeight: 'bold', color: '#555',
+                display: 'block', marginBottom: '4px', fontFamily: 'Arial, sans-serif',
+            });
+            return el;
+        };
+
+        const mkInput = (placeholder, value, readOnly) => {
+            const el = document.createElement('input');
+            el.type = 'text';
+            el.placeholder = placeholder || '';
+            el.value = value || '';
+            el.readOnly = !!readOnly;
+            Object.assign(el.style, {
+                width: '100%', padding: '8px 10px',
+                border: '1px solid #ccc', borderRadius: '5px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                boxSizing: 'border-box', marginBottom: '12px',
+                background: readOnly ? '#f5f5f5' : '#fff',
+                color: readOnly ? '#666' : '#333',
+            });
+            return el;
+        };
+
+        const title = document.createElement('div');
+        title.textContent = '📝 Add Log Entry';
+        Object.assign(title.style, {
+            fontSize: '15px', fontWeight: 'bold',
+            color: '#0073e6', marginBottom: '16px', fontFamily: 'Arial, sans-serif',
+        });
+
+        const ritmLabel   = mkLabel('RITM Number');
+        const ritmInput   = mkInput('e.g. RITM1234567');
+        const dateLabel   = mkLabel('Date (auto-filled)');
+        const dateInput   = mkInput('', getTodayDate(), true);
+        const userLabel   = mkLabel('Your Name');
+        const userInput   = mkInput('Your name', GM_getValue('toolkit_username', ''));
+        const descLabel   = mkLabel('Description');
+
+        const descInput = document.createElement('textarea');
+        descInput.placeholder = 'What was changed or why?';
+        descInput.rows = 3;
+        Object.assign(descInput.style, {
+            width: '100%', padding: '8px 10px',
+            border: '1px solid #ccc', borderRadius: '5px',
+            fontSize: '13px', fontFamily: 'Arial, sans-serif',
+            boxSizing: 'border-box', marginBottom: '16px', resize: 'vertical',
+        });
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const addEntryBtn = document.createElement('button');
+        addEntryBtn.textContent = 'Add Entry';
+        Object.assign(addEntryBtn.style, {
+            flex: '1', padding: '10px', background: '#0073e6', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        addEntryBtn.addEventListener('mouseenter', () => { addEntryBtn.style.background = '#005bb5'; });
+        addEntryBtn.addEventListener('mouseleave', () => { addEntryBtn.style.background = '#0073e6'; });
+        addEntryBtn.onclick = () => {
+            const ritm = ritmInput.value.trim();
+            const date = dateInput.value.trim();
+            const user = userInput.value.trim();
+            const desc = descInput.value.trim();
+
+            if (!ritm) { ritmInput.style.borderColor = '#e53935'; ritmInput.focus(); return; }
+            if (!desc) { descInput.style.borderColor = '#e53935'; descInput.focus(); return; }
+
+            if (user && user !== GM_getValue('toolkit_username', '')) {
+                GM_setValue('toolkit_username', user);
+            }
+
+            const logLine = `${ritm} | ${date} | ${user || 'Unknown'} | ${desc}`;
+            const current = textarea.value;
+            setAngularValue(textarea, current ? current + '\n' + logLine : logLine);
+
+            overlay.remove();
+            modal.remove();
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(addEntryBtn);
+
+        modal.appendChild(title);
+        modal.appendChild(ritmLabel);   modal.appendChild(ritmInput);
+        modal.appendChild(dateLabel);   modal.appendChild(dateInput);
+        modal.appendChild(userLabel);   modal.appendChild(userInput);
+        modal.appendChild(descLabel);   modal.appendChild(descInput);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => ritmInput.focus(), 50);
+    }
+
+    function parseLogEntries(text) {
+        if (!text) return [];
+        return text.split('\n').map(line => {
+            const parts = line.split('|').map(p => p.trim());
+            if (parts.length >= 4) {
+                return {
+                    ritm: parts[0], date: parts[1], user: parts[2],
+                    description: parts.slice(3).join(' | '),
+                    isLogEntry: true,
+                };
+            }
+            return { raw: line, isLogEntry: false };
+        });
+    }
+
+    function showViewLogModal(textarea) {
+        if (document.getElementById('ns-view-log-modal')) return;
+
+        const logEntries = parseLogEntries(textarea.value).filter(e => e.isLogEntry);
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-view-log-overlay';
+        Object.assign(overlay.style, {
+            position:   'fixed',
+            top:        '0', left: '0',
+            width:      '100%', height: '100%',
+            background: 'rgba(0,0,0,0.45)',
+            zIndex:     '2000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-view-log-modal';
+        Object.assign(modal.style, {
+            position:      'fixed',
+            top:           '50%', left: '50%',
+            transform:     'translate(-50%, -50%)',
+            zIndex:        '2000001',
+            background:    '#ffffff',
+            border:        '2px solid #4caf50',
+            borderRadius:  '10px',
+            padding:       '24px',
+            boxShadow:     '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily:    'Arial, sans-serif',
+            maxWidth:      '600px',
+            width:         '90vw',
+            maxHeight:     '80vh',
+            boxSizing:     'border-box',
+            color:         '#333',
+            display:       'flex',
+            flexDirection: 'column',
+        });
+
+        const title = document.createElement('div');
+        title.textContent = `📋 Policy Change Log  (${logEntries.length} ${logEntries.length === 1 ? 'entry' : 'entries'})`;
+        Object.assign(title.style, {
+            fontSize: '15px', fontWeight: 'bold',
+            color: '#2e7d32', marginBottom: '16px',
+            fontFamily: 'Arial, sans-serif', flexShrink: '0',
+        });
+
+        const scrollArea = document.createElement('div');
+        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '16px' });
+
+        if (logEntries.length === 0) {
+            const empty = document.createElement('div');
+            empty.textContent = 'No log entries found in the policy description.';
+            Object.assign(empty.style, {
+                fontSize: '13px', color: '#999', textAlign: 'center',
+                padding: '24px 0', fontFamily: 'Arial, sans-serif',
+            });
+            scrollArea.appendChild(empty);
+        } else {
+            logEntries.forEach((entry, i) => {
+                const card = document.createElement('div');
+                Object.assign(card.style, {
+                    background:   i % 2 === 0 ? '#f8fff8' : '#ffffff',
+                    border:       '1px solid #c8e6c9',
+                    borderRadius: '7px',
+                    padding:      '12px 14px',
+                    marginBottom: '8px',
+                    fontSize:     '13px',
+                    fontFamily:   'Arial, sans-serif',
+                });
+
+                const mkBadge = (text, bg, color, border) => {
+                    const s = document.createElement('span');
+                    s.textContent = text;
+                    Object.assign(s.style, {
+                        background: bg, color, borderRadius: '4px',
+                        padding: '2px 7px', fontWeight: 'bold', fontSize: '12px',
+                        border: border || 'none',
+                    });
+                    return s;
+                };
+
+                const headerRow = document.createElement('div');
+                Object.assign(headerRow.style, {
+                    display: 'flex', gap: '8px',
+                    flexWrap: 'wrap', marginBottom: '7px', alignItems: 'center',
+                });
+                headerRow.appendChild(mkBadge(entry.ritm, '#1565c0', '#fff'));
+                headerRow.appendChild(mkBadge(entry.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
+                headerRow.appendChild(mkBadge('👤 ' + entry.user, '#e8f5e9', '#2e7d32'));
+
+                const descEl = document.createElement('div');
+                descEl.textContent = entry.description;
+                Object.assign(descEl.style, { color: '#333', lineHeight: '1.4' });
+
+                card.appendChild(headerRow);
+                card.appendChild(descEl);
+                scrollArea.appendChild(card);
+            });
+        }
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            width: '100%', padding: '10px', background: '#4caf50', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif', flexShrink: '0',
+        });
+        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#388e3c'; });
+        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#4caf50'; });
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        modal.appendChild(title);
+        modal.appendChild(scrollArea);
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) closeBtn.click(); };
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FIRST-BOOT USERNAME PROMPT
+    // ─────────────────────────────────────────────────────────────
+
+    function showUsernamePromptModal() {
+        if (document.getElementById('ns-username-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'ns-username-overlay';
+        Object.assign(overlay.style, {
+            position:   'fixed',
+            top:        '0', left: '0',
+            width:      '100%', height: '100%',
+            background: 'rgba(0,0,0,0.45)',
+            zIndex:     '2000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'ns-username-modal';
+        Object.assign(modal.style, {
+            position:     'fixed',
+            top:          '50%', left: '50%',
+            transform:    'translate(-50%, -50%)',
+            zIndex:       '2000001',
+            background:   '#ffffff',
+            border:       '2px solid #0073e6',
+            borderRadius: '10px',
+            padding:      '24px',
+            boxShadow:    '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily:   'Arial, sans-serif',
+            maxWidth:     '380px',
+            width:        '90vw',
+            boxSizing:    'border-box',
+            color:        '#333',
+        });
+
+        const title = document.createElement('div');
+        title.textContent = '👋 Welcome to NS Policies Toolkit';
+        Object.assign(title.style, {
+            fontSize: '15px', fontWeight: 'bold',
+            color: '#0073e6', marginBottom: '8px', fontFamily: 'Arial, sans-serif',
+        });
+
+        const subtitle = document.createElement('div');
+        subtitle.textContent = 'Enter your name — it will be auto-filled when adding log entries to policy descriptions.';
+        Object.assign(subtitle.style, {
+            fontSize: '12px', color: '#666',
+            marginBottom: '16px', lineHeight: '1.5', fontFamily: 'Arial, sans-serif',
+        });
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.placeholder = 'Your full name';
+        Object.assign(nameInput.style, {
+            width: '100%', padding: '8px 10px',
+            border: '1px solid #ccc', borderRadius: '5px',
+            fontSize: '13px', fontFamily: 'Arial, sans-serif',
+            boxSizing: 'border-box', marginBottom: '16px',
+        });
+
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save & Continue';
+        Object.assign(saveBtn.style, {
+            width: '100%', padding: '10px', background: '#0073e6', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        saveBtn.addEventListener('mouseenter', () => { saveBtn.style.background = '#005bb5'; });
+        saveBtn.addEventListener('mouseleave', () => { saveBtn.style.background = '#0073e6'; });
+        saveBtn.onclick = () => {
+            const name = nameInput.value.trim();
+            if (!name) { nameInput.style.borderColor = '#e53935'; nameInput.focus(); return; }
+            GM_setValue('toolkit_username', name);
+            overlay.remove();
+            modal.remove();
+        };
+        nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBtn.click(); });
+
+        modal.appendChild(title);
+        modal.appendChild(subtitle);
+        modal.appendChild(nameInput);
+        modal.appendChild(saveBtn);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        setTimeout(() => nameInput.focus(), 100);
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // SHARED RUNNER
     // ─────────────────────────────────────────────────────────────
 
@@ -991,6 +1439,7 @@ Version 1.2:
         addOpenButtons();
         checkSmtp();
         interceptSaveButtons();
+        injectDescriptionLogButtons();
     }
 
     let burst = 0;
@@ -1023,7 +1472,8 @@ Version 1.2:
                     n.querySelector?.('.ns-picker-tag')     ||
                     n.querySelector?.('.criteria-title')    ||
                     n.querySelector?.('a.trigger')    ||
-                    n.querySelector?.('button.ns-btn-primary')
+                    n.querySelector?.('button.ns-btn-primary') ||
+                    n.querySelector?.('textarea.policy-description-container')
                 );
             })
         );
@@ -1044,6 +1494,11 @@ Version 1.2:
         observer.observe(document.body, { childList: true, subtree: true });
         buildSettingsModal();
         setTimeout(attemptRegistration, 1000);
+
+        if (!GM_getValue('toolkit_username', '')) {
+            setTimeout(() => showUsernamePromptModal(), 800);
+        }
+
         console.log('✅ NS Policies Toolkit v' + SCRIPT_VERSION + ' ready');
     }
 
