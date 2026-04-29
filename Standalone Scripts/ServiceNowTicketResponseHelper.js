@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.10.4';
-    const CHANGELOG = `Version 2.10.4:
+    const SCRIPT_VERSION = '2.10.5';
+    const CHANGELOG = `Version 2.10.5:
+- Section titles in the dropdown are now more visually distinct for easier scanning.
+
+Version 2.10.4:
 - Added several new options for EMEA Team.
 
 Version 2.10.3:
@@ -2395,10 +2398,12 @@ Regards.`,
             const categoryHeader = document.createElement('div');
             categoryHeader.className = 'category-header';
             Object.assign(categoryHeader.style, {
-                padding: '8px 15px', fontSize: '12px', fontWeight: 'bold', color: '#666',
-                backgroundColor: catKey === 'custom' ? '#f0f2ff' : '#f8f9fa',
-                borderBottom: '1px solid #e0e0e0', cursor: 'pointer', userSelect: 'none',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                padding: '8px 15px', fontSize: '11px', fontWeight: 'bold', color: '#555',
+                backgroundColor: catKey === 'custom' ? '#ebe8ff' : '#e9edf2',
+                borderTop: '1px solid #d4d8de', borderBottom: '2px solid #d4d8de',
+                cursor: 'pointer', userSelect: 'none',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                textTransform: 'uppercase', letterSpacing: '0.7px'
             });
 
             const categoryLabel = document.createElement('span');
