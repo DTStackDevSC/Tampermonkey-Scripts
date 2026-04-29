@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.12
+// @version      1.13
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, and URL list history. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -39,16 +39,15 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.12';
-    const CHANGELOG = `Version 1.12:
-- Both log viewers (Description Log and URL List History) now have a
-  "Remove Older Than" button. A confirmation modal shows how many entries
-  will be deleted before committing.
+    const SCRIPT_VERSION = '1.13';
+    const CHANGELOG = `Version 1.13:
+- Fixed SSL Decryption buttons: "+ Add Removal Entry" now appears on the
+  policy description textarea (bottom), not the domains picker (top).
+  "Add Log Entry" modal now shows "Domain Changes" label on SSL pages.
 
-Version 1.11:
-- SSL Decryption Domain Log: adds "+ Add Removal Entry" button to the
-  domains field on SSL decryption policy pages. Inserts a #RITM | Date |
-  Name | Removed marker at cursor position. Toggle in Feature Settings.`;
+Version 1.12:
+- Both log viewers now have a "Remove Older Than" button. A confirmation
+  modal shows how many entries will be deleted before committing.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -289,8 +288,8 @@ Version 1.11:
         },
         {
             key:         'sslDomainLog',
-            label:       '🔒 SSL Decryption Domain Log Button',
-            description: 'On SSL Decryption policy pages, adds an "+ Add Removal Entry" button to the domains field. Inserts a #RITM | Date | Name | Removed marker at the cursor position.',
+            label:       '🔒 SSL Decryption Removal Entry Button',
+            description: 'On SSL Decryption policy pages, adds an "+ Add Removal Entry" button alongside the description log buttons. Inserts a #RITM | Date | Name | Removed marker at cursor. Also adapts the "Add Log Entry" modal label to "Domain Changes".',
         },
     ];
 
@@ -422,10 +421,12 @@ Version 1.11:
                         });
                     }
                     if (key === 'sslDomainLog') {
-                        removeAll('.' + SSL_DOMAIN_BTN_CONTAINER_CLASS);
-                        document.querySelectorAll('[data-nstk-ssl-injected]').forEach(ta => {
-                            delete ta.dataset.nstkSslInjected;
+                        // Clear description log containers so they re-inject with/without the removal button
+                        removeAll('.' + LOG_BTN_CONTAINER_CLASS);
+                        document.querySelectorAll('[data-nstk-log-injected]').forEach(ta => {
+                            delete ta.dataset.nstkLogInjected;
                         });
+                        injectDescriptionLogButtons();
                     }
                 }
                 showReloadNotice();
@@ -1101,6 +1102,8 @@ Version 1.11:
     function injectDescriptionLogButtons() {
         if (!getSetting('descriptionLog')) return;
 
+        const isSSL = /ssl-decryption/i.test(window.location.hash || window.location.pathname || '');
+
         getDescriptionTextareas().forEach(textarea => {
             // Per-textarea guard — skip if buttons already injected for this element
             if (textarea.dataset.nstkLogInjected) return;
@@ -1112,6 +1115,7 @@ Version 1.11:
                 display:   'flex',
                 gap:       '8px',
                 marginTop: '6px',
+                flexWrap:  'wrap',
             });
 
             const addBtn = document.createElement('button');
@@ -1127,8 +1131,29 @@ Version 1.11:
             addBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                showAddLogEntryModal(textarea);
+                showAddLogEntryModal(textarea, isSSL ? 'ssl' : null);
             });
+            container.appendChild(addBtn);
+
+            // On SSL decryption pages, also show a removal entry button
+            if (isSSL && getSetting('sslDomainLog')) {
+                const removalBtn = document.createElement('button');
+                removalBtn.textContent = '+ Add Removal Entry';
+                removalBtn.title = 'Insert a #RITM | Date | Name | Removed marker at cursor position';
+                removalBtn.style.cssText = `
+                    padding: 4px 10px; border: 1px solid #e53935;
+                    border-radius: 4px; background: #e53935;
+                    color: #fff; cursor: pointer; font-size: 12px;
+                    font-weight: 600; line-height: 1.4;
+                `;
+                removalBtn.addEventListener('mouseenter', () => { removalBtn.style.background = '#b71c1c'; });
+                removalBtn.addEventListener('mouseleave', () => { removalBtn.style.background = '#e53935'; });
+                removalBtn.addEventListener('click', (e) => {
+                    e.stopPropagation(); e.preventDefault();
+                    showAddRemovalEntryModal(textarea);
+                });
+                container.appendChild(removalBtn);
+            }
 
             const viewBtn = document.createElement('button');
             viewBtn.textContent = '📋 View Log';
@@ -1145,16 +1170,16 @@ Version 1.11:
                 e.preventDefault();
                 showViewLogModal(textarea);
             });
-
-            container.appendChild(addBtn);
             container.appendChild(viewBtn);
+
             textarea.insertAdjacentElement('afterend', container);
             console.log('[NS Toolkit] Description log buttons injected for textarea:', textarea.className);
         });
     }
 
-    function showAddLogEntryModal(textarea) {
+    function showAddLogEntryModal(textarea, context) {
         if (document.getElementById('ns-add-log-modal')) return;
+        const isSSL = context === 'ssl';
 
         const overlay = document.createElement('div');
         overlay.id = 'ns-add-log-overlay';
@@ -1213,7 +1238,7 @@ Version 1.11:
         };
 
         const title = document.createElement('div');
-        title.textContent = '📝 Add Log Entry';
+        title.textContent = isSSL ? '📝 Add Domain Change Entry' : '📝 Add Log Entry';
         Object.assign(title.style, {
             fontSize: '15px', fontWeight: 'bold',
             color: '#0073e6', marginBottom: '16px', fontFamily: 'Arial, sans-serif',
@@ -1225,10 +1250,10 @@ Version 1.11:
         const dateInput   = mkInput('', getTodayDate(), true);
         const userLabel   = mkLabel('Your Name');
         const userInput   = mkInput('Your name', GM_getValue('toolkit_username', ''));
-        const descLabel   = mkLabel('Description');
+        const descLabel   = mkLabel(isSSL ? 'Domain Changes' : 'Description');
 
         const descInput = document.createElement('textarea');
-        descInput.placeholder = 'What was changed or why?';
+        descInput.placeholder = isSSL ? 'Which domains were added or removed?' : 'What was changed or why?';
         descInput.rows = 3;
         Object.assign(descInput.style, {
             width: '100%', padding: '8px 10px',
@@ -1659,65 +1684,8 @@ Version 1.11:
     }
 
     // ─────────────────────────────────────────────────────────────
-    // FEATURE 6 — SSL DECRYPTION DOMAIN LOG
+    // FEATURE 6 — SSL DECRYPTION DOMAIN LOG (removal entry modal)
     // ─────────────────────────────────────────────────────────────
-
-    const SSL_DOMAIN_BTN_CONTAINER_CLASS = 'ns-ssl-domain-btn-container';
-
-    const SSL_DOMAINS_TA_SELECTORS = [
-        '[data-test-id="domains_picker"] textarea',
-        'textarea[placeholder*="comma separated" i]',
-        'textarea[placeholder*="List of domains" i]',
-    ];
-
-    function getSslDomainTextareas() {
-        const seen = new Set();
-        SSL_DOMAINS_TA_SELECTORS.forEach(sel => {
-            document.querySelectorAll(sel).forEach(el => seen.add(el));
-        });
-        return [...seen];
-    }
-
-    function injectSslDomainButtons() {
-        if (!getSetting('sslDomainLog')) return;
-
-        getSslDomainTextareas().forEach(textarea => {
-            if (textarea.dataset.nstkSslInjected) return;
-            textarea.dataset.nstkSslInjected = '1';
-
-            // Remove any description log buttons that may have already been injected
-            // on this element before the skip-guard was in place
-            const existing = textarea.nextElementSibling;
-            if (existing && existing.classList.contains('ns-log-btn-container')) {
-                existing.remove();
-                delete textarea.dataset.nstkLogInjected;
-            }
-
-            const container = document.createElement('div');
-            container.className = SSL_DOMAIN_BTN_CONTAINER_CLASS;
-            Object.assign(container.style, { display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' });
-
-            const removeBtn = document.createElement('button');
-            removeBtn.textContent = '+ Add Removal Entry';
-            removeBtn.title = 'Insert a #RITM | Date | Name | Removed marker at the cursor position';
-            removeBtn.style.cssText = `
-                padding: 4px 10px; border: 1px solid #e53935;
-                border-radius: 4px; background: #e53935;
-                color: #fff; cursor: pointer; font-size: 12px;
-                font-weight: 600; line-height: 1.4;
-            `;
-            removeBtn.addEventListener('mouseenter', () => { removeBtn.style.background = '#b71c1c'; });
-            removeBtn.addEventListener('mouseleave', () => { removeBtn.style.background = '#e53935'; });
-            removeBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); e.preventDefault();
-                showAddRemovalEntryModal(textarea);
-            });
-
-            container.appendChild(removeBtn);
-            textarea.insertAdjacentElement('afterend', container);
-            console.log('[NS Toolkit] SSL domain removal button injected.');
-        });
-    }
 
     function showAddRemovalEntryModal(textarea) {
         if (document.getElementById('ns-ssl-removal-modal')) return;
@@ -2593,7 +2561,6 @@ Version 1.11:
         checkSmtp();
         interceptSaveButtons();
         injectDescriptionLogButtons();
-        injectSslDomainButtons();
         injectUrlListHistoryButtons();
     }
 
@@ -2630,7 +2597,6 @@ Version 1.11:
                     n.querySelector?.('button.ns-btn-primary') ||
                     n.querySelector?.('textarea.ns-form-textarea') ||
                     n.querySelector?.('textarea#category-description') ||
-                    SSL_DOMAINS_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel)) ||
                     URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel))
                 );
             })
