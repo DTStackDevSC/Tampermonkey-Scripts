@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.6
+// @version      1.7
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, and description log entry tools. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -37,15 +37,15 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.6';
-    const CHANGELOG = `Version 1.6:
-- Save Reminder now shows a tip pointing to the "+ Add Log Entry" button
-  so users know they can fill in the required info without typing manually.
+    const SCRIPT_VERSION = '1.7';
+    const CHANGELOG = `Version 1.7:
+- Description Log buttons now appear on Custom Categories pages as well
+  as policy pages. Injection is tracked per-textarea so multiple
+  description fields on the same page each get their own buttons.
 
-Version 1.5:
-- Fixed Save Reminder firing inside Netskope's own dialogs (e.g. the
-  "where to place this policy" modal). The reminder now only intercepts
-  the main policy Save button, not buttons inside overlays or dialogs.`;
+Version 1.6:
+- Save Reminder now shows a tip pointing to the "+ Add Log Entry" button
+  so users know they can fill in the required info without typing manually.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -396,7 +396,12 @@ Version 1.5:
                     if (key === 'copyButtons')    removeAll('.dlp-copy-btn');
                     if (key === 'openButtons')    removeAll('.dlp-open-btn');
                     if (key === 'smtpAutofill')   removeAll('#' + SMTP_BTN_ID);
-                    if (key === 'descriptionLog') removeAll('#' + LOG_BTN_CONTAINER_ID);
+                    if (key === 'descriptionLog') {
+                        removeAll('.' + LOG_BTN_CONTAINER_CLASS);
+                        document.querySelectorAll('[data-nstk-log-injected]').forEach(ta => {
+                            delete ta.dataset.nstkLogInjected;
+                        });
+                    }
                 }
                 showReloadNotice();
             });
@@ -1037,73 +1042,83 @@ Version 1.5:
     // FEATURE 5 — DESCRIPTION LOG ENTRY
     // ─────────────────────────────────────────────────────────────
 
-    const LOG_BTN_CONTAINER_ID = 'ns-log-btn-container';
+    const LOG_BTN_CONTAINER_CLASS = 'ns-log-btn-container';
+
+    // Selectors that identify description textareas across Netskope pages:
+    //   1. Specific class used on policy pages
+    //   2. Placeholder / aria-label fallback for custom categories and other pages
+    const DESCRIPTION_TA_SELECTORS = [
+        'textarea.policy-description-container.ns-form-textarea',
+        'textarea.ns-form-textarea[placeholder*="description" i]',
+        'textarea.ns-form-textarea[aria-label*="description" i]',
+    ];
 
     function getTodayDate() {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    function getDescriptionTextarea() {
-        return document.querySelector('textarea.policy-description-container.ns-form-textarea');
+    function getDescriptionTextareas() {
+        const seen = new Set();
+        DESCRIPTION_TA_SELECTORS.forEach(sel => {
+            document.querySelectorAll(sel).forEach(el => seen.add(el));
+        });
+        return [...seen];
     }
 
     function injectDescriptionLogButtons() {
         if (!getSetting('descriptionLog')) return;
 
-        const textarea = getDescriptionTextarea();
-        if (!textarea) {
-            const existing = document.getElementById(LOG_BTN_CONTAINER_ID);
-            if (existing) existing.remove();
-            return;
-        }
+        getDescriptionTextareas().forEach(textarea => {
+            // Per-textarea guard — skip if buttons already injected for this element
+            if (textarea.dataset.nstkLogInjected) return;
+            textarea.dataset.nstkLogInjected = '1';
 
-        if (document.getElementById(LOG_BTN_CONTAINER_ID)) return;
+            const container = document.createElement('div');
+            container.className = LOG_BTN_CONTAINER_CLASS;
+            Object.assign(container.style, {
+                display:   'flex',
+                gap:       '8px',
+                marginTop: '6px',
+            });
 
-        const container = document.createElement('div');
-        container.id = LOG_BTN_CONTAINER_ID;
-        Object.assign(container.style, {
-            display:   'flex',
-            gap:       '8px',
-            marginTop: '6px',
+            const addBtn = document.createElement('button');
+            addBtn.textContent = '+ Add Log Entry';
+            addBtn.style.cssText = `
+                padding: 4px 10px; border: 1px solid #0073e6;
+                border-radius: 4px; background: #0073e6;
+                color: #fff; cursor: pointer; font-size: 12px;
+                font-weight: 600; line-height: 1.4;
+            `;
+            addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
+            addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
+            addBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                showAddLogEntryModal(textarea);
+            });
+
+            const viewBtn = document.createElement('button');
+            viewBtn.textContent = '📋 View Log';
+            viewBtn.style.cssText = `
+                padding: 4px 10px; border: 1px solid #4caf50;
+                border-radius: 4px; background: #4caf50;
+                color: #fff; cursor: pointer; font-size: 12px;
+                font-weight: 600; line-height: 1.4;
+            `;
+            viewBtn.addEventListener('mouseenter', () => { viewBtn.style.background = '#388e3c'; });
+            viewBtn.addEventListener('mouseleave', () => { viewBtn.style.background = '#4caf50'; });
+            viewBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                showViewLogModal(textarea);
+            });
+
+            container.appendChild(addBtn);
+            container.appendChild(viewBtn);
+            textarea.insertAdjacentElement('afterend', container);
+            console.log('[NS Toolkit] Description log buttons injected for textarea:', textarea.className);
         });
-
-        const addBtn = document.createElement('button');
-        addBtn.textContent = '+ Add Log Entry';
-        addBtn.style.cssText = `
-            padding: 4px 10px; border: 1px solid #0073e6;
-            border-radius: 4px; background: #0073e6;
-            color: #fff; cursor: pointer; font-size: 12px;
-            font-weight: 600; line-height: 1.4;
-        `;
-        addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
-        addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
-        addBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            showAddLogEntryModal(textarea);
-        });
-
-        const viewBtn = document.createElement('button');
-        viewBtn.textContent = '📋 View Log';
-        viewBtn.style.cssText = `
-            padding: 4px 10px; border: 1px solid #4caf50;
-            border-radius: 4px; background: #4caf50;
-            color: #fff; cursor: pointer; font-size: 12px;
-            font-weight: 600; line-height: 1.4;
-        `;
-        viewBtn.addEventListener('mouseenter', () => { viewBtn.style.background = '#388e3c'; });
-        viewBtn.addEventListener('mouseleave', () => { viewBtn.style.background = '#4caf50'; });
-        viewBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            showViewLogModal(textarea);
-        });
-
-        container.appendChild(addBtn);
-        container.appendChild(viewBtn);
-        textarea.insertAdjacentElement('afterend', container);
-        console.log('[NS Toolkit] Description log buttons injected.');
     }
 
     function showAddLogEntryModal(textarea) {
@@ -1514,7 +1529,7 @@ Version 1.5:
                     n.querySelector?.('.criteria-title')    ||
                     n.querySelector?.('a.trigger')    ||
                     n.querySelector?.('button.ns-btn-primary') ||
-                    n.querySelector?.('textarea.policy-description-container')
+                    n.querySelector?.('textarea.ns-form-textarea')
                 );
             })
         );
