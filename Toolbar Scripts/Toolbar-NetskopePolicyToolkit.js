@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.14
+// @version      1.15
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, and URL list history. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -39,15 +39,16 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.14';
-    const CHANGELOG = `Version 1.14:
-- SSL Removal Entry modal now has an optional "Domains Removed" field.
-  When filled, the inserted entry becomes: #RITM | Date | Name | Removed | domains.
+    const SCRIPT_VERSION = '1.15';
+    const CHANGELOG = `Version 1.15:
+- Settings modal: Log Buttons (Description Log, URL List History, SSL Removal)
+  are now grouped under a collapsible category to reduce clutter.
+- Settings modal now scrolls when content doesn't fit the screen.
+- Added "Your Name" field directly in the settings modal for quick edits.
 
-Version 1.13:
-- Fixed SSL Decryption buttons: "+ Add Removal Entry" now appears on the
-  policy description textarea (bottom), not the domains picker (top).
-  "Add Log Entry" modal now shows "Domain Changes" label on SSL pages.`;
+Version 1.14:
+- SSL Removal Entry modal now has an optional "Domains Removed" field.
+  When filled, the inserted entry becomes: #RITM | Date | Name | Removed | domains.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -312,30 +313,46 @@ Version 1.13:
             if (e.target === backdrop) hideSettingsModal();
         });
 
-        /* ── Modal card ── */
+        /* ── Modal card (flex column so header/footer stay pinned while body scrolls) ── */
         const modal = document.createElement('div');
         modal.id = MODAL_ID;
         Object.assign(modal.style, {
-            position:     'relative',
-            background:   '#f9f9f9',
-            border:       '1px solid #ccc',
-            boxShadow:    '0 4px 24px rgba(0,0,0,0.18)',
-            borderRadius: '10px',
-            padding:      '48px 24px 24px',
-            zIndex:       '999998',
-            fontFamily:   'Arial, sans-serif',
-            minWidth:     '420px',
-            maxWidth:     '520px',
-            width:        '100%',
+            position:      'relative',
+            background:    '#f9f9f9',
+            border:        '1px solid #ccc',
+            boxShadow:     '0 4px 24px rgba(0,0,0,0.18)',
+            borderRadius:  '10px',
+            zIndex:        '999998',
+            fontFamily:    'Arial, sans-serif',
+            minWidth:      '420px',
+            maxWidth:      '520px',
+            width:         '100%',
+            maxHeight:     '90vh',
+            display:       'flex',
+            flexDirection: 'column',
+            boxSizing:     'border-box',
         });
+
+        /* ── Header row (pinned, not scrolled) ── */
+        const headerRow = document.createElement('div');
+        Object.assign(headerRow.style, {
+            display:        'flex',
+            alignItems:     'center',
+            justifyContent: 'space-between',
+            padding:        '12px 14px 10px',
+            borderBottom:   '1px solid #e0e0e0',
+            flexShrink:     '0',
+        });
+
+        const titleEl = document.createElement('div');
+        Object.assign(titleEl.style, { fontSize: '12px', fontWeight: 'bold', color: '#333' });
+        titleEl.textContent = '🛡 NS Policies Toolkit — Feature Settings';
+        headerRow.appendChild(titleEl);
 
         /* ── Close button ── */
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '✕';
         Object.assign(closeBtn.style, {
-            position:     'absolute',
-            top:          '8px',
-            right:        '8px',
             background:   '#e53935',
             color:        '#fff',
             border:       'none',
@@ -344,22 +361,21 @@ Version 1.13:
             padding:      '4px 9px',
             fontWeight:   'bold',
             fontSize:     '13px',
+            flexShrink:   '0',
         });
         closeBtn.addEventListener('click', hideSettingsModal);
-        modal.appendChild(closeBtn);
+        headerRow.appendChild(closeBtn);
+        modal.appendChild(headerRow);
 
-        /* ── Title ── */
-        const titleEl = document.createElement('div');
-        Object.assign(titleEl.style, {
-            position:   'absolute',
-            top:        '13px',
-            left:       '14px',
-            fontSize:   '12px',
-            fontWeight: 'bold',
-            color:      '#333',
+        /* ── Scrollable body ── */
+        const scrollBody = document.createElement('div');
+        scrollBody.id = MODAL_ID + '-body';
+        Object.assign(scrollBody.style, {
+            overflowY: 'auto',
+            flex:      '1',
+            padding:   '16px 24px',
         });
-        titleEl.textContent = '🛡 NS Policies Toolkit — Feature Settings';
-        modal.appendChild(titleEl);
+        modal.appendChild(scrollBody);
 
         /* ── Subtitle ── */
         const subtitle = document.createElement('p');
@@ -367,13 +383,80 @@ Version 1.13:
         Object.assign(subtitle.style, {
             fontSize:   '12px',
             color:      '#666',
-            margin:     '0 0 18px',
+            margin:     '0 0 14px',
             lineHeight: '1.5',
         });
-        modal.appendChild(subtitle);
+        scrollBody.appendChild(subtitle);
 
-        /* ── Feature rows ── */
-        FEATURES.forEach(({ key, label, description }) => {
+        /* ── Your Name config row ── */
+        const nameRow = document.createElement('div');
+        Object.assign(nameRow.style, {
+            display:      'flex',
+            alignItems:   'center',
+            gap:          '8px',
+            background:   '#fff',
+            border:       '1px solid #e0e0e0',
+            borderRadius: '8px',
+            padding:      '10px 14px',
+            marginBottom: '14px',
+        });
+
+        const nameIcon = document.createElement('span');
+        nameIcon.textContent = '👤';
+        Object.assign(nameIcon.style, { fontSize: '16px', flexShrink: '0' });
+        nameRow.appendChild(nameIcon);
+
+        const nameLabelEl = document.createElement('div');
+        Object.assign(nameLabelEl.style, { fontWeight: 'bold', fontSize: '13px', color: '#222', flexShrink: '0' });
+        nameLabelEl.textContent = 'Your Name';
+        nameRow.appendChild(nameLabelEl);
+
+        const nameInput = document.createElement('input');
+        nameInput.type        = 'text';
+        nameInput.placeholder = 'Your full name';
+        nameInput.value       = GM_getValue('toolkit_username', '');
+        nameInput.id          = MODAL_ID + '-name-input';
+        Object.assign(nameInput.style, {
+            flex:         '1',
+            padding:      '5px 8px',
+            border:       '1px solid #ccc',
+            borderRadius: '4px',
+            fontSize:     '13px',
+            fontFamily:   'Arial, sans-serif',
+            boxSizing:    'border-box',
+        });
+        nameRow.appendChild(nameInput);
+
+        const nameSaveBtn = document.createElement('button');
+        nameSaveBtn.textContent = 'Save';
+        Object.assign(nameSaveBtn.style, {
+            padding:      '5px 12px',
+            background:   '#1a73e8',
+            color:        '#fff',
+            border:       'none',
+            borderRadius: '4px',
+            cursor:       'pointer',
+            fontSize:     '12px',
+            fontWeight:   'bold',
+            flexShrink:   '0',
+        });
+        nameSaveBtn.addEventListener('mouseenter', () => { nameSaveBtn.style.background = '#1558b0'; });
+        nameSaveBtn.addEventListener('mouseleave', () => { nameSaveBtn.style.background = '#1a73e8'; });
+        nameSaveBtn.addEventListener('click', () => {
+            const n = nameInput.value.trim();
+            if (!n) { nameInput.style.borderColor = '#e53935'; nameInput.focus(); return; }
+            nameInput.style.borderColor = '#ccc';
+            GM_setValue('toolkit_username', n);
+            nameSaveBtn.textContent = '✓';
+            nameSaveBtn.style.background = '#4caf50';
+            setTimeout(() => { nameSaveBtn.textContent = 'Save'; nameSaveBtn.style.background = '#1a73e8'; }, 1500);
+        });
+        nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameSaveBtn.click(); });
+        nameRow.appendChild(nameSaveBtn);
+        scrollBody.appendChild(nameRow);
+
+        /* ── Helper: build a single feature toggle row ── */
+        function buildFeatureRow({ key, label, description }, indented) {
             const row = document.createElement('div');
             Object.assign(row.style, {
                 display:      'flex',
@@ -383,9 +466,10 @@ Version 1.13:
                 border:       '1px solid #e0e0e0',
                 borderRadius: '8px',
                 padding:      '12px 14px',
-                marginBottom: '10px',
+                marginBottom: '8px',
                 cursor:       'pointer',
                 transition:   'border-color 0.15s',
+                ...(indented ? { marginLeft: '18px' } : {}),
             });
 
             const toggleWrapper = document.createElement('div');
@@ -457,18 +541,84 @@ Version 1.13:
             row.addEventListener('click', (e) => { if (e.target !== toggle) toggle.click(); });
 
             updateRowStyle(row, toggle.checked);
-            modal.appendChild(row);
+            return row;
+        }
+
+        /* ── Standalone feature rows ── */
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'smtpAutofill', 'saveReminder'];
+        FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
+            scrollBody.appendChild(buildFeatureRow(f, false));
         });
 
-        /* ── Footer: version label + changelog badge ── */
+        /* ── Log Buttons category (collapsible) ── */
+        const LOG_KEYS = ['descriptionLog', 'urlListHistory', 'sslDomainLog'];
+        const logFeatures = FEATURES.filter(f => LOG_KEYS.includes(f.key));
+
+        const logCatRow = document.createElement('div');
+        Object.assign(logCatRow.style, {
+            display:    'flex',
+            alignItems: 'center',
+            gap:        '10px',
+            background: '#eef2ff',
+            border:     '1px solid #c5cae9',
+            borderRadius: '8px',
+            padding:    '9px 14px',
+            marginBottom: '8px',
+            cursor:     'pointer',
+            userSelect: 'none',
+        });
+
+        const logCatIcon = document.createElement('span');
+        logCatIcon.textContent = '📋';
+        Object.assign(logCatIcon.style, { fontSize: '15px', flexShrink: '0' });
+        logCatRow.appendChild(logCatIcon);
+
+        const logCatTextWrap = document.createElement('div');
+        Object.assign(logCatTextWrap.style, { flex: '1' });
+
+        const logCatLabel = document.createElement('div');
+        Object.assign(logCatLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#3949ab' });
+        logCatLabel.textContent = 'Log Buttons';
+
+        const logCatDesc = document.createElement('div');
+        Object.assign(logCatDesc.style, { fontSize: '11px', color: '#7986cb', marginTop: '1px' });
+        logCatDesc.textContent = 'Description log, URL list history, SSL removal entry';
+
+        logCatTextWrap.appendChild(logCatLabel);
+        logCatTextWrap.appendChild(logCatDesc);
+        logCatRow.appendChild(logCatTextWrap);
+
+        const chevron = document.createElement('span');
+        Object.assign(chevron.style, {
+            fontSize: '12px', color: '#7986cb',
+            transition: 'transform 0.2s', display: 'inline-block',
+        });
+        chevron.textContent = '▾';
+        logCatRow.appendChild(chevron);
+        scrollBody.appendChild(logCatRow);
+
+        /* ── Log sub-features container ── */
+        const logSubContainer = document.createElement('div');
+        Object.assign(logSubContainer.style, { marginBottom: '4px' });
+        logFeatures.forEach(f => logSubContainer.appendChild(buildFeatureRow(f, true)));
+        scrollBody.appendChild(logSubContainer);
+
+        let logExpanded = true;
+        logCatRow.addEventListener('click', () => {
+            logExpanded = !logExpanded;
+            logSubContainer.style.display = logExpanded ? 'block' : 'none';
+            chevron.style.transform = logExpanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+        });
+
+        /* ── Footer: version label + changelog badge (pinned) ── */
         const footer = document.createElement('div');
         Object.assign(footer.style, {
             display:        'flex',
             alignItems:     'center',
             justifyContent: 'space-between',
-            marginTop:      '6px',
-            paddingTop:     '12px',
+            padding:        '10px 24px 14px',
             borderTop:      '1px solid #e0e0e0',
+            flexShrink:     '0',
         });
 
         const versionLabel = document.createElement('span');
@@ -556,6 +706,10 @@ Version 1.13:
             }
         });
 
+        // Sync username input
+        const nameInput = document.getElementById(MODAL_ID + '-name-input');
+        if (nameInput) nameInput.value = GM_getValue('toolkit_username', '');
+
         const backdrop = document.getElementById(MODAL_ID + '-backdrop');
         if (backdrop) backdrop.style.display = 'flex';
     }
@@ -617,8 +771,8 @@ Version 1.13:
         reloadBtn.addEventListener('click', () => window.location.reload());
         notice.appendChild(reloadBtn);
 
-        const modal = document.getElementById(MODAL_ID);
-        if (modal) modal.insertBefore(notice, modal.firstElementChild);
+        const scrollBody = document.getElementById(MODAL_ID + '-body');
+        if (scrollBody) scrollBody.insertBefore(notice, scrollBody.firstElementChild);
     }
 
     // ─────────────────────────────────────────────────────────────
