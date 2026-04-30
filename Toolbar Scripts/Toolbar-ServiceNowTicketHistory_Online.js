@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.0
+// @version      1.3.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,14 +24,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
-- Added DLP Policies group: Created / Modified / Deleted
-  - Fields: Policy name, AD group, Destination, Activities, Profile & Action, DLP Profile, Action, Policy Description, Group position
-  - Reconciled in Worknote summary using same lifecycle model as regular Policies
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Added Recategorization Request entry type with URL Requested and Categories requested fields.
 
-Version 1.2.0:
-- Removed Save to TXT, Export to JSON, and Import JSON options (superseded by online sync)`;
+Version 1.3.0:
+- Added DLP Policies group: Created / Modified / Deleted
+  - Fields: Policy name, AD group, Destination, Activities, Profile & Action, DLP Profile, Action, Policy Description, Group position`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -103,6 +102,10 @@ Version 1.2.0:
         ],
         custom_app_deleted: [
             { key: 'appName', label: 'App name', type: 'text' },
+        ],
+        recat_request: [
+            { key: 'urlRequested',        label: 'URL Requested',        type: 'text' },
+            { key: 'categoriesRequested', label: 'Categories requested', type: 'text' },
         ],
     };
 
@@ -204,6 +207,12 @@ Version 1.2.0:
             ],
         },
         {
+            group: 'Recategorization',
+            items: [
+                { label: 'Recategorization Request', value: 'Recategorization Request', color: '#17a2b8', schema: 'recat_request' },
+            ],
+        },
+        {
             group: 'General',
             items: [
                 { label: 'Custom', value: 'Custom', color: '#343a40', schema: null },
@@ -264,6 +273,7 @@ Version 1.2.0:
         { label: 'Steering / Client Configs',   types: ['Steering/Client Config Created', 'Steering/Client Config Modified', 'Steering/Client Config Deleted'] },
         { label: 'User Notifications',          types: ['User Notification Added', 'User Notification Modified', 'User Notification Removed'] },
         { label: 'Custom Apps',                 types: ['Custom App Added', 'Custom App Edited', 'Custom App Removed'] },
+        { label: 'Recategorization Requests',   types: ['Recategorization Request'] },
         { label: 'Other',                       types: ['Custom'] },
     ];
 
@@ -1045,6 +1055,12 @@ Version 1.2.0:
             'Custom App Removed': {
                 workNoteHeader: 'Netskope Custom App has been removed:',
                 commentsHeader: "We've removed the following Netskope Custom App as requested:",
+            },
+
+            // ── Recategorization ───────────────────────────────────
+            'Recategorization Request': {
+                workNoteHeader: '# Recategorization request submitted to Netskope:',
+                commentsHeader: 'A recategorization request has been submitted to Netskope. Please allow 24–48 hours for them to review it and apply any necessary changes.',
             },
 
             // 'Custom' is intentionally absent — freeform notes don't auto-write.

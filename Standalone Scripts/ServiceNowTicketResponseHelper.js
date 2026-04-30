@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.11.0
+// @version      2.11.1
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,12 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.11.0';
-    const CHANGELOG = `Version 2.11.0:
-- Added DLP Policy Management entries for EMEA Team (public comments and worknotes).
+    const SCRIPT_VERSION = '2.11.1';
+    const CHANGELOG = `Version 2.11.1:
+- EMEA: Added "# Recategorization Request" worknote with URL Requested and Categories requested fields.
 
-Version 2.10.5:
-- Section titles in the dropdown are now more visually distinct for easier scanning.`;
+Version 2.11.0:
+- Added DLP Policy Management entries for EMEA Team (public comments and worknotes).`;
 
     /* ==========================================================
      *  TEAM CONFIGURATIONS
@@ -217,6 +217,11 @@ Version 2.10.5:
                 category: 'responses',
                 fieldType: 'comments'
             },
+            recatRequestWorknote: {
+                label: '# Recategorization Request',
+                category: 'workcomments',
+                fieldType: 'work_notes'
+            },
             ideaFeatureRequest: {
                 label: 'IDEA Request Opened',
                 category: 'responses',
@@ -346,6 +351,7 @@ Version 2.10.5:
             'vendorcaseloaded',
             'slackAddComment',
             'recatRequest',
+            'recatRequestWorknote',
             'ideaFeatureRequest',
             'first',
             'second',
@@ -625,6 +631,9 @@ Thanks!`,
 A recategorization request has been submitted to Netskope. Please allow 24–48 hours for them to review it and apply any necessary changes.
 
 Kind regards,`,
+                recatRequestWorknote: (vars) => `# Recategorization request submitted to Netskope.
+- URL Requested:
+- Categories requested: `,
                 ideaFeatureRequest: (vars) => `Hello @[${vars.openedByName}],
 
 An IDEA #### feature request has been opened with Netskope for this functionality. We will update you directly once there is any progress or feedback.
