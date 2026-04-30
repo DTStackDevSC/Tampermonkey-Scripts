@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketQuickOpen.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketQuickOpen.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0
-// @description  Highlight a RITM or PER ticket number on any page to get a floating button that opens the ticket in a new tab. Toggle via Toolbar.
+// @version      1.1
+// @description  Highlight a RITM, PER, or Netskope case number on any page to get a floating button that opens it in a new tab. Toggle via Toolbar.
 // @author       J.R.
 // @match        *://*/*
 // @grant        GM_getValue
@@ -19,8 +19,12 @@
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.0';
-    const CHANGELOG = `Version 1.0:
+    const SCRIPT_VERSION = '1.1';
+    const CHANGELOG = `Version 1.1:
+- Added Netskope support case detection (006XXXXX format). Highlight any 006-prefixed 8-digit case number to open it in Netskope's global search.
+- Settings modal now has separate ServiceNow and Netskope sections with independent toggles.
+
+Version 1.0:
 - Initial release as toolbar script. Highlight any RITM or PER number on any page to open the ticket in a new tab.`;
 
     function getStoredVersion()    { return GM_getValue('tqo_version', null); }
@@ -46,20 +50,37 @@
     // CONFIGURATION
     // ─────────────────────────────────────────────────────────────
 
-    const SETTING_KEY = 'tqo_enabled';
-    function isEnabled()   { return GM_getValue(SETTING_KEY, true); }
-    function setEnabled(v) { GM_setValue(SETTING_KEY, !!v); }
+    const SNOW_SETTING_KEY = 'tqo_snow_enabled';
+    const NS_SETTING_KEY   = 'tqo_ns_enabled';
+    function isSnowEnabled()   { return GM_getValue(SNOW_SETTING_KEY, true); }
+    function setSnowEnabled(v) { GM_setValue(SNOW_SETTING_KEY, !!v); }
+    function isNsEnabled()     { return GM_getValue(NS_SETTING_KEY, true); }
+    function setNsEnabled(v)   { GM_setValue(NS_SETTING_KEY, !!v); }
+
+    function isGroupEnabled(group) {
+        if (group === 'snow') return isSnowEnabled();
+        if (group === 'ns')   return isNsEnabled();
+        return false;
+    }
 
     const TICKET_TYPES = {
         RITM: {
+            group: 'snow',
             regex: /^RITM\d+$/i,
             url:   (n) => `https://deloitteglobal.service-now.com/sc_req_item.do?sys_id=${n}`,
             color: '#0073e6',
         },
         PER: {
+            group: 'snow',
             regex: /^PER\d+$/i,
             url:   (n) => `https://deloitteglobal.service-now.com/sn_compliance_policy_exception.do?sys_id=${n}`,
             color: '#7c3aed',
+        },
+        NS: {
+            group: 'ns',
+            regex: /^006\d{5}$/,
+            url:   (n) => `https://support.netskope.com/s/global-search/${n}`,
+            color: '#00897b',
         },
     };
 
@@ -171,8 +192,107 @@
     // SETTINGS MODAL
     // ─────────────────────────────────────────────────────────────
 
-    const MODAL_ID       = 'tqo-settings-modal';
-    const TOGGLE_ROW_ID  = 'tqo-toggle-row';
+    const MODAL_ID = 'tqo-settings-modal';
+
+    function buildToggleSection(opts) {
+        const section = document.createElement('div');
+        Object.assign(section.style, {
+            background: '#fff', border: `1px solid ${opts.accentColor}44`,
+            borderRadius: '8px', marginBottom: '16px', overflow: 'hidden',
+        });
+
+        const sectionHeader = document.createElement('div');
+        Object.assign(sectionHeader.style, {
+            background: `${opts.accentColor}18`, borderBottom: `1px solid ${opts.accentColor}33`,
+            padding: '6px 12px', display: 'flex', alignItems: 'center',
+        });
+        const sectionTitle = document.createElement('span');
+        Object.assign(sectionTitle.style, {
+            fontSize: '11px', fontWeight: 'bold', color: opts.accentColor,
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+        });
+        sectionTitle.textContent = `${opts.icon}  ${opts.title}`;
+        sectionHeader.appendChild(sectionTitle);
+        section.appendChild(sectionHeader);
+
+        const toggleRow = document.createElement('div');
+        Object.assign(toggleRow.style, {
+            display: 'flex', alignItems: 'flex-start', gap: '12px',
+            padding: '10px 14px', cursor: 'pointer',
+        });
+
+        const toggleWrap = document.createElement('div');
+        Object.assign(toggleWrap.style, { flexShrink: '0', marginTop: '2px' });
+        const toggle = document.createElement('input');
+        toggle.type    = 'checkbox';
+        toggle.id      = opts.toggleId;
+        toggle.checked = isGroupEnabled(opts.group);
+        Object.assign(toggle.style, { width: '34px', height: '18px', cursor: 'pointer', accentColor: opts.accentColor });
+        toggleWrap.appendChild(toggle);
+        toggleRow.appendChild(toggleWrap);
+
+        const textWrap = document.createElement('div');
+        const lbl = document.createElement('div');
+        Object.assign(lbl.style, { fontWeight: 'bold', fontSize: '12px', color: '#222', marginBottom: '2px' });
+        lbl.textContent = opts.description.title;
+        const desc = document.createElement('div');
+        Object.assign(desc.style, { fontSize: '11px', color: '#666', lineHeight: '1.4' });
+        desc.textContent = opts.description.body;
+        textWrap.append(lbl, desc);
+        toggleRow.appendChild(textWrap);
+
+        toggle.addEventListener('change', () => {
+            if (opts.group === 'snow') setSnowEnabled(toggle.checked);
+            else                       setNsEnabled(toggle.checked);
+            updateSectionStyle(toggleRow, toggle.checked, opts.accentColor);
+        });
+        toggleRow.addEventListener('click', (e) => { if (e.target !== toggle) toggle.click(); });
+        updateSectionStyle(toggleRow, toggle.checked, opts.accentColor);
+        section.appendChild(toggleRow);
+
+        opts.typeKeys.forEach(typeKey => {
+            const cfg = TICKET_TYPES[typeKey];
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '8px 14px', borderTop: '1px solid #f0f0f0',
+            });
+
+            const badge = document.createElement('span');
+            badge.textContent = typeKey;
+            Object.assign(badge.style, {
+                background: cfg.color, color: '#fff', borderRadius: '4px',
+                padding: '2px 9px', fontWeight: 'bold', fontSize: '11px', flexShrink: '0',
+            });
+
+            const urlExample = document.createElement('span');
+            Object.assign(urlExample.style, {
+                fontSize: '10px', color: '#777', fontFamily: "'Courier New', monospace",
+                wordBreak: 'break-all',
+            });
+            urlExample.textContent = cfg.url(`${typeKey}…`);
+
+            row.append(badge, urlExample);
+            section.appendChild(row);
+        });
+
+        if (opts.note) {
+            const noteRow = document.createElement('div');
+            Object.assign(noteRow.style, {
+                padding: '6px 14px 10px', borderTop: '1px solid #f0f0f0',
+                fontSize: '11px', color: '#888', lineHeight: '1.4', fontStyle: 'italic',
+            });
+            noteRow.textContent = opts.note;
+            section.appendChild(noteRow);
+        }
+
+        return { section, toggleEl: toggle, toggleRow };
+    }
+
+    function updateSectionStyle(row, enabled, accentColor) {
+        row.style.background = enabled ? `${accentColor}0d` : '#fff';
+        row.style.opacity    = enabled ? '1' : '0.65';
+    }
 
     function buildSettingsModal() {
         if (document.getElementById(MODAL_ID)) return;
@@ -193,7 +313,7 @@
             position: 'relative', background: '#f9f9f9', border: '1px solid #ccc',
             boxShadow: '0 4px 24px rgba(0,0,0,0.18)', borderRadius: '10px',
             zIndex: '999998', fontFamily: 'Arial, sans-serif',
-            width: '420px', maxWidth: '95vw', maxHeight: '90vh',
+            width: '440px', maxWidth: '95vw', maxHeight: '90vh',
             display: 'flex', flexDirection: 'column', boxSizing: 'border-box',
         });
 
@@ -203,7 +323,6 @@
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '12px 14px 10px', borderBottom: '1px solid #e0e0e0', flexShrink: '0',
         });
-
         const titleEl = document.createElement('div');
         Object.assign(titleEl.style, { fontSize: '12px', fontWeight: 'bold', color: '#333' });
         titleEl.textContent = '🎫 Ticket Quick Open — Settings';
@@ -224,78 +343,36 @@
         Object.assign(body.style, { padding: '16px 20px', overflowY: 'auto', flex: '1' });
         modal.appendChild(body);
 
-        /* ── Enable / disable toggle ── */
-        const toggleRow = document.createElement('div');
-        toggleRow.id = TOGGLE_ROW_ID;
-        Object.assign(toggleRow.style, {
-            display: 'flex', alignItems: 'flex-start', gap: '14px',
-            background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px',
-            padding: '12px 14px', marginBottom: '18px', cursor: 'pointer',
-            transition: 'border-color 0.15s',
+        /* ── ServiceNow section ── */
+        const snowSection = buildToggleSection({
+            group:       'snow',
+            accentColor: '#1a73e8',
+            icon:        '☁️',
+            title:       'ServiceNow',
+            toggleId:    'tqo-snow-toggle',
+            description: {
+                title: 'Enable ServiceNow tickets',
+                body:  'Detect RITM and PER numbers and open them in ServiceNow.',
+            },
+            typeKeys: ['RITM', 'PER'],
         });
+        body.appendChild(snowSection.section);
 
-        const toggleWrap = document.createElement('div');
-        Object.assign(toggleWrap.style, { flexShrink: '0', marginTop: '2px' });
-
-        const toggle = document.createElement('input');
-        toggle.type    = 'checkbox';
-        toggle.id      = 'tqo-toggle';
-        toggle.checked = isEnabled();
-        Object.assign(toggle.style, { width: '36px', height: '20px', cursor: 'pointer', accentColor: '#1a73e8' });
-        toggle.addEventListener('change', () => {
-            setEnabled(toggle.checked);
-            updateToggleStyle(toggleRow, toggle.checked);
+        /* ── Netskope section ── */
+        const nsSection = buildToggleSection({
+            group:       'ns',
+            accentColor: '#00897b',
+            icon:        '🛡️',
+            title:       'Netskope',
+            toggleId:    'tqo-ns-toggle',
+            description: {
+                title: 'Enable Netskope support cases',
+                body:  'Detect 006XXXXX case numbers and search for them in the Netskope support portal.',
+            },
+            typeKeys: ['NS'],
+            note:     'ℹ️ Opens Netskope global search — no direct case URL can be computed from the case number.',
         });
-        toggleWrap.appendChild(toggle);
-        toggleRow.appendChild(toggleWrap);
-
-        const toggleText = document.createElement('div');
-        const lbl = document.createElement('div');
-        Object.assign(lbl.style, { fontWeight: 'bold', fontSize: '13px', color: '#222', marginBottom: '3px' });
-        lbl.textContent = '🎫 Enable Ticket Quick Open';
-        const desc = document.createElement('div');
-        Object.assign(desc.style, { fontSize: '12px', color: '#666', lineHeight: '1.4' });
-        desc.textContent = 'When enabled, selecting a ticket number on any page shows a floating button to open it in a new tab.';
-        toggleText.append(lbl, desc);
-        toggleRow.appendChild(toggleText);
-        toggleRow.addEventListener('click', (e) => { if (e.target !== toggle) toggle.click(); });
-        updateToggleStyle(toggleRow, toggle.checked);
-        body.appendChild(toggleRow);
-
-        /* ── Supported ticket types ── */
-        const sectionLabel = document.createElement('div');
-        Object.assign(sectionLabel.style, {
-            fontSize: '11px', fontWeight: 'bold', color: '#888',
-            textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px',
-        });
-        sectionLabel.textContent = 'Supported ticket types';
-        body.appendChild(sectionLabel);
-
-        Object.entries(TICKET_TYPES).forEach(([type, cfg]) => {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', alignItems: 'center', gap: '12px',
-                background: '#fff', border: '1px solid #e0e0e0', borderRadius: '7px',
-                padding: '10px 14px', marginBottom: '8px',
-            });
-
-            const badge = document.createElement('span');
-            badge.textContent = type;
-            Object.assign(badge.style, {
-                background: cfg.color, color: '#fff', borderRadius: '4px',
-                padding: '3px 10px', fontWeight: 'bold', fontSize: '12px', flexShrink: '0',
-            });
-
-            const urlExample = document.createElement('span');
-            Object.assign(urlExample.style, {
-                fontSize: '11px', color: '#777', fontFamily: "'Courier New', monospace",
-                wordBreak: 'break-all',
-            });
-            urlExample.textContent = cfg.url(`${type}…`);
-
-            row.append(badge, urlExample);
-            body.appendChild(row);
-        });
+        body.appendChild(nsSection.section);
 
         /* ── Footer ── */
         const footer = document.createElement('div');
@@ -303,7 +380,6 @@
             padding: '10px 20px 14px', borderTop: '1px solid #e0e0e0', flexShrink: '0',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         });
-
         const versionLabel = document.createElement('span');
         Object.assign(versionLabel.style, { fontSize: '11px', color: '#999' });
         versionLabel.textContent = `v${SCRIPT_VERSION}`;
@@ -332,9 +408,7 @@
 
             const notifText = document.createElement('span');
             notifText.textContent = "What's new";
-            Object.assign(notifText.style, {
-                fontSize: '11px', color: '#0066cc', textDecoration: 'underline',
-            });
+            Object.assign(notifText.style, { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' });
 
             notif.append(dot, notifText);
             notif.onclick = () => showChangelogModal();
@@ -346,22 +420,14 @@
         document.body.appendChild(backdrop);
     }
 
-    function updateToggleStyle(row, enabled) {
-        row.style.borderColor = enabled ? '#1a73e8' : '#e0e0e0';
-        row.style.background  = enabled ? '#f0f6ff' : '#fff';
-        row.style.opacity     = enabled ? '1'       : '0.7';
-    }
-
     function showSettingsModal() {
         buildSettingsModal();
 
-        // Re-sync toggle to stored value (may have changed in another tab)
-        const toggle    = document.getElementById('tqo-toggle');
-        const toggleRow = document.getElementById(TOGGLE_ROW_ID);
-        if (toggle && toggleRow) {
-            toggle.checked = isEnabled();
-            updateToggleStyle(toggleRow, toggle.checked);
-        }
+        // Re-sync toggles to stored values (may have changed in another tab)
+        const snowToggle = document.getElementById('tqo-snow-toggle');
+        const nsToggle   = document.getElementById('tqo-ns-toggle');
+        if (snowToggle) snowToggle.checked = isSnowEnabled();
+        if (nsToggle)   nsToggle.checked   = isNsEnabled();
 
         const backdrop = document.getElementById(MODAL_ID + '-backdrop');
         if (backdrop) backdrop.style.display = 'flex';
@@ -377,10 +443,9 @@
     // ─────────────────────────────────────────────────────────────
 
     function matchTicket(rawText) {
-        // Trim whitespace and strip leading/trailing punctuation so partial
-        // selections like "RITM1234567." or " RITM1234567 " still match.
         const text = rawText.trim().replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '').toUpperCase();
         for (const [, cfg] of Object.entries(TICKET_TYPES)) {
+            if (!isGroupEnabled(cfg.group)) continue;
             if (cfg.regex.test(text)) return { cfg, number: text };
         }
         return null;
@@ -455,8 +520,6 @@
 
     document.addEventListener('mouseup', (e) => {
         if (e.target?.id === BTN_ID) return;
-        if (!isEnabled()) { removeBtn(); return; }
-
         const selected = window.getSelection()?.toString() || '';
         const match    = matchTicket(selected);
         if (match) showBtn(match, e.clientX, e.clientY);
