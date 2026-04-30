@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.0
+// @version      1.3.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,13 +24,14 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.0';
-    const CHANGELOG = `Version 1.2.0:
-- Removed Save to TXT, Export to JSON, and Import JSON options (superseded by online sync)
+    const SCRIPT_VERSION = '1.3.0';
+    const CHANGELOG = `Version 1.3.0:
+- Added DLP Policies group: Created / Modified / Deleted
+  - Fields: Policy name, AD group, Destination, Activities, Profile & Action, DLP Profile, Action, Policy Description, Group position
+  - Reconciled in Worknote summary using same lifecycle model as regular Policies
 
-Version 1.1.0:
-- Added User Notification entry types (Add, Edit, Remove)
-- Added Custom App entry types (Add, Edit, Remove) with name, type, and domains fields`;
+Version 1.2.0:
+- Removed Save to TXT, Export to JSON, and Import JSON options (superseded by online sync)`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -48,6 +49,17 @@ Version 1.1.0:
         ],
         policy_deleted: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
+        ],
+        dlp_policy_full: [
+            { key: 'policyName',    label: 'Policy name',        type: 'text'     },
+            { key: 'adGroup',       label: 'AD group',           type: 'text'     },
+            { key: 'destination',   label: 'Destination',        type: 'text'     },
+            { key: 'activities',    label: 'Activities',         type: 'text'     },
+            { key: 'profileAction', label: 'Profile & Action',   type: 'text'     },
+            { key: 'dlpProfile',    label: 'DLP Profile',        type: 'text'     },
+            { key: 'action',        label: 'Action',             type: 'text'     },
+            { key: 'description',   label: 'Policy Description', type: 'textarea' },
+            { key: 'groupPosition', label: 'Group position',     type: 'text'     },
         ],
         ssl_policy: [
             { key: 'sslPolicyName', label: 'SSL Policy name', type: 'text'     },
@@ -107,6 +119,14 @@ Version 1.1.0:
                 { label: 'Policy Created',  value: 'Policy Created',  color: '#007bff', schema: 'policy_full'    },
                 { label: 'Policy Modified', value: 'Policy Modified', color: '#6610f2', schema: 'policy_full'    },
                 { label: 'Policy Deleted',  value: 'Policy Deleted',  color: '#c0392b', schema: 'policy_deleted' },
+            ],
+        },
+        {
+            group: 'DLP Policies',
+            items: [
+                { label: 'DLP Policy Created',  value: 'DLP Policy Created',  color: '#007bff', schema: 'dlp_policy_full' },
+                { label: 'DLP Policy Modified', value: 'DLP Policy Modified', color: '#6610f2', schema: 'dlp_policy_full' },
+                { label: 'DLP Policy Deleted',  value: 'DLP Policy Deleted',  color: '#c0392b', schema: 'policy_deleted'  },
             ],
         },
         {
@@ -234,6 +254,7 @@ Version 1.1.0:
 
     const CATEGORY_GROUPS = [
         { label: 'Policy Changes',              types: ['Policy Created', 'Policy Modified', 'Policy Deleted'] },
+        { label: 'DLP Policy Changes',          types: ['DLP Policy Created', 'DLP Policy Modified', 'DLP Policy Deleted'] },
         { label: 'URL Lists',                   types: ['URL List Created', 'URL List — URLs Added', 'URL List — URLs Removed', 'URL List Removed'] },
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
         { label: 'Custom Categories',           types: ['Custom Category Created', 'Custom Category — URL Lists Added', 'Custom Category — URL Lists Removed', 'Custom Category Removed'] },
@@ -1413,6 +1434,12 @@ Version 1.1.0:
             createTypes: ['Policy Created'],
             modifyTypes: ['Policy Modified'],
             deleteTypes: ['Policy Deleted'],
+        },
+        'DLP Policy Changes': {
+            nameKey:     'policyName',
+            createTypes: ['DLP Policy Created'],
+            modifyTypes: ['DLP Policy Modified'],
+            deleteTypes: ['DLP Policy Deleted'],
         },
         'Steering / Client Configs': {
             nameKey:     'configName',
