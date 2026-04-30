@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.1.4
+// @version      2.1.5
 // @description  Highlight rows in ServiceNow based on Updated By column with configurable username and theme (Updated for new UI)
 // @author       J.R.
 // @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards/
@@ -25,12 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.4';
-    const CHANGELOG = `Version 2.1.4:
-- Update URL Changed
-    
-Version 2.1.3:
-- Added first-run popup prompting for username when none is configured`;
+    const SCRIPT_VERSION = '2.1.5';
+    const CHANGELOG = `Version 2.1.5:
+- Fixed rows not re-highlighting after switching pages after some time on the page.
+
+Version 2.1.4:
+- Update URL Changed`;
 
     /* ==========================================================
      *  CONFIGURATION
@@ -1146,6 +1146,9 @@ Version 2.1.3:
             });
         });
 
+        // Attach persistent shadow observer so future table re-renders are caught automatically
+        attachShadowObserver();
+
         if (processedCount > 0) {
             console.log(`✅ Highlighted ${processedCount} rows`);
         } else {
@@ -1153,6 +1156,28 @@ Version 2.1.3:
         }
 
         return processedCount > 0;
+    }
+
+    /* ==========================================================
+     *  SHADOW DOM OBSERVER  (persistent — survives polling window)
+     *  Attaches a MutationObserver directly to each now-list shadow root
+     *  so table re-renders (pagination, sort, filter) are caught even
+     *  after the startup polling interval has ended.
+     * ==========================================================*/
+
+    function attachShadowObserver() {
+        findAllShadowRoots()
+            .filter(el => el.tagName?.toLowerCase() === 'now-list')
+            .forEach(nowList => {
+                if (!nowList.shadowRoot || nowList._shadowObserverAttached) return;
+                nowList._shadowObserverAttached = true;
+                let debounce = null;
+                new MutationObserver(() => {
+                    if (!targetUsername) return;
+                    clearTimeout(debounce);
+                    debounce = setTimeout(() => highlightRowsWithClasses(), 400);
+                }).observe(nowList.shadowRoot, { childList: true, subtree: true });
+            });
     }
 
     /* ==========================================================
@@ -1227,7 +1252,7 @@ Version 2.1.3:
             return;
         }
 
-        console.log('Initializing Row Highlighter v2.1.3...');
+        console.log(`Initializing Row Highlighter v${SCRIPT_VERSION}...`);
         isInitialized = true;
 
         // Load stored settings
@@ -1329,15 +1354,11 @@ Version 2.1.3:
                     console.log(`🔍 Polling attempt ${attempts}/${maxAttempts} - Tables: ${tableCount}, Rows: ${rowCount}`);
                 }
 
-                const success = highlightRowsWithClasses();
+                highlightRowsWithClasses();
 
-                if (success || attempts >= maxAttempts) {
+                if (attempts >= maxAttempts) {
                     clearInterval(retryInterval);
-                    if (success) {
-                        console.log(`✅ Successfully highlighted rows after ${attempts} attempts (${attempts * 2}s)`);
-                    } else {
-                        console.log(`⚠️ Stopped polling after ${maxAttempts} attempts - no tables found`);
-                    }
+                    console.log(`⚠️ Startup polling complete — shadow observer active for ongoing coverage`);
                 }
             }, 2000);
         }
@@ -1419,6 +1440,7 @@ Version 2.1.3:
                 setTimeout(() => highlightRowsWithClasses(), 500);
                 setTimeout(() => highlightRowsWithClasses(), 1000);
                 setTimeout(() => highlightRowsWithClasses(), 1500);
+                setTimeout(() => highlightRowsWithClasses(), 2500);
             }
         }, true);
 
@@ -1555,6 +1577,6 @@ Version 2.1.3:
         initialize();
     }
 
-    console.log('✅ Row Highlighter v2.1.3 script loaded!');
+    console.log(`✅ Row Highlighter v${SCRIPT_VERSION} script loaded!`);
 
 })();
