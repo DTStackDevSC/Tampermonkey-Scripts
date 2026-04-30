@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2
+// @version      1.3
 // @description  Display color-coded SLA warning banner based on days remaining
 // @author       You
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -229,9 +229,34 @@
         dueDateInput.insertAdjacentElement('afterend', configBtn);
     }
 
+    // ─── State Check ─────────────────────────────────────────────────────────
+
+    function isTicketClosed() {
+        // ServiceNow renders the state as a select (edit mode) or a display span (read-only mode).
+        // Try the select first, then fall back to common read-only label selectors.
+        const stateSelect = document.querySelector('select[id$=".state"]');
+        if (stateSelect) {
+            const text = stateSelect.options[stateSelect.selectedIndex]?.text?.trim() || '';
+            return text.toLowerCase() === 'closed complete';
+        }
+        // Read-only display variants used by different SNow themes
+        const stateLabel =
+            document.querySelector('[id$=".state_label"]') ||
+            document.querySelector('[id$=".state"] .select2-chosen');
+        if (stateLabel) {
+            return stateLabel.textContent.trim().toLowerCase() === 'closed complete';
+        }
+        return false;
+    }
+
     // ─── Banner ───────────────────────────────────────────────────────────────
 
     function createOrUpdateBanner(dueDate, formatKey) {
+        if (isTicketClosed()) {
+            document.getElementById('sla-alert-banner')?.remove();
+            return;
+        }
+
         const tr = getTimeRemaining(dueDate, formatKey);
         if (!tr) return;
 
