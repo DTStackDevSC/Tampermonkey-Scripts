@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.0
+// @version      1.3.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,51 +24,16 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.8';
-    const CHANGELOG = `Version 1.2.8:
+    const SCRIPT_VERSION = '1.3.0';
+    const CHANGELOG = `Version 1.3.0:
+- Added DLP Policies group: Created / Modified / Deleted
+  - Fields: Policy name, AD group, Destination, Activities, Profile & Action, DLP Profile, Action, Policy Description, Group position
+  - Reconciled in Worknote summary using same lifecycle model as regular Policies
+
+Version 1.2.8:
 - Added Custom Categories group: Created / URL Lists Added / URL Lists Removed / Removed
   - Fully reconciled in Worknote summary (same net-change model as URL Lists)
-  - Fields: category name + URL Lists textarea
-
-Version 1.2.7:
-- Added Network Locations group: Created / IPs Added / IPs Removed / Removed
-- Renamed "Grouped" button to "Worknote"
-
-Version 1.2.6:
-- Grouped Summary reconciles ALL entry type groups (Steering Exceptions, App Exceptions,
-  Policies, Steering/Client Configs now fully reconciled)
-
-Version 1.2.3:
-- Grouped Summary now reconciles domain-bearing entries (URL Lists, SSL Decryption)
-  - Entries for the same named entity are merged into a single net state
-  - Domains added and later removed are excluded from the summary output
-  - Fully removed entities are shown as [REMOVED] with no domain list
-
-Version 1.2.2:
-- "URL List Updated" split into "URLs Added" and "URLs Removed" variants
-- SSL Decryption group now mirrors URL Lists: Created / URLs Added / URLs Removed / Removed
-- SSL Decryption schema updated to match URL List structure (Policy name + Domains)
-
-Version 1.2.1:
-- Replaced old URL type options with URL List Created / Updated / Removed (structured fields)
-- Removed generic "Exception added", "Assignment updated", "Note / Comment" types
-- Dropdown now uses grouped optgroups for easier navigation (Policies, URL Lists, SSL, etc.)
-
-Version 1.2.0:
-- Structured field forms per change type (Policy, SSL, Steering, App Exception, etc.)
-- Empty type selection now defaults to "Custom" instead of blocking
-- Edit button on every entry — change type or update any field
-- Grouped Summary: copies all entries sorted by category for worknote pasting
-- Export to JSON + Import from JSON (merge by ID, shareable with colleagues)
-- Two-row action buttons: Copy | Summary | TXT | JSON / Import | Browse | Clear
-
-Version 1.1.0:
-- Structured append-only log replacing freeform textarea
-- Predefined snippet dropdown, Copy All, Download TXT, Notes Browser
-- Per-entry two-click inline delete
-
-Version 1.0.0:
-- Initial release`;
+  - Fields: category name + URL Lists textarea`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -86,6 +51,17 @@ Version 1.0.0:
         ],
         policy_deleted: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
+        ],
+        dlp_policy_full: [
+            { key: 'policyName',    label: 'Policy name',        type: 'text'     },
+            { key: 'adGroup',       label: 'AD group',           type: 'text'     },
+            { key: 'destination',   label: 'Destination',        type: 'text'     },
+            { key: 'activities',    label: 'Activities',         type: 'text'     },
+            { key: 'profileAction', label: 'Profile & Action',   type: 'text'     },
+            { key: 'dlpProfile',    label: 'DLP Profile',        type: 'text'     },
+            { key: 'action',        label: 'Action',             type: 'text'     },
+            { key: 'description',   label: 'Policy Description', type: 'textarea' },
+            { key: 'groupPosition', label: 'Group position',     type: 'text'     },
         ],
         ssl_policy: [
             { key: 'sslPolicyName', label: 'SSL Policy name', type: 'text'     },
@@ -134,6 +110,14 @@ Version 1.0.0:
                 { label: 'Policy Created',  value: 'Policy Created',  color: '#007bff', schema: 'policy_full'    },
                 { label: 'Policy Modified', value: 'Policy Modified', color: '#6610f2', schema: 'policy_full'    },
                 { label: 'Policy Deleted',  value: 'Policy Deleted',  color: '#c0392b', schema: 'policy_deleted' },
+            ],
+        },
+        {
+            group: 'DLP Policies',
+            items: [
+                { label: 'DLP Policy Created',  value: 'DLP Policy Created',  color: '#007bff', schema: 'dlp_policy_full' },
+                { label: 'DLP Policy Modified', value: 'DLP Policy Modified', color: '#6610f2', schema: 'dlp_policy_full' },
+                { label: 'DLP Policy Deleted',  value: 'DLP Policy Deleted',  color: '#c0392b', schema: 'policy_deleted'  },
             ],
         },
         {
@@ -245,6 +229,7 @@ Version 1.0.0:
 
     const CATEGORY_GROUPS = [
         { label: 'Policy Changes',              types: ['Policy Created', 'Policy Modified', 'Policy Deleted'] },
+        { label: 'DLP Policy Changes',          types: ['DLP Policy Created', 'DLP Policy Modified', 'DLP Policy Deleted'] },
         { label: 'URL Lists',                   types: ['URL List Created', 'URL List — URLs Added', 'URL List — URLs Removed', 'URL List Removed'] },
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
         { label: 'Custom Categories',           types: ['Custom Category Created', 'Custom Category — URL Lists Added', 'Custom Category — URL Lists Removed', 'Custom Category Removed'] },
@@ -689,6 +674,12 @@ Version 1.0.0:
             createTypes: ['Policy Created'],
             modifyTypes: ['Policy Modified'],
             deleteTypes: ['Policy Deleted'],
+        },
+        'DLP Policy Changes': {
+            nameKey:     'policyName',
+            createTypes: ['DLP Policy Created'],
+            modifyTypes: ['DLP Policy Modified'],
+            deleteTypes: ['DLP Policy Deleted'],
         },
         'Steering / Client Configs': {
             nameKey:     'configName',

@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.10.5
+// @version      2.11.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,15 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.10.5';
-    const CHANGELOG = `Version 2.10.5:
-- Section titles in the dropdown are now more visually distinct for easier scanning.
+    const SCRIPT_VERSION = '2.11.0';
+    const CHANGELOG = `Version 2.11.0:
+- Added DLP Policy Management entries for EMEA Team (public comments and worknotes).
 
-Version 2.10.4:
-- Added several new options for EMEA Team.
-
-Version 2.10.3:
-- Updated Update URL to GitHub.`;
+Version 2.10.5:
+- Section titles in the dropdown are now more visually distinct for easier scanning.`;
 
     /* ==========================================================
      *  TEAM CONFIGURATIONS
@@ -273,6 +270,54 @@ Version 2.10.3:
                 parentItem: 'policyMgmtWorknote',
                 fieldType: 'work_notes'
             },
+            dlpPolicyMgmt: {
+                label: 'DLP Policy Managment',
+                category: 'responses',
+                hasSubmenu: true,
+                fieldType: 'comments'
+            },
+            dlpPolicyCreate: {
+                label: 'Create',
+                category: 'responses',
+                parentItem: 'dlpPolicyMgmt',
+                fieldType: 'comments'
+            },
+            dlpPolicyModify: {
+                label: 'Modify',
+                category: 'responses',
+                parentItem: 'dlpPolicyMgmt',
+                fieldType: 'comments'
+            },
+            dlpPolicyDelete: {
+                label: 'Delete',
+                category: 'responses',
+                parentItem: 'dlpPolicyMgmt',
+                fieldType: 'comments'
+            },
+            dlpPolicyMgmtWorknote: {
+                label: '# DLP Policy Managment',
+                category: 'workcomments',
+                hasSubmenu: true,
+                fieldType: 'work_notes'
+            },
+            dlpPolicyCreateWorknote: {
+                label: '# Create',
+                category: 'workcomments',
+                parentItem: 'dlpPolicyMgmtWorknote',
+                fieldType: 'work_notes'
+            },
+            dlpPolicyModifyWorknote: {
+                label: '# Modify',
+                category: 'workcomments',
+                parentItem: 'dlpPolicyMgmtWorknote',
+                fieldType: 'work_notes'
+            },
+            dlpPolicyDeleteWorknote: {
+                label: '# Delete',
+                category: 'workcomments',
+                parentItem: 'dlpPolicyMgmtWorknote',
+                fieldType: 'work_notes'
+            },
             workingOnReminder: {
                 label: 'Working on the request Reminder',
                 category: 'reminders',
@@ -313,6 +358,14 @@ Version 2.10.3:
             'policyCreateWorknote',
             'policyModifyWorknote',
             'policyDeleteWorknote',
+            'dlpPolicyMgmt',
+            'dlpPolicyCreate',
+            'dlpPolicyModify',
+            'dlpPolicyDelete',
+            'dlpPolicyMgmtWorknote',
+            'dlpPolicyCreateWorknote',
+            'dlpPolicyModifyWorknote',
+            'dlpPolicyDeleteWorknote',
             'configMgmtWorknotes',
             'configSteeringWorknotes',
             'urlcheck',
@@ -616,6 +669,73 @@ Partner Tenant Access configured:
 - Group position:
 - Action:`,
                 policyDeleteWorknote: (vars) => `Netskope Policy has been scheduled to be deleted (currently disabled):
+- Policy name:`,
+                dlpPolicyMgmt: (vars) => ``,
+                dlpPolicyCreate: (vars) => `Hi @[${vars.openedByName}],
+
+We've created the following Netskope DLP policy to help address the request:
+- Policy name:
+- AD group:
+- Destination:
+- Activities:
+- Profile & Action:
+- DLP Profile:
+- Action:
+- Policy description:
+- Group position:
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.
+
+Best regards,
+Global Data Security Enablement`,
+                dlpPolicyModify: (vars) => `Hi @[${vars.openedByName}],
+
+We've modified the following Netskope DLP policy to help address the request:
+- Policy name:
+- AD group:
+- Destination:
+- Activities:
+- Profile & Action:
+- DLP Profile:
+- Action:
+- Policy description:
+- Group position:
+
+When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.
+
+Best regards,
+Global Data Security Enablement`,
+                dlpPolicyDelete: (vars) => `Hi @[${vars.openedByName}],
+
+We've scheduled for deletion the following Netskope DLP policy:
+- Policy name:
+
+This policy has been disabled and scheduled for deletion in 30 days.
+
+Best regards,
+Global Data Security Enablement`,
+                dlpPolicyMgmtWorknote: (vars) => ``,
+                dlpPolicyCreateWorknote: (vars) => `Netskope DLP Policy has been created:
+- Policy name:
+- AD group:
+- Destination:
+- Activities:
+- Profile & Action:
+- DLP Profile:
+- Action:
+- Policy description:
+- Group position:`,
+                dlpPolicyModifyWorknote: (vars) => `Netskope DLP Policy has been modified:
+- Policy name:
+- AD group:
+- Destination:
+- Activities:
+- Profile & Action:
+- DLP Profile:
+- Action:
+- Policy description:
+- Group position:`,
+                dlpPolicyDeleteWorknote: (vars) => `Netskope DLP Policy has been scheduled to be deleted (currently disabled):
 - Policy name:`,
                 workingOnReminder: (vars) => `Hello @[${vars.openedByName}],
 
