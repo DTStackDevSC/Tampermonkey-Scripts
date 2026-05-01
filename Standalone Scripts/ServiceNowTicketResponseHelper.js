@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.11.1
+// @version      2.12.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,12 +25,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.11.1';
-    const CHANGELOG = `Version 2.11.1:
-- EMEA: Added "# Recategorization Request" worknote with URL Requested and Categories requested fields.
+    const SCRIPT_VERSION = '2.12.0';
+    const CHANGELOG = `Version 2.12.0:
+- Search bar: filter templates in real time from the top of the dropdown.
+- Recently Used: last 3 used templates pinned to the top of the list.
 
-Version 2.11.0:
-- Added DLP Policy Management entries for EMEA Team (public comments and worknotes).`;
+Version 2.11.1:
+- EMEA: Added "# Recategorization Request" worknote with URL Requested and Categories requested fields.`;
 
     /* ==========================================================
      *  TEAM CONFIGURATIONS
@@ -1457,6 +1458,22 @@ Regards.`,
     }
 
     /* ==========================================================
+     *  RECENTLY USED STORAGE
+     * ==========================================================*/
+
+    const MAX_RECENTLY_USED = 3;
+
+    function getRecentlyUsed() {
+        return GM_getValue('ticketResponseRecentlyUsed', []);
+    }
+
+    function trackRecentlyUsed(entry) {
+        const recent = getRecentlyUsed().filter(r => r.key !== entry.key);
+        recent.unshift(entry);
+        GM_setValue('ticketResponseRecentlyUsed', recent.slice(0, MAX_RECENTLY_USED));
+    }
+
+    /* ==========================================================
      *  CUSTOM RESPONSES STORAGE (GM_getValue/GM_setValue)
      * ==========================================================*/
 
@@ -2496,6 +2513,23 @@ Regards.`,
         header.appendChild(manageCustomRow);
         dropdown.appendChild(header);
 
+        const searchRow = document.createElement('div');
+        Object.assign(searchRow.style, { padding: '7px 12px', borderBottom: '1px solid #e8e8e8', backgroundColor: '#fff' });
+        const searchInput = document.createElement('input');
+        searchInput.id = 'response-search-input';
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Filter templates…';
+        Object.assign(searchInput.style, {
+            width: '100%', padding: '5px 8px', fontSize: '12px',
+            border: '1px solid #d0d0d0', borderRadius: '4px',
+            fontFamily: 'Arial, sans-serif', boxSizing: 'border-box', outline: 'none', color: '#333',
+        });
+        searchInput.addEventListener('focus', () => { searchInput.style.borderColor = '#0066cc'; });
+        searchInput.addEventListener('blur',  () => { searchInput.style.borderColor = '#d0d0d0'; });
+        searchInput.addEventListener('input', () => { filterItems(optionsContainer, searchInput.value); });
+        searchRow.appendChild(searchInput);
+        dropdown.appendChild(searchRow);
+
         const optionsContainer = document.createElement('div');
         optionsContainer.id = 'sections-container';
         Object.assign(optionsContainer.style, { overflowY: 'auto', maxHeight: '400px' });
@@ -2515,6 +2549,47 @@ Regards.`,
 
         const sectionStates = getSectionStates();
         const sectionOrder  = getSectionOrder(teamKey);
+
+        // ── Recently Used section ──
+        const recentItems = getRecentlyUsed();
+        if (recentItems.length > 0) {
+            const recentSection = document.createElement('div');
+            recentSection.className = 'category-section';
+            recentSection.dataset.categoryKey = 'recently_used';
+
+            const recentHeader = document.createElement('div');
+            Object.assign(recentHeader.style, {
+                padding: '8px 15px', fontSize: '11px', fontWeight: 'bold', color: '#555',
+                backgroundColor: '#fff8e1', borderTop: '1px solid #d4d8de', borderBottom: '2px solid #d4d8de',
+                textTransform: 'uppercase', letterSpacing: '0.7px',
+            });
+            recentHeader.textContent = '⏱ Recently Used';
+
+            const recentItemsContainer = document.createElement('div');
+            recentItemsContainer.className = 'category-items';
+
+            recentItems.forEach(entry => {
+                const ft = entry.fieldType || 'comments';
+                const option = buildMenuOption(entry.label, ft, async () => {
+                    trackRecentlyUsed(entry);
+                    const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                    const textarea = getTargetTextarea(ft);
+                    if (textarea) {
+                        const text = entry.isCustom
+                            ? resolveCustomResponseText(entry.customText, vars)
+                            : team.responses[entry.key](vars);
+                        await insertTextWithMention(textarea, text, ft);
+                        flashTargetField(textarea);
+                    }
+                    dropdown.style.display = 'none';
+                });
+                recentItemsContainer.appendChild(option);
+            });
+
+            recentSection.appendChild(recentHeader);
+            recentSection.appendChild(recentItemsContainer);
+            optionsContainer.appendChild(recentSection);
+        }
 
         sectionOrder.forEach(catKey => {
             const category = categories[catKey];
@@ -2553,6 +2628,7 @@ Regards.`,
             category.items.forEach(item => {
                 if (item.isCustom) {
                     const option = buildMenuOption(item.label, item.fieldType || 'comments', async () => {
+                        trackRecentlyUsed({ key: item.value, label: item.label, fieldType: item.fieldType || 'comments', isCustom: true, customText: item.customText });
                         const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
                         const textarea = getTargetTextarea(item.fieldType || 'comments');
                         if (textarea) {
@@ -2602,9 +2678,12 @@ Regards.`,
                         })
                         .filter(Boolean);
 
+                    parentOption.dataset.filterLabel = [item.label, ...submenuItems.map(s => s.label)].join(' ').toLowerCase();
+
                     submenuItems.forEach(subItem => {
                         const subOption = buildMenuOption(subItem.label, subItem.fieldType, async (e) => {
                             e.stopPropagation();
+                            trackRecentlyUsed({ key: subItem.value, label: subItem.label, fieldType: subItem.fieldType });
                             const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
                             const textarea = getTargetTextarea(subItem.fieldType);
                             if (textarea) {
@@ -2637,6 +2716,7 @@ Regards.`,
 
                 } else if (!metadata || !metadata.parentItem) {
                     const option = buildMenuOption(item.label, fieldType, async () => {
+                        trackRecentlyUsed({ key: item.value, label: item.label, fieldType });
                         const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
                         const textarea = getTargetTextarea(fieldType);
                         if (textarea) {
@@ -2685,8 +2765,37 @@ Regards.`,
         return pip;
     }
 
+    function filterItems(optionsContainer, query) {
+        const q = query.toLowerCase().trim();
+        if (!q) {
+            const states = getSectionStates();
+            optionsContainer.querySelectorAll('.category-section').forEach(section => {
+                section.style.display = '';
+                section.querySelectorAll('[data-filter-label]').forEach(item => { item.style.display = ''; });
+                const itemsEl = section.querySelector('.category-items');
+                if (itemsEl) {
+                    const catKey = section.dataset.categoryKey;
+                    itemsEl.style.display = (catKey !== 'recently_used' && states[catKey]) ? 'none' : 'block';
+                }
+            });
+            return;
+        }
+        optionsContainer.querySelectorAll('.category-section').forEach(section => {
+            let visible = 0;
+            section.querySelectorAll('[data-filter-label]').forEach(item => {
+                const match = item.dataset.filterLabel.includes(q);
+                item.style.display = match ? '' : 'none';
+                if (match) visible++;
+            });
+            section.style.display = visible > 0 ? '' : 'none';
+            const itemsEl = section.querySelector('.category-items');
+            if (itemsEl) itemsEl.style.display = 'block';
+        });
+    }
+
     function buildMenuOption(label, fieldType, onClickHandler) {
         const option = document.createElement('div');
+        option.dataset.filterLabel = label.toLowerCase();
         Object.assign(option.style, {
             padding: '10px 15px', cursor: 'pointer', fontSize: '13px', color: '#000',
             borderBottom: '1px solid #f0f0f0', transition: 'background-color 0.2s ease',
@@ -2834,9 +2943,18 @@ Regards.`,
                 dropdown.style.display = 'none';
                 document.querySelectorAll('.bypass-submenu').forEach(sm => sm.style.display = 'none');
             } else {
+                // Rebuild sections to refresh Recently Used from storage
+                rebuildDropdownContent(dropdown, currentTeam, teamKey, inlineButton);
+                // Reset search input if it had text
+                const srchInput = dropdown.querySelector('#response-search-input');
+                if (srchInput && srchInput.value) {
+                    srchInput.value = '';
+                    const sc = dropdown.querySelector('#sections-container');
+                    if (sc) filterItems(sc, '');
+                }
                 positionDropdown(dropdown, inlineButton);
                 dropdown.style.display = 'flex';
-                refreshFieldTypePips(dropdown);   // ← refresh pip visibility on every open
+                refreshFieldTypePips(dropdown);
             }
         };
 
