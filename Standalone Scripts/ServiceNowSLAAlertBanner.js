@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3
+// @version      1.3.1
 // @description  Display color-coded SLA warning banner based on days remaining
 // @author       You
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -15,6 +15,13 @@
 
 (function() {
     'use strict';
+
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Banner now suppresses on all terminal states (Closed Incomplete, Cancelled, Resolved, Closed) not just Closed Complete.
+
+Version 1.3:
+- Added configurable date format picker with ⚙ button next to the Due Date field.`;
 
     // ─── Date Format Config ───────────────────────────────────────────────────
 
@@ -231,20 +238,28 @@
 
     // ─── State Check ─────────────────────────────────────────────────────────
 
+    const TERMINAL_STATES = new Set([
+        'closed complete',
+        'closed incomplete',
+        'cancelled',
+        'resolved',
+        'closed',
+    ]);
+
     function isTicketClosed() {
         // ServiceNow renders the state as a select (edit mode) or a display span (read-only mode).
         // Try the select first, then fall back to common read-only label selectors.
         const stateSelect = document.querySelector('select[id$=".state"]');
         if (stateSelect) {
-            const text = stateSelect.options[stateSelect.selectedIndex]?.text?.trim() || '';
-            return text.toLowerCase() === 'closed complete';
+            const text = stateSelect.options[stateSelect.selectedIndex]?.text?.trim().toLowerCase() || '';
+            return TERMINAL_STATES.has(text);
         }
         // Read-only display variants used by different SNow themes
         const stateLabel =
             document.querySelector('[id$=".state_label"]') ||
             document.querySelector('[id$=".state"] .select2-chosen');
         if (stateLabel) {
-            return stateLabel.textContent.trim().toLowerCase() === 'closed complete';
+            return TERMINAL_STATES.has(stateLabel.textContent.trim().toLowerCase());
         }
         return false;
     }
