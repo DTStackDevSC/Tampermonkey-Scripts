@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.9
+// @version      1.1.0
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -12,6 +12,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
+// @grant        GM_setClipboard
 // @run-at       document-start
 // ==/UserScript==
 
@@ -25,16 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.9';
-    const CHANGELOG = `Version 1.0.9:
-- Update URL Changed
-    
-Version 1.0.7:
-- Replaced static team configuration with dynamic member setup
-- Team members are now entered at first run and stored in GM storage
-- Added member management (add/remove) from modal footer
-- Added Import/Export (JSON) in Manage Members modal
-- Added Import (JSON) in first-run setup wizard`;
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Added optional Short Description field to the assignment modal. When filled, copies a formatted one-liner (Ticket # | Member Firm | Description) to clipboard after assigning — ready to paste in Teams or email.
+
+Version 1.0.9:
+- Update URL Changed`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -934,6 +931,11 @@ Version 1.0.7:
             text-decoration: underline; font-family: Arial, sans-serif !important;
         }
         .sn-assign-switch-team-btn:hover { color: #0052a3 !important; }
+
+        .sn-assign-field-tip {
+            font-size: 11px !important; color: #888 !important; margin-top: 5px !important;
+            line-height: 1.4; font-family: Arial, sans-serif !important;
+        }
     `;
 
     /* ==========================================================
@@ -1098,8 +1100,27 @@ Version 1.0.7:
             <div class="sn-assign-loading-text">Assigning ticket...</div>
         `;
 
+        // Short Description (Optional) — for clipboard one-liner
+        const shortDescGroup = document.createElement('div');
+        shortDescGroup.className = 'sn-assign-form-group';
+        const shortDescLabel = document.createElement('label');
+        shortDescLabel.className = 'sn-assign-label';
+        shortDescLabel.textContent = 'Short Description (Optional)';
+        const shortDescInput = document.createElement('input');
+        shortDescInput.type = 'text';
+        shortDescInput.id = 'sn-assign-short-desc';
+        shortDescInput.className = 'sn-assign-dropdown';
+        shortDescInput.placeholder = 'e.g. ES | Error accessing Netskope client';
+        const shortDescTip = document.createElement('div');
+        shortDescTip.className = 'sn-assign-field-tip';
+        shortDescTip.textContent = '💡 If filled, copies "Ticket # | your text" to clipboard after assigning — ready to paste in Teams or email.';
+        shortDescGroup.appendChild(shortDescLabel);
+        shortDescGroup.appendChild(shortDescInput);
+        shortDescGroup.appendChild(shortDescTip);
+
         content.appendChild(infoBox);
         content.appendChild(formGroup);
+        content.appendChild(shortDescGroup);
         content.appendChild(checkboxContainer);
         content.appendChild(freezeContainer);
         content.appendChild(buttons);
@@ -1186,6 +1207,8 @@ Version 1.0.7:
             if (freezeCheckbox) freezeCheckbox.checked = false;
             const freezePicker = document.getElementById('sn-assign-freeze-picker');
             if (freezePicker) freezePicker.classList.remove('active');
+            const shortDescInput = document.getElementById('sn-assign-short-desc');
+            if (shortDescInput) shortDescInput.value = '';
         }
     }
 
@@ -1348,6 +1371,7 @@ Version 1.0.7:
         const useMissingInfoTemplate = checkbox.checked;
         const freezeCheckbox = document.getElementById('sn-assign-freeze-checkbox');
         const useFreezeReminder = freezeCheckbox.checked;
+        const shortDescVal = document.getElementById('sn-assign-short-desc')?.value?.trim() || '';
 
         console.log('🎫 Starting ticket assignment to:', assigneeName);
         showLoading();
@@ -1360,6 +1384,14 @@ Version 1.0.7:
             await openSCTASKInBackground();
             hideLoading();
             hideModal();
+
+            if (shortDescVal) {
+                const ticketNum = getTicketNumber();
+                const clipText = ticketNum ? `${ticketNum} | ${shortDescVal}` : shortDescVal;
+                GM_setClipboard(clipText);
+                console.log('📋 Copied to clipboard:', clipText);
+            }
+
             console.log('✅ Ticket assignment completed successfully');
         } catch (error) {
             hideLoading();
@@ -1451,6 +1483,13 @@ Version 1.0.7:
         }
         console.warn('⚠️ Could not find "Opened by" field, using placeholder');
         return 'Requester Name';
+    }
+
+    function getTicketNumber() {
+        const numField = document.getElementById('sc_req_item.number') ||
+                         document.getElementById('incident.number');
+        if (numField) return (numField.value || numField.textContent).trim();
+        return '';
     }
 
     async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder) {
