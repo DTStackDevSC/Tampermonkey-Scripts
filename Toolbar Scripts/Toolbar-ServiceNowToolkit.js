@@ -3,17 +3,13 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
-// @match        https://*.service-now.com/sc_req_item.do*
-// @match        https://*.service-now.com/incident.do*
-// @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards/
-// @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards*
-// @match        https://*.service-now.com/now/nav/ui/classic/params/target/%24pa_dashboard.do
-// @match        https://*.service-now.com/now/nav/ui/classic/params/target/%24pa_dashboard.do*
-// @grant        GM_setValue
+// @match        https://*.service-now.com/*
 // @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -26,12 +22,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.0';
-    const CHANGELOG = `Version 1.0.0:
-- Initial release: work note and comment draft autosave
-- Drafts stored per-ticket in sessionStorage (cleared when browser closes)
-- Floating indicator on ticket pages: restore, clear, and post-submit prompt
-- Toolbar panel on dashboard: view, restore context, and delete saved drafts`;
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Switched to GM storage — drafts persist across browser restarts
+- Toolbar button now registers on all ServiceNow pages
+- Redesigned modal: settings view with feature toggles + separate Drafts panel
+
+Version 1.0.1:
+- Both Work Notes and Comments fields tracked simultaneously per ticket`;
 
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
@@ -60,11 +58,13 @@
     const TOOL_ID       = 'serviceNowToolkit';
     const TOOL_TOOLTIP  = 'ServiceNow Toolkit';
     const TOOL_POSITION = 10;
+    const MODAL_ID      = 'sn-toolkit-modal';
 
-    const DRAFT_PREFIX   = 'sn_toolkit_draft_';
-    const AUTOSAVE_DELAY = 3000; // ms between saves
+    const GM_KEY_DRAFTS   = 'sn_toolkit_drafts';
+    const GM_KEY_AUTOSAVE = 'sn_toolkit_autosave_enabled';
+    const AUTOSAVE_DELAY  = 3000;
 
-    // Ordered by specificity — first match wins
+    // Ordered by specificity — first match wins per selector pass
     const FIELD_SELECTORS = [
         { sel: '#activity-stream-work_notes-textarea', label: 'Work Notes' },
         { sel: '#activity-stream-comments-textarea',   label: 'Comments'   },
@@ -85,51 +85,59 @@
     const REGISTRATION_RETRY_DELAY  = 500;
 
     /* ==========================================================
-     *  DRAFT STORAGE  (sessionStorage — cleared on browser close)
+     *  SETTINGS
      * ==========================================================*/
 
+    function getAutosaveEnabled() { return GM_getValue(GM_KEY_AUTOSAVE, true); }
+    function setAutosaveEnabled(v) { GM_setValue(GM_KEY_AUTOSAVE, v); }
+
+    /* ==========================================================
+     *  DRAFT STORAGE  (GM storage — persists across sessions)
+     * ==========================================================*/
+
+    function fieldSlug(label) {
+        return label.toLowerCase().replace(/ /g, '_');
+    }
+
+    function getDraftsObj() {
+        try { return JSON.parse(GM_getValue(GM_KEY_DRAFTS, '{}')); }
+        catch { return {}; }
+    }
+
     function saveDraft(ticket, content, fieldLabel) {
-        sessionStorage.setItem(DRAFT_PREFIX + ticket, JSON.stringify({
-            ticket, content, fieldLabel,
-            savedAt: Date.now(),
-            url: location.href
-        }));
+        const drafts = getDraftsObj();
+        drafts[ticket + '_' + fieldSlug(fieldLabel)] = {
+            ticket, content, fieldLabel, savedAt: Date.now(), url: location.href
+        };
+        GM_setValue(GM_KEY_DRAFTS, JSON.stringify(drafts));
     }
 
-    function loadDraft(ticket) {
-        try {
-            const raw = sessionStorage.getItem(DRAFT_PREFIX + ticket);
-            return raw ? JSON.parse(raw) : null;
-        } catch { return null; }
+    function loadDraft(ticket, fieldLabel) {
+        return getDraftsObj()[ticket + '_' + fieldSlug(fieldLabel)] || null;
     }
 
-    function deleteDraft(ticket) {
-        sessionStorage.removeItem(DRAFT_PREFIX + ticket);
+    function deleteDraft(ticket, fieldLabel) {
+        const drafts = getDraftsObj();
+        delete drafts[ticket + '_' + fieldSlug(fieldLabel)];
+        GM_setValue(GM_KEY_DRAFTS, JSON.stringify(drafts));
     }
 
-    function hasDraft(ticket) {
-        return sessionStorage.getItem(DRAFT_PREFIX + ticket) !== null;
+    function hasDraft(ticket, fieldLabel) {
+        const d = getDraftsObj()[ticket + '_' + fieldSlug(fieldLabel)];
+        return !!(d?.content);
     }
 
     function getAllDrafts() {
-        const result = [];
-        for (let i = 0; i < sessionStorage.length; i++) {
-            const key = sessionStorage.key(i);
-            if (key?.startsWith(DRAFT_PREFIX)) {
-                try {
-                    const d = JSON.parse(sessionStorage.getItem(key));
-                    if (d) result.push(d);
-                } catch { /* skip malformed */ }
-            }
-        }
-        return result.sort((a, b) => b.savedAt - a.savedAt);
+        return Object.values(getDraftsObj()).sort((a, b) => b.savedAt - a.savedAt);
+    }
+
+    function clearAllDrafts() {
+        GM_setValue(GM_KEY_DRAFTS, '{}');
     }
 
     /* ==========================================================
-     *  UI COMPONENTS
+     *  UI COMPONENTS — floating indicator (ticket pages)
      * ==========================================================*/
-
-    // ── Floating indicator (ticket pages) ──────────────────────
 
     let indicatorEl      = null;
     let autoDismissTimer = null;
@@ -139,42 +147,29 @@
         indicatorEl = document.createElement('div');
         indicatorEl.id = 'sn-toolkit-indicator';
         Object.assign(indicatorEl.style, {
-            position: 'fixed',
-            bottom: '24px',
-            right: '80px',
-            display: 'none',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '7px 12px',
-            background: '#ffffff',
-            border: '1px solid #c5d3f0',
-            borderLeft: '4px solid #4a90d9',
-            borderRadius: '6px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.14)',
-            fontSize: '12px',
-            color: '#2c3e6a',
+            position: 'fixed', bottom: '24px', right: '80px',
+            display: 'none', alignItems: 'center', gap: '8px',
+            padding: '7px 12px', background: '#ffffff',
+            border: '1px solid #c5d3f0', borderLeft: '4px solid #4a90d9',
+            borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.14)',
+            fontSize: '12px', color: '#2c3e6a',
             fontFamily: 'Arial, Helvetica, sans-serif',
-            zIndex: '99990',
-            userSelect: 'none',
-            maxWidth: '400px',
+            zIndex: '99990', userSelect: 'none', maxWidth: '420px',
         });
         document.body.appendChild(indicatorEl);
     }
 
-    function makeActionBtn(label, onClick, accent) {
+    function makeBtn(label, onClick, accent) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = label;
         Object.assign(btn.style, {
-            padding: '3px 9px',
-            fontSize: '11px',
+            padding: '3px 9px', fontSize: '11px',
             border: accent ? '1px solid #4a90d9' : '1px solid #c5d3f0',
             borderRadius: '3px',
             background: accent ? '#e8f0fe' : '#f7f9ff',
             color: accent ? '#1a5cb8' : '#3a3a6a',
-            cursor: 'pointer',
-            fontFamily: 'Arial, Helvetica, sans-serif',
-            whiteSpace: 'nowrap',
+            cursor: 'pointer', fontFamily: 'Arial, Helvetica, sans-serif', whiteSpace: 'nowrap',
         });
         btn.addEventListener('mouseover', () => btn.style.opacity = '0.7');
         btn.addEventListener('mouseout',  () => btn.style.opacity = '1');
@@ -186,21 +181,13 @@
         clearTimeout(autoDismissTimer);
         buildIndicator();
         indicatorEl.innerHTML = '';
-
         const msg = document.createElement('span');
         msg.textContent = `${icon} ${text}`;
         indicatorEl.appendChild(msg);
-
-        actions.forEach(({ label, onClick, accent }) => {
-            indicatorEl.appendChild(makeActionBtn(label, onClick, accent));
-        });
-
+        actions.forEach(({ label, onClick, accent }) => indicatorEl.appendChild(makeBtn(label, onClick, accent)));
         indicatorEl.style.display = 'inline-flex';
-
         if (autoDismissMs > 0) {
-            autoDismissTimer = setTimeout(() => {
-                if (indicatorEl) indicatorEl.style.display = 'none';
-            }, autoDismissMs);
+            autoDismissTimer = setTimeout(() => { if (indicatorEl) indicatorEl.style.display = 'none'; }, autoDismissMs);
         }
     }
 
@@ -209,7 +196,9 @@
         if (indicatorEl) indicatorEl.style.display = 'none';
     }
 
-    // ── Toolbar modal (dashboard pages) ───────────────────────
+    /* ==========================================================
+     *  UI COMPONENTS — settings / drafts modal
+     * ==========================================================*/
 
     function relTime(ts) {
         const s = Math.floor((Date.now() - ts) / 1000);
@@ -218,189 +207,323 @@
         return `${Math.floor(s / 3600)}h ago`;
     }
 
-    function truncate(str, n = 88) {
-        const clean = (str || '').replace(/\s+/g, ' ').trim();
-        return clean.length > n ? clean.slice(0, n) + '…' : clean;
+    function truncate(str, n = 90) {
+        const c = (str || '').replace(/\s+/g, ' ').trim();
+        return c.length > n ? c.slice(0, n) + '…' : c;
+    }
+
+    function updateRowStyle(row, enabled) {
+        row.style.borderColor = enabled ? '#1a73e8' : '#e0e0e0';
+        row.style.background  = enabled ? '#f0f6ff' : '#ffffff';
     }
 
     function buildModal() {
-        if (document.getElementById('sn-toolkit-modal')) return;
+        if (document.getElementById(MODAL_ID)) return;
 
-        const modal = document.createElement('div');
-        modal.id = 'sn-toolkit-modal';
-        Object.assign(modal.style, {
-            position: 'fixed',
-            top: '60px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: '#f9f9f9',
-            border: '1px solid #cccccc',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-            padding: '50px 20px 20px 20px',
-            zIndex: '999998',
-            borderRadius: '10px',
-            fontFamily: 'Arial, Helvetica, sans-serif',
-            display: 'none',
-            flexDirection: 'column',
-            gap: '12px',
-            minWidth: '480px',
-            maxWidth: '560px',
+        /* ── Backdrop ── */
+        const backdrop = document.createElement('div');
+        backdrop.id = MODAL_ID + '-backdrop';
+        Object.assign(backdrop.style, {
+            position: 'fixed', inset: '0',
+            background: 'rgba(0,0,0,0.35)',
+            zIndex: '999997', display: 'none',
+            alignItems: 'center', justifyContent: 'center',
+        });
+        backdrop.addEventListener('click', e => { if (e.target === backdrop) hideModal(); });
+
+        /* ── Card ── */
+        const card = document.createElement('div');
+        card.id = MODAL_ID;
+        Object.assign(card.style, {
+            position: 'relative', background: '#f9f9f9',
+            border: '1px solid #ccc', boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+            borderRadius: '10px', zIndex: '999998',
+            fontFamily: 'Arial, sans-serif',
+            minWidth: '440px', maxWidth: '520px', width: '100%',
+            maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxSizing: 'border-box',
         });
 
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'X';
-        Object.assign(closeBtn.style, {
-            position: 'absolute', top: '5px', right: '5px',
-            background: '#dc3545', color: '#ffffff', border: 'none',
-            borderRadius: '4px', cursor: 'pointer', padding: '4px 8px',
-            fontWeight: 'bold', fontSize: '12px',
-            fontFamily: 'Arial, Helvetica, sans-serif',
+        /* ── Header ── */
+        const header = document.createElement('div');
+        header.id = MODAL_ID + '-header';
+        Object.assign(header.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '12px 14px 10px', borderBottom: '1px solid #e0e0e0', flexShrink: '0',
         });
-        closeBtn.onclick = () => { modal.style.display = 'none'; };
-        modal.appendChild(closeBtn);
+
+        const headerLeft = document.createElement('div');
+        Object.assign(headerLeft.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+
+        const backBtn = document.createElement('button');
+        backBtn.id = MODAL_ID + '-back-btn';
+        backBtn.textContent = '← Back';
+        Object.assign(backBtn.style, {
+            display: 'none', padding: '3px 10px', fontSize: '12px',
+            border: '1px solid #ccc', borderRadius: '4px',
+            background: '#f5f5f5', color: '#333', cursor: 'pointer', fontFamily: 'Arial, sans-serif',
+        });
+        backBtn.addEventListener('mouseenter', () => backBtn.style.background = '#e8e8e8');
+        backBtn.addEventListener('mouseleave', () => backBtn.style.background = '#f5f5f5');
+        backBtn.addEventListener('click', () => switchView('settings'));
 
         const titleEl = document.createElement('div');
-        Object.assign(titleEl.style, {
-            position: 'absolute', top: '12px', left: '12px',
-            fontSize: '12px', color: '#333333', fontWeight: 'bold',
-            fontFamily: 'Arial, Helvetica, sans-serif',
-        });
-        titleEl.textContent = '🛠️ ServiceNow Toolkit — Saved Drafts';
-        modal.appendChild(titleEl);
+        titleEl.id = MODAL_ID + '-title';
+        Object.assign(titleEl.style, { fontSize: '12px', fontWeight: 'bold', color: '#333' });
+        titleEl.textContent = '🛠️ ServiceNow Toolkit — Settings';
 
-        const listContainer = document.createElement('div');
-        listContainer.id = 'sn-toolkit-draft-list';
-        Object.assign(listContainer.style, {
-            display: 'flex', flexDirection: 'column', gap: '8px',
-            maxHeight: '400px', overflowY: 'auto',
-        });
-        modal.appendChild(listContainer);
+        headerLeft.appendChild(backBtn);
+        headerLeft.appendChild(titleEl);
 
-        const footer = document.createElement('div');
-        Object.assign(footer.style, {
-            fontSize: '11px', color: '#888888',
-            borderTop: '1px solid #e0e0e0', paddingTop: '8px',
-            fontFamily: 'Arial, Helvetica, sans-serif',
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        Object.assign(closeBtn.style, {
+            background: '#e53935', color: '#fff', border: 'none',
+            borderRadius: '4px', cursor: 'pointer',
+            padding: '4px 9px', fontWeight: 'bold', fontSize: '13px', flexShrink: '0',
         });
-        footer.textContent = '⏱ Drafts live in this session only — cleared when the browser closes.';
-        modal.appendChild(footer);
+        closeBtn.addEventListener('click', hideModal);
+        header.appendChild(headerLeft);
+        header.appendChild(closeBtn);
+        card.appendChild(header);
 
-        document.body.appendChild(modal);
+        /* ── Scrollable body ── */
+        const body = document.createElement('div');
+        body.id = MODAL_ID + '-body';
+        Object.assign(body.style, { overflowY: 'auto', flex: '1', padding: '16px 20px' });
+        card.appendChild(body);
+
+        backdrop.appendChild(card);
+        document.body.appendChild(backdrop);
+
+        // Build both views
+        buildSettingsView(body);
+        buildDraftsView(body);
+        switchView('settings');
     }
 
-    function renderDraftList() {
-        const container = document.getElementById('sn-toolkit-draft-list');
-        if (!container) return;
-        container.innerHTML = '';
+    /* ── Settings view ── */
+    function buildSettingsView(body) {
+        const view = document.createElement('div');
+        view.id = MODAL_ID + '-view-settings';
+
+        const subtitle = document.createElement('p');
+        subtitle.textContent = 'Toggle features on or off. Changes take effect immediately and are saved across sessions.';
+        Object.assign(subtitle.style, {
+            fontSize: '12px', color: '#666', margin: '0 0 14px', lineHeight: '1.5',
+        });
+        view.appendChild(subtitle);
+
+        // ── Feature: Autosave ──
+        const featureRow = document.createElement('div');
+        Object.assign(featureRow.style, {
+            display: 'flex', alignItems: 'flex-start', gap: '14px',
+            background: '#fff', border: '1px solid #e0e0e0',
+            borderRadius: '8px', padding: '12px 14px', cursor: 'pointer',
+            transition: 'border-color 0.15s',
+        });
+
+        const toggleWrapper = document.createElement('div');
+        Object.assign(toggleWrapper.style, { flexShrink: '0', marginTop: '2px' });
+
+        const toggle = document.createElement('input');
+        toggle.type    = 'checkbox';
+        toggle.id      = MODAL_ID + '-autosave-toggle';
+        toggle.checked = getAutosaveEnabled();
+        Object.assign(toggle.style, { width: '36px', height: '20px', cursor: 'pointer', accentColor: '#1a73e8' });
+        toggle.addEventListener('change', () => {
+            setAutosaveEnabled(toggle.checked);
+            updateRowStyle(featureRow, toggle.checked);
+        });
+        toggleWrapper.appendChild(toggle);
+
+        const textBlock = document.createElement('div');
+        Object.assign(textBlock.style, { flex: '1' });
+
+        const featureLabel = document.createElement('div');
+        featureLabel.textContent = '📝 Work Note Draft Autosave';
+        Object.assign(featureLabel.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#222', marginBottom: '3px',
+        });
+
+        const featureDesc = document.createElement('div');
+        featureDesc.textContent = 'Auto-saves Work Notes and Comments fields as you type on ticket pages. Drafts persist across sessions until manually deleted.';
+        Object.assign(featureDesc.style, { fontSize: '12px', color: '#666', lineHeight: '1.4', marginBottom: '10px' });
+
+        const viewDraftsBtn = document.createElement('button');
+        viewDraftsBtn.textContent = 'View Saved Drafts →';
+        Object.assign(viewDraftsBtn.style, {
+            padding: '5px 12px', fontSize: '12px',
+            border: '1px solid #1a73e8', borderRadius: '4px',
+            background: '#e8f0fe', color: '#1a73e8',
+            cursor: 'pointer', fontFamily: 'Arial, sans-serif', fontWeight: 'bold',
+        });
+        viewDraftsBtn.addEventListener('mouseenter', () => viewDraftsBtn.style.background = '#d2e3fc');
+        viewDraftsBtn.addEventListener('mouseleave', () => viewDraftsBtn.style.background = '#e8f0fe');
+        viewDraftsBtn.addEventListener('click', e => { e.stopPropagation(); switchView('drafts'); });
+
+        textBlock.appendChild(featureLabel);
+        textBlock.appendChild(featureDesc);
+        textBlock.appendChild(viewDraftsBtn);
+
+        featureRow.appendChild(toggleWrapper);
+        featureRow.appendChild(textBlock);
+        featureRow.addEventListener('click', e => { if (e.target !== toggle && e.target !== viewDraftsBtn) toggle.click(); });
+        updateRowStyle(featureRow, toggle.checked);
+        view.appendChild(featureRow);
+
+        // ── Version footer ──
+        const versionRow = document.createElement('div');
+        Object.assign(versionRow.style, {
+            marginTop: '16px', fontSize: '11px', color: '#aaa',
+            textAlign: 'right', fontFamily: 'Arial, sans-serif',
+        });
+        versionRow.textContent = `v${SCRIPT_VERSION}`;
+        view.appendChild(versionRow);
+
+        body.appendChild(view);
+    }
+
+    /* ── Drafts view ── */
+    function buildDraftsView(body) {
+        const view = document.createElement('div');
+        view.id = MODAL_ID + '-view-drafts';
+        view.style.display = 'none';
+        body.appendChild(view);
+    }
+
+    function renderDraftsView() {
+        const view = document.getElementById(MODAL_ID + '-view-drafts');
+        if (!view) return;
+        view.innerHTML = '';
 
         const drafts = getAllDrafts();
 
         if (drafts.length === 0) {
             const empty = document.createElement('div');
             Object.assign(empty.style, {
-                textAlign: 'center', color: '#888888',
-                fontSize: '13px', padding: '24px 0',
-                fontFamily: 'Arial, Helvetica, sans-serif',
+                textAlign: 'center', color: '#888', fontSize: '13px',
+                padding: '32px 0', fontFamily: 'Arial, sans-serif',
             });
-            empty.textContent = 'No drafts saved in this session.';
-            container.appendChild(empty);
+            empty.textContent = 'No saved drafts.';
+            view.appendChild(empty);
             return;
         }
 
-        // "Clear all" row
-        const clearRow = document.createElement('div');
-        Object.assign(clearRow.style, { display: 'flex', justifyContent: 'flex-end' });
+        // Clear all row
+        const topRow = document.createElement('div');
+        Object.assign(topRow.style, { display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' });
         const clearAllBtn = document.createElement('button');
         clearAllBtn.textContent = '🗑️ Clear All';
         Object.assign(clearAllBtn.style, {
             padding: '5px 12px', fontSize: '12px',
-            border: '1px solid #dc3545', borderRadius: '4px',
-            background: '#fff5f5', color: '#dc3545',
-            cursor: 'pointer', fontFamily: 'Arial, Helvetica, sans-serif',
+            border: '1px solid #e53935', borderRadius: '4px',
+            background: '#fff5f5', color: '#e53935',
+            cursor: 'pointer', fontFamily: 'Arial, sans-serif',
         });
-        clearAllBtn.addEventListener('mouseover', () => clearAllBtn.style.background = '#ffe0e0');
-        clearAllBtn.addEventListener('mouseout',  () => clearAllBtn.style.background = '#fff5f5');
-        clearAllBtn.onclick = () => { drafts.forEach(d => deleteDraft(d.ticket)); renderDraftList(); };
-        clearRow.appendChild(clearAllBtn);
-        container.appendChild(clearRow);
+        clearAllBtn.addEventListener('mouseenter', () => clearAllBtn.style.background = '#fde0de');
+        clearAllBtn.addEventListener('mouseleave', () => clearAllBtn.style.background = '#fff5f5');
+        clearAllBtn.addEventListener('click', () => { clearAllDrafts(); renderDraftsView(); });
+        topRow.appendChild(clearAllBtn);
+        view.appendChild(topRow);
 
         drafts.forEach(draft => {
             const card = document.createElement('div');
             Object.assign(card.style, {
-                background: '#ffffff', border: '1px solid #dee2e6',
-                borderRadius: '6px', padding: '10px 12px',
-                display: 'flex', flexDirection: 'column', gap: '5px',
+                background: '#fff', border: '1px solid #dee2e6',
+                borderRadius: '8px', padding: '10px 12px',
+                display: 'flex', flexDirection: 'column', gap: '4px',
+                marginBottom: '8px',
             });
 
-            // Header: ticket number | field badge | time | delete btn
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center' });
 
             const ticketLabel = document.createElement('strong');
             ticketLabel.textContent = draft.ticket;
             Object.assign(ticketLabel.style, {
-                fontSize: '13px', color: '#222222',
-                fontFamily: 'Arial, Helvetica, sans-serif',
+                fontSize: '13px', color: '#222', fontFamily: 'Arial, sans-serif',
             });
 
-            const metaGroup = document.createElement('div');
-            Object.assign(metaGroup.style, { display: 'flex', gap: '6px', alignItems: 'center' });
+            const meta = document.createElement('div');
+            Object.assign(meta.style, { display: 'flex', gap: '6px', alignItems: 'center' });
 
             const fieldBadge = document.createElement('span');
             fieldBadge.textContent = draft.fieldLabel || 'Work Notes';
             Object.assign(fieldBadge.style, {
                 fontSize: '11px', padding: '2px 6px', borderRadius: '3px',
-                background: '#e8f0fe', color: '#1a73e8',
-                fontFamily: 'Arial, Helvetica, sans-serif',
+                background: '#e8f0fe', color: '#1a73e8', fontFamily: 'Arial, sans-serif',
             });
 
             const timeSpan = document.createElement('span');
             timeSpan.textContent = relTime(draft.savedAt);
             Object.assign(timeSpan.style, {
-                fontSize: '11px', color: '#888888',
-                fontFamily: 'Arial, Helvetica, sans-serif',
+                fontSize: '11px', color: '#888', fontFamily: 'Arial, sans-serif',
             });
 
             const delBtn = document.createElement('button');
             delBtn.textContent = '🗑️';
-            delBtn.title = 'Delete this draft';
+            delBtn.title = 'Delete draft';
             Object.assign(delBtn.style, {
                 border: 'none', background: 'transparent',
-                cursor: 'pointer', fontSize: '14px',
-                lineHeight: '1', padding: '0 2px', opacity: '0.65',
+                cursor: 'pointer', fontSize: '14px', lineHeight: '1', padding: '0 2px', opacity: '0.65',
             });
-            delBtn.addEventListener('mouseover', () => delBtn.style.opacity = '1');
-            delBtn.addEventListener('mouseout',  () => delBtn.style.opacity = '0.65');
-            delBtn.onclick = () => { deleteDraft(draft.ticket); renderDraftList(); };
+            delBtn.addEventListener('mouseenter', () => delBtn.style.opacity = '1');
+            delBtn.addEventListener('mouseleave', () => delBtn.style.opacity = '0.65');
+            delBtn.addEventListener('click', () => { deleteDraft(draft.ticket, draft.fieldLabel); renderDraftsView(); });
 
-            metaGroup.appendChild(fieldBadge);
-            metaGroup.appendChild(timeSpan);
-            metaGroup.appendChild(delBtn);
-            header.appendChild(ticketLabel);
-            header.appendChild(metaGroup);
-            card.appendChild(header);
+            meta.appendChild(fieldBadge);
+            meta.appendChild(timeSpan);
+            meta.appendChild(delBtn);
+            cardHeader.appendChild(ticketLabel);
+            cardHeader.appendChild(meta);
 
-            // Draft content preview
             const preview = document.createElement('div');
             preview.textContent = truncate(draft.content);
             Object.assign(preview.style, {
-                fontSize: '12px', color: '#555555', lineHeight: '1.45',
-                fontFamily: 'Arial, Helvetica, sans-serif',
+                fontSize: '12px', color: '#555', lineHeight: '1.45',
+                fontFamily: 'Arial, sans-serif',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             });
-            card.appendChild(preview);
 
-            container.appendChild(card);
+            card.appendChild(cardHeader);
+            card.appendChild(preview);
+            view.appendChild(card);
         });
     }
 
-    function showToolkitModal() {
+    /* ── View switching ── */
+    function switchView(viewName) {
+        const settingsView = document.getElementById(MODAL_ID + '-view-settings');
+        const draftsView   = document.getElementById(MODAL_ID + '-view-drafts');
+        const backBtn      = document.getElementById(MODAL_ID + '-back-btn');
+        const titleEl      = document.getElementById(MODAL_ID + '-title');
+
+        if (!settingsView || !draftsView) return;
+
+        if (viewName === 'drafts') {
+            settingsView.style.display = 'none';
+            draftsView.style.display   = 'block';
+            backBtn.style.display      = 'inline-block';
+            titleEl.textContent        = '📋 Saved Drafts';
+            renderDraftsView();
+        } else {
+            draftsView.style.display   = 'none';
+            settingsView.style.display = 'block';
+            backBtn.style.display      = 'none';
+            titleEl.textContent        = '🛠️ ServiceNow Toolkit — Settings';
+        }
+    }
+
+    function showModal() {
         buildModal();
-        renderDraftList();
-        const modal = document.getElementById('sn-toolkit-modal');
-        if (modal) modal.style.display = 'flex';
+        switchView('settings');
+        const backdrop = document.getElementById(MODAL_ID + '-backdrop');
+        if (backdrop) backdrop.style.display = 'flex';
+    }
+
+    function hideModal() {
+        const backdrop = document.getElementById(MODAL_ID + '-backdrop');
+        if (backdrop) backdrop.style.display = 'none';
     }
 
     /* ==========================================================
@@ -415,70 +538,91 @@
         return el?.value?.trim() || null;
     }
 
-    function findWorkNotesField() {
+    function findWorkNotesFields() {
+        const found = [];
+        const seen  = new Set();
         for (const { sel, label } of FIELD_SELECTORS) {
             const el = document.querySelector(sel);
-            if (el) return { el, label };
+            if (el && !seen.has(el)) {
+                seen.add(el);
+                found.push({ el, label });
+            }
         }
-        return null;
+        return found;
     }
 
-    function startAutosave(ticketNum, fieldEl, fieldLabel) {
-        let lastSaved = '';
-        let lastValue = fieldEl.value;
+    function handleDraftRestorePrompt(ticketNum, fields) {
+        const pending = fields
+            .map(({ el, label }) => ({ el, label, draft: loadDraft(ticketNum, label) }))
+            .filter(f => f.draft?.content);
 
-        // Offer to restore an existing draft — don't auto-fill to avoid
-        // re-populating a note that was already submitted.
-        const draft = loadDraft(ticketNum);
-        if (draft?.content) {
-            showIndicator('📝', `Saved draft found (${fieldLabel})`, [
-                {
-                    label: 'Restore',
-                    accent: true,
-                    onClick: () => {
-                        fieldEl.value = draft.content;
-                        lastSaved = draft.content;
-                        lastValue = draft.content;
-                        showIndicator('✅', 'Draft restored', [
-                            {
-                                label: 'Clear Draft',
-                                onClick: () => {
-                                    deleteDraft(ticketNum);
-                                    fieldEl.value = '';
-                                    lastSaved = '';
-                                    lastValue = '';
-                                    hideIndicator();
-                                }
-                            }
+        if (pending.length === 0) return;
+
+        function showPrompt(remaining) {
+            const isMulti = remaining.length > 1;
+            const text = isMulti
+                ? `${remaining.length} saved drafts (${remaining.map(f => f.label).join(' + ')})`
+                : `Saved draft found (${remaining[0].label})`;
+
+            const restoreActions = remaining.map(({ el, label, draft }) => ({
+                label: isMulti ? `↩ ${label}` : 'Restore',
+                accent: true,
+                onClick: () => {
+                    el.value = draft.content;
+                    const rest = remaining.filter(f => f.label !== label);
+                    if (rest.length === 0) {
+                        showIndicator('✅', `${label} draft restored`, [
+                            { label: 'Clear', onClick: () => { deleteDraft(ticketNum, label); hideIndicator(); } }
                         ]);
+                    } else {
+                        showIndicator(
+                            '✅', `${label} restored — also: ${rest.map(f => f.label).join(', ')}`,
+                            rest.map(({ el: rEl, label: rLabel, draft: rDraft }) => ({
+                                label: `↩ ${rLabel}`, accent: true,
+                                onClick: () => {
+                                    rEl.value = rDraft.content;
+                                    showIndicator('✅', 'All drafts restored', [
+                                        { label: 'Clear All', onClick: () => { remaining.forEach(f => deleteDraft(ticketNum, f.label)); hideIndicator(); } }
+                                    ]);
+                                }
+                            })).concat([{
+                                label: 'Delete',
+                                onClick: () => { rest.forEach(f => deleteDraft(ticketNum, f.label)); hideIndicator(); }
+                            }])
+                        );
                     }
-                },
+                }
+            }));
+
+            showIndicator('📝', text, [
+                ...restoreActions,
                 {
-                    label: 'Delete',
-                    onClick: () => { deleteDraft(ticketNum); hideIndicator(); }
+                    label: isMulti ? 'Delete All' : 'Delete',
+                    onClick: () => { remaining.forEach(f => deleteDraft(ticketNum, f.label)); hideIndicator(); }
                 }
             ]);
         }
 
+        showPrompt(pending);
+    }
+
+    function startAutosave(ticketNum, fieldEl, fieldLabel) {
+        let lastSaved = loadDraft(ticketNum, fieldLabel)?.content || '';
+        let lastValue = fieldEl.value;
+
         setInterval(() => {
+            if (!getAutosaveEnabled()) return;
+
             const current = fieldEl.value;
 
-            // Field was cleared after containing content → likely just submitted
-            if (lastValue && !current && hasDraft(ticketNum)) {
-                showIndicator('✉️', 'Work note submitted? Clear the saved draft?', [
+            // Field cleared after having content → likely just submitted
+            if (lastValue && !current && hasDraft(ticketNum, fieldLabel)) {
+                showIndicator('✉️', `${fieldLabel} submitted? Clear the saved draft?`, [
                     {
-                        label: 'Clear Draft',
-                        accent: true,
-                        onClick: () => {
-                            deleteDraft(ticketNum);
-                            lastSaved = '';
-                            hideIndicator();
-                        }
+                        label: 'Clear Draft', accent: true,
+                        onClick: () => { deleteDraft(ticketNum, fieldLabel); lastSaved = ''; hideIndicator(); }
                     },
-                    {
-                        label: 'Keep',
-                        onClick: hideIndicator
-                    }
+                    { label: 'Keep', onClick: hideIndicator }
                 ]);
                 lastValue = current;
                 return;
@@ -489,15 +633,10 @@
             if (current && current !== lastSaved) {
                 saveDraft(ticketNum, current, fieldLabel);
                 lastSaved = current;
-                // Show "saved" briefly then dismiss — don't clutter if user is actively typing
-                showIndicator('💾', 'Draft auto-saved', [
+                showIndicator('💾', `${fieldLabel} draft saved`, [
                     {
                         label: 'Clear',
-                        onClick: () => {
-                            deleteDraft(ticketNum);
-                            lastSaved = '';
-                            hideIndicator();
-                        }
+                        onClick: () => { deleteDraft(ticketNum, fieldLabel); lastSaved = ''; hideIndicator(); }
                     }
                 ], 3000);
             }
@@ -511,16 +650,19 @@
 
         function tryInit() {
             const ticketNum = getTicketNumber();
-            const found     = findWorkNotesField();
+            const fields    = findWorkNotesFields();
 
-            if (ticketNum && found) {
+            if (ticketNum && fields.length > 0) {
                 buildIndicator();
-                startAutosave(ticketNum, found.el, found.label);
+                if (getAutosaveEnabled()) {
+                    handleDraftRestorePrompt(ticketNum, fields);
+                }
+                fields.forEach(({ el, label }) => startAutosave(ticketNum, el, label));
             } else if (retries < 12) {
                 retries++;
                 setTimeout(tryInit, 1500);
             } else {
-                console.log('⚠️ Toolkit: could not detect ticket number or work notes field after 12 retries');
+                console.log('⚠️ Toolkit: could not detect ticket number or work notes field');
             }
         }
 
@@ -544,12 +686,7 @@
 
         if (toolbarExists && menuExists) {
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: {
-                    id:       TOOL_ID,
-                    icon:     toolIcon,
-                    tooltip:  TOOL_TOOLTIP,
-                    position: TOOL_POSITION,
-                }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: TOOL_TOOLTIP, position: TOOL_POSITION }
             }));
             isRegistered = true;
             console.log('✅ ServiceNow Toolkit registered!');
@@ -557,6 +694,11 @@
             setTimeout(attemptRegistration, REGISTRATION_RETRY_DELAY);
         }
     }
+
+    document.addEventListener('toolbarReady', () => attemptRegistration());
+    document.addEventListener('toolbarToolClicked', e => {
+        if (e.detail.id === TOOL_ID) showModal();
+    });
 
     /* ==========================================================
      *  INITIALIZATION
@@ -568,19 +710,12 @@
 
         const isTicketPage = /\/(sc_req_item|incident)\.do(\?|$)/.test(location.pathname + location.search);
 
+        buildModal();
+        setTimeout(attemptRegistration, 1000);
+
         if (isTicketPage) {
             console.log('🛠️ Toolkit: ticket page — autosave starting');
             initTicketPage();
-        } else {
-            console.log('🛠️ Toolkit: dashboard page — registering toolbar');
-            buildModal();
-
-            document.addEventListener('toolbarReady', () => attemptRegistration());
-            document.addEventListener('toolbarToolClicked', e => {
-                if (e.detail.id === TOOL_ID) showToolkitModal();
-            });
-
-            setTimeout(attemptRegistration, 1000);
         }
 
         if (isNewVersion() && !hasSeenChangelog()) {
