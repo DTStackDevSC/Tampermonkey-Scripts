@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         |Toolbar| General Toolkit
-// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketQuickOpen.js
-// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketQuickOpen.js
+// @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
+// @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @version      1.1
 // @description  Highlight a RITM, PER, or Netskope case number on any page to get a floating button that opens it in a new tab. Toggle via Toolbar.
