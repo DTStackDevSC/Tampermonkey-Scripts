@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.2.0
+// @version      2.2.1
 // @description  Highlight rows in ServiceNow based on Updated By column with configurable username and theme (Updated for new UI)
 // @author       J.R.
 // @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards/
@@ -25,10 +25,10 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.2.0';
-    const CHANGELOG = `Version 2.2.0:
-- Added SLA Due Date Heat-map: colours each row's left border by due date urgency (red/orange/purple)
-- New toggle and date format selector in settings
+    const SCRIPT_VERSION = '2.2.1';
+    const CHANGELOG = `Version 2.2.1:
+- SLA Heat-map enabled by default; first-run format picker on first use
+- SLA urgency colour now shown on the Due Date cell border instead of the whole row
 
 Version 2.1.5:
 - Fixed rows not re-highlighting after switching pages after some time on the page.`;
@@ -704,7 +704,11 @@ Version 2.1.5:
             slaHeatmapEnabled = !slaHeatmapEnabled;
             GM_setValue(SLA_ENABLED_KEY, slaHeatmapEnabled);
             refreshSLAToggle();
-            highlightRowsWithClasses();
+            if (slaHeatmapEnabled) {
+                highlightRowsWithClasses();
+            } else {
+                clearSLAHeatmap();
+            }
         });
         slaToggleBtn.addEventListener('mouseover', () => {
             slaToggleBtn.style.background = slaHeatmapEnabled ? '#218838' : '#5a6268';
@@ -1108,6 +1112,100 @@ Version 2.1.5:
         return null;
     }
 
+    function showSLAFormatPicker() {
+        if (document.getElementById('sla-format-picker-overlay')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'sla-format-picker-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', inset: '0',
+            background: 'rgba(0,0,0,0.55)',
+            zIndex: '1000003',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: 'Arial, Helvetica, sans-serif'
+        });
+
+        const box = document.createElement('div');
+        Object.assign(box.style, {
+            background: '#ffffff', borderRadius: '8px',
+            padding: '28px 32px', maxWidth: '460px', width: '90%',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.25)'
+        });
+
+        const title = document.createElement('h2');
+        title.textContent = '📅 SLA Heat-map — Date Format';
+        Object.assign(title.style, { margin: '0 0 10px', fontSize: '16px', color: '#1d1d1d' });
+
+        const hint = document.createElement('p');
+        Object.assign(hint.style, { margin: '0 0 6px', fontSize: '13px', color: '#555', lineHeight: '1.6' });
+        hint.textContent = 'Select the date format your ServiceNow instance uses for due dates.';
+
+        const howTo = document.createElement('p');
+        Object.assign(howTo.style, {
+            margin: '0 0 20px', fontSize: '12px', color: '#777', lineHeight: '1.6',
+            borderLeft: '3px solid #e0e0e0', paddingLeft: '10px'
+        });
+        howTo.innerHTML =
+            'Check the <strong>Due Date</strong> field on any ticket, or go to your ' +
+            '<strong>Profile</strong> (top-right → <em>Profile</em>) and look for ' +
+            '<strong>Date format</strong>. If it shows <strong>None</strong>, your format is ' +
+            '<strong>yyyy-MM-dd</strong>.<br><br>This can be changed later in the Row Highlighter settings.';
+
+        const btnGroup = document.createElement('div');
+        Object.assign(btnGroup.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
+
+        Object.keys(SLA_DATE_FORMATS).forEach(key => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = key;
+            Object.assign(btn.style, {
+                padding: '10px 14px', fontSize: '13px', textAlign: 'left',
+                cursor: 'pointer', border: '1px solid #ccc', borderRadius: '4px',
+                background: '#f7f7f7', color: '#1d1d1d', transition: 'background 0.15s',
+                fontFamily: 'Arial, Helvetica, sans-serif'
+            });
+            btn.onmouseover = () => { btn.style.background = '#e8f0fe'; };
+            btn.onmouseout  = () => { btn.style.background = '#f7f7f7'; };
+            btn.onclick = () => {
+                slaDateFormat = key;
+                GM_setValue(SLA_FORMAT_KEY, key);
+                overlay.remove();
+                const sel = document.getElementById('highlighter-sla-format');
+                if (sel) sel.value = key;
+                highlightRowsWithClasses();
+            };
+            btnGroup.appendChild(btn);
+        });
+
+        box.append(title, hint, howTo, btnGroup);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+    }
+
+    function clearSLAHeatmap() {
+        // Old UI
+        const tbody = document.querySelector('tbody.list2_body');
+        if (tbody) {
+            tbody.querySelectorAll('td.vt[headers*="due_date"]').forEach(cell => {
+                cell.style.removeProperty('box-shadow');
+                cell.style.removeProperty('border-left');
+            });
+            return;
+        }
+        // New UI — shadow DOM
+        findAllShadowRoots()
+            .filter(el => el.tagName?.toLowerCase() === 'now-list')
+            .forEach(nowList => {
+                if (!nowList.shadowRoot) return;
+                const table = nowList.shadowRoot.querySelector('table.now-list-table');
+                if (!table) return;
+                table.querySelectorAll('td[data-column-key="due_date"], td[data-column-key*="due"]').forEach(cell => {
+                    cell.style.removeProperty('box-shadow');
+                    cell.style.removeProperty('border-left');
+                });
+            });
+    }
+
     function applySLAHeatmap() {
         if (!slaHeatmapEnabled) return;
 
@@ -1118,7 +1216,13 @@ Version 2.1.5:
                 const cell = row.querySelector('td.vt[headers*="due_date"]');
                 if (!cell) return;
                 const color = getSLABorderColor(cell.textContent.trim());
-                if (color) row.style.setProperty('border-left', `4px solid ${color}`, 'important');
+                if (color) {
+                    cell.style.setProperty('box-shadow', `inset 4px 0 0 ${color}`, 'important');
+                    cell.style.setProperty('border-left', `4px solid ${color}`, 'important');
+                } else {
+                    cell.style.removeProperty('box-shadow');
+                    cell.style.removeProperty('border-left');
+                }
             });
             return;
         }
@@ -1139,7 +1243,13 @@ Version 2.1.5:
                         ? (content.getAttribute('data-tooltip') || content.textContent.trim())
                         : cell.textContent.trim();
                     const color = getSLABorderColor(dateStr);
-                    if (color) row.style.setProperty('border-left', `4px solid ${color}`, 'important');
+                    if (color) {
+                        cell.style.setProperty('box-shadow', `inset 4px 0 0 ${color}`, 'important');
+                        cell.style.setProperty('border-left', `4px solid ${color}`, 'important');
+                    } else {
+                        cell.style.removeProperty('box-shadow');
+                        cell.style.removeProperty('border-left');
+                    }
                 });
             });
     }
@@ -1460,8 +1570,13 @@ Version 2.1.5:
         // Load stored settings
         currentTheme = getStoredTheme();
         targetUsername = getStoredUsername();
-        slaHeatmapEnabled = GM_getValue(SLA_ENABLED_KEY, false);
-        slaDateFormat = GM_getValue(SLA_FORMAT_KEY, 'yyyy-MM-dd');
+        slaHeatmapEnabled = GM_getValue(SLA_ENABLED_KEY, true);
+        const storedSLAFormat = GM_getValue(SLA_FORMAT_KEY, null);
+        if (storedSLAFormat !== null) {
+            slaDateFormat = storedSLAFormat;
+        } else if (slaHeatmapEnabled) {
+            setTimeout(() => showSLAFormatPicker(), 1500);
+        }
 
         console.log(`Using theme: ${currentTheme}`);
         if (targetUsername) {
