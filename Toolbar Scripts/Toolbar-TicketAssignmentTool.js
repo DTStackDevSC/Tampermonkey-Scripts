@@ -26,12 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.0';
-    const CHANGELOG = `Version 1.2.0:
-- Short Description field now auto-detects and pre-fills the Member Firm code from the ticket when the modal is opened.
+    const SCRIPT_VERSION = '1.2.1';
+    const CHANGELOG = `Version 1.2.1:
+- Member Firm is now silently auto-detected in the background and injected into the clipboard snippet automatically. The Short Description field is for the description only.
 
 Version 1.1.0:
-- Added optional Short Description field to the assignment modal. When filled, copies a formatted one-liner (Ticket # | Member Firm | Description) to clipboard after assigning — ready to paste in Teams or email.`;
+- Added optional Short Description field to the assignment modal. When filled, copies "RITM | MF | Short Description" to clipboard after assigning.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -1153,10 +1153,10 @@ Version 1.1.0:
         shortDescInput.type = 'text';
         shortDescInput.id = 'sn-assign-short-desc';
         shortDescInput.className = 'sn-assign-dropdown';
-        shortDescInput.placeholder = 'e.g. ES | Error accessing Netskope client';
+        shortDescInput.placeholder = 'e.g. Error accessing Netskope client';
         const shortDescTip = document.createElement('div');
         shortDescTip.className = 'sn-assign-field-tip';
-        shortDescTip.textContent = '💡 Member Firm is auto-detected from the ticket. If filled, copies "Ticket # | your text" to clipboard after assigning.';
+        shortDescTip.textContent = '💡 If filled, copies "RITM | MF | Short Description" to clipboard after assigning. MF is auto-detected from the ticket.';
         shortDescGroup.appendChild(shortDescLabel);
         shortDescGroup.appendChild(shortDescInput);
         shortDescGroup.appendChild(shortDescTip);
@@ -1235,13 +1235,6 @@ Version 1.1.0:
             overlay.classList.add('active');
             const dropdown = document.getElementById('sn-assign-team-dropdown');
             if (dropdown) setTimeout(() => dropdown.focus(), 100);
-
-            // Auto-fill MF code if field is empty
-            const shortDescInput = document.getElementById('sn-assign-short-desc');
-            if (shortDescInput && !shortDescInput.value) {
-                const detectedMF = detectMFCode();
-                if (detectedMF) shortDescInput.value = detectedMF + ' | ';
-            }
         }
     }
 
@@ -1436,8 +1429,13 @@ Version 1.1.0:
             hideModal();
 
             if (shortDescVal) {
-                const ticketNum = getTicketNumber();
-                const clipText = ticketNum ? `${ticketNum} | ${shortDescVal}` : shortDescVal;
+                const ticketNum   = getTicketNumber();
+                const detectedMF  = detectMFCode();
+                const parts = [];
+                if (ticketNum)  parts.push(ticketNum);
+                if (detectedMF) parts.push(detectedMF);
+                parts.push(shortDescVal);
+                const clipText = parts.join(' | ');
                 GM_setClipboard(clipText);
                 console.log('📋 Copied to clipboard:', clipText);
             }
