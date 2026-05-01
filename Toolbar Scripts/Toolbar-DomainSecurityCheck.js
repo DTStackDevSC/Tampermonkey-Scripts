@@ -3,13 +3,12 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.4
+// @version      1.2.5
 // @description  Toolbar button to check domain on VirusTotal, IBM X-Force Exchange & Netskope
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
 // @grant        GM_openInTab
-// @grant        GM_setClipboard
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-start
@@ -24,14 +23,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.4';
-    const CHANGELOG = `Version 1.2.4:
-- Update URL Changed
-    
-Version 1.2.0:
-- ServiceNow SPM Request URL is no longer hardcoded
-- URL is now prompted on first use and saved to GM storage
-- URL can be reconfigured at any time via the modal settings`;
+    const SCRIPT_VERSION = '1.2.5';
+    const CHANGELOG = `Version 1.2.5:
+- Netskope URL Lookup now opens directly with the domain pre-filled (no clipboard copy)
+
+Version 1.2.4:
+- Update URL Changed`;
 
     /* ==========================================================
      *  GM STORAGE KEYS
@@ -706,8 +703,7 @@ Version 1.2.0:
         });
         infoBox.innerHTML = `
             <strong>What happens when you check:</strong><br>
-            ✓ Domain copied to clipboard (https://domain)<br>
-            ✓ Opens Netskope URL Lookup<br>
+            ✓ Opens Netskope URL Lookup (domain pre-filled)<br>
             ✓ Opens IBM X-Force Exchange<br>
             ✓ Opens VirusTotal<br>
             ✓ Opens ServiceNow SPM Request Form (if checked &amp; URL is configured)
@@ -740,21 +736,7 @@ Version 1.2.0:
 
             console.log('🔍 Checking domain:', domain);
 
-            const fullUrl = `https://${domain}`;
-            try {
-                GM_setClipboard(fullUrl, 'text');
-                const originalText = btnCheck.textContent;
-                btnCheck.textContent = '✓ Copied to Clipboard!';
-                btnCheck.style.background = '#28a745';
-                setTimeout(() => {
-                    btnCheck.textContent = originalText;
-                    btnCheck.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-                }, 1500);
-            } catch (err) {
-                console.error('Failed to copy to clipboard:', err);
-            }
-
-            GM_openInTab('https://www.netskope.com/url-lookup', { active: false, insert: true });
+            GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${domain}`, { active: false, insert: true });
             GM_openInTab(`https://exchange.xforce.ibmcloud.com/url/${domain}`, { active: false, insert: true });
             GM_openInTab(`https://www.virustotal.com/gui/domain/${domain}`, { active: false, insert: true });
 
