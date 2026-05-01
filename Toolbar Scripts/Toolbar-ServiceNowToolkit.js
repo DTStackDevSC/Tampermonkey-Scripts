@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.0
+// @version      1.1.1
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,14 +22,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
+    const SCRIPT_VERSION = '1.1.1';
+    const CHANGELOG = `Version 1.1.1:
+- Drafts are now auto-deleted when Update / Save and Stay is clicked
+- Activity stream fields also cleared silently when the field empties post-submit
+
+Version 1.1.0:
 - Switched to GM storage — drafts persist across browser restarts
 - Toolbar button now registers on all ServiceNow pages
-- Redesigned modal: settings view with feature toggles + separate Drafts panel
-
-Version 1.0.1:
-- Both Work Notes and Comments fields tracked simultaneously per ticket`;
+- Redesigned modal: settings view with feature toggles + separate Drafts panel`;
 
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
@@ -606,6 +607,39 @@ Version 1.0.1:
         showPrompt(pending);
     }
 
+    const SUBMIT_SELECTORS = [
+        '#sysverb_update',
+        '#sysverb_update_and_stay',
+        '#sysverb_save',
+        'button[name="sysverb_update"]',
+        'button[name="sysverb_update_and_stay"]',
+        'button[name="sysverb_save"]',
+    ];
+
+    function attachSubmitListeners(ticketNum, fields) {
+        function onSubmitClick() {
+            let cleared = 0;
+            fields.forEach(({ el, label }) => {
+                if (el.value.trim() && hasDraft(ticketNum, label)) {
+                    deleteDraft(ticketNum, label);
+                    cleared++;
+                }
+            });
+            if (cleared > 0) {
+                showIndicator('✅', cleared === 1 ? 'Draft cleared' : `${cleared} drafts cleared`, [], 2500);
+            }
+        }
+
+        SUBMIT_SELECTORS.forEach(sel => {
+            document.querySelectorAll(sel).forEach(btn => {
+                if (!btn.dataset.snToolkitBound) {
+                    btn.dataset.snToolkitBound = '1';
+                    btn.addEventListener('click', onSubmitClick);
+                }
+            });
+        });
+    }
+
     function startAutosave(ticketNum, fieldEl, fieldLabel) {
         let lastSaved = loadDraft(ticketNum, fieldLabel)?.content || '';
         let lastValue = fieldEl.value;
@@ -615,15 +649,11 @@ Version 1.0.1:
 
             const current = fieldEl.value;
 
-            // Field cleared after having content → likely just submitted
+            // Field cleared after having content — activity stream post or other submit mechanism
             if (lastValue && !current && hasDraft(ticketNum, fieldLabel)) {
-                showIndicator('✉️', `${fieldLabel} submitted? Clear the saved draft?`, [
-                    {
-                        label: 'Clear Draft', accent: true,
-                        onClick: () => { deleteDraft(ticketNum, fieldLabel); lastSaved = ''; hideIndicator(); }
-                    },
-                    { label: 'Keep', onClick: hideIndicator }
-                ]);
+                deleteDraft(ticketNum, fieldLabel);
+                lastSaved = '';
+                showIndicator('✅', `${fieldLabel} draft cleared`, [], 2500);
                 lastValue = current;
                 return;
             }
@@ -657,6 +687,7 @@ Version 1.0.1:
                 if (getAutosaveEnabled()) {
                     handleDraftRestorePrompt(ticketNum, fields);
                 }
+                attachSubmitListeners(ticketNum, fields);
                 fields.forEach(({ el, label }) => startAutosave(ticketNum, el, label));
             } else if (retries < 12) {
                 retries++;
