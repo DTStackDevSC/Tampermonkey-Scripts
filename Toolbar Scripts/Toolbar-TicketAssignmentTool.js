@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.1
+// @version      1.2.2
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -26,12 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.1';
-    const CHANGELOG = `Version 1.2.1:
-- Member Firm is now silently auto-detected in the background and injected into the clipboard snippet automatically. The Short Description field is for the description only.
+    const SCRIPT_VERSION = '1.2.2';
+    const CHANGELOG = `Version 1.2.2:
+- Assignment loading overlay now shows whether the clipboard snippet was copied or not before closing.
 
-Version 1.1.0:
-- Added optional Short Description field to the assignment modal. When filled, copies "RITM | MF | Short Description" to clipboard after assigning.`;
+Version 1.2.1:
+- Member Firm is now silently auto-detected in the background and injected into the clipboard snippet automatically. The Short Description field is for the description only.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -1262,7 +1262,43 @@ Version 1.1.0:
 
     function hideLoading() {
         const loading = document.getElementById('sn-assign-loading');
-        if (loading) loading.classList.remove('active');
+        if (!loading) return;
+        loading.classList.remove('active');
+        // Reset spinner and text for next use
+        const spinner = loading.querySelector('.sn-assign-spinner');
+        if (spinner) { spinner.style.cssText = ''; spinner.textContent = ''; }
+        const loadingText = loading.querySelector('.sn-assign-loading-text');
+        if (loadingText) loadingText.textContent = 'Assigning ticket...';
+        const statusEl = loading.querySelector('.sn-assign-clip-status');
+        if (statusEl) statusEl.remove();
+    }
+
+    function showAssignmentSuccess(clipText) {
+        const loading = document.getElementById('sn-assign-loading');
+        if (!loading) return;
+
+        const spinner = loading.querySelector('.sn-assign-spinner');
+        if (spinner) {
+            spinner.style.cssText = 'font-size:38px; width:auto; height:auto; border:none; animation:none;';
+            spinner.textContent = '✅';
+        }
+
+        const loadingText = loading.querySelector('.sn-assign-loading-text');
+        if (loadingText) loadingText.textContent = 'Ticket assigned!';
+
+        const statusEl = document.createElement('div');
+        statusEl.className = 'sn-assign-clip-status';
+        Object.assign(statusEl.style, {
+            fontSize: '12px', fontFamily: 'Arial, sans-serif',
+            marginTop: '8px', fontWeight: '500', textAlign: 'center',
+            color: clipText ? '#2e7d32' : '#999',
+        });
+        statusEl.textContent = clipText
+            ? '📋 Snippet copied to clipboard'
+            : 'No snippet — Short Description was empty';
+        loading.appendChild(statusEl);
+
+        setTimeout(() => { hideLoading(); hideModal(); }, 2500);
     }
 
     /* ==========================================================
@@ -1425,21 +1461,21 @@ Version 1.1.0:
             const openedByName = getOpenedByName();
             await addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder);
             await openSCTASKInBackground();
-            hideLoading();
-            hideModal();
 
+            let clipText = null;
             if (shortDescVal) {
-                const ticketNum   = getTicketNumber();
-                const detectedMF  = detectMFCode();
+                const ticketNum  = getTicketNumber();
+                const detectedMF = detectMFCode();
                 const parts = [];
                 if (ticketNum)  parts.push(ticketNum);
                 if (detectedMF) parts.push(detectedMF);
                 parts.push(shortDescVal);
-                const clipText = parts.join(' | ');
+                clipText = parts.join(' | ');
                 GM_setClipboard(clipText);
                 console.log('📋 Copied to clipboard:', clipText);
             }
 
+            showAssignmentSuccess(clipText);
             console.log('✅ Ticket assignment completed successfully');
         } catch (error) {
             hideLoading();
