@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.1
+// @version      1.4.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,13 +24,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
-- Added Recategorization Request entry type with URL Requested and Categories requested fields.
+    const SCRIPT_VERSION = '1.4.0';
+    const CHANGELOG = `Version 1.4.0:
+- Search / filter bar added to the log panel: filter entries by keyword, type, field value, author, or date range.
 
-Version 1.3.0:
-- Added DLP Policies group: Created / Modified / Deleted
-  - Fields: Policy name, AD group, Destination, Activities, Profile & Action, DLP Profile, Action, Policy Description, Group position`;
+Version 1.3.1:
+- Added Recategorization Request entry type with URL Requested and Categories requested fields.`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -423,6 +422,7 @@ Version 1.3.0:
     const MAX_ATTEMPTS       = 10;
     const RETRY_DELAY        = 500;
     let sidebarVisible       = false;
+    let activeFilter         = { query: '', dateFrom: '', dateTo: '' };
 
     /* ──────────────────────────────────────────────────────────
      *  CONNECTIVITY STATE  (must be initialised before initializeSidebar())
@@ -1840,6 +1840,39 @@ Version 1.3.0:
     }
 
     /* ==========================================================
+     *  LOG FILTER
+     * ==========================================================*/
+
+    function filterEntries(entries, filter) {
+        let result = entries;
+
+        const q = (filter.query || '').toLowerCase().trim();
+        if (q) {
+            result = result.filter(e => {
+                const content = formatEntryContent(e).toLowerCase();
+                const author  = (e.author_label || e.author_user_id || '').toLowerCase();
+                return (
+                    e.type.toLowerCase().includes(q) ||
+                    content.includes(q) ||
+                    author.includes(q) ||
+                    e.ts.includes(q) ||
+                    (e.note || '').toLowerCase().includes(q)
+                );
+            });
+        }
+
+        // entry.ts format: "YYYY-MM-DD HH:MM" — lexicographic comparison works correctly
+        if (filter.dateFrom) {
+            result = result.filter(e => e.ts >= filter.dateFrom);
+        }
+        if (filter.dateTo) {
+            result = result.filter(e => e.ts.slice(0, 10) <= filter.dateTo);
+        }
+
+        return result;
+    }
+
+    /* ==========================================================
      *  LOG REFRESH
      * ==========================================================*/
 
@@ -1848,14 +1881,22 @@ Version 1.3.0:
         const countEl   = document.getElementById('ct-entry-count');
         if (!container) return;
 
-        const entries = loadEntries(ticket);
-        container.innerHTML = '';
+        const allEntries      = loadEntries(ticket);
+        const filteredEntries = filterEntries(allEntries, activeFilter);
+        const isFiltered      = filteredEntries.length !== allEntries.length;
+        container.innerHTML   = '';
 
-        if (countEl) countEl.textContent = entries.length
-            ? `${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`
-            : 'No entries yet';
+        if (countEl) {
+            if (!allEntries.length) {
+                countEl.textContent = 'No entries yet';
+            } else if (isFiltered) {
+                countEl.textContent = `${filteredEntries.length} of ${allEntries.length} ${allEntries.length === 1 ? 'entry' : 'entries'}`;
+            } else {
+                countEl.textContent = `${allEntries.length} ${allEntries.length === 1 ? 'entry' : 'entries'}`;
+            }
+        }
 
-        if (!entries.length) {
+        if (!allEntries.length) {
             container.appendChild(
                 css(Object.assign(mk('div'), { textContent: 'No changes logged yet — add your first entry above.' }), {
                     textAlign:'center', color:'#ccc', fontSize:'12px',
@@ -1865,7 +1906,17 @@ Version 1.3.0:
             return;
         }
 
-        [...entries].reverse().forEach(e =>
+        if (!filteredEntries.length) {
+            container.appendChild(
+                css(Object.assign(mk('div'), { textContent: 'No entries match the current filter.' }), {
+                    textAlign:'center', color:'#aaa', fontSize:'12px',
+                    padding:'28px 0', fontFamily:'Arial, sans-serif', fontStyle:'italic'
+                })
+            );
+            return;
+        }
+
+        [...filteredEntries].reverse().forEach(e =>
             container.appendChild(renderEntryCard(e, ticket, () => refreshLog(ticket)))
         );
     }
@@ -2146,6 +2197,85 @@ Version 1.3.0:
         ]));
 
         sidebar.appendChild(logHeader);
+
+        // ── Search / filter bar ──────────────────────────────────
+        const filterBar = css(mk('div'), { marginBottom:'6px' });
+
+        // Keyword row
+        const kwRow = css(mk('div'), { display:'flex', alignItems:'center', gap:'4px', marginBottom:'5px' });
+
+        const kwInput = css(mk('input', { id:'ct-filter-search', type:'text', placeholder:'Filter by type, value, author…' }), {
+            flex:'1', padding:'5px 8px', fontSize:'11px', border:'1px solid #d0d0d0',
+            borderRadius:'4px', fontFamily:'Arial, sans-serif', outline:'none',
+            color:'#333', boxSizing:'border-box',
+        });
+        kwInput.addEventListener('focus', () => { kwInput.style.borderColor = '#667eea'; });
+        kwInput.addEventListener('blur',  () => { kwInput.style.borderColor = '#d0d0d0'; });
+        kwInput.addEventListener('input', () => {
+            activeFilter.query = kwInput.value;
+            refreshLog(getTicketNumber());
+        });
+
+        const kwClear = css(mk('button', { type:'button', title:'Clear search' }), {
+            background:'transparent', border:'none', cursor:'pointer',
+            color:'#bbb', fontSize:'15px', padding:'0 3px', lineHeight:'1', flexShrink:'0',
+        });
+        kwClear.textContent = '×';
+        kwClear.addEventListener('click', () => {
+            kwInput.value = ''; activeFilter.query = '';
+            refreshLog(getTicketNumber());
+        });
+        kwClear.addEventListener('mouseenter', () => { kwClear.style.color = '#333'; });
+        kwClear.addEventListener('mouseleave', () => { kwClear.style.color = '#bbb'; });
+        kwRow.append(kwInput, kwClear);
+        filterBar.appendChild(kwRow);
+
+        // Date range row
+        const drRow = css(mk('div'), { display:'flex', alignItems:'center', gap:'4px' });
+
+        const drLabel = css(Object.assign(mk('span'), { textContent:'Date:' }), {
+            fontSize:'10px', color:'#999', fontFamily:'Arial, sans-serif', flexShrink:'0',
+        });
+
+        const dateStyle = {
+            flex:'1', padding:'4px 5px', fontSize:'11px', border:'1px solid #d0d0d0',
+            borderRadius:'4px', fontFamily:'Arial, sans-serif', color:'#333',
+            outline:'none', minWidth:'0', boxSizing:'border-box',
+        };
+
+        const fromInput = css(mk('input', { id:'ct-filter-from', type:'date' }), dateStyle);
+        fromInput.addEventListener('change', () => {
+            activeFilter.dateFrom = fromInput.value;
+            refreshLog(getTicketNumber());
+        });
+
+        const drSep = css(Object.assign(mk('span'), { textContent:'–' }), {
+            fontSize:'10px', color:'#aaa', flexShrink:'0',
+        });
+
+        const toInput = css(mk('input', { id:'ct-filter-to', type:'date' }), dateStyle);
+        toInput.addEventListener('change', () => {
+            activeFilter.dateTo = toInput.value;
+            refreshLog(getTicketNumber());
+        });
+
+        const drClear = css(mk('button', { type:'button', title:'Clear date range' }), {
+            background:'transparent', border:'none', cursor:'pointer',
+            color:'#bbb', fontSize:'15px', padding:'0 3px', lineHeight:'1', flexShrink:'0',
+        });
+        drClear.textContent = '×';
+        drClear.addEventListener('click', () => {
+            fromInput.value = ''; toInput.value = '';
+            activeFilter.dateFrom = ''; activeFilter.dateTo = '';
+            refreshLog(getTicketNumber());
+        });
+        drClear.addEventListener('mouseenter', () => { drClear.style.color = '#333'; });
+        drClear.addEventListener('mouseleave', () => { drClear.style.color = '#bbb'; });
+
+        drRow.append(drLabel, fromInput, drSep, toInput, drClear);
+        filterBar.appendChild(drRow);
+
+        sidebar.appendChild(filterBar);
 
         // Divider
         sidebar.appendChild(css(mk('div'), { height:'1px', background:'#e0e0e0', marginBottom:'10px' }));
