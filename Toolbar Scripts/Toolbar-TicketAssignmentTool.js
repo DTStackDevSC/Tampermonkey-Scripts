@@ -26,12 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
-- Added optional Short Description field to the assignment modal. When filled, copies a formatted one-liner (Ticket # | Member Firm | Description) to clipboard after assigning — ready to paste in Teams or email.
+    const SCRIPT_VERSION = '1.2.0';
+    const CHANGELOG = `Version 1.2.0:
+- Short Description field now auto-detects and pre-fills the Member Firm code from the ticket when the modal is opened.
 
-Version 1.0.9:
-- Update URL Changed`;
+Version 1.1.0:
+- Added optional Short Description field to the assignment modal. When filled, copies a formatted one-liner (Ticket # | Member Firm | Description) to clipboard after assigning — ready to paste in Teams or email.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -672,6 +672,49 @@ Version 1.0.9:
         'IST', 'JST', 'AEST', 'AEDT', 'NZST', 'NZDT'
     ];
 
+    const MF_CODE_MAP = {
+        'Deloitte Africa':                          'Africa',
+        'Deloitte Austria':                         'AT',
+        'Deloitte Belgium':                         'BE',
+        'Deloitte Central Europe':                  'CE',
+        'Deloitte Central Mediterranean':           'DCM',
+        'Deloitte Cyprus':                          'DME',
+        'Deloitte Denmark':                         'DK',
+        'Deloitte DKU':                             'DKU',
+        'DTTL':                                     'GLB',
+        'Deloitte Finland':                         'FI',
+        'Deloitte France':                          'FR',
+        'Deloitte Germany':                         'DE',
+        'Deloitte Iceland':                         'IS',
+        'Deloitte Ireland':                         'IE',
+        'Deloitte Luxembourg':                      'LU',
+        'Deloitte Middle East':                     'DME',
+        'Deloitte Netherlands':                     'NL',
+        'Deloitte Nordics':                         'Nordics',
+        'Deloitte North and South Europe':          'NSE',
+        'Deloitte Norway':                          'NO',
+        'Deloitte Portugal':                        'PT',
+        'Deloitte Spain':                           'ES',
+        'Deloitte Sweden':                          'SE',
+        'Deloitte Switzerland':                     'CH',
+        'Deloitte Turkey':                          'TR',
+        'Deloitte United Kingdom':                  'UK',
+        'Deloitte United States':                   'US',
+        'Deloitte Canada':                          'CA',
+        'Deloitte Brazil':                          'BR',
+        'Deloitte Caribbean and Bermuda Countries': 'CBC',
+        'Deloitte SLATAM':                          'SLATAM',
+        'Deloitte S-LATAM':                         'SLATAM',
+        'Deloitte South East Asia':                 'SEA',
+        'Deloitte South Asia India':                'SA_IN',
+        'Deloitte South Asia Mauritius':            'SA_MU',
+        'Deloitte Japan':                           'JP',
+        'Deloitte Korea':                           'KR',
+        'Deloitte Taiwan':                          'TW',
+        'Deloitte Australia':                       'AU',
+        'Deloitte New Zealand':                     'NZ',
+    };
+
     const toolIcon = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
     </svg>`;
@@ -1113,7 +1156,7 @@ Version 1.0.9:
         shortDescInput.placeholder = 'e.g. ES | Error accessing Netskope client';
         const shortDescTip = document.createElement('div');
         shortDescTip.className = 'sn-assign-field-tip';
-        shortDescTip.textContent = '💡 If filled, copies "Ticket # | your text" to clipboard after assigning — ready to paste in Teams or email.';
+        shortDescTip.textContent = '💡 Member Firm is auto-detected from the ticket. If filled, copies "Ticket # | your text" to clipboard after assigning.';
         shortDescGroup.appendChild(shortDescLabel);
         shortDescGroup.appendChild(shortDescInput);
         shortDescGroup.appendChild(shortDescTip);
@@ -1192,6 +1235,13 @@ Version 1.0.9:
             overlay.classList.add('active');
             const dropdown = document.getElementById('sn-assign-team-dropdown');
             if (dropdown) setTimeout(() => dropdown.focus(), 100);
+
+            // Auto-fill MF code if field is empty
+            const shortDescInput = document.getElementById('sn-assign-short-desc');
+            if (shortDescInput && !shortDescInput.value) {
+                const detectedMF = detectMFCode();
+                if (detectedMF) shortDescInput.value = detectedMF + ' | ';
+            }
         }
     }
 
@@ -1489,6 +1539,21 @@ Version 1.0.9:
         const numField = document.getElementById('sc_req_item.number') ||
                          document.getElementById('incident.number');
         if (numField) return (numField.value || numField.textContent).trim();
+        return '';
+    }
+
+    function detectMFCode() {
+        const selectors = [
+            'input[type="hidden"][id*="display_hidden"]',
+            'input.element_reference_input',
+            'input.questionsetreference',
+        ];
+        for (const selector of selectors) {
+            for (const input of document.querySelectorAll(selector)) {
+                const value = input.value.trim();
+                if (value && MF_CODE_MAP[value]) return MF_CODE_MAP[value];
+            }
+        }
         return '';
     }
 

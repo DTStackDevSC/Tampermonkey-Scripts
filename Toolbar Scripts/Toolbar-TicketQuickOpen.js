@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         |Toolbar| Ticket Quick Open
+// @name         |Toolbar| General Toolkit
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketQuickOpen.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketQuickOpen.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
@@ -113,7 +113,7 @@ Version 1.0:
 
         if (toolbarExists && menuExists) {
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Ticket Quick Open', position: TOOL_POSITION }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'General Toolkit', position: TOOL_POSITION }
             }));
             isRegistered = true;
             console.log('✅ TQO: registered in toolbar');
@@ -325,7 +325,7 @@ Version 1.0:
         });
         const titleEl = document.createElement('div');
         Object.assign(titleEl.style, { fontSize: '12px', fontWeight: 'bold', color: '#333' });
-        titleEl.textContent = '🎫 Ticket Quick Open — Settings';
+        titleEl.textContent = '🎫 General Toolkit — Settings';
         header.appendChild(titleEl);
 
         const closeBtn = document.createElement('button');
@@ -543,7 +543,7 @@ Version 1.0:
 
         buildSettingsModal();
         setTimeout(attemptRegistration, 1000);
-        console.log('✅ Ticket Quick Open v' + SCRIPT_VERSION + ' ready');
+        console.log('✅ General Toolkit v' + SCRIPT_VERSION + ' ready');
     }
 
     if (document.readyState === 'loading') {
