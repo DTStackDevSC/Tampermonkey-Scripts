@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.1.5
+// @version      2.2.0
 // @description  Highlight rows in ServiceNow based on Updated By column with configurable username and theme (Updated for new UI)
 // @author       J.R.
 // @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards/
@@ -25,12 +25,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.5';
-    const CHANGELOG = `Version 2.1.5:
-- Fixed rows not re-highlighting after switching pages after some time on the page.
+    const SCRIPT_VERSION = '2.2.0';
+    const CHANGELOG = `Version 2.2.0:
+- Added SLA Due Date Heat-map: colours each row's left border by due date urgency (red/orange/purple)
+- New toggle and date format selector in settings
 
-Version 2.1.4:
-- Update URL Changed`;
+Version 2.1.5:
+- Fixed rows not re-highlighting after switching pages after some time on the page.`;
 
     /* ==========================================================
      *  CONFIGURATION
@@ -53,10 +54,14 @@ Version 2.1.4:
     const THEME_STORAGE_KEY = 'servicenow_highlighter_theme';
     const VERSION_STORAGE_KEY = 'servicenow_highlighter_version';
     const CHANGELOG_SEEN_KEY = 'servicenow_highlighter_changelog_seen';
+    const SLA_ENABLED_KEY = 'servicenow_highlighter_sla_enabled';
+    const SLA_FORMAT_KEY  = 'servicenow_highlighter_sla_format';
 
     // State
     let targetUsername = null;
     let currentTheme = 'light';
+    let slaHeatmapEnabled = false;
+    let slaDateFormat = 'yyyy-MM-dd';
 
     // Theme configurations
     const THEMES = {
@@ -80,6 +85,14 @@ Version 2.1.4:
                 border: '#ef4444'
             }
         }
+    };
+
+    const SLA_DATE_FORMATS = {
+        'MM-dd-yyyy': { order: ['m','d','y'] },
+        'dd/MM/yyyy': { order: ['d','m','y'] },
+        'dd-MM-yyyy': { order: ['d','m','y'] },
+        'dd.MM.yyyy': { order: ['d','m','y'] },
+        'yyyy-MM-dd': { order: ['y','m','d'] },
     };
 
     /* ==========================================================
@@ -590,6 +603,125 @@ Version 2.1.4:
         themeContainer.appendChild(themeInner);
         modal.appendChild(themeContainer);
 
+        // SLA Heatmap section
+        const slaContainer = document.createElement('div');
+        Object.assign(slaContainer.style, {
+            width: '100%',
+            padding: '15px',
+            background: '#f5f5f5',
+            borderRadius: '6px'
+        });
+
+        const slaTopRow = document.createElement('div');
+        Object.assign(slaTopRow.style, {
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '8px'
+        });
+
+        const slaTitleEl = document.createElement('div');
+        slaTitleEl.innerHTML = '<strong style="color:#333333; font-family:Arial,Helvetica,sans-serif; font-size:14px;">📅 SLA Due Date Heat-map</strong>';
+
+        const slaToggleBtn = document.createElement('button');
+        Object.assign(slaToggleBtn.style, {
+            padding: '6px 14px',
+            fontSize: '13px',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontFamily: 'Arial, Helvetica, sans-serif',
+            fontWeight: 'bold',
+            transition: 'background 0.2s'
+        });
+
+        const slaLegendEl = document.createElement('div');
+        Object.assign(slaLegendEl.style, {
+            fontSize: '12px',
+            color: '#666666',
+            lineHeight: '1.6',
+            fontFamily: 'Arial, Helvetica, sans-serif',
+            marginBottom: '8px'
+        });
+        slaLegendEl.innerHTML =
+            'Colours the left border of each row by due date urgency:&nbsp; ' +
+            '<span style="color:#ff4444;font-weight:bold;">■</span> Expired / ≤1 day &nbsp; ' +
+            '<span style="color:#ff8c00;font-weight:bold;">■</span> 2 days &nbsp; ' +
+            '<span style="color:#9370db;font-weight:bold;">■</span> 3 days';
+
+        const slaFormatRow = document.createElement('div');
+        Object.assign(slaFormatRow.style, {
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: '2px'
+        });
+
+        const slaFormatLabel = document.createElement('label');
+        slaFormatLabel.textContent = 'Date format:';
+        Object.assign(slaFormatLabel.style, {
+            fontSize: '12px',
+            color: '#555555',
+            fontFamily: 'Arial, Helvetica, sans-serif',
+            marginRight: '6px'
+        });
+
+        const slaFormatSelect = document.createElement('select');
+        slaFormatSelect.id = 'highlighter-sla-format';
+        Object.assign(slaFormatSelect.style, {
+            padding: '4px 8px',
+            fontSize: '12px',
+            border: '1px solid #cccccc',
+            borderRadius: '4px',
+            fontFamily: 'Arial, Helvetica, sans-serif',
+            background: '#ffffff',
+            color: '#333333',
+            cursor: 'pointer'
+        });
+        Object.keys(SLA_DATE_FORMATS).forEach(key => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = key;
+            if (key === slaDateFormat) opt.selected = true;
+            slaFormatSelect.appendChild(opt);
+        });
+        slaFormatSelect.addEventListener('change', () => {
+            slaDateFormat = slaFormatSelect.value;
+            GM_setValue(SLA_FORMAT_KEY, slaDateFormat);
+            highlightRowsWithClasses();
+        });
+
+        slaFormatRow.appendChild(slaFormatLabel);
+        slaFormatRow.appendChild(slaFormatSelect);
+
+        function refreshSLAToggle() {
+            slaToggleBtn.textContent = slaHeatmapEnabled ? '✓ Enabled' : 'Disabled';
+            slaToggleBtn.style.background = slaHeatmapEnabled ? '#28a745' : '#6c757d';
+            slaToggleBtn.style.color = '#ffffff';
+            slaFormatRow.style.display = slaHeatmapEnabled ? 'flex' : 'none';
+        }
+
+        slaToggleBtn.addEventListener('click', () => {
+            slaHeatmapEnabled = !slaHeatmapEnabled;
+            GM_setValue(SLA_ENABLED_KEY, slaHeatmapEnabled);
+            refreshSLAToggle();
+            highlightRowsWithClasses();
+        });
+        slaToggleBtn.addEventListener('mouseover', () => {
+            slaToggleBtn.style.background = slaHeatmapEnabled ? '#218838' : '#5a6268';
+        });
+        slaToggleBtn.addEventListener('mouseout', () => {
+            slaToggleBtn.style.background = slaHeatmapEnabled ? '#28a745' : '#6c757d';
+        });
+
+        slaTopRow.appendChild(slaTitleEl);
+        slaTopRow.appendChild(slaToggleBtn);
+        slaContainer.appendChild(slaTopRow);
+        slaContainer.appendChild(slaLegendEl);
+        slaContainer.appendChild(slaFormatRow);
+        modal.appendChild(slaContainer);
+
+        refreshSLAToggle();
+
         // Version row with changelog notification
         const versionRow = document.createElement('div');
         Object.assign(versionRow.style, {
@@ -946,6 +1078,73 @@ Version 2.1.4:
     }
 
     /* ==========================================================
+     *  SLA HEATMAP LOGIC
+     * ==========================================================*/
+
+    function parseSLADate(dateStr) {
+        if (!dateStr) return null;
+        dateStr = dateStr.trim();
+        const fmt = SLA_DATE_FORMATS[slaDateFormat] || SLA_DATE_FORMATS['yyyy-MM-dd'];
+        const { order } = fmt;
+        const match = dateStr.match(/^(\d{1,4})[-\/.](\d{1,2})[-\/.](\d{2,4})(?:[T ](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+        if (match) {
+            const [, seg1, seg2, seg3, h = '0', min = '0', s = '0'] = match;
+            const parts = { [order[0]]: seg1, [order[1]]: seg2, [order[2]]: seg3 };
+            return new Date(+parts.y, +parts.m - 1, +parts.d, +h, +min, +s);
+        }
+        const fallback = new Date(dateStr);
+        return isNaN(fallback) ? null : fallback;
+    }
+
+    function getSLABorderColor(dateStr) {
+        const due = parseSLADate(dateStr);
+        if (!due) return null;
+        const diffMs = due - new Date();
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffMs < 0)  return '#ff4444'; // expired
+        if (days <= 1)   return '#ff4444'; // today or 1 day
+        if (days === 2)  return '#ff8c00'; // 2 days
+        if (days === 3)  return '#9370db'; // 3 days
+        return null;
+    }
+
+    function applySLAHeatmap() {
+        if (!slaHeatmapEnabled) return;
+
+        // Old UI
+        const tbody = document.querySelector('tbody.list2_body');
+        if (tbody) {
+            tbody.querySelectorAll('tr.list_row').forEach(row => {
+                const cell = row.querySelector('td.vt[headers*="due_date"]');
+                if (!cell) return;
+                const color = getSLABorderColor(cell.textContent.trim());
+                if (color) row.style.setProperty('border-left', `4px solid ${color}`, 'important');
+            });
+            return;
+        }
+
+        // New UI — shadow DOM
+        findAllShadowRoots()
+            .filter(el => el.tagName?.toLowerCase() === 'now-list')
+            .forEach(nowList => {
+                if (!nowList.shadowRoot) return;
+                const table = nowList.shadowRoot.querySelector('table.now-list-table');
+                if (!table) return;
+                table.querySelectorAll('tr.now-list-table-row').forEach(row => {
+                    const cell = row.querySelector('td[data-column-key="due_date"]') ||
+                                 row.querySelector('td[data-column-key*="due"]');
+                    if (!cell) return;
+                    const content = cell.querySelector('.cell-content');
+                    const dateStr = content
+                        ? (content.getAttribute('data-tooltip') || content.textContent.trim())
+                        : cell.textContent.trim();
+                    const color = getSLABorderColor(dateStr);
+                    if (color) row.style.setProperty('border-left', `4px solid ${color}`, 'important');
+                });
+            });
+    }
+
+    /* ==========================================================
      *  NEW HIGHLIGHTING LOGIC FOR NEW UI
      * ==========================================================*/
 
@@ -980,6 +1179,7 @@ Version 2.1.4:
     function highlightRowsWithClasses() {
         if (!targetUsername) {
             console.log('⏳ No target username set yet');
+            applySLAHeatmap();
             return false;
         }
 
@@ -1052,6 +1252,7 @@ Version 2.1.4:
                         processedCount++;
                     }
                 });
+                applySLAHeatmap();
                 return processedCount > 0;
             }
         }
@@ -1155,6 +1356,7 @@ Version 2.1.4:
             console.log('⏳ No rows found to highlight');
         }
 
+        applySLAHeatmap();
         return processedCount > 0;
     }
 
@@ -1258,6 +1460,8 @@ Version 2.1.4:
         // Load stored settings
         currentTheme = getStoredTheme();
         targetUsername = getStoredUsername();
+        slaHeatmapEnabled = GM_getValue(SLA_ENABLED_KEY, false);
+        slaDateFormat = GM_getValue(SLA_FORMAT_KEY, 'yyyy-MM-dd');
 
         console.log(`Using theme: ${currentTheme}`);
         if (targetUsername) {
