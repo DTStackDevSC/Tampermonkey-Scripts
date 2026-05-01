@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1
+// @version      1.2
 // @description  Highlight a RITM, PER, or Netskope case number on any page to get a floating button that opens it in a new tab. Toggle via Toolbar.
 // @author       J.R.
 // @match        *://*/*
@@ -19,13 +19,13 @@
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.1';
-    const CHANGELOG = `Version 1.1:
-- Added Netskope support case detection (006XXXXX format). Highlight any 006-prefixed 8-digit case number to open it in Netskope's global search.
-- Settings modal now has separate ServiceNow and Netskope sections with independent toggles.
+    const SCRIPT_VERSION = '1.2';
+    const CHANGELOG = `Version 1.2:
+- Added INC (Incident) ticket type support. Highlight any INC number on any page to open it in ServiceNow alongside RITM and PER.
 
-Version 1.0:
-- Initial release as toolbar script. Highlight any RITM or PER number on any page to open the ticket in a new tab.`;
+Version 1.1:
+- Added Netskope support case detection (006XXXXX format). Highlight any 006-prefixed 8-digit case number to open it in Netskope's global search.
+- Settings modal now has separate ServiceNow and Netskope sections with independent toggles.`;
 
     function getStoredVersion()    { return GM_getValue('tqo_version', null); }
     function saveVersion(v)        { GM_setValue('tqo_version', v); }
@@ -69,6 +69,12 @@ Version 1.0:
             regex: /^RITM\d+$/i,
             url:   (n) => `https://deloitteglobal.service-now.com/sc_req_item.do?sys_id=${n}`,
             color: '#0073e6',
+        },
+        INC: {
+            group: 'snow',
+            regex: /^INC\d+$/i,
+            url:   (n) => `https://deloitteglobal.service-now.com/incident.do?sys_id=${n}`,
+            color: '#e53935',
         },
         PER: {
             group: 'snow',
@@ -352,9 +358,9 @@ Version 1.0:
             toggleId:    'tqo-snow-toggle',
             description: {
                 title: 'Enable ServiceNow tickets',
-                body:  'Detect RITM and PER numbers and open them in ServiceNow.',
+                body:  'Detect RITM, INC, and PER numbers and open them in ServiceNow.',
             },
-            typeKeys: ['RITM', 'PER'],
+            typeKeys: ['RITM', 'INC', 'PER'],
         });
         body.appendChild(snowSection.section);
 

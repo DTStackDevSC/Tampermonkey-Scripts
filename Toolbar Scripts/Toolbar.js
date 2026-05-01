@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.1
+// @version      1.1.0
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,12 +26,13 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.1';
-    const CHANGELOG = `Version 1.0.1:
-- Update URL Changed
-    
-Version 1.0:
-- Initial Release`;
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Toolbar is now draggable — drag the toggle button to reposition it anywhere on screen; position is saved automatically.
+- Added pin mode — click the 📌 badge on the toggle button to keep the menu permanently open.
+
+Version 1.0.1:
+- Update URL Changed`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -139,7 +140,8 @@ Version 1.0:
         'button-size': 36,
         'tool-size': 32,
         'animation-speed': 0.3,
-        'menu-gap': 8
+        'menu-gap': 8,
+        'toolbar-pinned': false
     };
 
     function getSetting(key) {
@@ -767,16 +769,64 @@ Version 1.0:
             margin-top: 4px !important;
             font-style: italic !important;
         }
+
+        /* Drag + Pin styles */
+        #custom-toolbar-toggle-wrap {
+            position: relative;
+            display: inline-flex;
+            cursor: grab;
+        }
+
+        #custom-toolbar-toggle-wrap.dragging {
+            cursor: grabbing;
+            user-select: none;
+        }
+
+        #custom-toolbar-pin {
+            position: absolute;
+            top: -7px;
+            right: -7px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 1.5px solid #e5e7eb;
+            background: #ffffff;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+            cursor: pointer;
+            font-size: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            line-height: 1;
+            opacity: 0.7;
+            transition: opacity 0.2s, transform 0.15s, background 0.15s;
+            z-index: 1;
+        }
+
+        #custom-toolbar-pin:hover {
+            opacity: 1;
+            transform: scale(1.15);
+        }
+
+        #custom-toolbar-pin.active {
+            opacity: 1;
+            background: #667eea;
+            border-color: #667eea;
+        }
     `);
 
     // Create toolbar HTML
     const toolbarHTML = `
         <div id="custom-toolbar-container" data-toolbar-v2="true">
-            <button id="custom-toolbar-toggle" title="Toggle Toolbar">
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/>
-                </svg>
-            </button>
+            <div id="custom-toolbar-toggle-wrap">
+                <button id="custom-toolbar-toggle" title="Toggle Toolbar">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/>
+                    </svg>
+                </button>
+                <button id="custom-toolbar-pin" title="Pin toolbar open">📌</button>
+            </div>
             <div id="custom-toolbar-menu">
                 <!-- Settings -->
                 <div class="toolbar-item" data-tool="settings">
@@ -809,6 +859,17 @@ Version 1.0:
         const toolbarElement = container.firstElementChild;
         document.body.appendChild(toolbarElement);
 
+        // Restore saved drag position (inline styles override CSS preset)
+        const savedDragLeft = GM_getValue('toolbar-custom-left', null);
+        const savedDragTop  = GM_getValue('toolbar-custom-top',  null);
+        if (savedDragLeft !== null && savedDragTop !== null) {
+            toolbarElement.style.left      = savedDragLeft + 'px';
+            toolbarElement.style.top       = savedDragTop  + 'px';
+            toolbarElement.style.right     = 'auto';
+            toolbarElement.style.bottom    = 'auto';
+            toolbarElement.style.transform = 'none';
+        }
+
         console.log('✅ Toolbar DOM element created with data-toolbar-v2 attribute');
 
         setupEventListeners();
@@ -822,33 +883,99 @@ Version 1.0:
     }
 
     function setupEventListeners() {
+        const toggleWrap   = document.getElementById('custom-toolbar-toggle-wrap');
         const toggleButton = document.getElementById('custom-toolbar-toggle');
-        const menu = document.getElementById('custom-toolbar-menu');
+        const pinBtn       = document.getElementById('custom-toolbar-pin');
+        const menu         = document.getElementById('custom-toolbar-menu');
+        const tbContainer  = document.getElementById('custom-toolbar-container');
 
         if (!toggleButton || !menu) {
             console.error('❌ Cannot find toolbar elements');
             return;
         }
 
-        // Click to toggle menu
-        toggleButton.addEventListener('click', function(e) {
-            e.stopPropagation();
-            menu.classList.toggle('active');
+        // ── Restore pin state ────────────────────────────────────────
+        if (getSetting('toolbar-pinned')) {
+            menu.classList.add('active', 'pinned-open');
+            if (pinBtn) pinBtn.classList.add('active');
+        }
+
+        // ── Drag logic ───────────────────────────────────────────────
+        let isDragging = false;
+        let didDrag    = false;
+        let dragOffX   = 0;
+        let dragOffY   = 0;
+
+        const dragHandle = toggleWrap || toggleButton;
+
+        dragHandle.addEventListener('mousedown', function(e) {
+            if (e.button !== 0) return;
+            const rect = tbContainer.getBoundingClientRect();
+            dragOffX   = e.clientX - rect.left;
+            dragOffY   = e.clientY - rect.top;
+            isDragging = true;
+            didDrag    = false;
+            if (toggleWrap) toggleWrap.classList.add('dragging');
+            e.preventDefault();
         });
 
-        // Close menu when clicking outside
-        document.addEventListener('click', function(e) {
-            if (!e.target.closest('#custom-toolbar-container')) {
-                menu.classList.remove('active');
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            didDrag      = true;
+            const newLeft = Math.max(0, Math.min(window.innerWidth  - tbContainer.offsetWidth,  e.clientX - dragOffX));
+            const newTop  = Math.max(0, Math.min(window.innerHeight - tbContainer.offsetHeight, e.clientY - dragOffY));
+            tbContainer.style.left      = newLeft + 'px';
+            tbContainer.style.top       = newTop  + 'px';
+            tbContainer.style.right     = 'auto';
+            tbContainer.style.bottom    = 'auto';
+            tbContainer.style.transform = 'none';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!isDragging) return;
+            isDragging = false;
+            if (toggleWrap) toggleWrap.classList.remove('dragging');
+            if (didDrag) {
+                GM_setValue('toolbar-custom-left', Math.round(parseFloat(tbContainer.style.left)));
+                GM_setValue('toolbar-custom-top',  Math.round(parseFloat(tbContainer.style.top)));
             }
         });
 
-        // Settings button
+        // ── Pin button ───────────────────────────────────────────────
+        if (pinBtn) {
+            pinBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const nowPinned = menu.classList.toggle('pinned-open');
+                setSetting('toolbar-pinned', nowPinned);
+                pinBtn.classList.toggle('active', nowPinned);
+                if (nowPinned) menu.classList.add('active');
+                else           menu.classList.remove('active');
+            });
+        }
+
+        // ── Toggle click ─────────────────────────────────────────────
+        toggleButton.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (didDrag) { didDrag = false; return; }
+            if (menu.classList.contains('pinned-open')) return;
+            menu.classList.toggle('active');
+        });
+
+        // ── Close on outside click (respects pin) ────────────────────
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#custom-toolbar-container')) {
+                if (!menu.classList.contains('pinned-open')) {
+                    menu.classList.remove('active');
+                }
+            }
+        });
+
+        // ── Settings button ──────────────────────────────────────────
         const settingsBtn = menu.querySelector('[data-tool="settings"]');
         if (settingsBtn) {
             settingsBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                menu.classList.remove('active');
+                if (!menu.classList.contains('pinned-open')) menu.classList.remove('active');
                 showSettings();
             });
         }
@@ -912,6 +1039,11 @@ Version 1.0:
                                     <option value="bottom-left">Bottom Left</option>
                                     <option value="bottom-right">Bottom Right</option>
                                 </select>
+                                <div class="setting-help-text">Saving a preset position clears any custom drag position.</div>
+                            </div>
+                            <div class="setting-item">
+                                <button id="reset-drag-position" class="btn-secondary">Reset Drag Position</button>
+                                <div class="setting-help-text">Clears the saved drag position and returns to the preset above.</div>
                             </div>
                         </div>
 
@@ -1093,6 +1225,16 @@ Version 1.0:
         document.getElementById('export-settings').addEventListener('click', exportSettings);
         document.getElementById('import-settings').addEventListener('click', importSettings);
         document.getElementById('reset-settings').addEventListener('click', resetSettings);
+
+        const resetDragBtn = document.getElementById('reset-drag-position');
+        if (resetDragBtn) {
+            resetDragBtn.addEventListener('click', () => {
+                GM_deleteValue('toolbar-custom-left');
+                GM_deleteValue('toolbar-custom-top');
+                alert('✅ Drag position cleared! The page will reload.');
+                location.reload();
+            });
+        }
     }
 
     function loadSettings() {
@@ -1134,6 +1276,10 @@ Version 1.0:
         setSetting('tool-size', parseInt(document.getElementById('tool-size').value));
         setSetting('animation-speed', parseFloat(document.getElementById('animation-speed').value));
         setSetting('menu-gap', parseInt(document.getElementById('menu-gap').value));
+
+        // Saving a preset position clears any custom drag position
+        GM_deleteValue('toolbar-custom-left');
+        GM_deleteValue('toolbar-custom-top');
 
         alert('✅ Settings saved! The page will reload to apply changes.');
     }
@@ -1212,6 +1358,8 @@ Version 1.0:
             Object.keys(DEFAULT_SETTINGS).forEach(key => {
                 GM_deleteValue(key);
             });
+            GM_deleteValue('toolbar-custom-left');
+            GM_deleteValue('toolbar-custom-top');
             alert('✅ Settings reset to default! The page will reload.');
             location.reload();
         }
