@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.1
+// @version      1.1.2
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,15 +22,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.1';
-    const CHANGELOG = `Version 1.1.1:
-- Drafts are now auto-deleted when Update / Save and Stay is clicked
-- Activity stream fields also cleared silently when the field empties post-submit
+    const SCRIPT_VERSION = '1.1.2';
+    const CHANGELOG = `Version 1.1.2:
+- Fixed duplicate draft entries in restore prompt when both activity-stream and classic textareas are present for the same field
 
-Version 1.1.0:
-- Switched to GM storage — drafts persist across browser restarts
-- Toolbar button now registers on all ServiceNow pages
-- Redesigned modal: settings view with feature toggles + separate Drafts panel`;
+Version 1.1.1:
+- Drafts are now auto-deleted when Update / Save and Stay is clicked
+- Activity stream fields also cleared silently when the field empties post-submit`;
 
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
@@ -540,12 +538,14 @@ Version 1.1.0:
     }
 
     function findWorkNotesFields() {
-        const found = [];
-        const seen  = new Set();
+        const found      = [];
+        const seenEls    = new Set();
+        const seenLabels = new Set();
         for (const { sel, label } of FIELD_SELECTORS) {
             const el = document.querySelector(sel);
-            if (el && !seen.has(el)) {
-                seen.add(el);
+            if (el && !seenEls.has(el) && !seenLabels.has(label)) {
+                seenEls.add(el);
+                seenLabels.add(label);
                 found.push({ el, label });
             }
         }
