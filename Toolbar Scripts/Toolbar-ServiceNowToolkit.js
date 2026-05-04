@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.3
+// @version      1.1.4
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,12 +22,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.3';
-    const CHANGELOG = `Version 1.1.3:
-- Fixed draft indicator buttons (Work Notes, Comments, Delete All) clipping their labels
+    const SCRIPT_VERSION = '1.1.4';
+    const CHANGELOG = `Version 1.1.4:
+- Drafts are now preserved when a save fails due to session timeout or permission errors
 
-Version 1.1.2:
-- Fixed duplicate draft entries in restore prompt when both activity-stream and classic textareas are present for the same field`;
+Version 1.1.3:
+- Fixed draft indicator buttons (Work Notes, Comments, Delete All) clipping their labels`;
 
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
@@ -61,6 +61,9 @@ Version 1.1.2:
     const GM_KEY_DRAFTS   = 'sn_toolkit_drafts';
     const GM_KEY_AUTOSAVE = 'sn_toolkit_autosave_enabled';
     const AUTOSAVE_DELAY  = 3000;
+
+    const SESSION_KEY_SUBMIT_INTENT = 'sn_toolkit_submit_intent';
+    const SUBMIT_INTENT_TTL_MS      = 60000;
 
     // Ordered by specificity — first match wins per selector pass
     const FIELD_SELECTORS = [
@@ -131,6 +134,34 @@ Version 1.1.2:
 
     function clearAllDrafts() {
         GM_setValue(GM_KEY_DRAFTS, '{}');
+    }
+
+    /* ==========================================================
+     *  SUBMIT INTENT  (sessionStorage — survives page navigation within the tab)
+     *
+     *  Stores which ticket + fields the user just tried to save.
+     *  On the next ticket page load we check if the ticket matches and the
+     *  intent is fresh (< SUBMIT_INTENT_TTL_MS).  If so the save succeeded
+     *  and we silently clear the drafts.  If we land on any non-ticket page
+     *  first (login / error / home) the intent is wiped without touching
+     *  drafts, so the user gets the restore prompt when they come back.
+     * ==========================================================*/
+
+    function storeSubmitIntent(ticket, fieldLabels) {
+        sessionStorage.setItem(SESSION_KEY_SUBMIT_INTENT, JSON.stringify({
+            ticket, fields: fieldLabels, ts: Date.now(),
+        }));
+    }
+
+    function consumeSubmitIntent() {
+        const raw = sessionStorage.getItem(SESSION_KEY_SUBMIT_INTENT);
+        sessionStorage.removeItem(SESSION_KEY_SUBMIT_INTENT);
+        if (!raw) return null;
+        try {
+            const intent = JSON.parse(raw);
+            if (Date.now() - intent.ts > SUBMIT_INTENT_TTL_MS) return null;
+            return intent;
+        } catch { return null; }
     }
 
     /* ==========================================================
@@ -617,16 +648,10 @@ Version 1.1.2:
 
     function attachSubmitListeners(ticketNum, fields) {
         function onSubmitClick() {
-            let cleared = 0;
-            fields.forEach(({ el, label }) => {
-                if (el.value.trim() && hasDraft(ticketNum, label)) {
-                    deleteDraft(ticketNum, label);
-                    cleared++;
-                }
-            });
-            if (cleared > 0) {
-                showIndicator('✅', cleared === 1 ? 'Draft cleared' : `${cleared} drafts cleared`, [], 2500);
-            }
+            // Record intent but do NOT delete drafts yet — we don't know if the
+            // save will succeed.  The next ticket page load will confirm success
+            // and clear them, or they'll survive if the session was expired.
+            storeSubmitIntent(ticketNum, fields.map(f => f.label));
         }
 
         SUBMIT_SELECTORS.forEach(sel => {
@@ -683,9 +708,21 @@ Version 1.1.2:
 
             if (ticketNum && fields.length > 0) {
                 buildIndicator();
-                if (getAutosaveEnabled()) {
+
+                const intent = consumeSubmitIntent();
+                if (intent && intent.ticket === ticketNum) {
+                    // Same ticket reloaded within TTL — save succeeded, clear drafts silently
+                    let cleared = 0;
+                    (intent.fields || []).forEach(label => {
+                        if (hasDraft(ticketNum, label)) { deleteDraft(ticketNum, label); cleared++; }
+                    });
+                    if (cleared > 0) {
+                        showIndicator('✅', cleared === 1 ? 'Draft cleared after save' : `${cleared} drafts cleared after save`, [], 3000);
+                    }
+                } else if (getAutosaveEnabled()) {
                     handleDraftRestorePrompt(ticketNum, fields);
                 }
+
                 attachSubmitListeners(ticketNum, fields);
                 fields.forEach(({ el, label }) => startAutosave(ticketNum, el, label));
             } else if (retries < 12) {
@@ -739,6 +776,13 @@ Version 1.1.2:
         isInitialized = true;
 
         const isTicketPage = /\/(sc_req_item|incident)\.do(\?|$)/.test(location.pathname + location.search);
+
+        if (!isTicketPage) {
+            // If we landed on a non-ticket page (login, error, home) after a save
+            // attempt, the save failed — discard the intent without touching drafts
+            // so the restore prompt appears when the user returns to the ticket.
+            sessionStorage.removeItem(SESSION_KEY_SUBMIT_INTENT);
+        }
 
         buildModal();
         setTimeout(attemptRegistration, 1000);
