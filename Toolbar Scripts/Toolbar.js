@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.0
+// @version      1.2.0
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,13 +26,12 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
-- Toolbar is now draggable — drag the toggle button to reposition it anywhere on screen; position is saved automatically.
-- Added pin mode — click the 📌 badge on the toggle button to keep the menu permanently open.
+    const SCRIPT_VERSION = '1.2.0';
+    const CHANGELOG = `Version 1.2.0:
+- Pin menu and dragging are now toggles in Settings (both off by default) — removes accidental drags and pin misclicks.
 
-Version 1.0.1:
-- Update URL Changed`;
+Version 1.1.0:
+- Toolbar is now draggable — drag the toggle button to reposition it anywhere on screen; position is saved automatically.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -141,7 +140,8 @@ Version 1.0.1:
         'tool-size': 32,
         'animation-speed': 0.3,
         'menu-gap': 8,
-        'toolbar-pinned': false
+        'toolbar-pinned': false,
+        'toolbar-draggable': false
     };
 
     function getSetting(key) {
@@ -770,49 +770,20 @@ Version 1.0.1:
             font-style: italic !important;
         }
 
-        /* Drag + Pin styles */
+        /* Drag styles */
         #custom-toolbar-toggle-wrap {
             position: relative;
             display: inline-flex;
+            cursor: pointer;
+        }
+
+        #custom-toolbar-toggle-wrap.drag-enabled {
             cursor: grab;
         }
 
-        #custom-toolbar-toggle-wrap.dragging {
+        #custom-toolbar-toggle-wrap.drag-enabled.dragging {
             cursor: grabbing;
             user-select: none;
-        }
-
-        #custom-toolbar-pin {
-            position: absolute;
-            top: -7px;
-            right: -7px;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            border: 1.5px solid #e5e7eb;
-            background: #ffffff;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-            cursor: pointer;
-            font-size: 9px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            line-height: 1;
-            opacity: 0.7;
-            transition: opacity 0.2s, transform 0.15s, background 0.15s;
-            z-index: 1;
-        }
-
-        #custom-toolbar-pin:hover {
-            opacity: 1;
-            transform: scale(1.15);
-        }
-
-        #custom-toolbar-pin.active {
-            opacity: 1;
-            background: #667eea;
-            border-color: #667eea;
         }
     `);
 
@@ -825,7 +796,6 @@ Version 1.0.1:
                         <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/>
                     </svg>
                 </button>
-                <button id="custom-toolbar-pin" title="Pin toolbar open">📌</button>
             </div>
             <div id="custom-toolbar-menu">
                 <!-- Settings -->
@@ -885,7 +855,6 @@ Version 1.0.1:
     function setupEventListeners() {
         const toggleWrap   = document.getElementById('custom-toolbar-toggle-wrap');
         const toggleButton = document.getElementById('custom-toolbar-toggle');
-        const pinBtn       = document.getElementById('custom-toolbar-pin');
         const menu         = document.getElementById('custom-toolbar-menu');
         const tbContainer  = document.getElementById('custom-toolbar-container');
 
@@ -897,59 +866,50 @@ Version 1.0.1:
         // ── Restore pin state ────────────────────────────────────────
         if (getSetting('toolbar-pinned')) {
             menu.classList.add('active', 'pinned-open');
-            if (pinBtn) pinBtn.classList.add('active');
         }
 
-        // ── Drag logic ───────────────────────────────────────────────
+        // ── Drag logic (only when enabled in settings) ───────────────
         let isDragging = false;
         let didDrag    = false;
-        let dragOffX   = 0;
-        let dragOffY   = 0;
 
-        const dragHandle = toggleWrap || toggleButton;
+        if (getSetting('toolbar-draggable')) {
+            if (toggleWrap) toggleWrap.classList.add('drag-enabled');
 
-        dragHandle.addEventListener('mousedown', function(e) {
-            if (e.button !== 0) return;
-            const rect = tbContainer.getBoundingClientRect();
-            dragOffX   = e.clientX - rect.left;
-            dragOffY   = e.clientY - rect.top;
-            isDragging = true;
-            didDrag    = false;
-            if (toggleWrap) toggleWrap.classList.add('dragging');
-            e.preventDefault();
-        });
+            let dragOffX = 0;
+            let dragOffY = 0;
+            const dragHandle = toggleWrap || toggleButton;
 
-        document.addEventListener('mousemove', function(e) {
-            if (!isDragging) return;
-            didDrag      = true;
-            const newLeft = Math.max(0, Math.min(window.innerWidth  - tbContainer.offsetWidth,  e.clientX - dragOffX));
-            const newTop  = Math.max(0, Math.min(window.innerHeight - tbContainer.offsetHeight, e.clientY - dragOffY));
-            tbContainer.style.left      = newLeft + 'px';
-            tbContainer.style.top       = newTop  + 'px';
-            tbContainer.style.right     = 'auto';
-            tbContainer.style.bottom    = 'auto';
-            tbContainer.style.transform = 'none';
-        });
+            dragHandle.addEventListener('mousedown', function(e) {
+                if (e.button !== 0) return;
+                const rect = tbContainer.getBoundingClientRect();
+                dragOffX   = e.clientX - rect.left;
+                dragOffY   = e.clientY - rect.top;
+                isDragging = true;
+                didDrag    = false;
+                if (toggleWrap) toggleWrap.classList.add('dragging');
+                e.preventDefault();
+            });
 
-        document.addEventListener('mouseup', function() {
-            if (!isDragging) return;
-            isDragging = false;
-            if (toggleWrap) toggleWrap.classList.remove('dragging');
-            if (didDrag) {
-                GM_setValue('toolbar-custom-left', Math.round(parseFloat(tbContainer.style.left)));
-                GM_setValue('toolbar-custom-top',  Math.round(parseFloat(tbContainer.style.top)));
-            }
-        });
+            document.addEventListener('mousemove', function(e) {
+                if (!isDragging) return;
+                didDrag      = true;
+                const newLeft = Math.max(0, Math.min(window.innerWidth  - tbContainer.offsetWidth,  e.clientX - dragOffX));
+                const newTop  = Math.max(0, Math.min(window.innerHeight - tbContainer.offsetHeight, e.clientY - dragOffY));
+                tbContainer.style.left      = newLeft + 'px';
+                tbContainer.style.top       = newTop  + 'px';
+                tbContainer.style.right     = 'auto';
+                tbContainer.style.bottom    = 'auto';
+                tbContainer.style.transform = 'none';
+            });
 
-        // ── Pin button ───────────────────────────────────────────────
-        if (pinBtn) {
-            pinBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const nowPinned = menu.classList.toggle('pinned-open');
-                setSetting('toolbar-pinned', nowPinned);
-                pinBtn.classList.toggle('active', nowPinned);
-                if (nowPinned) menu.classList.add('active');
-                else           menu.classList.remove('active');
+            document.addEventListener('mouseup', function() {
+                if (!isDragging) return;
+                isDragging = false;
+                if (toggleWrap) toggleWrap.classList.remove('dragging');
+                if (didDrag) {
+                    GM_setValue('toolbar-custom-left', Math.round(parseFloat(tbContainer.style.left)));
+                    GM_setValue('toolbar-custom-top',  Math.round(parseFloat(tbContainer.style.top)));
+                }
             });
         }
 
@@ -1122,6 +1082,22 @@ Version 1.0.1:
                                     Show tooltips on hover
                                 </label>
                             </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <input type="checkbox" id="toolbar-pinned" />
+                                    Keep menu pinned open
+                                </label>
+                                <div class="setting-help-text">Menu stays visible at all times and cannot be closed by clicking outside</div>
+                            </div>
+
+                            <div class="setting-item">
+                                <label>
+                                    <input type="checkbox" id="toolbar-draggable" />
+                                    Enable toolbar dragging
+                                </label>
+                                <div class="setting-help-text">Allows repositioning the toolbar by dragging the toggle button</div>
+                            </div>
                         </div>
 
                         <!-- Tool Management -->
@@ -1243,6 +1219,8 @@ Version 1.0.1:
         document.getElementById('compact-mode').checked = getSetting('compact-mode');
         document.getElementById('auto-close').checked = getSetting('auto-close');
         document.getElementById('show-tooltips').checked = getSetting('show-tooltips');
+        document.getElementById('toolbar-pinned').checked = getSetting('toolbar-pinned');
+        document.getElementById('toolbar-draggable').checked = getSetting('toolbar-draggable');
 
         const opacityInput = document.getElementById('toolbar-opacity');
         opacityInput.value = getSetting('toolbar-opacity');
@@ -1276,6 +1254,8 @@ Version 1.0.1:
         setSetting('tool-size', parseInt(document.getElementById('tool-size').value));
         setSetting('animation-speed', parseFloat(document.getElementById('animation-speed').value));
         setSetting('menu-gap', parseInt(document.getElementById('menu-gap').value));
+        setSetting('toolbar-pinned', document.getElementById('toolbar-pinned').checked);
+        setSetting('toolbar-draggable', document.getElementById('toolbar-draggable').checked);
 
         // Saving a preset position clears any custom drag position
         GM_deleteValue('toolbar-custom-left');
