@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.4
+// @version      1.2.0
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,12 +22,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.4';
-    const CHANGELOG = `Version 1.1.4:
-- Drafts are now preserved when a save fails due to session timeout or permission errors
+    const SCRIPT_VERSION = '1.2.0';
+    const CHANGELOG = `Version 1.2.0:
+- Drafts older than 7 days are now automatically deleted on page load
 
-Version 1.1.3:
-- Fixed draft indicator buttons (Work Notes, Comments, Delete All) clipping their labels`;
+Version 1.1.4:
+- Drafts are now preserved when a save fails due to session timeout or permission errors`;
 
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
@@ -61,6 +61,7 @@ Version 1.1.3:
     const GM_KEY_DRAFTS   = 'sn_toolkit_drafts';
     const GM_KEY_AUTOSAVE = 'sn_toolkit_autosave_enabled';
     const AUTOSAVE_DELAY  = 3000;
+    const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
     const SESSION_KEY_SUBMIT_INTENT = 'sn_toolkit_submit_intent';
     const SUBMIT_INTENT_TTL_MS      = 60000;
@@ -134,6 +135,21 @@ Version 1.1.3:
 
     function clearAllDrafts() {
         GM_setValue(GM_KEY_DRAFTS, '{}');
+    }
+
+    function pruneExpiredDrafts() {
+        const drafts = getDraftsObj();
+        let pruned = 0;
+        for (const key of Object.keys(drafts)) {
+            if (Date.now() - (drafts[key].savedAt || 0) > DRAFT_MAX_AGE_MS) {
+                delete drafts[key];
+                pruned++;
+            }
+        }
+        if (pruned > 0) {
+            GM_setValue(GM_KEY_DRAFTS, JSON.stringify(drafts));
+            console.log(`🛠️ Toolkit: pruned ${pruned} expired draft(s)`);
+        }
     }
 
     /* ==========================================================
@@ -784,6 +800,7 @@ Version 1.1.3:
             sessionStorage.removeItem(SESSION_KEY_SUBMIT_INTENT);
         }
 
+        pruneExpiredDrafts();
         buildModal();
         setTimeout(attemptRegistration, 1000);
 
