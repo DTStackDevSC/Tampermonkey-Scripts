@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.2
+// @version      1.1.3
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,13 +22,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.2';
-    const CHANGELOG = `Version 1.1.2:
-- Fixed duplicate draft entries in restore prompt when both activity-stream and classic textareas are present for the same field
+    const SCRIPT_VERSION = '1.1.3';
+    const CHANGELOG = `Version 1.1.3:
+- Fixed draft indicator buttons (Work Notes, Comments, Delete All) clipping their labels
 
-Version 1.1.1:
-- Drafts are now auto-deleted when Update / Save and Stay is clicked
-- Activity stream fields also cleared silently when the field empties post-submit`;
+Version 1.1.2:
+- Fixed duplicate draft entries in restore prompt when both activity-stream and classic textareas are present for the same field`;
 
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
@@ -147,7 +146,7 @@ Version 1.1.1:
         indicatorEl.id = 'sn-toolkit-indicator';
         Object.assign(indicatorEl.style, {
             position: 'fixed', bottom: '24px', right: '80px',
-            display: 'none', alignItems: 'center', gap: '8px',
+            display: 'none', alignItems: 'center', flexWrap: 'wrap', gap: '8px',
             padding: '7px 12px', background: '#ffffff',
             border: '1px solid #c5d3f0', borderLeft: '4px solid #4a90d9',
             borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.14)',
