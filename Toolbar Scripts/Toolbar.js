@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.1
+// @version      1.2.2
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,12 +26,12 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.1';
-    const CHANGELOG = `Version 1.2.1:
-- Fixed lag when opening Settings modal — settings now load instantly instead of after an unnecessary 50ms delay.
+    const SCRIPT_VERSION = '1.2.2';
+    const CHANGELOG = `Version 1.2.2:
+- Fixed Settings modal lag — removed backdrop-filter blur (expensive on complex pages) and promoted modal to its own compositor layer.
 
-Version 1.2.0:
-- Pin menu and dragging are now toggles in Settings (both off by default) — removes accidental drags and pin misclicks.`;
+Version 1.2.1:
+- Fixed lag when opening Settings modal — settings now load instantly instead of after an unnecessary 50ms delay.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -526,7 +526,6 @@ Version 1.2.0:
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(4px);
         }
 
         .settings-content {
@@ -540,6 +539,7 @@ Version 1.2.0:
             display: flex;
             flex-direction: column;
             animation: modalSlideIn 0.3s ease;
+            will-change: transform;
         }
 
         @keyframes modalSlideIn {
