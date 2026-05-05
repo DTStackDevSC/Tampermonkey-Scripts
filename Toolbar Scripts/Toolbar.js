@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.1
+// @version      1.3.2
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,14 +26,13 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
-- Fixed Tool Labels layout - label now sits clearly above or below the icon with no overlap or clipping.
-- Pinned Tools now default to the Right side.
+    const SCRIPT_VERSION = '1.3.2';
+    const CHANGELOG = `Version 1.3.2:
+- Tool Labels now show full name without truncation and font size increased to 10px.
 
-Version 1.3:
-- Added Pinned Tools: pin any tool to the left or right side of the menu and reorder with arrows in Settings.
-- Added Tool Labels: optionally show permanent labels above or below each tool icon.`;
+Version 1.3.1:
+- Fixed Tool Labels layout - label now sits clearly above or below the icon with no overlap or clipping.
+- Pinned Tools now default to the Right side.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -954,11 +953,8 @@ Version 1.3:
         }
 
         .toolbar-item-label {
-            font-size: 9px !important;
+            font-size: 10px !important;
             text-align: center !important;
-            max-width: 64px !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
             white-space: nowrap !important;
             pointer-events: none !important;
             color: #6b7280 !important;
