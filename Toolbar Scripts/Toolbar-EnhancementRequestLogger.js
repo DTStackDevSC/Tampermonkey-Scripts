@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1
+// @version      1.1.1
 // @description  Opens a pre-filled Office Forms submission with RITM auto-populated from the current ServiceNow ticket - Integrated with Toolbar
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,13 +22,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1';
-    const CHANGELOG = `Version 1.1:
-- Service and Region fields converted to dropdowns; Region supports EMEA, APAC, and AME
-- Updated Details field placeholder text
+    const SCRIPT_VERSION = '1.1.1';
+    const CHANGELOG = `Version 1.1.1:
+- Fixed changelog modal rendering beneath main modal
+- Changed toolbar icon to lightbulb
 
-Version 1.0:
-- Initial release`;
+Version 1.1:
+- Service and Region fields converted to dropdowns; Region supports EMEA, APAC, and AME
+- Updated Details field placeholder text`;
 
     const GM_KEY_VERSION        = 'erlVersion';
     const GM_KEY_CHANGELOG_SEEN = 'erlChangelogSeen';
@@ -75,7 +76,7 @@ Version 1.0:
     const TOOL_POSITION = 11;
 
     const toolIcon = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14H7v-2h5v2zm5-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+        <path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.3 3-5.7 0-3.9-3.1-7-7-7z"/>
     </svg>`;
 
     /* ==========================================================
@@ -126,14 +127,14 @@ Version 1.0:
         overlay.id = 'erl-cl-overlay';
         Object.assign(overlay.style, {
             position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.5)', zIndex: '20000', display: 'block'
+            background: 'rgba(0,0,0,0.5)', zIndex: '1000000', display: 'block'
         });
 
         const clModal = document.createElement('div');
         clModal.id = 'erl-cl-modal';
         Object.assign(clModal.style, {
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            zIndex: '20001', background: '#ffffff', border: '2px solid #333', padding: '20px',
+            zIndex: '1000001', background: '#ffffff', border: '2px solid #333', padding: '20px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial,sans-serif',
             borderRadius: '10px', maxWidth: '600px', width: '90%', maxHeight: '80vh',
             overflowY: 'auto', color: '#333'
