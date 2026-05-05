@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.1
+// @version      1.4.0
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -19,21 +19,20 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.3.0 loading...');
+    console.log('🔧 Netskope URL List Manager v1.4.0 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
-- Update URL Changed
-    
-Version 1.3.0:
-- Added Domain Lookup feature: search for a domain across all URL lists
-- Supports exact, partial, and wildcard matching
-- Results show list name, ID, URL count, and matched entries
-- Click a result to jump directly to the Update form for that list`;
+    const SCRIPT_VERSION = '1.4.0';
+    const CHANGELOG = `Version 1.4.0:
+- Added log buttons to Create and Update URL list forms
+- Buttons: + Log Entry, Delete Selected, View History (same as Netskope Toolkit)
+- Added Insert RITM button - inserts the current ServiceNow ticket number at cursor
+
+Version 1.3.1:
+- Update URL Changed`;
 
     const TOOL_ICON = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>`;
     const MAX_REGISTRATION_ATTEMPTS = 10;
@@ -1236,6 +1235,8 @@ Version 1.3.0:
         const textarea = UI.createTextArea('create-urls-input', 'Enter URLs (one per line)', 'example.com\ntest.example.com\n*.domain.com', 10);
         textarea.style.flex = '1';
         container.appendChild(textarea);
+        const createTextareaEl = textarea.querySelector('textarea');
+        if (createTextareaEl) container.appendChild(createUrlListLogButtons(createTextareaEl));
 
         const btnContainer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
         btnContainer.appendChild(UI.createButton('✨ Create List', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', submitCreateList));
@@ -1265,6 +1266,7 @@ Version 1.3.0:
         const textareaEl = textarea.querySelector('textarea');
         if (textareaEl) textareaEl.value = (list.data?.urls || []).join('\n');
         container.appendChild(textarea);
+        if (textareaEl) container.appendChild(createUrlListLogButtons(textareaEl));
 
         const btnContainer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
         btnContainer.appendChild(UI.createButton('🔄 Update List', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', () => submitUpdateList(list.id, list.name)));
@@ -1606,6 +1608,691 @@ Version 1.3.0:
     function escapeHtml(str) {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
         return str.replace(/[&<>"']/g, c => map[c]);
+    }
+
+    /* ==========================================================
+     *  LOG BUTTON HELPERS
+     * ==========================================================*/
+
+    function getTodayDate() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function getTicketNumber() {
+        for (const id of ['sc_req_item.number', 'incident.number']) {
+            const n = document.getElementById(id);
+            if (n?.value?.trim()) return n.value.trim();
+        }
+        const m = window.location.search.match(/[?&]sys_id=([^&]+)/);
+        return m ? `SYS_${m[1].slice(0, 8)}` : null;
+    }
+
+    function insertAtCursor(textarea, text) {
+        const start  = textarea.selectionStart;
+        const end    = textarea.selectionEnd;
+        const value  = textarea.value;
+        const before = value.slice(0, start);
+        const after  = value.slice(end);
+        const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
+        const suffix = (after  && !after.startsWith('\n')) ? '\n' : '';
+        textarea.value = before + prefix + text + suffix + after;
+        const newPos = before.length + prefix.length + text.length + suffix.length;
+        textarea.setSelectionRange(newPos, newPos);
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.focus();
+    }
+
+    function parseUrlListLog(text) {
+        if (!text) return [];
+        const lines = text.split('\n');
+        const groups = [];
+        let current = null;
+        const orphanDomains = [];
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (/^#\w/.test(trimmed)) {
+                if (orphanDomains.length > 0) {
+                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
+                    orphanDomains.length = 0;
+                }
+                const parts = trimmed.slice(1).split('|').map(p => p.trim());
+                current = {
+                    ritm:      '#' + parts[0],
+                    date:      parts[1] || '',
+                    name:      parts[2] || '',
+                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
+                    domains:   [],
+                    raw:       line,
+                };
+                groups.push(current);
+            } else if (trimmed) {
+                const isCommented = /^#/.test(trimmed);
+                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
+                const entry = { raw: line, domain, isCommented };
+                if (current) current.domains.push(entry);
+                else orphanDomains.push(entry);
+            }
+        }
+
+        if (orphanDomains.length > 0) {
+            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
+        }
+        return groups;
+    }
+
+    function showUrlLogEntryModal(textarea) {
+        if (document.getElementById('urllist-log-add-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'urllist-log-add-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.55)', zIndex: '1100000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'urllist-log-add-modal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '1100001', background: '#ffffff', border: '2px solid #0073e6',
+            borderRadius: '10px', padding: '24px', boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily: 'Arial, sans-serif', maxWidth: '440px', width: '90vw',
+            boxSizing: 'border-box', color: '#333',
+        });
+
+        const mkLbl = (text) => {
+            const el = document.createElement('label');
+            el.textContent = text;
+            Object.assign(el.style, { fontSize: '12px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '4px' });
+            return el;
+        };
+        const mkInp = (placeholder, value, readOnly) => {
+            const el = document.createElement('input');
+            el.type = 'text'; el.placeholder = placeholder || ''; el.value = value || ''; el.readOnly = !!readOnly;
+            Object.assign(el.style, {
+                width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '5px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif', boxSizing: 'border-box', marginBottom: '12px',
+                background: readOnly ? '#f5f5f5' : '#fff', color: readOnly ? '#666' : '#333',
+            });
+            return el;
+        };
+
+        const titleEl = document.createElement('div');
+        titleEl.textContent = '📜 Add URL List Log Entry';
+        Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '16px' });
+
+        const ritmLbl = mkLbl('RITM Number');
+        const ritmInp = mkInp('e.g. RITM1234567', getTicketNumber() || '');
+        const dateLbl = mkLbl('Date (auto-filled)');
+        const dateInp = mkInp('', getTodayDate(), true);
+        const userLbl = mkLbl('Your Name');
+        const userInp = mkInp('Your name', GM_getValue('netskopeUrlList_username', ''));
+
+        const tipEl = document.createElement('div');
+        Object.assign(tipEl.style, {
+            background: '#e8f4fd', border: '1px solid #90caf9', borderRadius: '6px',
+            padding: '8px 12px', marginBottom: '16px', fontSize: '12px', color: '#1a4f7a',
+        });
+        tipEl.textContent = 'The log header (#RITM | Date | Name) will be inserted at the current cursor position. Type your domains below it.';
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const addBtn = document.createElement('button');
+        addBtn.textContent = 'Insert Log Header';
+        Object.assign(addBtn.style, {
+            flex: '1', padding: '10px', background: '#0073e6', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
+        addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
+        addBtn.onclick = () => {
+            const ritm = ritmInp.value.trim();
+            const date = dateInp.value.trim();
+            const user = userInp.value.trim();
+            if (!ritm) { ritmInp.style.borderColor = '#e53935'; ritmInp.focus(); return; }
+            if (user && user !== GM_getValue('netskopeUrlList_username', '')) GM_setValue('netskopeUrlList_username', user);
+            const ritmClean = ritm.startsWith('#') ? ritm : '#' + ritm;
+            const logLine = `${ritmClean} | ${date} | ${user || 'Unknown'}`;
+            insertAtCursor(textarea, logLine);
+            overlay.remove(); modal.remove();
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(addBtn);
+
+        modal.appendChild(titleEl);
+        modal.appendChild(ritmLbl); modal.appendChild(ritmInp);
+        modal.appendChild(dateLbl); modal.appendChild(dateInp);
+        modal.appendChild(userLbl); modal.appendChild(userInp);
+        modal.appendChild(tipEl);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => ritmInp.focus(), 50);
+    }
+
+    function showUrlDeleteSelectionModal(textarea) {
+        const start    = textarea.selectionStart;
+        const end      = textarea.selectionEnd;
+        const selected = textarea.value.slice(start, end).trim();
+
+        if (!selected) {
+            const msg = document.createElement('div');
+            msg.textContent = 'Select the domains you want to mark as deleted first.';
+            Object.assign(msg.style, {
+                position: 'fixed', bottom: '20px', right: '20px',
+                background: '#e65100', color: '#fff', padding: '10px 16px',
+                borderRadius: '6px', zIndex: '1100002', fontSize: '13px',
+                fontFamily: 'Arial, sans-serif', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            });
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 2500);
+            return;
+        }
+
+        if (document.getElementById('urllist-del-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'urllist-del-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.55)', zIndex: '1100000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'urllist-del-modal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '1100001', background: '#ffffff', border: '2px solid #e53935',
+            borderRadius: '10px', padding: '24px', boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily: 'Arial, sans-serif', maxWidth: '480px', width: '90vw',
+            boxSizing: 'border-box', color: '#333',
+        });
+
+        const mkLbl = (text) => {
+            const el = document.createElement('label');
+            el.textContent = text;
+            Object.assign(el.style, { fontSize: '12px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '4px' });
+            return el;
+        };
+        const mkInp = (placeholder, value, readOnly) => {
+            const el = document.createElement('input');
+            el.type = 'text'; el.placeholder = placeholder || ''; el.value = value || ''; el.readOnly = !!readOnly;
+            Object.assign(el.style, {
+                width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '5px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif', boxSizing: 'border-box', marginBottom: '12px',
+                background: readOnly ? '#f5f5f5' : '#fff', color: readOnly ? '#666' : '#333',
+            });
+            return el;
+        };
+
+        const titleEl = document.createElement('div');
+        titleEl.textContent = '🗑 Mark Selected Domains as Deleted';
+        Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#e53935', marginBottom: '8px' });
+
+        const preview = document.createElement('div');
+        Object.assign(preview.style, {
+            background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: '6px',
+            padding: '8px 12px', marginBottom: '8px', fontSize: '11px', color: '#555',
+            fontFamily: 'monospace', maxHeight: '80px', overflowY: 'auto',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+        });
+        preview.textContent = selected.length > 300 ? selected.slice(0, 300) + '…' : selected;
+
+        const domainCount = selected.split('\n').filter(l => l.trim()).length;
+        const countLine = document.createElement('div');
+        countLine.textContent = `${domainCount} line${domainCount !== 1 ? 's' : ''} selected — they will be commented out and marked as deleted.`;
+        Object.assign(countLine.style, { fontSize: '12px', color: '#666', marginBottom: '14px' });
+
+        const ritmLbl = mkLbl('RITM Number');
+        const ritmInp = mkInp('e.g. RITM1234567', getTicketNumber() || '');
+        const dateLbl = mkLbl('Date (auto-filled)');
+        const dateInp = mkInp('', getTodayDate(), true);
+        const userLbl = mkLbl('Your Name');
+        const userInp = mkInp('Your name', GM_getValue('netskopeUrlList_username', ''));
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px', marginTop: '4px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Mark as Deleted';
+        Object.assign(confirmBtn.style, {
+            flex: '1', padding: '10px', background: '#e53935', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        confirmBtn.addEventListener('mouseenter', () => { confirmBtn.style.background = '#c62828'; });
+        confirmBtn.addEventListener('mouseleave', () => { confirmBtn.style.background = '#e53935'; });
+        confirmBtn.onclick = () => {
+            const ritm = ritmInp.value.trim();
+            const date = dateInp.value.trim();
+            const user = userInp.value.trim();
+            if (!ritm) { ritmInp.style.borderColor = '#e53935'; ritmInp.focus(); return; }
+            if (user && user !== GM_getValue('netskopeUrlList_username', '')) GM_setValue('netskopeUrlList_username', user);
+
+            const ritmClean = ritm.startsWith('#') ? ritm : '#' + ritm;
+            const logLine   = `${ritmClean} | ${date} | ${user || 'Unknown'} | Deleted`;
+
+            const selLines  = textarea.value.slice(start, end).split('\n');
+            const commented = selLines.map(l => {
+                const t = l.trim();
+                if (!t || /^#/.test(t)) return l;
+                return '# ' + l;
+            }).join('\n');
+
+            const before = textarea.value.slice(0, start);
+            const after  = textarea.value.slice(end);
+            const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
+            textarea.value = before + prefix + logLine + '\n' + commented + after;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+            overlay.remove(); modal.remove();
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(confirmBtn);
+
+        modal.appendChild(titleEl);
+        modal.appendChild(preview);
+        modal.appendChild(countLine);
+        modal.appendChild(ritmLbl); modal.appendChild(ritmInp);
+        modal.appendChild(dateLbl); modal.appendChild(dateInp);
+        modal.appendChild(userLbl); modal.appendChild(userInp);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => ritmInp.focus(), 50);
+    }
+
+    function showUrlRemoveOlderConfirm(previewFn, onConfirm) {
+        if (document.getElementById('urllist-remove-older-confirm')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'urllist-remove-older-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.55)', zIndex: '1100002',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'urllist-remove-older-confirm';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: '1100003', background: '#ffffff', border: '2px solid #e53935',
+            borderRadius: '10px', padding: '24px', boxShadow: '0 6px 28px rgba(0,0,0,0.3)',
+            fontFamily: 'Arial, sans-serif', maxWidth: '400px', width: '90vw',
+            boxSizing: 'border-box', color: '#333',
+        });
+
+        const title = document.createElement('div');
+        title.textContent = '🗑 Remove Logs Older Than';
+        Object.assign(title.style, { fontSize: '15px', fontWeight: 'bold', color: '#c62828', marginBottom: '6px' });
+
+        const subtitle = document.createElement('div');
+        subtitle.textContent = 'All log entries strictly before this date will be permanently deleted from the textarea.';
+        Object.assign(subtitle.style, { fontSize: '12px', color: '#666', marginBottom: '16px', lineHeight: '1.4' });
+
+        const dateLabel = document.createElement('label');
+        dateLabel.textContent = 'Remove entries before:';
+        Object.assign(dateLabel.style, { fontSize: '12px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '4px' });
+
+        const dateInput = document.createElement('input');
+        dateInput.type = 'date';
+        Object.assign(dateInput.style, {
+            width: '100%', padding: '8px 10px', border: '1px solid #ccc',
+            borderRadius: '5px', fontSize: '13px', boxSizing: 'border-box', marginBottom: '12px',
+        });
+
+        const previewEl = document.createElement('div');
+        Object.assign(previewEl.style, {
+            fontSize: '12px', minHeight: '18px', marginBottom: '16px',
+            padding: '8px 12px', borderRadius: '5px',
+            background: '#fff8e1', border: '1px solid #ffe082', color: '#795548', display: 'none',
+        });
+
+        dateInput.addEventListener('change', () => {
+            const cutoff = dateInput.value;
+            if (!cutoff) { previewEl.style.display = 'none'; return; }
+            const count = previewFn(cutoff);
+            previewEl.style.display = 'block';
+            if (count === 0) {
+                previewEl.textContent = 'No entries are older than this date.';
+                previewEl.style.background = '#f1f8e9';
+                previewEl.style.borderColor = '#aed581';
+                previewEl.style.color = '#558b2f';
+            } else {
+                previewEl.textContent = `⚠️  ${count} entr${count === 1 ? 'y' : 'ies'} will be permanently removed.`;
+                previewEl.style.background = '#fff8e1';
+                previewEl.style.borderColor = '#ffe082';
+                previewEl.style.color = '#795548';
+            }
+        });
+
+        const btnRow = document.createElement('div');
+        Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            flex: '1', padding: '10px', background: '#e0e0e0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        cancelBtn.addEventListener('mouseenter', () => { cancelBtn.style.background = '#d0d0d0'; });
+        cancelBtn.addEventListener('mouseleave', () => { cancelBtn.style.background = '#e0e0e0'; });
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.textContent = 'Confirm Delete';
+        Object.assign(confirmBtn.style, {
+            flex: '1', padding: '10px', background: '#e53935', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        confirmBtn.addEventListener('mouseenter', () => { confirmBtn.style.background = '#b71c1c'; });
+        confirmBtn.addEventListener('mouseleave', () => { confirmBtn.style.background = '#e53935'; });
+        confirmBtn.onclick = () => {
+            const cutoff = dateInput.value;
+            if (!cutoff) { dateInput.style.borderColor = '#e53935'; dateInput.focus(); return; }
+            if (previewFn(cutoff) === 0) return;
+            overlay.remove(); modal.remove();
+            onConfirm(cutoff);
+        };
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(confirmBtn);
+
+        modal.appendChild(title);
+        modal.appendChild(subtitle);
+        modal.appendChild(dateLabel);
+        modal.appendChild(dateInput);
+        modal.appendChild(previewEl);
+        modal.appendChild(btnRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
+        setTimeout(() => dateInput.focus(), 50);
+    }
+
+    function showUrlListLogViewerModal(textarea) {
+        if (document.getElementById('urllist-log-view-modal')) return;
+
+        const allGroups = parseUrlListLog(textarea.value).filter(g =>
+            g.ritm || g.domains.some(d => d.domain)
+        );
+
+        const overlay = document.createElement('div');
+        overlay.id = 'urllist-log-view-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.55)', zIndex: '1100000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'urllist-log-view-modal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '1100001', background: '#ffffff', border: '2px solid #0073e6',
+            borderRadius: '10px', padding: '24px', boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+            fontFamily: 'Arial, sans-serif', maxWidth: '640px', width: '92vw',
+            maxHeight: '85vh', boxSizing: 'border-box', color: '#333',
+            display: 'flex', flexDirection: 'column',
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.textContent = `📜 URL List Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
+        Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
+        modal.appendChild(titleEl);
+
+        const filterRow = document.createElement('div');
+        Object.assign(filterRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end' });
+
+        const mkFilterBlock = (labelText, inputType) => {
+            const wrap = document.createElement('div');
+            const lbl  = document.createElement('div');
+            lbl.textContent = labelText;
+            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
+            const inp = document.createElement('input');
+            inp.type        = inputType || 'text';
+            inp.placeholder = inputType === 'date' ? '' : 'All';
+            Object.assign(inp.style, {
+                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
+                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px', boxSizing: 'border-box',
+            });
+            wrap.appendChild(lbl); wrap.appendChild(inp);
+            return { wrap, inp };
+        };
+
+        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
+        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
+        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
+
+        const clearFiltersBtn = document.createElement('button');
+        clearFiltersBtn.textContent = 'Clear';
+        Object.assign(clearFiltersBtn.style, {
+            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
+            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
+        });
+        clearFiltersBtn.onclick = () => { ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = ''; applyFilters(); };
+
+        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
+        modal.appendChild(filterRow);
+
+        const scrollArea = document.createElement('div');
+        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
+        modal.appendChild(scrollArea);
+
+        function buildGroupCard(group) {
+            const isDeleted = group.isDeleted;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
+                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
+                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif',
+            });
+
+            const mkBadge = (text, bg, color, border) => {
+                const s = document.createElement('span');
+                s.textContent = text;
+                Object.assign(s.style, {
+                    display: 'inline-block', background: bg, color, borderRadius: '4px',
+                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px', border: border || 'none',
+                });
+                return s;
+            };
+
+            const headerRow = document.createElement('div');
+            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
+
+            if (group.ritm)     headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
+            if (group.date)     headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
+            if (group.name)     headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
+            if (isDeleted)      headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
+            if (group.isOrphan) headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
+            card.appendChild(headerRow);
+
+            const activeDomains = group.domains.filter(d => d.domain);
+            if (activeDomains.length > 0) {
+                const domainList = document.createElement('div');
+                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
+                activeDomains.forEach(d => {
+                    const dEl = document.createElement('div');
+                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
+                    Object.assign(dEl.style, { color: d.isCommented ? '#aaa' : '#333', textDecoration: d.isCommented ? 'line-through' : 'none' });
+                    domainList.appendChild(dEl);
+                });
+                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
+                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
+                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
+                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
+                const countEl = document.createElement('div');
+                countEl.textContent = countText;
+                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
+                card.appendChild(domainList);
+                card.appendChild(countEl);
+            } else {
+                const emptyEl = document.createElement('div');
+                emptyEl.textContent = '(no domains in this group)';
+                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
+                card.appendChild(emptyEl);
+            }
+            return card;
+        }
+
+        function applyFilters() {
+            const ritmVal  = ritmFilter.value.trim().toLowerCase();
+            const dateFrom = dateFromFilter.value;
+            const dateTo   = dateToFilter.value;
+
+            const filtered = allGroups.filter(group => {
+                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
+                if (dateFrom && group.date && group.date < dateFrom) return false;
+                if (dateTo   && group.date && group.date > dateTo)   return false;
+                return true;
+            });
+
+            scrollArea.innerHTML = '';
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = allGroups.length === 0 ? 'No log entries found in this URL list.' : 'No entries match the current filters.';
+                Object.assign(empty.style, { fontSize: '13px', color: '#999', textAlign: 'center', padding: '24px 0', fontStyle: 'italic' });
+                scrollArea.appendChild(empty);
+            } else {
+                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
+            }
+        }
+
+        ritmFilter.addEventListener('input', applyFilters);
+        dateFromFilter.addEventListener('change', applyFilters);
+        dateToFilter.addEventListener('change', applyFilters);
+        applyFilters();
+
+        const footerRow = document.createElement('div');
+        Object.assign(footerRow.style, { display: 'flex', gap: '8px', flexShrink: '0' });
+
+        const removeOlderBtn = document.createElement('button');
+        removeOlderBtn.textContent = '🗑 Remove Older Than';
+        Object.assign(removeOlderBtn.style, {
+            flex: '0 0 auto', padding: '10px 14px', background: '#fff', color: '#c62828',
+            border: '1px solid #e53935', borderRadius: '6px', cursor: 'pointer',
+            fontWeight: 'bold', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+        });
+        removeOlderBtn.addEventListener('mouseenter', () => { removeOlderBtn.style.background = '#ffebee'; });
+        removeOlderBtn.addEventListener('mouseleave', () => { removeOlderBtn.style.background = '#fff'; });
+        removeOlderBtn.addEventListener('click', () => {
+            showUrlRemoveOlderConfirm(
+                (cutoff) => allGroups.filter(g => !g.isOrphan && g.date && g.date < cutoff).length,
+                (cutoff) => {
+                    const groups = parseUrlListLog(textarea.value);
+                    const keepLines = [];
+                    groups.forEach(group => {
+                        if (group.isOrphan || !group.date || group.date >= cutoff) {
+                            if (group.raw) keepLines.push(group.raw);
+                            group.domains.forEach(d => keepLines.push(d.raw));
+                        }
+                    });
+                    textarea.value = keepLines.join('\n').trim();
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    overlay.remove(); modal.remove();
+                }
+            );
+        });
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            flex: '1', padding: '10px', background: '#0073e6', color: '#fff',
+            border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px',
+        });
+        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#005bb5'; });
+        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#0073e6'; });
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        footerRow.appendChild(removeOlderBtn);
+        footerRow.appendChild(closeBtn);
+        modal.appendChild(footerRow);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) closeBtn.click(); };
+    }
+
+    function createUrlListLogButtons(textareaEl) {
+        const container = UI.createElement('div', { display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' });
+
+        const addBtn = document.createElement('button');
+        addBtn.textContent = '+ Log Entry';
+        addBtn.title = 'Insert a #RITM | Date | Name header at the cursor position';
+        addBtn.style.cssText = `padding: 4px 10px; border: 1px solid #0073e6; border-radius: 4px; background: #0073e6; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
+        addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
+        addBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showUrlLogEntryModal(textareaEl); });
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '🗑 Delete Selected';
+        deleteBtn.title = 'Select domains in the textarea first, then click to comment them out and add a Deleted log header';
+        deleteBtn.style.cssText = `padding: 4px 10px; border: 1px solid #e53935; border-radius: 4px; background: #e53935; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        deleteBtn.addEventListener('mouseenter', () => { deleteBtn.style.background = '#c62828'; });
+        deleteBtn.addEventListener('mouseleave', () => { deleteBtn.style.background = '#e53935'; });
+        deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showUrlDeleteSelectionModal(textareaEl); });
+
+        const viewBtn = document.createElement('button');
+        viewBtn.textContent = '📜 View History';
+        viewBtn.style.cssText = `padding: 4px 10px; border: 1px solid #4caf50; border-radius: 4px; background: #4caf50; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        viewBtn.addEventListener('mouseenter', () => { viewBtn.style.background = '#388e3c'; });
+        viewBtn.addEventListener('mouseleave', () => { viewBtn.style.background = '#4caf50'; });
+        viewBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showUrlListLogViewerModal(textareaEl); });
+
+        const ritmBtn = document.createElement('button');
+        ritmBtn.textContent = '🎫 Insert RITM';
+        ritmBtn.title = 'Insert the current ServiceNow ticket number at cursor position';
+        ritmBtn.style.cssText = `padding: 4px 10px; border: 1px solid #764ba2; border-radius: 4px; background: #764ba2; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        ritmBtn.addEventListener('mouseenter', () => { ritmBtn.style.background = '#5a3680'; });
+        ritmBtn.addEventListener('mouseleave', () => { ritmBtn.style.background = '#764ba2'; });
+        ritmBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); e.preventDefault();
+            const ticket = getTicketNumber();
+            if (!ticket) { UI.showStatus('⚠️ No RITM/ticket number detected on this page.', 'warning'); return; }
+            insertAtCursor(textareaEl, ticket);
+        });
+
+        container.appendChild(addBtn);
+        container.appendChild(deleteBtn);
+        container.appendChild(viewBtn);
+        container.appendChild(ritmBtn);
+        return container;
     }
 
     /* ==========================================================
