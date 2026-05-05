@@ -122,63 +122,96 @@ Version 1.0:
      * ==========================================================*/
 
     function showChangelogModal() {
-        if (document.getElementById('erl-changelog-modal')) return;
-
         const overlay = document.createElement('div');
-        overlay.id = 'erl-changelog-modal';
+        overlay.id = 'erl-cl-overlay';
         Object.assign(overlay.style, {
-            position:        'fixed',
-            top:             '60px',
-            left:            '50%',
-            transform:       'translateX(-50%)',
-            backgroundColor: '#f9f9f9',
-            border:          '1px solid #ccc',
-            boxShadow:       '0px 4px 12px rgba(0,0,0,0.15)',
-            padding:         '46px 24px 20px 24px',
-            zIndex:          '999999',
-            borderRadius:    '10px',
-            fontFamily:      'Arial, sans-serif',
-            minWidth:        '380px',
-            maxWidth:        '480px'
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)', zIndex: '20000', display: 'block'
         });
 
-        const titleEl = document.createElement('div');
-        Object.assign(titleEl.style, {
-            position: 'absolute', top: '12px', left: '12px',
-            fontSize: '12px', color: '#333', fontWeight: 'bold'
+        const clModal = document.createElement('div');
+        clModal.id = 'erl-cl-modal';
+        Object.assign(clModal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '20001', background: '#ffffff', border: '2px solid #333', padding: '20px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial,sans-serif',
+            borderRadius: '10px', maxWidth: '600px', width: '90%', maxHeight: '80vh',
+            overflowY: 'auto', color: '#333'
         });
-        titleEl.textContent = `📋 Enhancement Request Logger — What's New (v${SCRIPT_VERSION})`;
-        overlay.appendChild(titleEl);
 
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'X';
-        Object.assign(closeBtn.style, {
-            position: 'absolute', top: '5px', right: '5px',
-            background: 'red', color: 'white', border: 'none',
-            borderRadius: '4px', cursor: 'pointer', padding: '4px 8px', fontWeight: 'bold'
+        const clTitle = document.createElement('h2');
+        clTitle.textContent = `What's New - Version ${SCRIPT_VERSION}`;
+        Object.assign(clTitle.style, {
+            marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea',
+            paddingBottom: '10px', fontSize: '1.5em', fontWeight: 'bold'
         });
-        closeBtn.onclick = () => { markChangelogSeen(); overlay.remove(); };
-        overlay.appendChild(closeBtn);
 
-        const pre = document.createElement('pre');
-        pre.textContent = CHANGELOG;
-        Object.assign(pre.style, {
-            margin: '0 0 16px', fontSize: '12px', color: '#444',
-            whiteSpace: 'pre-wrap', lineHeight: '1.6', fontFamily: 'Arial, sans-serif'
+        const versionInfo = document.createElement('div');
+        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
+        Object.assign(versionInfo.style, {
+            backgroundColor: '#f8f9fa', color: '#333', padding: '10px', borderRadius: '5px',
+            marginBottom: '15px', borderLeft: '4px solid #667eea', fontSize: '14px'
         });
-        overlay.appendChild(pre);
 
-        const dismissBtn = document.createElement('button');
-        dismissBtn.textContent = 'Got it';
-        Object.assign(dismissBtn.style, {
-            padding: '8px 20px', border: 'none', borderRadius: '6px',
-            cursor: 'pointer', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white', fontWeight: 'bold', fontSize: '13px', width: '100%'
+        const changelogContent = document.createElement('div');
+        changelogContent.textContent = CHANGELOG;
+        Object.assign(changelogContent.style, {
+            whiteSpace: 'pre-wrap', lineHeight: '1.6', color: '#333',
+            fontFamily: "'Courier New',Courier,monospace", fontSize: '13px',
+            backgroundColor: '#fafafa', padding: '10px', borderRadius: '5px'
         });
-        dismissBtn.onclick = () => { markChangelogSeen(); overlay.remove(); };
-        overlay.appendChild(dismissBtn);
+
+        const closeButton = document.createElement('button');
+        closeButton.textContent = 'Got it!';
+        Object.assign(closeButton.style, {
+            marginTop: '15px', padding: '10px 20px', backgroundColor: '#667eea', color: '#fff',
+            border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px'
+        });
+        closeButton.addEventListener('mouseenter', () => { closeButton.style.backgroundColor = '#5568d3'; });
+        closeButton.addEventListener('mouseleave', () => { closeButton.style.backgroundColor = '#667eea'; });
+        closeButton.onclick = () => {
+            overlay.remove();
+            clModal.remove();
+            markChangelogSeen();
+            saveVersion(SCRIPT_VERSION);
+            const n = document.getElementById('erl-changelog-notif');
+            if (n) n.remove();
+        };
+
+        clModal.appendChild(clTitle);
+        clModal.appendChild(versionInfo);
+        clModal.appendChild(changelogContent);
+        clModal.appendChild(closeButton);
 
         document.body.appendChild(overlay);
+        document.body.appendChild(clModal);
+        overlay.onclick = () => closeButton.click();
+    }
+
+    function injectStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            #erl-changelog-notif {
+                display: inline-flex; align-items: center; gap: 5px;
+                cursor: pointer; padding: 2px 6px;
+                border-radius: 4px; transition: background-color 0.2s ease;
+            }
+            #erl-changelog-notif:hover { background-color: #f0f0f0; }
+            #erl-changelog-notif .erl-notif-dot {
+                display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                animation: erlColorPulse 1s ease-in-out infinite;
+            }
+            @keyframes erlColorPulse {
+                0%, 100% { background-color: #667eea; }
+                50%       { background-color: #5568d3; }
+            }
+            #erl-changelog-notif .erl-notif-text {
+                font-size: 11px; color: #667eea; text-decoration: underline;
+                font-family: Arial, sans-serif; font-weight: normal;
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     /* ==========================================================
@@ -228,18 +261,42 @@ Version 1.0:
         closeButton.onclick = () => modal.style.display = 'none';
         modal.appendChild(closeButton);
 
-        // ── Title ─────────────────────────────────────────────
-        const title = document.createElement('div');
-        Object.assign(title.style, {
+        // ── Title bar ─────────────────────────────────────────
+        const titleBar = document.createElement('div');
+        Object.assign(titleBar.style, {
             position:   'absolute',
-            top:        '12px',
+            top:        '10px',
             left:       '12px',
-            fontSize:   '12px',
-            color:      '#333',
-            fontWeight: 'bold'
+            display:    'flex',
+            alignItems: 'center',
+            gap:        '8px'
         });
-        title.textContent = '📋 Enhancement Request Logger';
-        modal.appendChild(title);
+
+        const titleText = document.createElement('span');
+        Object.assign(titleText.style, { fontSize: '12px', color: '#333', fontWeight: 'bold' });
+        titleText.textContent = '📋 Enhancement Request Logger';
+        titleBar.appendChild(titleText);
+
+        const versionBadge = document.createElement('span');
+        versionBadge.textContent = `v${SCRIPT_VERSION}`;
+        Object.assign(versionBadge.style, { fontSize: '11px', color: '#6b7280' });
+        titleBar.appendChild(versionBadge);
+
+        if (isNewVersion() && !hasSeenChangelog()) {
+            const clNotif = document.createElement('span');
+            clNotif.id = 'erl-changelog-notif';
+            const dot = document.createElement('span');
+            dot.className = 'erl-notif-dot';
+            const txt = document.createElement('span');
+            txt.className = 'erl-notif-text';
+            txt.textContent = 'Changelog';
+            clNotif.appendChild(dot);
+            clNotif.appendChild(txt);
+            clNotif.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showChangelogModal(); });
+            titleBar.appendChild(clNotif);
+        }
+
+        modal.appendChild(titleBar);
 
         // ── Field builders ────────────────────────────────────
         function makeLabel(text) {
@@ -521,13 +578,9 @@ Version 1.0:
 
         console.log('Initializing Enhancement Request Logger...');
         isInitialized = true;
+        injectStyles();
         initializeModal();
         console.log('✅ Enhancement Request Logger modal ready!');
-
-        if (isNewVersion() && !hasSeenChangelog()) {
-            saveVersion(SCRIPT_VERSION);
-            showChangelogModal();
-        }
 
         setTimeout(() => {
             attemptRegistration();
