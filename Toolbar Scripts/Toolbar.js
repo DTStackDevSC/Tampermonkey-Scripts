@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.2
+// @version      1.3
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,12 +26,13 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.2';
-    const CHANGELOG = `Version 1.2.2:
-- Fixed Settings modal lag — removed backdrop-filter blur (expensive on complex pages) and promoted modal to its own compositor layer.
+    const SCRIPT_VERSION = '1.3';
+    const CHANGELOG = `Version 1.3:
+- Added Pinned Tools: pin any tool to the left or right side of the menu and reorder with arrows in Settings.
+- Added Tool Labels: optionally show permanent labels above or below each tool icon.
 
-Version 1.2.1:
-- Fixed lag when opening Settings modal — settings now load instantly instead of after an unnecessary 50ms delay.`;
+Version 1.2.2:
+- Fixed Settings modal lag - removed backdrop-filter blur (expensive on complex pages) and promoted modal to its own compositor layer.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -141,7 +142,9 @@ Version 1.2.1:
         'animation-speed': 0.3,
         'menu-gap': 8,
         'toolbar-pinned': false,
-        'toolbar-draggable': false
+        'toolbar-draggable': false,
+        'show-labels': false,
+        'label-position': 'top'
     };
 
     function getSetting(key) {
@@ -150,6 +153,123 @@ Version 1.2.1:
 
     function setSetting(key, value) {
         GM_setValue(key, value);
+    }
+
+    /* ==========================================================
+     *  TOOL REGISTRY AND PIN MANAGEMENT
+     * ==========================================================*/
+
+    const toolRegistry = new Map(); // id -> config
+
+    function loadPinnedConfig() {
+        try { return JSON.parse(GM_getValue('toolbar-pinned-tools', '[]')); }
+        catch (e) { return []; }
+    }
+
+    function savePinnedConfig(arr) {
+        GM_setValue('toolbar-pinned-tools', JSON.stringify(arr));
+    }
+
+    let _rerenderTimer = null;
+
+    function scheduleRerender() {
+        clearTimeout(_rerenderTimer);
+        _rerenderTimer = setTimeout(rerenderMenu, 500);
+    }
+
+    function rerenderMenu() {
+        const menu = document.getElementById('custom-toolbar-menu');
+        if (!menu) return;
+
+        const settingsEl = menu.querySelector('[data-tool="settings"]');
+
+        const pinnedConfig  = loadPinnedConfig();
+        const pinnedIds     = pinnedConfig.map(p => p.id);
+        const leftPinned    = pinnedConfig.filter(p => p.side === 'left');
+        const rightPinned   = pinnedConfig.filter(p => p.side === 'right');
+        const allPinnedSet  = new Set(pinnedIds);
+
+        const showLabels    = getSetting('show-labels');
+        const labelPosition = getSetting('label-position');
+
+        function buildToolEl(config) {
+            const el = document.createElement('div');
+            el.className = 'toolbar-item' + (showLabels ? ' has-label' : '');
+            el.setAttribute('data-tool', config.id);
+            if (config.position !== undefined && config.position !== null) {
+                el.setAttribute('data-position', config.position);
+            }
+
+            const tmp = document.createElement('div');
+            tmp.innerHTML = config.icon;
+            const svgEl = tmp.firstElementChild;
+
+            const tooltip = document.createElement('div');
+            tooltip.className = 'toolbar-item-tooltip';
+            tooltip.textContent = config.tooltip;
+
+            if (showLabels) {
+                const label = document.createElement('div');
+                label.className = 'toolbar-item-label';
+                label.textContent = config.tooltip;
+                if (labelPosition === 'top') {
+                    el.appendChild(label);
+                    el.appendChild(svgEl);
+                } else {
+                    el.appendChild(svgEl);
+                    el.appendChild(label);
+                }
+            } else {
+                el.appendChild(svgEl);
+            }
+            el.appendChild(tooltip);
+
+            el.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (!menu.classList.contains('pinned-open')) menu.classList.remove('active');
+                document.dispatchEvent(new CustomEvent('toolbarToolClicked', { detail: { id: config.id } }));
+            });
+
+            return el;
+        }
+
+        function makeSep() {
+            const sep = document.createElement('div');
+            sep.className = 'toolbar-separator';
+            return sep;
+        }
+
+        // Clear everything except the settings cog
+        while (menu.firstChild) menu.removeChild(menu.firstChild);
+
+        const leftEls = leftPinned
+            .filter(p => toolRegistry.has(p.id))
+            .map(p => buildToolEl(toolRegistry.get(p.id)));
+
+        const regularEls = Array.from(toolRegistry.values())
+            .filter(c => !allPinnedSet.has(c.id))
+            .sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity))
+            .map(buildToolEl);
+
+        const rightEls = rightPinned
+            .filter(p => toolRegistry.has(p.id))
+            .map(p => buildToolEl(toolRegistry.get(p.id)));
+
+        const hasLeft    = leftEls.length > 0;
+        const hasRegular = regularEls.length > 0;
+        const hasRight   = rightEls.length > 0;
+        const hasAny     = hasLeft || hasRegular || hasRight;
+
+        leftEls.forEach(el => menu.appendChild(el));
+        if (hasLeft && (hasRegular || hasRight)) menu.appendChild(makeSep());
+        regularEls.forEach(el => menu.appendChild(el));
+        if (hasRight && (hasLeft || hasRegular)) menu.appendChild(makeSep());
+        rightEls.forEach(el => menu.appendChild(el));
+        if (hasAny) menu.appendChild(makeSep());
+
+        if (settingsEl) menu.appendChild(settingsEl);
+
+        console.log('🔄 Menu rerendered:', { left: leftEls.length, regular: regularEls.length, right: rightEls.length });
     }
 
     /* ==========================================================
@@ -785,6 +905,84 @@ Version 1.2.1:
             cursor: grabbing;
             user-select: none;
         }
+
+        /* Tool labels */
+        .toolbar-item.has-label {
+            flex-direction: column !important;
+            gap: 2px !important;
+            height: auto !important;
+            min-width: ${savedToolSize}px !important;
+            padding: 3px 5px !important;
+        }
+
+        .toolbar-item-label {
+            font-size: 9px !important;
+            text-align: center !important;
+            max-width: 64px !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+            pointer-events: none !important;
+            color: #374151 !important;
+            line-height: 1 !important;
+        }
+
+        .toolbar-item:hover .toolbar-item-label {
+            color: #667eea !important;
+        }
+
+        /* Pinned tools rows in settings */
+        .pin-tool-row {
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            padding: 5px 2px !important;
+            border-bottom: 1px solid #f0f0f0 !important;
+        }
+
+        .pin-tool-row:last-child {
+            border-bottom: none !important;
+        }
+
+        .pin-tool-row .pin-name {
+            flex: 1 !important;
+            font-size: 13px !important;
+            color: #1f2937 !important;
+        }
+
+        .pin-tool-row .pin-side-select,
+        .pin-tool-row .pin-reorder-btn {
+            display: none !important;
+        }
+
+        .pin-tool-row.is-pinned .pin-side-select,
+        .pin-tool-row.is-pinned .pin-reorder-btn {
+            display: inline-block !important;
+        }
+
+        .pin-side-select {
+            font-size: 12px !important;
+            padding: 2px 4px !important;
+            border: 1px solid #d1d5db !important;
+            border-radius: 4px !important;
+            background: #ffffff !important;
+            color: #1f2937 !important;
+        }
+
+        .pin-reorder-btn {
+            background: none !important;
+            border: 1px solid #d1d5db !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            font-size: 12px !important;
+            padding: 1px 5px !important;
+            color: #374151 !important;
+            line-height: 1.4 !important;
+        }
+
+        .pin-reorder-btn:hover {
+            background: #e5e7eb !important;
+        }
     `);
 
     // Create toolbar HTML
@@ -960,6 +1158,7 @@ Version 1.2.1:
                     changelogNotification.classList.add('hidden');
                 }
             }
+            populatePinnedToolsList();
             return;
         }
 
@@ -1100,14 +1299,29 @@ Version 1.2.1:
                             </div>
                         </div>
 
-                        <!-- Tool Management -->
+                        <!-- Pinned Tools -->
                         <div class="settings-section">
-                            <h3>🔧 Tools</h3>
+                            <h3>📌 Pinned Tools</h3>
+                            <p class="setting-help-text">Pin tools for quick access. Choose Left or Right side and use arrows to reorder within the pinned group.</p>
+                            <div class="tools-list" style="max-height: 220px;" id="pinned-tools-list"></div>
+                        </div>
+
+                        <!-- Tool Labels -->
+                        <div class="settings-section">
+                            <h3>🏷️ Tool Labels</h3>
                             <div class="setting-item">
-                                <label>Active Tools:</label>
-                                <div id="tools-list" class="tools-list">
-                                    <!-- Will be populated dynamically -->
-                                </div>
+                                <label>
+                                    <input type="checkbox" id="show-labels" />
+                                    Show permanent labels on tool icons
+                                </label>
+                                <div class="setting-help-text">Displays the tool name directly on each icon without needing to hover</div>
+                            </div>
+                            <div class="setting-item" id="label-position-row" style="display:none;">
+                                <label>Label position:</label>
+                                <select id="label-position">
+                                    <option value="top">Top</option>
+                                    <option value="bottom">Bottom</option>
+                                </select>
                             </div>
                         </div>
 
@@ -1145,7 +1359,7 @@ Version 1.2.1:
             };
         }
 
-        populateToolsList();
+        populatePinnedToolsList();
     }
 
     function setupSettingsEventListeners() {
@@ -1200,6 +1414,14 @@ Version 1.2.1:
         document.getElementById('import-settings').addEventListener('click', importSettings);
         document.getElementById('reset-settings').addEventListener('click', resetSettings);
 
+        const showLabelsEl   = document.getElementById('show-labels');
+        const labelPosRow    = document.getElementById('label-position-row');
+        if (showLabelsEl && labelPosRow) {
+            showLabelsEl.addEventListener('change', () => {
+                labelPosRow.style.display = showLabelsEl.checked ? '' : 'none';
+            });
+        }
+
         const resetDragBtn = document.getElementById('reset-drag-position');
         if (resetDragBtn) {
             resetDragBtn.addEventListener('click', () => {
@@ -1239,6 +1461,15 @@ Version 1.2.1:
         const menuGapInput = document.getElementById('menu-gap');
         menuGapInput.value = getSetting('menu-gap');
         document.getElementById('menu-gap-value').textContent = menuGapInput.value + 'px';
+
+        const showLabelsEl = document.getElementById('show-labels');
+        if (showLabelsEl) showLabelsEl.checked = getSetting('show-labels');
+
+        const labelPositionEl = document.getElementById('label-position');
+        if (labelPositionEl) labelPositionEl.value = getSetting('label-position');
+
+        const labelPositionRow = document.getElementById('label-position-row');
+        if (labelPositionRow) labelPositionRow.style.display = getSetting('show-labels') ? '' : 'none';
     }
 
     function saveSettings() {
@@ -1254,6 +1485,14 @@ Version 1.2.1:
         setSetting('menu-gap', parseInt(document.getElementById('menu-gap').value));
         setSetting('toolbar-pinned', document.getElementById('toolbar-pinned').checked);
         setSetting('toolbar-draggable', document.getElementById('toolbar-draggable').checked);
+        setSetting('show-labels', document.getElementById('show-labels').checked);
+        setSetting('label-position', document.getElementById('label-position').value);
+
+        const pinnedRows = Array.from(document.querySelectorAll('#pinned-tools-list .pin-tool-row.is-pinned'));
+        savePinnedConfig(pinnedRows.map(row => ({
+            id: row.dataset.toolId,
+            side: row.querySelector('.pin-side-select').value
+        })));
 
         // Saving a preset position clears any custom drag position
         GM_deleteValue('toolbar-custom-left');
@@ -1262,33 +1501,110 @@ Version 1.2.1:
         alert('✅ Settings saved! The page will reload to apply changes.');
     }
 
-    function populateToolsList() {
-        const toolsList = document.getElementById('tools-list');
-        const menu = document.getElementById('custom-toolbar-menu');
+    function populatePinnedToolsList() {
+        const container = document.getElementById('pinned-tools-list');
+        if (!container) return;
 
-        if (!menu || !toolsList) return;
-
-        const tools = Array.from(menu.querySelectorAll('.toolbar-item'));
-
-        if (tools.length === 0) {
-            toolsList.innerHTML = '<p style="color: #6b7280; font-size: 13px;">No tools installed yet.</p>';
+        if (toolRegistry.size === 0) {
+            container.innerHTML = '<p style="color: #6b7280; font-size: 13px;">No tools installed yet.</p>';
             return;
         }
 
-        toolsList.innerHTML = '';
-        tools.forEach(tool => {
-            const toolId = tool.getAttribute('data-tool');
-            const tooltip = tool.querySelector('.toolbar-item-tooltip');
-            const toolName = tooltip ? tooltip.textContent : toolId;
+        const pinnedConfig = loadPinnedConfig();
+        const pinnedMap    = new Map(pinnedConfig.map(p => [p.id, p.side]));
 
-            const toolItem = document.createElement('div');
-            toolItem.className = 'tool-item';
-            toolItem.innerHTML = `
-                <input type="checkbox" checked disabled />
-                <span>${toolName}</span>
-            `;
-            toolsList.appendChild(toolItem);
-        });
+        const pinnedTools   = pinnedConfig
+            .filter(p => toolRegistry.has(p.id))
+            .map(p => ({ config: toolRegistry.get(p.id), side: p.side }));
+
+        const unpinnedTools = Array.from(toolRegistry.values())
+            .filter(c => !pinnedMap.has(c.id))
+            .sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
+
+        container.innerHTML = '';
+
+        function makeRow(config, side, isPinned) {
+            const row = document.createElement('div');
+            row.className = 'pin-tool-row' + (isPinned ? ' is-pinned' : '');
+            row.dataset.toolId = config.id;
+
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = isPinned;
+            cb.style.marginRight = '6px';
+
+            const name = document.createElement('span');
+            name.className = 'pin-name';
+            name.textContent = config.tooltip || config.id;
+
+            const sideSelect = document.createElement('select');
+            sideSelect.className = 'pin-side-select';
+            ['left', 'right'].forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s;
+                opt.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+                if (s === (side || 'left')) opt.selected = true;
+                sideSelect.appendChild(opt);
+            });
+
+            const upBtn = document.createElement('button');
+            upBtn.className = 'pin-reorder-btn';
+            upBtn.textContent = '▲';
+            upBtn.title = 'Move up';
+
+            const downBtn = document.createElement('button');
+            downBtn.className = 'pin-reorder-btn';
+            downBtn.textContent = '▼';
+            downBtn.title = 'Move down';
+
+            row.appendChild(cb);
+            row.appendChild(name);
+            row.appendChild(sideSelect);
+            row.appendChild(upBtn);
+            row.appendChild(downBtn);
+
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    row.classList.add('is-pinned');
+                    const firstUnpinned = container.querySelector('.pin-tool-row:not(.is-pinned)');
+                    if (firstUnpinned) {
+                        container.insertBefore(row, firstUnpinned);
+                    } else {
+                        container.appendChild(row);
+                    }
+                } else {
+                    row.classList.remove('is-pinned');
+                    const allPinned = Array.from(container.querySelectorAll('.pin-tool-row.is-pinned'));
+                    if (allPinned.length > 0) {
+                        const afterLast = allPinned[allPinned.length - 1].nextSibling;
+                        if (afterLast) {
+                            container.insertBefore(row, afterLast);
+                        } else {
+                            container.appendChild(row);
+                        }
+                    } else {
+                        container.insertBefore(row, container.firstChild);
+                    }
+                }
+            });
+
+            upBtn.addEventListener('click', () => {
+                const pinnedRows = Array.from(container.querySelectorAll('.pin-tool-row.is-pinned'));
+                const idx = pinnedRows.indexOf(row);
+                if (idx > 0) container.insertBefore(row, pinnedRows[idx - 1]);
+            });
+
+            downBtn.addEventListener('click', () => {
+                const pinnedRows = Array.from(container.querySelectorAll('.pin-tool-row.is-pinned'));
+                const idx = pinnedRows.indexOf(row);
+                if (idx >= 0 && idx < pinnedRows.length - 1) container.insertBefore(pinnedRows[idx + 1], row);
+            });
+
+            return row;
+        }
+
+        pinnedTools.forEach(({ config, side }) => container.appendChild(makeRow(config, side, true)));
+        unpinnedTools.forEach(config => container.appendChild(makeRow(config, 'left', false)));
     }
 
     function exportSettings() {
@@ -1354,79 +1670,9 @@ Version 1.2.1:
     });
 
     function addToolToMenu(config) {
-        const menu = document.getElementById('custom-toolbar-menu');
-        if (!menu) {
-            console.error('❌ Menu not found, cannot add tool');
-            return;
-        }
-
-        const settings = menu.querySelector('[data-tool="settings"]');
-        const customTools = Array.from(menu.children).filter(child =>
-            child.classList.contains('toolbar-item') &&
-            child.getAttribute('data-tool') !== 'settings'
-        );
-
-        if (customTools.length === 0) {
-            const separator = document.createElement('div');
-            separator.className = 'toolbar-separator';
-            menu.insertBefore(separator, settings);
-        }
-
-        const toolDiv = document.createElement('div');
-        toolDiv.className = 'toolbar-item';
-        toolDiv.setAttribute('data-tool', config.id);
-
-        if (config.position !== undefined) {
-            toolDiv.setAttribute('data-position', config.position);
-        }
-
-        toolDiv.innerHTML = `
-            ${config.icon}
-            <div class="toolbar-item-tooltip">${config.tooltip}</div>
-        `;
-
-        toolDiv.addEventListener('click', function(e) {
-            e.stopPropagation();
-            menu.classList.remove('active');
-
-            document.dispatchEvent(new CustomEvent('toolbarToolClicked', {
-                detail: { id: config.id }
-            }));
-        });
-
-        const separator = settings.previousElementSibling;
-
-        if (config.position === undefined || config.position === null) {
-            menu.insertBefore(toolDiv, separator);
-        } else {
-            const position = parseInt(config.position);
-            const allCustomTools = Array.from(menu.children).filter(child =>
-                child.classList.contains('toolbar-item') &&
-                child.getAttribute('data-tool') !== 'settings'
-            );
-
-            let insertBefore = separator;
-
-            for (let i = 0; i < allCustomTools.length; i++) {
-                const existingTool = allCustomTools[i];
-                const existingPosition = existingTool.getAttribute('data-position');
-
-                if (existingPosition !== null) {
-                    const existingPos = parseInt(existingPosition);
-                    if (position < existingPos) {
-                        insertBefore = existingTool;
-                        break;
-                    }
-                } else {
-                    insertBefore = existingTool;
-                    break;
-                }
-            }
-
-            menu.insertBefore(toolDiv, insertBefore);
-        }
-
-        console.log('✅ Tool added to menu:', config.id, config.position !== undefined ? `at position ${config.position}` : '(no position)');
+        toolRegistry.set(config.id, config);
+        scheduleRerender();
+        console.log('📥 Registered tool:', config.id);
     }
 
     /* ==========================================================
