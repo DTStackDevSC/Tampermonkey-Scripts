@@ -203,6 +203,34 @@
             return wrap;
         }
 
+        function makeSelectRow(labelText, valueId, options, defaultValue) {
+            const wrap = document.createElement('div');
+            wrap.style.width = '100%';
+            const sel = document.createElement('select');
+            sel.id = valueId;
+            Object.assign(sel.style, {
+                width:        '100%',
+                padding:      '8px 10px',
+                border:       '1px solid #ddd',
+                borderRadius: '6px',
+                fontSize:     '13px',
+                color:        '#333',
+                background:   '#fff',
+                boxSizing:    'border-box',
+                cursor:       'pointer'
+            });
+            options.forEach(opt => {
+                const o = document.createElement('option');
+                o.value = opt;
+                o.textContent = opt;
+                if (opt === defaultValue) o.selected = true;
+                sel.appendChild(o);
+            });
+            wrap.appendChild(makeLabel(labelText));
+            wrap.appendChild(sel);
+            return wrap;
+        }
+
         function makeTextareaRow(labelText, valueId, placeholder) {
             const wrap = document.createElement('div');
             wrap.style.width = '100%';
@@ -227,12 +255,12 @@
             return wrap;
         }
 
-        modal.appendChild(makeReadOnlyRow('Service',     'erl-service',     DEFAULT_SERVICE));
+        modal.appendChild(makeSelectRow('Service',     'erl-service',     [DEFAULT_SERVICE], DEFAULT_SERVICE));
         modal.appendChild(makeEditableRow('Case Number', 'erl-case-number', 'e.g. IDEA-12345', ''));
         modal.appendChild(makeReadOnlyRow('RITM',        'erl-ritm',        'Not found — open a RITM ticket first'));
         modal.appendChild(makeEditableRow('Vendor Case', 'erl-vendor-case', 'e.g. 006', ''));
-        modal.appendChild(makeEditableRow('Region',      'erl-region',      'e.g. EMEA', DEFAULT_REGION));
-        modal.appendChild(makeTextareaRow('Details',     'erl-details',     'Short details description...'));
+        modal.appendChild(makeSelectRow('Region',      'erl-region',      ['EMEA', 'APAC', 'AME'], DEFAULT_REGION));
+        modal.appendChild(makeTextareaRow('Details',     'erl-details',     'Brief description of the Enhancement request'));
 
         // ── Status message ────────────────────────────────────
         const status = document.createElement('div');
