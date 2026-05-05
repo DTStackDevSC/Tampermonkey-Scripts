@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.0.4
+// @version      1.0.5
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,8 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.4';
-    const CHANGELOG = `Version 1.0.4:
+    const SCRIPT_VERSION = '1.0.5';
+    const CHANGELOG = `Version 1.0.5:
 - Fixed comment textarea not being detected in dual mode - now uses activity-stream-comments-textarea matching the dual-input container detection
 
 Version 1.0.3:
