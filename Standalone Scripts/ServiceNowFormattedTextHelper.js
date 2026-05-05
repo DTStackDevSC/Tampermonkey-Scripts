@@ -23,7 +23,7 @@
 
     const SCRIPT_VERSION = '1.0.4';
     const CHANGELOG = `Version 1.0.4:
-- Fixed comment textarea not being detected in dual mode (when both work notes and comments are shown simultaneously)
+- Fixed comment textarea not being detected in dual mode - now uses activity-stream-comments-textarea matching the dual-input container detection
 
 Version 1.0.3:
 - Update URL Changed`;
@@ -1388,16 +1388,16 @@ Version 1.0.3:
      * ==========================================================*/
 
     function insertFormattedText(editor) {
-        // Single-tab activity stream mode
-        let textarea = document.querySelector('#activity-stream-textarea');
+        const dualContainer = document.getElementById('multiple-input-journal-entry');
+        const isDual = dualContainer &&
+                       dualContainer.getAttribute('aria-hidden') === 'false' &&
+                       !!document.getElementById('activity-stream-work_notes-textarea') &&
+                       !!document.getElementById('activity-stream-comments-textarea');
 
-        if (!textarea) {
-            // Dual mode: both work notes and comments are rendered as separate form fields.
-            // Target the additional comments field specifically.
-            textarea = document.querySelector('textarea[name="comments"]') ||
-                       document.querySelector('#comments') ||
-                       document.querySelector('textarea[aria-label*="comment" i]');
-        }
+        const textarea = isDual
+            ? document.getElementById('activity-stream-comments-textarea')
+            : document.querySelector('#activity-stream-textarea') ||
+              document.querySelector('[data-stream-text-input]');
 
         if (!textarea) {
             console.error('❌ Textarea not found!');
