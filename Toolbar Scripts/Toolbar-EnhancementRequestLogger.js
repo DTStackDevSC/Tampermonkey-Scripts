@@ -3,11 +3,13 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0
+// @version      1.1
 // @description  Opens a pre-filled Office Forms submission with RITM auto-populated from the current ServiceNow ticket - Integrated with Toolbar
 // @author       J.R.
 // @match        https://*.service-now.com/*
 // @grant        GM_openInTab
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -15,6 +17,38 @@
     'use strict';
 
     console.log('📋 Enhancement Request Logger loading...');
+
+    /* ==========================================================
+     *  VERSION CONTROL
+     * ==========================================================*/
+
+    const SCRIPT_VERSION = '1.1';
+    const CHANGELOG = `Version 1.1:
+- Service and Region fields converted to dropdowns; Region supports EMEA, APAC, and AME
+- Updated Details field placeholder text
+
+Version 1.0:
+- Initial release`;
+
+    const GM_KEY_VERSION        = 'erlVersion';
+    const GM_KEY_CHANGELOG_SEEN = 'erlChangelogSeen';
+
+    function getStoredVersion()  { return GM_getValue(GM_KEY_VERSION, null); }
+    function saveVersion(v)      { GM_setValue(GM_KEY_VERSION, v); }
+    function hasSeenChangelog()  { return GM_getValue(GM_KEY_CHANGELOG_SEEN, null) === SCRIPT_VERSION; }
+    function markChangelogSeen() { GM_setValue(GM_KEY_CHANGELOG_SEEN, SCRIPT_VERSION); }
+
+    function isNewVersion() {
+        const stored = getStoredVersion();
+        if (!stored) return true;
+        const a = stored.split('.').map(Number);
+        const b = SCRIPT_VERSION.split('.').map(Number);
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+            if ((b[i] || 0) > (a[i] || 0)) return true;
+            if ((b[i] || 0) < (a[i] || 0)) return false;
+        }
+        return false;
+    }
 
     /* ==========================================================
      *  CONFIGURATION
@@ -81,6 +115,70 @@
         ];
         const qs = params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
         return `${FORM_BASE_URL}&${qs}`;
+    }
+
+    /* ==========================================================
+     *  CHANGELOG MODAL
+     * ==========================================================*/
+
+    function showChangelogModal() {
+        if (document.getElementById('erl-changelog-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'erl-changelog-modal';
+        Object.assign(overlay.style, {
+            position:        'fixed',
+            top:             '60px',
+            left:            '50%',
+            transform:       'translateX(-50%)',
+            backgroundColor: '#f9f9f9',
+            border:          '1px solid #ccc',
+            boxShadow:       '0px 4px 12px rgba(0,0,0,0.15)',
+            padding:         '46px 24px 20px 24px',
+            zIndex:          '999999',
+            borderRadius:    '10px',
+            fontFamily:      'Arial, sans-serif',
+            minWidth:        '380px',
+            maxWidth:        '480px'
+        });
+
+        const titleEl = document.createElement('div');
+        Object.assign(titleEl.style, {
+            position: 'absolute', top: '12px', left: '12px',
+            fontSize: '12px', color: '#333', fontWeight: 'bold'
+        });
+        titleEl.textContent = `📋 Enhancement Request Logger — What's New (v${SCRIPT_VERSION})`;
+        overlay.appendChild(titleEl);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'X';
+        Object.assign(closeBtn.style, {
+            position: 'absolute', top: '5px', right: '5px',
+            background: 'red', color: 'white', border: 'none',
+            borderRadius: '4px', cursor: 'pointer', padding: '4px 8px', fontWeight: 'bold'
+        });
+        closeBtn.onclick = () => { markChangelogSeen(); overlay.remove(); };
+        overlay.appendChild(closeBtn);
+
+        const pre = document.createElement('pre');
+        pre.textContent = CHANGELOG;
+        Object.assign(pre.style, {
+            margin: '0 0 16px', fontSize: '12px', color: '#444',
+            whiteSpace: 'pre-wrap', lineHeight: '1.6', fontFamily: 'Arial, sans-serif'
+        });
+        overlay.appendChild(pre);
+
+        const dismissBtn = document.createElement('button');
+        dismissBtn.textContent = 'Got it';
+        Object.assign(dismissBtn.style, {
+            padding: '8px 20px', border: 'none', borderRadius: '6px',
+            cursor: 'pointer', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white', fontWeight: 'bold', fontSize: '13px', width: '100%'
+        });
+        dismissBtn.onclick = () => { markChangelogSeen(); overlay.remove(); };
+        overlay.appendChild(dismissBtn);
+
+        document.body.appendChild(overlay);
     }
 
     /* ==========================================================
@@ -425,6 +523,11 @@
         isInitialized = true;
         initializeModal();
         console.log('✅ Enhancement Request Logger modal ready!');
+
+        if (isNewVersion() && !hasSeenChangelog()) {
+            saveVersion(SCRIPT_VERSION);
+            showChangelogModal();
+        }
 
         setTimeout(() => {
             attemptRegistration();
