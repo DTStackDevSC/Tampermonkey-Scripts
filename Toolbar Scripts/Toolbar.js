@@ -209,14 +209,19 @@ Version 1.2.2:
             tooltip.textContent = config.tooltip;
 
             if (showLabels) {
+                const iconWell = document.createElement('div');
+                iconWell.className = 'toolbar-item-icon-well';
+                iconWell.appendChild(svgEl);
+
                 const label = document.createElement('div');
                 label.className = 'toolbar-item-label';
                 label.textContent = config.tooltip;
+
                 if (labelPosition === 'top') {
                     el.appendChild(label);
-                    el.appendChild(svgEl);
+                    el.appendChild(iconWell);
                 } else {
-                    el.appendChild(svgEl);
+                    el.appendChild(iconWell);
                     el.appendChild(label);
                 }
             } else {
@@ -909,10 +914,42 @@ Version 1.2.2:
         /* Tool labels */
         .toolbar-item.has-label {
             flex-direction: column !important;
-            gap: 2px !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 4px !important;
             height: auto !important;
+            width: auto !important;
             min-width: ${savedToolSize}px !important;
-            padding: 3px 5px !important;
+            padding: 2px 6px !important;
+            background: transparent !important;
+            border-color: transparent !important;
+        }
+
+        .toolbar-item.has-label:hover {
+            background: transparent !important;
+            border-color: transparent !important;
+        }
+
+        .toolbar-item-icon-well {
+            width: ${savedToolSize}px !important;
+            height: ${savedToolSize}px !important;
+            border-radius: 8px !important;
+            background: #f3f4f6 !important;
+            border: 2px solid transparent !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: all 0.2s ease !important;
+            flex-shrink: 0 !important;
+        }
+
+        .toolbar-item.has-label:hover .toolbar-item-icon-well {
+            background: #e5e7eb !important;
+            border-color: #667eea !important;
+        }
+
+        .toolbar-item.has-label:hover .toolbar-item-icon-well svg {
+            fill: #667eea !important;
         }
 
         .toolbar-item-label {
@@ -923,11 +960,11 @@ Version 1.2.2:
             text-overflow: ellipsis !important;
             white-space: nowrap !important;
             pointer-events: none !important;
-            color: #374151 !important;
-            line-height: 1 !important;
+            color: #6b7280 !important;
+            line-height: 1.1 !important;
         }
 
-        .toolbar-item:hover .toolbar-item-label {
+        .toolbar-item.has-label:hover .toolbar-item-label {
             color: #667eea !important;
         }
 
@@ -1543,7 +1580,7 @@ Version 1.2.2:
                 const opt = document.createElement('option');
                 opt.value = s;
                 opt.textContent = s.charAt(0).toUpperCase() + s.slice(1);
-                if (s === (side || 'left')) opt.selected = true;
+                if (s === (side || 'right')) opt.selected = true;
                 sideSelect.appendChild(opt);
             });
 
@@ -1604,7 +1641,7 @@ Version 1.2.2:
         }
 
         pinnedTools.forEach(({ config, side }) => container.appendChild(makeRow(config, side, true)));
-        unpinnedTools.forEach(config => container.appendChild(makeRow(config, 'left', false)));
+        unpinnedTools.forEach(config => container.appendChild(makeRow(config, 'right', false)));
     }
 
     function exportSettings() {
