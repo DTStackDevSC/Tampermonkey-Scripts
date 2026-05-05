@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3
+// @version      1.3.1
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,13 +26,14 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3';
-    const CHANGELOG = `Version 1.3:
-- Added Pinned Tools: pin any tool to the left or right side of the menu and reorder with arrows in Settings.
-- Added Tool Labels: optionally show permanent labels above or below each tool icon.
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Fixed Tool Labels layout - label now sits clearly above or below the icon with no overlap or clipping.
+- Pinned Tools now default to the Right side.
 
-Version 1.2.2:
-- Fixed Settings modal lag - removed backdrop-filter blur (expensive on complex pages) and promoted modal to its own compositor layer.`;
+Version 1.3:
+- Added Pinned Tools: pin any tool to the left or right side of the menu and reorder with arrows in Settings.
+- Added Tool Labels: optionally show permanent labels above or below each tool icon.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
