@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.0.3
+// @version      1.0.4
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,12 +21,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.3';
-    const CHANGELOG = `Version 1.0.3:
-- Update URL Changed
+    const SCRIPT_VERSION = '1.0.4';
+    const CHANGELOG = `Version 1.0.4:
+- Fixed comment textarea not being detected in dual mode (when both work notes and comments are shown simultaneously)
 
-Version 1.0.1:
-- Migrated all storage from browser localStorage to Tampermonkey GM storage`;
+Version 1.0.3:
+- Update URL Changed`;
 
     /* ==========================================================
      *  VERSION CONTROL FUNCTIONS
@@ -1388,7 +1388,16 @@ Version 1.0.1:
      * ==========================================================*/
 
     function insertFormattedText(editor) {
-        const textarea = document.querySelector('#activity-stream-textarea');
+        // Single-tab activity stream mode
+        let textarea = document.querySelector('#activity-stream-textarea');
+
+        if (!textarea) {
+            // Dual mode: both work notes and comments are rendered as separate form fields.
+            // Target the additional comments field specifically.
+            textarea = document.querySelector('textarea[name="comments"]') ||
+                       document.querySelector('#comments') ||
+                       document.querySelector('textarea[aria-label*="comment" i]');
+        }
 
         if (!textarea) {
             console.error('❌ Textarea not found!');
