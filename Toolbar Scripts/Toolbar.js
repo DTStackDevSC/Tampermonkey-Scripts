@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.0
+// @version      1.2.1
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,12 +26,12 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.0';
-    const CHANGELOG = `Version 1.2.0:
-- Pin menu and dragging are now toggles in Settings (both off by default) — removes accidental drags and pin misclicks.
+    const SCRIPT_VERSION = '1.2.1';
+    const CHANGELOG = `Version 1.2.1:
+- Fixed lag when opening Settings modal — settings now load instantly instead of after an unnecessary 50ms delay.
 
-Version 1.1.0:
-- Toolbar is now draggable — drag the toggle button to reposition it anywhere on screen; position is saved automatically.`;
+Version 1.2.0:
+- Pin menu and dragging are now toggles in Settings (both off by default) — removes accidental drags and pin misclicks.`;
 
     /* ==========================================================
      *  VERSION MANAGEMENT FUNCTIONS
@@ -1132,22 +1132,20 @@ Version 1.1.0:
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-        setTimeout(() => {
-            loadSettings();
-            setupSettingsEventListeners();
+        loadSettings();
+        setupSettingsEventListeners();
 
-            const showChangelog = isNewVersion() && !hasSeenChangelog();
-            const changelogNotification = document.getElementById('toolbarChangelogNotification');
+        const showChangelog = isNewVersion() && !hasSeenChangelog();
+        const changelogNotification = document.getElementById('toolbarChangelogNotification');
 
-            if (showChangelog && changelogNotification) {
-                changelogNotification.classList.remove('hidden');
-                changelogNotification.onclick = () => {
-                    showChangelogModal();
-                };
-            }
+        if (showChangelog && changelogNotification) {
+            changelogNotification.classList.remove('hidden');
+            changelogNotification.onclick = () => {
+                showChangelogModal();
+            };
+        }
 
-            populateToolsList();
-        }, 50);
+        populateToolsList();
     }
 
     function setupSettingsEventListeners() {
