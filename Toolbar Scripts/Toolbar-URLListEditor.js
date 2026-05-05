@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.0
+// @version      1.4.1
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -19,20 +19,21 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.4.0 loading...');
+    console.log('🔧 Netskope URL List Manager v1.4.1 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
+    const SCRIPT_VERSION = '1.4.1';
+    const CHANGELOG = `Version 1.4.1:
+- Insert RITM and Log Entry now insert at exact cursor position with no auto-newlines
+- Insert RITM button now prefixes the ticket number with #
+
+Version 1.4.0:
 - Added log buttons to Create and Update URL list forms
 - Buttons: + Log Entry, Delete Selected, View History (same as Netskope Toolkit)
-- Added Insert RITM button - inserts the current ServiceNow ticket number at cursor
-
-Version 1.3.1:
-- Update URL Changed`;
+- Added Insert RITM button - inserts the current ServiceNow ticket number at cursor`;
 
     const TOOL_ICON = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>`;
     const MAX_REGISTRATION_ATTEMPTS = 10;
@@ -1634,10 +1635,8 @@ Version 1.3.1:
         const value  = textarea.value;
         const before = value.slice(0, start);
         const after  = value.slice(end);
-        const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
-        const suffix = (after  && !after.startsWith('\n')) ? '\n' : '';
-        textarea.value = before + prefix + text + suffix + after;
-        const newPos = before.length + prefix.length + text.length + suffix.length;
+        textarea.value = before + text + after;
+        const newPos = before.length + text.length;
         textarea.setSelectionRange(newPos, newPos);
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
         textarea.focus();
@@ -2285,7 +2284,7 @@ Version 1.3.1:
             e.stopPropagation(); e.preventDefault();
             const ticket = getTicketNumber();
             if (!ticket) { UI.showStatus('⚠️ No RITM/ticket number detected on this page.', 'warning'); return; }
-            insertAtCursor(textareaEl, ticket);
+            insertAtCursor(textareaEl, '#' + ticket.replace(/^#+/, ''));
         });
 
         container.appendChild(addBtn);
