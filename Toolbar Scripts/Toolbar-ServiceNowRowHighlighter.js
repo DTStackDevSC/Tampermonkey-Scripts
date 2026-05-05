@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.3
+// @version      2.3.1
 // @description  Highlights rows on any ServiceNow ticket list when Updated By column is present; applies SLA heat-map when Due Date column is present
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,15 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3';
-    const CHANGELOG = `Version 2.3:
-- Script now runs on all ServiceNow pages, not just dashboards.
-- Row highlighting activates automatically when the Updated By column is present in any ticket table.
-- SLA heat-map activates automatically when the Due Date column is present in any ticket table.
+    const SCRIPT_VERSION = '2.3.1';
+    const CHANGELOG = `Version 2.3.1:
+- Fixed table detection to work across all ServiceNow view types - now scans any shadow host containing a ticket table, not just now-list elements.
 
-Version 2.2.1:
-- SLA Heat-map enabled by default; first-run format picker on first use.
-- SLA urgency colour now shown on the Due Date cell border instead of the whole row.`;
+Version 2.3:
+- Script now runs on all ServiceNow pages, not just dashboards.
+- Row highlighting and SLA heat-map activate automatically based on which columns are visible.`;
 
     /* ==========================================================
      *  CONFIGURATION
@@ -1192,18 +1190,13 @@ Version 2.2.1:
             });
             return;
         }
-        // New UI — shadow DOM
-        findAllShadowRoots()
-            .filter(el => el.tagName?.toLowerCase() === 'now-list')
-            .forEach(nowList => {
-                if (!nowList.shadowRoot) return;
-                const table = nowList.shadowRoot.querySelector('table.now-list-table');
-                if (!table) return;
-                table.querySelectorAll('td[data-column-key="due_date"], td[data-column-key*="due"]').forEach(cell => {
-                    cell.style.removeProperty('box-shadow');
-                    cell.style.removeProperty('border-left');
-                });
+        // New UI — any shadow host or light DOM
+        findListTables().forEach(table => {
+            table.querySelectorAll('td[data-column-key="due_date"], td[data-column-key*="due"]').forEach(cell => {
+                cell.style.removeProperty('box-shadow');
+                cell.style.removeProperty('border-left');
             });
+        });
     }
 
     function applySLAHeatmap() {
@@ -1227,38 +1220,33 @@ Version 2.2.1:
             return;
         }
 
-        // New UI — shadow DOM
-        findAllShadowRoots()
-            .filter(el => el.tagName?.toLowerCase() === 'now-list')
-            .forEach(nowList => {
-                if (!nowList.shadowRoot) return;
-                const table = nowList.shadowRoot.querySelector('table.now-list-table');
-                if (!table) return;
-                table.querySelectorAll('tr.now-list-table-row').forEach(row => {
-                    const cell = row.querySelector('td[data-column-key="due_date"]') ||
-                                 row.querySelector('td[data-column-key*="due"]');
-                    if (!cell) return;
-                    const content = cell.querySelector('.cell-content');
-                    const dateStr = content
-                        ? (content.getAttribute('data-tooltip') || content.textContent.trim())
-                        : cell.textContent.trim();
-                    const color = getSLABorderColor(dateStr);
-                    if (color) {
-                        cell.style.setProperty('box-shadow', `inset 4px 0 0 ${color}`, 'important');
-                        cell.style.setProperty('border-left', `4px solid ${color}`, 'important');
-                    } else {
-                        cell.style.removeProperty('box-shadow');
-                        cell.style.removeProperty('border-left');
-                    }
-                });
+        // New UI — any shadow host or light DOM
+        findListTables().forEach(table => {
+            table.querySelectorAll('tr.now-list-table-row').forEach(row => {
+                const cell = row.querySelector('td[data-column-key="due_date"]') ||
+                             row.querySelector('td[data-column-key*="due"]');
+                if (!cell) return;
+                const content = cell.querySelector('.cell-content');
+                const dateStr = content
+                    ? (content.getAttribute('data-tooltip') || content.textContent.trim())
+                    : cell.textContent.trim();
+                const color = getSLABorderColor(dateStr);
+                if (color) {
+                    cell.style.setProperty('box-shadow', `inset 4px 0 0 ${color}`, 'important');
+                    cell.style.setProperty('border-left', `4px solid ${color}`, 'important');
+                } else {
+                    cell.style.removeProperty('box-shadow');
+                    cell.style.removeProperty('border-left');
+                }
             });
+        });
     }
 
     /* ==========================================================
      *  NEW HIGHLIGHTING LOGIC FOR NEW UI
      * ==========================================================*/
 
-    // Function to recursively search through Shadow DOM
+    // Recursively collect every Element reachable through shadow roots
     function findAllShadowRoots(root = document.body) {
         const elements = [];
 
@@ -1284,6 +1272,16 @@ Version 2.2.1:
 
         traverse(root);
         return elements;
+    }
+
+    // Returns every table.now-list-table reachable from any shadow root or the light DOM
+    function findListTables() {
+        const tables = new Set();
+        document.querySelectorAll('table.now-list-table').forEach(t => tables.add(t));
+        findAllShadowRoots()
+            .filter(el => el.shadowRoot)
+            .forEach(el => el.shadowRoot.querySelectorAll('table.now-list-table').forEach(t => tables.add(t)));
+        return Array.from(tables);
     }
 
     function highlightRowsWithClasses() {
@@ -1365,48 +1363,24 @@ Version 2.2.1:
             }
         }
 
-        // Search through ALL elements including Shadow DOM
-        console.log('🔍 Searching through Shadow DOM...');
-        const allElements = findAllShadowRoots();
-        console.log(`  Found ${allElements.length} total elements (including shadow DOM)`);
+        // Search every table.now-list-table reachable from light DOM or any shadow root
+        console.log('🔍 Searching for ticket tables...');
+        const tables = findListTables();
+        console.log(`  Found ${tables.length} table(s)`);
 
-        // Find all now-list elements
-        const nowListElements = allElements.filter(el =>
-            el.tagName && el.tagName.toLowerCase() === 'now-list'
-        );
-        console.log(`  Found ${nowListElements.length} now-list elements`);
-
-        // Search in each now-list's shadow root
-        nowListElements.forEach((nowList, index) => {
-            console.log(`  Checking now-list #${index + 1}...`);
-
-            if (!nowList.shadowRoot) {
-                console.log(`    ⚠️ No shadow root found`);
-                return;
-            }
-
-            const table = nowList.shadowRoot.querySelector('table.now-list-table');
-            if (!table) {
-                console.log(`    ⚠️ No table.now-list-table found in shadow root`);
-                return;
-            }
-
-            console.log(`    ✅ Found table!`);
+        tables.forEach((table, index) => {
             const rows = table.querySelectorAll('tr.now-list-table-row');
-            console.log(`    Found ${rows.length} rows`);
+            console.log(`  Table #${index + 1}: ${rows.length} rows`);
 
             const hasUpdatedByCol = !!table.querySelector('[data-column-key="sys_updated_by"]');
             if (!hasUpdatedByCol) {
-                console.log(`    ⏭️ No 'Updated By' column in this table - skipping row highlighting`);
+                console.log(`    ⏭️ No 'Updated By' column - skipping row highlighting`);
                 return;
             }
 
             rows.forEach(row => {
                 const updatedByCell = row.querySelector('td[data-column-key="sys_updated_by"]');
-
-                if (!updatedByCell) {
-                    return;
-                }
+                if (!updatedByCell) return;
 
                 let updatedByValue = '';
                 const cellContent = updatedByCell.querySelector('.cell-content');
@@ -1417,9 +1391,6 @@ Version 2.2.1:
                 }
 
                 row.classList.remove('highlight-green', 'highlight-red', 'is-highlighted');
-
-                const rowId = `highlight-row-${Math.random().toString(36).substr(2, 9)}`;
-                row.setAttribute('id', rowId);
 
                 if (updatedByValue === targetUsername) {
                     row.classList.add('highlight-green');
@@ -1483,16 +1454,16 @@ Version 2.2.1:
 
     function attachShadowObserver() {
         findAllShadowRoots()
-            .filter(el => el.tagName?.toLowerCase() === 'now-list')
-            .forEach(nowList => {
-                if (!nowList.shadowRoot || nowList._shadowObserverAttached) return;
-                nowList._shadowObserverAttached = true;
+            .filter(el => el.shadowRoot && el.shadowRoot.querySelector('table.now-list-table'))
+            .forEach(host => {
+                if (host._shadowObserverAttached) return;
+                host._shadowObserverAttached = true;
                 let debounce = null;
                 new MutationObserver(() => {
                     if (!targetUsername) return;
                     clearTimeout(debounce);
                     debounce = setTimeout(() => highlightRowsWithClasses(), 400);
-                }).observe(nowList.shadowRoot, { childList: true, subtree: true });
+                }).observe(host.shadowRoot, { childList: true, subtree: true });
             });
     }
 
