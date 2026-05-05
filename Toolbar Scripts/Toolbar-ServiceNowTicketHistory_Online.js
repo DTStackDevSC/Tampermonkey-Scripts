@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.0
+// @version      1.4.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,12 +24,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
-- Search / filter bar added to the log panel: filter entries by keyword, type, field value, author, or date range.
+    const SCRIPT_VERSION = '1.4.1';
+    const CHANGELOG = `Version 1.4.1:
+- Newly created entities (URL Lists, Network Locations, Custom Categories, SSL Decryption policies) now show a [CREATED] tag in the closing worknote summary.
 
-Version 1.3.1:
-- Added Recategorization Request entry type with URL Requested and Categories requested fields.`;
+Version 1.4.0:
+- Search / filter bar added to the log panel: filter entries by keyword, type, field value, author, or date range.`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -1398,6 +1398,7 @@ Version 1.3.1:
         'URL Lists': {
             nameKey:     'urlListName',
             domainKey:   'domains',
+            createTypes: ['URL List Created'],
             addTypes:    ['URL List Created', 'URL List — URLs Added'],
             removeTypes: ['URL List — URLs Removed'],
             deleteTypes: ['URL List Removed'],
@@ -1405,6 +1406,7 @@ Version 1.3.1:
         'SSL Decryption Policies': {
             nameKey:     'sslPolicyName',
             domainKey:   'domains',
+            createTypes: ['SSL Decryption Policy Created'],
             addTypes:    ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added'],
             removeTypes: ['SSL Decryption — URLs Removed'],
             deleteTypes: ['SSL Decryption Policy Removed'],
@@ -1426,6 +1428,7 @@ Version 1.3.1:
         'Network Locations': {
             nameKey:     'locationName',
             domainKey:   'ips',
+            createTypes: ['Network Location Created'],
             addTypes:    ['Network Location Created', 'Network Location — IPs Added'],
             removeTypes: ['Network Location — IPs Removed'],
             deleteTypes: ['Network Location Removed'],
@@ -1433,6 +1436,7 @@ Version 1.3.1:
         'Custom Categories': {
             nameKey:     'categoryName',
             domainKey:   'urlLists',
+            createTypes: ['Custom Category Created'],
             addTypes:    ['Custom Category Created', 'Custom Category — URL Lists Added'],
             removeTypes: ['Custom Category — URL Lists Removed'],
             deleteTypes: ['Custom Category Removed'],
@@ -1503,11 +1507,13 @@ Version 1.3.1:
 
             if (!entityMap[name]) {
                 entityOrder.push(name);
-                entityMap[name] = { ops: new Map(), deleted: false };
+                entityMap[name] = { ops: new Map(), deleted: false, isNew: false };
             }
 
             const rec   = entityMap[name];
             const items = parseDomains(entry.fields?.[config.domainKey] || '');
+
+            if (config.createTypes?.includes(entry.type)) rec.isNew = true;
 
             if (config.addTypes.includes(entry.type)) {
                 items.forEach(d => {
@@ -1532,11 +1538,11 @@ Version 1.3.1:
         });
 
         return entityOrder.map(name => {
-            const { ops, deleted } = entityMap[name];
+            const { ops, deleted, isNew } = entityMap[name];
             const items = [...ops.values()]
                 .filter(({ firstOp, lastOp }) => firstOp === lastOp)  // net-zero pairs dropped
                 .map(({ display, lastOp }) => ({ display, op: lastOp }));
-            return { name, items, deleted };
+            return { name, items, deleted, isNew };
         });
     }
 
@@ -1613,8 +1619,9 @@ Version 1.3.1:
                 if (!reconciled.length) return;
 
                 lines.push(`[ ${label} ]`, '');
-                reconciled.forEach(({ name, items, deleted }) => {
-                    lines.push(`  ${name}${deleted ? '  [REMOVED]' : ''}`);
+                reconciled.forEach(({ name, items, deleted, isNew }) => {
+                    const entityTag = deleted ? '  [REMOVED]' : isNew ? '  [CREATED]' : '';
+                    lines.push(`  ${name}${entityTag}`);
                     if (items.length) {
                         items.forEach(({ display, op }) =>
                             lines.push(`    • ${display}  ${op === '+' ? '[ADDED]' : '[REMOVED]'}`)
