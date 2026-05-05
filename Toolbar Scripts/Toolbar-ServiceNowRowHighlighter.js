@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.3.1
+// @version      2.3.2
 // @description  Highlights rows on any ServiceNow ticket list when Updated By column is present; applies SLA heat-map when Due Date column is present
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,13 +23,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.1';
-    const CHANGELOG = `Version 2.3.1:
-- Fixed table detection to work across all ServiceNow view types - now scans any shadow host containing a ticket table, not just now-list elements.
+    const SCRIPT_VERSION = '2.3.2';
+    const CHANGELOG = `Version 2.3.2:
+- Fixed row highlighting and SLA heat-map not working on classic ServiceNow list views - script now searches inside iframes embedded in shadow roots to reach the ticket table.
 
-Version 2.3:
-- Script now runs on all ServiceNow pages, not just dashboards.
-- Row highlighting and SLA heat-map activate automatically based on which columns are visible.`;
+Version 2.3.1:
+- Fixed table detection to work across all ServiceNow view types - now scans any shadow host containing a ticket table, not just now-list elements.`;
 
     /* ==========================================================
      *  CONFIGURATION
@@ -1182,7 +1181,11 @@ Version 2.3:
 
     function clearSLAHeatmap() {
         // Old UI
-        const tbody = document.querySelector('tbody.list2_body');
+        let tbody = null;
+        for (const doc of getAccessibleDocuments()) {
+            tbody = doc.querySelector('tbody.list2_body');
+            if (tbody) break;
+        }
         if (tbody) {
             tbody.querySelectorAll('td.vt[headers*="due_date"]').forEach(cell => {
                 cell.style.removeProperty('box-shadow');
@@ -1203,7 +1206,11 @@ Version 2.3:
         if (!slaHeatmapEnabled) return;
 
         // Old UI
-        const tbody = document.querySelector('tbody.list2_body');
+        let tbody = null;
+        for (const doc of getAccessibleDocuments()) {
+            tbody = doc.querySelector('tbody.list2_body');
+            if (tbody) break;
+        }
         if (tbody) {
             tbody.querySelectorAll('tr.list_row').forEach(row => {
                 const cell = row.querySelector('td.vt[headers*="due_date"]');
@@ -1274,13 +1281,42 @@ Version 2.3:
         return elements;
     }
 
-    // Returns every table.now-list-table reachable from any shadow root or the light DOM
+    // Returns all same-origin documents reachable from the current page,
+    // including documents inside iframes nested in shadow roots.
+    function getAccessibleDocuments() {
+        const docs = [document];
+        const visited = new WeakSet([document]);
+
+        function addIframesFromBody(body) {
+            if (!body) return;
+            findAllShadowRoots(body)
+                .filter(el => el.tagName === 'IFRAME')
+                .forEach(iframe => {
+                    try {
+                        const idoc = iframe.contentDocument || iframe.contentWindow?.document;
+                        if (!idoc || visited.has(idoc)) return;
+                        visited.add(idoc);
+                        docs.push(idoc);
+                        addIframesFromBody(idoc.body);
+                    } catch(e) {}
+                });
+        }
+
+        addIframesFromBody(document.body);
+        return docs;
+    }
+
+    // Returns every table.now-list-table reachable from any document, shadow root, or iframe
     function findListTables() {
         const tables = new Set();
-        document.querySelectorAll('table.now-list-table').forEach(t => tables.add(t));
-        findAllShadowRoots()
-            .filter(el => el.shadowRoot)
-            .forEach(el => el.shadowRoot.querySelectorAll('table.now-list-table').forEach(t => tables.add(t)));
+        getAccessibleDocuments().forEach(doc => {
+            doc.querySelectorAll('table.now-list-table').forEach(t => tables.add(t));
+            if (doc.body) {
+                findAllShadowRoots(doc.body)
+                    .filter(el => el.shadowRoot)
+                    .forEach(el => el.shadowRoot.querySelectorAll('table.now-list-table').forEach(t => tables.add(t)));
+            }
+        });
         return Array.from(tables);
     }
 
@@ -1303,7 +1339,11 @@ Version 2.3:
         }, 100);
 
         // Try old UI first (backward compatibility)
-        const tbody = document.querySelector('tbody.list2_body');
+        let tbody = null;
+        for (const doc of getAccessibleDocuments()) {
+            tbody = doc.querySelector('tbody.list2_body');
+            if (tbody) break;
+        }
         if (tbody) {
             const rows = tbody.querySelectorAll('tr.list_row');
             if (rows.length > 0) {
@@ -1453,7 +1493,11 @@ Version 2.3:
      * ==========================================================*/
 
     function attachShadowObserver() {
-        findAllShadowRoots()
+        const allRoots = [];
+        getAccessibleDocuments().forEach(doc => {
+            if (doc.body) findAllShadowRoots(doc.body).forEach(el => allRoots.push(el));
+        });
+        allRoots
             .filter(el => el.shadowRoot && el.shadowRoot.querySelector('table.now-list-table'))
             .forEach(host => {
                 if (host._shadowObserverAttached) return;
