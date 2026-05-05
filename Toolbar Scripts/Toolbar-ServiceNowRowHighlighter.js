@@ -3,13 +3,11 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.2.1
-// @description  Highlight rows in ServiceNow based on Updated By column with configurable username and theme (Updated for new UI)
+// @version      2.3
+// @description  Highlights rows on any ServiceNow ticket list when Updated By column is present; applies SLA heat-map when Due Date column is present
 // @author       J.R.
-// @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards/
-// @match        https://*.service-now.com/now/platform-analytics-workspace/dashboards*
-// @match        https://*.service-now.com/now/nav/ui/classic/params/target/%24pa_dashboard.do
-// @match        https://*.service-now.com/now/nav/ui/classic/params/target/%24pa_dashboard.do*
+// @match        https://*.service-now.com/*
+// @match        https://*.servicenow.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
@@ -25,13 +23,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.2.1';
-    const CHANGELOG = `Version 2.2.1:
-- SLA Heat-map enabled by default; first-run format picker on first use
-- SLA urgency colour now shown on the Due Date cell border instead of the whole row
+    const SCRIPT_VERSION = '2.3';
+    const CHANGELOG = `Version 2.3:
+- Script now runs on all ServiceNow pages, not just dashboards.
+- Row highlighting activates automatically when the Updated By column is present in any ticket table.
+- SLA heat-map activates automatically when the Due Date column is present in any ticket table.
 
-Version 2.1.5:
-- Fixed rows not re-highlighting after switching pages after some time on the page.`;
+Version 2.2.1:
+- SLA Heat-map enabled by default; first-run format picker on first use.
+- SLA urgency colour now shown on the Due Date cell border instead of the whole row.`;
 
     /* ==========================================================
      *  CONFIGURATION
@@ -1310,58 +1310,56 @@ Version 2.1.5:
             const rows = tbody.querySelectorAll('tr.list_row');
             if (rows.length > 0) {
                 console.log(`🎨 Found ${rows.length} rows in old UI format`);
-                rows.forEach((row) => {
-                    const dataCells = Array.from(row.querySelectorAll('td')).filter(cell =>
-                        cell.classList.contains('vt')
-                    );
 
-                    if (dataCells.length === 0) return;
+                const hasUpdatedByCol = !!tbody.querySelector('td.vt[headers*="sys_updated_by"]');
+                console.log(`    Updated By column present: ${hasUpdatedByCol}`);
 
-                    const updatedByCell = dataCells[dataCells.length - 1];
-                    const updatedByValue = updatedByCell.textContent.trim();
+                if (hasUpdatedByCol) {
+                    rows.forEach((row) => {
+                        const updatedByCell = row.querySelector('td.vt[headers*="sys_updated_by"]');
+                        if (!updatedByCell) return;
+                        const updatedByValue = updatedByCell.textContent.trim();
 
-                    row.classList.remove('highlight-green', 'highlight-red', 'is-highlighted');
+                        row.classList.remove('highlight-green', 'highlight-red', 'is-highlighted');
 
-                    // Generate unique ID for this row
-                    const rowId = `highlight-row-${Math.random().toString(36).substr(2, 9)}`;
-                    row.setAttribute('id', rowId);
+                        if (updatedByValue === targetUsername) {
+                            row.classList.add('highlight-green');
+                            row.style.setProperty('background-color', colors.green.background, 'important');
+                            row.style.setProperty('background', colors.green.background, 'important');
+                            row.style.setProperty('border-left', `4px solid ${colors.green.border}`, 'important');
 
-                    if (updatedByValue === targetUsername) {
-                        row.classList.add('highlight-green');
-                        row.style.setProperty('background-color', colors.green.background, 'important');
-                        row.style.setProperty('background', colors.green.background, 'important');
-                        row.style.setProperty('border-left', `4px solid ${colors.green.border}`, 'important');
+                            const hoverColor = colors.green.hover || colors.green.background;
+                            row.addEventListener('mouseenter', function() {
+                                this.style.setProperty('background-color', hoverColor, 'important');
+                                this.style.setProperty('background', hoverColor, 'important');
+                            });
+                            row.addEventListener('mouseleave', function() {
+                                this.style.setProperty('background-color', colors.green.background, 'important');
+                                this.style.setProperty('background', colors.green.background, 'important');
+                            });
 
-                        const hoverColor = colors.green.hover || colors.green.background;
-                        row.addEventListener('mouseenter', function() {
-                            this.style.setProperty('background-color', hoverColor, 'important');
-                            this.style.setProperty('background', hoverColor, 'important');
-                        });
-                        row.addEventListener('mouseleave', function() {
-                            this.style.setProperty('background-color', colors.green.background, 'important');
-                            this.style.setProperty('background', colors.green.background, 'important');
-                        });
+                            processedCount++;
+                        } else if (updatedByValue !== '') {
+                            row.classList.add('highlight-red');
+                            row.style.setProperty('background-color', colors.red.background, 'important');
+                            row.style.setProperty('background', colors.red.background, 'important');
+                            row.style.setProperty('border-left', `4px solid ${colors.red.border}`, 'important');
 
-                        processedCount++;
-                    } else if (updatedByValue !== '') {
-                        row.classList.add('highlight-red');
-                        row.style.setProperty('background-color', colors.red.background, 'important');
-                        row.style.setProperty('background', colors.red.background, 'important');
-                        row.style.setProperty('border-left', `4px solid ${colors.red.border}`, 'important');
+                            const hoverColor = colors.red.hover || colors.red.background;
+                            row.addEventListener('mouseenter', function() {
+                                this.style.setProperty('background-color', hoverColor, 'important');
+                                this.style.setProperty('background', hoverColor, 'important');
+                            });
+                            row.addEventListener('mouseleave', function() {
+                                this.style.setProperty('background-color', colors.red.background, 'important');
+                                this.style.setProperty('background', colors.red.background, 'important');
+                            });
 
-                        const hoverColor = colors.red.hover || colors.red.background;
-                        row.addEventListener('mouseenter', function() {
-                            this.style.setProperty('background-color', hoverColor, 'important');
-                            this.style.setProperty('background', hoverColor, 'important');
-                        });
-                        row.addEventListener('mouseleave', function() {
-                            this.style.setProperty('background-color', colors.red.background, 'important');
-                            this.style.setProperty('background', colors.red.background, 'important');
-                        });
+                            processedCount++;
+                        }
+                    });
+                }
 
-                        processedCount++;
-                    }
-                });
                 applySLAHeatmap();
                 return processedCount > 0;
             }
@@ -1396,6 +1394,12 @@ Version 2.1.5:
             console.log(`    ✅ Found table!`);
             const rows = table.querySelectorAll('tr.now-list-table-row');
             console.log(`    Found ${rows.length} rows`);
+
+            const hasUpdatedByCol = !!table.querySelector('[data-column-key="sys_updated_by"]');
+            if (!hasUpdatedByCol) {
+                console.log(`    ⏭️ No 'Updated By' column in this table - skipping row highlighting`);
+                return;
+            }
 
             rows.forEach(row => {
                 const updatedByCell = row.querySelector('td[data-column-key="sys_updated_by"]');
