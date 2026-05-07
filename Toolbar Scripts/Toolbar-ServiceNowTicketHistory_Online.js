@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.1
+// @version      1.4.2
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,12 +24,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.1';
-    const CHANGELOG = `Version 1.4.1:
-- Newly created entities (URL Lists, Network Locations, Custom Categories, SSL Decryption policies) now show a [CREATED] tag in the closing worknote summary.
+    const SCRIPT_VERSION = '1.4.2';
+    const CHANGELOG = `Version 1.4.2:
+- Token input in the setup modal is now masked by default, with an eye toggle to reveal it temporarily.
 
-Version 1.4.0:
-- Search / filter bar added to the log panel: filter entries by keyword, type, field value, author, or date range.`;
+Version 1.4.1:
+- Newly created entities (URL Lists, Network Locations, Custom Categories, SSL Decryption policies) now show a [CREATED] tag in the closing worknote summary.`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -1093,7 +1093,7 @@ Version 1.4.0:
         function buildWorkNoteText(entry) {
             const tpl = NOTE_TEMPLATES[entry.type];
             if (!tpl) return null;
-            const lines = [tpl.workNoteHeader, ...fieldLines(entry)];
+            const lines = [`#${tpl.workNoteHeader}`, ...fieldLines(entry)];
             return lines.join('\n');
         }
 
@@ -2568,16 +2568,36 @@ Version 1.4.0:
             display:'block', fontSize:'11px', fontWeight:'bold',
             color:'#666', marginBottom:'4px', fontFamily:'Arial, sans-serif'
         }));
-        const tokenInput = css(mk('input', { id:'ct-setup-token', type:'text' }), {
-            width:'100%', padding:'7px 10px', border:'1px solid #ccc',
+        const tokenInput = css(mk('input', { id:'ct-setup-token', type:'password' }), {
+            width:'100%', padding:'7px 36px 7px 10px', border:'1px solid #ccc',
             borderRadius:'4px', fontSize:'12px',
             fontFamily:'"Courier New", Courier, monospace',
             background:'#fafafa', color:'#333', boxSizing:'border-box',
-            outline:'none', marginBottom:'12px'
+            outline:'none'
         });
         tokenInput.placeholder = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
         tokenInput.value       = GM_getValue('changeTrackerToken', '');
-        modal.appendChild(tokenInput);
+
+        const EYE_OPEN   = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        const EYE_CLOSED = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+        const revealBtn = css(mk('button', { type:'button', title:'Show token' }), {
+            position:'absolute', right:'6px', top:'50%', transform:'translateY(-50%)',
+            background:'none', border:'none', cursor:'pointer', padding:'2px',
+            color:'#888', display:'flex', alignItems:'center', lineHeight:'1'
+        });
+        revealBtn.innerHTML = EYE_OPEN;
+        revealBtn.addEventListener('click', () => {
+            const show = tokenInput.type === 'password';
+            tokenInput.type     = show ? 'text' : 'password';
+            revealBtn.innerHTML = show ? EYE_CLOSED : EYE_OPEN;
+            revealBtn.title     = show ? 'Hide token' : 'Show token';
+        });
+
+        const tokenWrap = css(mk('div'), { position:'relative', marginBottom:'12px' });
+        tokenWrap.appendChild(tokenInput);
+        tokenWrap.appendChild(revealBtn);
+        modal.appendChild(tokenWrap);
 
         // Help text
         const help = css(mk('div'), {
