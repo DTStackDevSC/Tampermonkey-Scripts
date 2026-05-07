@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.2
+// @version      1.4.3
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,12 +24,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.2';
-    const CHANGELOG = `Version 1.4.2:
-- Token input in the setup modal is now masked by default, with an eye toggle to reveal it temporarily.
+    const SCRIPT_VERSION = '1.4.3';
+    const CHANGELOG = `Version 1.4.3:
+- Entry IDs now use crypto.randomUUID() instead of a Math.random()-based generator, making IDs cryptographically unpredictable.
 
-Version 1.4.1:
-- Newly created entities (URL Lists, Network Locations, Custom Categories, SSL Decryption policies) now show a [CREATED] tag in the closing worknote summary.`;
+Version 1.4.2:
+- Token input in the setup modal is now masked by default, with an eye toggle to reveal it temporarily.`;
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -447,7 +447,7 @@ Version 1.4.1:
         const d = new Date();
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
-    function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+    function uid() { return crypto.randomUUID(); }
 
     /* ==========================================================
      *  TICKET NUMBER DETECTION

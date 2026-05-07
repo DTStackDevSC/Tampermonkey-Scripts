@@ -3,6 +3,7 @@ git_ui.py
 worker/
 claude-code-prompt.md
 manage-tokens.ps1
+manage-tokens.sh
 CLAUDE.md
 IDEAS_LOCAL.md
 REDTEAM_ChangeTracker.md
