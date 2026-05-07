@@ -4,6 +4,8 @@ worker/
 claude-code-prompt.md
 manage-tokens.ps1
 manage-tokens.sh
+manage-tokens.desktop
+git_ui.desktop
 CLAUDE.md
 IDEAS_LOCAL.md
 REDTEAM_ChangeTracker.md
