@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.1
+// @version      1.5.2
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,22 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.5.1 loading...');
+    console.log('🔧 Netskope URL List Manager v1.5.2 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.1';
-    const CHANGELOG = `Version 1.5.1:
+    const SCRIPT_VERSION = '1.5.2';
+    const CHANGELOG = `Version 1.5.2:
+- Fixed status bubble ("Found X URL lists") not displaying properly: it was appended
+  after the content containers, so the flex:1 container pushed it off-screen. Moved
+  it above the containers so it appears between the action buttons and the list.
+- Fixed persistent bottom clipping: replaced height/maxHeight with a pinned
+  bottom:20px anchor. The modal now always ends 20px from the viewport bottom
+  regardless of browser, OS scale, or padding model.
+
+Version 1.5.1:
 - Fixed modal clipping at the bottom of the screen. The tenant override selector was
   moved into the API Configuration section header row, adding no extra height.
   Added box-sizing: border-box to the modal so the declared height always includes
@@ -1168,8 +1176,8 @@ Version 1.4.1:
             boxShadow: '0px 4px 12px rgba(0,0,0,0.1)', padding: '50px 20px 20px 20px',
             zIndex: '999998', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
             display: 'none', flexDirection: 'column', alignItems: 'center', gap: '15px',
-            minWidth: '650px', maxWidth: '750px', height: 'calc(100vh - 80px)',
-            maxHeight: 'calc(100vh - 80px)', overflowY: 'auto', boxSizing: 'border-box'
+            minWidth: '650px', maxWidth: '750px', bottom: '20px',
+            overflowY: 'auto', boxSizing: 'border-box'
         }, { id: 'netskope-urllist-modal' });
 
         // Close button
@@ -1257,14 +1265,14 @@ Version 1.4.1:
         actionBtns.appendChild(UI.createButton('🔎 Domain Lookup', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', showDomainLookup));
         modal.appendChild(actionBtns);
 
+        modal.appendChild(UI.createElement('div', {
+            width: '100%', padding: '10px', borderRadius: '6px', fontSize: '13px',
+            textAlign: 'center', display: 'none'
+        }, { id: 'urllist-status' }));
+
         ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container'].forEach(id => {
             modal.appendChild(UI.createElement('div', { display: 'none', width: '100%' }, { id }));
         });
-
-        modal.appendChild(UI.createElement('div', {
-            width: '100%', padding: '10px', borderRadius: '6px', fontSize: '13px',
-            textAlign: 'center', display: 'none', marginTop: '10px'
-        }, { id: 'urllist-status' }));
 
         document.body.appendChild(modal);
     }
