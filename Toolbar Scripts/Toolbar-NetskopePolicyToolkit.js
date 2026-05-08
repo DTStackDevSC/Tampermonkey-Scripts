@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.17
+// @version      1.18
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, and DLP entity character counter. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -40,8 +40,13 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.17';
-    const CHANGELOG = `Version 1.17:
+    const SCRIPT_VERSION = '1.18';
+    const CHANGELOG = `Version 1.18:
+- Fixed dark mode compatibility: all toolkit modals now force light backgrounds and
+  dark text via injected CSS with !important so ServiceNow dark mode cannot override
+  script UI inputs, selects, and textareas.
+
+Version 1.17:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -371,6 +376,35 @@ Version 1.16:
     }
 
     // ─────────────────────────────────────────────────────────────
+    // DARK MODE ISOLATION
+    // ─────────────────────────────────────────────────────────────
+    const darkModeStyle = document.createElement('style');
+    darkModeStyle.textContent = `
+        #ns-toolkit-settings-modal, #ns-save-reminder-modal,
+        #ns-add-log-modal, #ns-view-log-modal,
+        #ns-remove-older-confirm, #ns-ssl-removal-modal,
+        #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal,
+        #ns-username-overlay, #nsToolkitChangelogModal {
+            color: #333333 !important;
+        }
+        #ns-toolkit-settings-modal input, #ns-toolkit-settings-modal select,
+        #ns-toolkit-settings-modal textarea,
+        #ns-add-log-modal input, #ns-add-log-modal select,
+        #ns-add-log-modal textarea,
+        #ns-ssl-removal-modal input, #ns-ssl-removal-modal select,
+        #ns-ssl-removal-modal textarea,
+        #ns-url-log-add-modal input, #ns-url-log-add-modal select,
+        #ns-url-log-add-modal textarea,
+        #ns-url-del-modal input, #ns-url-del-modal select,
+        #ns-url-del-modal textarea,
+        #ns-username-overlay input, #ns-username-overlay select,
+        #ns-username-overlay textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+    `;
+    document.head.appendChild(darkModeStyle);
+
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
 

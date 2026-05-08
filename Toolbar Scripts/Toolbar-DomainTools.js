@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.1
+// @version      1.1.2
 // @description  Extract domains from text and check their security reputation. Replaces Domain Extractor and Domain Security Check.
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.1';
-    const CHANGELOG = `Version 1.1.1:
+    const SCRIPT_VERSION = '1.1.2';
+    const CHANGELOG = `Version 1.1.2:
+- Fixed dark mode compatibility: the modal now forces light background and dark text via
+  injected CSS with !important so ServiceNow dark mode cannot override its inputs and
+  textareas.
+
+Version 1.1.1:
 - Extract tab: each domain row now has a checkbox for selection, and clicking anywhere on
   the row (except the Check button) toggles it.
 - Extract tab: "Select all / Deselect all" toggle appears above the domain list after extraction.
@@ -214,6 +219,20 @@ Version 1.0:
         document.body.appendChild(overlay);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeBtn.click(); });
     }
+
+    /* ==========================================================
+     *  DARK MODE ISOLATION
+     * ==========================================================*/
+
+    const darkModeStyle = document.createElement('style');
+    darkModeStyle.textContent = `
+        #dt-modal { color: #333333 !important; }
+        #dt-modal input, #dt-modal select, #dt-modal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+    `;
+    document.head.appendChild(darkModeStyle);
 
     /* ==========================================================
      *  CONFIGURATION

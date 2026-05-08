@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.3.4
+// @version      2.3.5
 // @description  Highlights rows on any ServiceNow ticket list when Updated By column is present; applies SLA heat-map when Due Date column is present
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.4';
-    const CHANGELOG = `Version 2.3.4:
+    const SCRIPT_VERSION = '2.3.5';
+    const CHANGELOG = `Version 2.3.5:
+- Fixed dark mode compatibility: the config modal now forces light background and dark
+  text on all inputs via CSS with !important so ServiceNow dark mode cannot override them.
+
+Version 2.3.4:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 2.3.3:
@@ -1185,6 +1189,14 @@ Version 2.3.1:
                 height: 100% !important;
                 background: rgba(0, 0, 0, 0.5) !important;
                 z-index: 1000000 !important;
+            }
+
+            /* Dark mode isolation */
+            #highlighter-config-modal { color: #333333 !important; }
+            #highlighter-config-modal input, #highlighter-config-modal select,
+            #highlighter-config-modal textarea {
+                background-color: #ffffff !important;
+                color: #333333 !important;
             }
         `;
         document.head.appendChild(style);

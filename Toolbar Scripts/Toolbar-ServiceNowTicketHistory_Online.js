@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.1
+// @version      1.5.2
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.1';
-    const CHANGELOG = `Version 1.5.1:
+    const SCRIPT_VERSION = '1.5.2';
+    const CHANGELOG = `Version 1.5.2:
+- Fixed dark mode compatibility: sidebar, edit modal, and setup modal now force light
+  backgrounds and dark text via CSS with !important so ServiceNow dark mode cannot
+  override script UI inputs, selects, and textareas.
+
+Version 1.5.1:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.5.0:
@@ -516,6 +521,17 @@ Version 1.4.3:
         #ct-changelog-overlay {
             position: fixed !important; inset: 0 !important;
             background: rgba(0,0,0,.5) !important; z-index: 20000 !important;
+        }
+
+        /* Dark mode isolation: force light theme on all script UI */
+        #ct-sidebar { background-color: #f9f9f9 !important; color: #333333 !important; }
+        #ct-edit-modal { background-color: #f9f9f9 !important; color: #333333 !important; }
+        #ct-setup-modal { background-color: #f9f9f9 !important; color: #333333 !important; }
+        #ct-sidebar input, #ct-sidebar select, #ct-sidebar textarea,
+        #ct-edit-modal input, #ct-edit-modal select, #ct-edit-modal textarea,
+        #ct-setup-modal input, #ct-setup-modal select, #ct-setup-modal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
         }
     `;
     document.head.appendChild(styleEl);

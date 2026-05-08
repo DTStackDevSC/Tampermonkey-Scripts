@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.0.6
+// @version      1.0.7
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.6';
-    const CHANGELOG = `Version 1.0.6:
+    const SCRIPT_VERSION = '1.0.7';
+    const CHANGELOG = `Version 1.0.7:
+- Fixed dark mode compatibility: the formatting modal and image modal now force light
+  backgrounds and dark text via CSS with !important so ServiceNow dark mode cannot
+  override their inputs and selects.
+
+Version 1.0.6:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 
@@ -1818,6 +1823,15 @@ Version 1.0.3:
         #image-modal select:focus {
             border-color: #669bea;
             box-shadow: 0 0 0 0.2rem rgba(102,155,234,0.25);
+        }
+
+        /* Dark mode isolation */
+        #formatted-text-modal, #image-modal { color: #333333 !important; }
+        #formatted-text-modal input, #formatted-text-modal select,
+        #formatted-text-modal textarea,
+        #image-modal input, #image-modal select, #image-modal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
         }
     `;
     document.head.appendChild(style);

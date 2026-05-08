@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.12.2
+// @version      2.12.3
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.12.2';
-    const CHANGELOG = `Version 2.12.2:
+    const SCRIPT_VERSION = '2.12.3';
+    const CHANGELOG = `Version 2.12.3:
+- Fixed dark mode compatibility: the response dropdown, custom responses modal, team
+  selector, and changelog modal now force light backgrounds and dark text via CSS with
+  !important so ServiceNow dark mode cannot override their inputs and controls.
+
+Version 2.12.2:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 2.12.1:
@@ -3004,6 +3009,22 @@ Regards.`,
         #ticket-response-dropdown::-webkit-scrollbar-thumb:hover { background: #555; }
         .category-header:hover  { background-color: #e9ecef !important; }
         .category-header:active { background-color: #dee2e6 !important; }
+
+        /* Dark mode isolation */
+        #ticket-response-dropdown, #customResponsesModal,
+        #teamSelector, #changelogModal { color: #333333 !important; }
+        #ticket-response-dropdown input, #ticket-response-dropdown select,
+        #ticket-response-dropdown textarea,
+        #customResponsesModal input, #customResponsesModal select,
+        #customResponsesModal textarea,
+        #teamSelector input, #teamSelector select, #teamSelector textarea,
+        #changelogModal input, #changelogModal select, #changelogModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+        #ticket-response-dropdown { background-color: #ffffff !important; }
+        #customResponsesModal { background-color: #ffffff !important; }
+        #changelogModal { background-color: #ffffff !important; }
     `;
     document.head.appendChild(style);
 

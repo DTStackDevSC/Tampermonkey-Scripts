@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.5
+// @version      1.4.6
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -26,8 +26,13 @@
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.5';
-    const CHANGELOG = `Version 1.4.5:
+    const SCRIPT_VERSION = '1.4.6';
+    const CHANGELOG = `Version 1.4.6:
+- Fixed dark mode compatibility: all modals now force light backgrounds and dark text
+  via injected CSS with !important so ServiceNow dark mode cannot override script UI
+  inputs, selects, and textareas.
+
+Version 1.4.5:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.4.4:
@@ -733,6 +738,26 @@ Version 1.4.1:
         #netskopeChangelogNotification .netskope-notification-dot { width: 8px !important; height: 8px !important; border-radius: 50% !important; animation: netskopeColorPulse 1s ease-in-out infinite !important; }
         @keyframes netskopeColorPulse { 0%, 100% { background-color: #007bff; } 50% { background-color: #ff8c00; } }
         #netskopeChangelogNotification .netskope-notification-text { font-size: 11px !important; color: #0066cc !important; text-decoration: underline !important; }
+
+        /* Dark mode isolation */
+        #netskope-urllist-modal, #netskopeHostSetupModal,
+        #urllist-log-add-modal, #urllist-del-modal,
+        #urllist-remove-older-confirm, #urllist-log-view-modal { color: #333333 !important; }
+        #netskope-urllist-modal input, #netskope-urllist-modal select,
+        #netskope-urllist-modal textarea,
+        #netskopeHostSetupModal input, #netskopeHostSetupModal select,
+        #netskopeHostSetupModal textarea,
+        #urllist-log-add-modal input, #urllist-log-add-modal select,
+        #urllist-log-add-modal textarea,
+        #urllist-del-modal input, #urllist-del-modal select,
+        #urllist-del-modal textarea,
+        #urllist-remove-older-confirm input, #urllist-remove-older-confirm select,
+        #urllist-remove-older-confirm textarea,
+        #urllist-log-view-modal input, #urllist-log-view-modal select,
+        #urllist-log-view-modal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
     `;
     document.head.appendChild(changelogStyle);
 

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.7
+// @version      1.2.8
 // @description  Toolbar button to check domain on VirusTotal, IBM X-Force Exchange & Netskope
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.7';
-    const CHANGELOG = `Version 1.2.7:
+    const SCRIPT_VERSION = '1.2.8';
+    const CHANGELOG = `Version 1.2.8:
+- Fixed dark mode compatibility: the security check modal and URL config modal now
+  force light backgrounds and dark text via CSS with !important so ServiceNow dark
+  mode cannot override their inputs.
+
+Version 1.2.7:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.2.6:
@@ -430,6 +435,8 @@ Version 1.2.5:
         font-size: 13px !important;
         font-family: 'Courier New', monospace !important;
         box-sizing: border-box !important;
+        background-color: #ffffff !important;
+        color: #333333 !important;
     }
 
     #sn-url-config-input:focus {
@@ -622,6 +629,15 @@ Version 1.2.5:
     }
 
     #sn-configure-url-link:hover { color: #004a99 !important; }
+
+    /* Dark mode isolation */
+    #security-check-modal { color: #333333 !important; }
+    #security-check-modal input, #security-check-modal select,
+    #security-check-modal textarea {
+        background-color: #ffffff !important;
+        color: #333333 !important;
+    }
+    #sn-url-config-modal { color: #333333 !important; }
 `;
     document.head.appendChild(style);
 

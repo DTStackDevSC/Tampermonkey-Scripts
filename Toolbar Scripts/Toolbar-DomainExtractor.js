@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainExtractor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainExtractor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.6
+// @version      1.0.7
 // @description  Extract domains from text
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.6';
-    const CHANGELOG = `Version 1.0.6:
+    const SCRIPT_VERSION = '1.0.7';
+    const CHANGELOG = `Version 1.0.7:
+- Fixed dark mode compatibility: the modal now forces light background and dark text
+  on all inputs and textareas via CSS with !important so ServiceNow dark mode cannot
+  override them.
+
+Version 1.0.6:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.0.5:
@@ -359,6 +364,14 @@ Version 1.0.4:
 
         .hidden {
             display: none !important;
+        }
+
+        /* Dark mode isolation */
+        #domain-extractor-modal { color: #333333 !important; }
+        #domain-extractor-modal input, #domain-extractor-modal select,
+        #domain-extractor-modal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
         }
     `;
     document.head.appendChild(style);
