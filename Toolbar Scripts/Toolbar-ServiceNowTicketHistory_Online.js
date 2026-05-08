@@ -3,11 +3,12 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.4
+// @version      1.5.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
+// @match        https://*.service-now.com/now/nav/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_listValues
@@ -24,8 +25,14 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.4';
-    const CHANGELOG = `Version 1.4.4:
+    const SCRIPT_VERSION = '1.5.0';
+    const CHANGELOG = `Version 1.5.0:
+- Added support for tickets opened from the ServiceNow dashboard (Polaris mode).
+  All ticket field access, activity stream detection, and mention insertion now
+  route through the shadow DOM iframe when the tool is opened from the dashboard,
+  and fall back to the classic direct-access path when opened in a new tab.
+
+Version 1.4.4:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -529,6 +536,7 @@ Version 1.4.3:
     const RETRY_DELAY        = 500;
     let sidebarVisible       = false;
     let activeFilter         = { query: '', dateFrom: '', dateTo: '' };
+    let _ctx                 = null;
 
     /* ──────────────────────────────────────────────────────────
      *  CONNECTIVITY STATE  (must be initialised before initializeSidebar())
@@ -541,6 +549,28 @@ Version 1.4.3:
      *  SETUP         → user is in the first-run setup form
      * ─────────────────────────────────────────────────────────*/
     let connState = 'INIT';
+
+    /* ==========================================================
+     *  TICKET CONTEXT (polaris / classic mode detection)
+     * ==========================================================*/
+
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
+                return { win: iframe.contentWindow, doc: iframe.contentDocument, mode: 'polaris' };
+            }
+        }
+        if (window.g_form) {
+            return { win: window, doc: document, mode: 'classic' };
+        }
+        return null;
+    }
+
+    function getTicketDoc() { return _ctx ? _ctx.doc : document; }
+    function getTicketWin() { return _ctx ? _ctx.win : window; }
 
     /* ==========================================================
      *  HELPERS
@@ -560,8 +590,9 @@ Version 1.4.3:
      * ==========================================================*/
 
     function getTicketNumber() {
+        const ticketDoc = getTicketDoc();
         for (const id of ['sc_req_item.number', 'incident.number']) {
-            const n = document.getElementById(id);
+            const n = ticketDoc.getElementById(id);
             if (n?.value?.trim()) return n.value.trim();
         }
         const m = window.location.search.match(/[?&]sys_id=([^&]+)/);
@@ -689,10 +720,11 @@ Version 1.4.3:
         // ── Field visibility detection ────────────────────────────
 
         function isDualInputMode() {
-            const container = document.getElementById('multiple-input-journal-entry');
+            const ticketDoc = getTicketDoc();
+            const container = ticketDoc.getElementById('multiple-input-journal-entry');
             if (container && container.getAttribute('aria-hidden') === 'false') {
-                const wn = document.getElementById('activity-stream-work_notes-textarea');
-                const cm = document.getElementById('activity-stream-comments-textarea');
+                const wn = ticketDoc.getElementById('activity-stream-work_notes-textarea');
+                const cm = ticketDoc.getElementById('activity-stream-comments-textarea');
                 return !!(wn && cm);
             }
             return false;
@@ -716,7 +748,8 @@ Version 1.4.3:
             if (ph.includes('work note')) return 'work_notes';
             if (ph.includes('additional comment') || ph.includes('comment')) return 'comments';
 
-            const activeBtn = document.querySelector(
+            const ticketDoc = getTicketDoc();
+            const activeBtn = ticketDoc.querySelector(
                 '[id*="show-work_notes"].active, ' +
                 'button[data-input-stream-type="work_notes"].active, ' +
                 'button[data-input-stream-type="work_notes"][aria-pressed="true"], ' +
@@ -724,7 +757,7 @@ Version 1.4.3:
             );
             if (activeBtn) return 'work_notes';
 
-            const activeCmBtn = document.querySelector(
+            const activeCmBtn = ticketDoc.querySelector(
                 '[id*="show-comments"].active, ' +
                 'button[data-input-stream-type="comments"].active, ' +
                 'button[data-input-stream-type="comments"][aria-pressed="true"], ' +
@@ -749,8 +782,9 @@ Version 1.4.3:
          *   { mode: 'none',          workNotes: null, comments: null }
          */
         function detectVisibility() {
-            const wn = document.getElementById('activity-stream-work_notes-textarea');
-            const cm = document.getElementById('activity-stream-comments-textarea');
+            const ticketDoc = getTicketDoc();
+            const wn = ticketDoc.getElementById('activity-stream-work_notes-textarea');
+            const cm = ticketDoc.getElementById('activity-stream-comments-textarea');
 
             if (isDualInputMode()) return { mode: 'both', workNotes: wn, comments: cm };
 
@@ -760,8 +794,8 @@ Version 1.4.3:
             if (wnVisible)              return { mode: 'workNotesOnly', workNotes: wn, comments: null };
             if (cmVisible)              return { mode: 'commentsOnly',  workNotes: null, comments: cm };
 
-            const generic = document.querySelector('#activity-stream-textarea')
-                         || document.querySelector('[data-stream-text-input]');
+            const generic = ticketDoc.querySelector('#activity-stream-textarea')
+                         || ticketDoc.querySelector('[data-stream-text-input]');
             if (generic) {
                 // Single-input mode — figure out which journal it is currently
                 // showing so we pick the right template.
@@ -793,14 +827,15 @@ Version 1.4.3:
             ];
 
             for (let attempt = 0; attempt < retries; attempt++) {
+                const ticketDoc = getTicketDoc();
                 for (const sel of selectors) {
-                    const f = document.getElementById(sel);
+                    const f = ticketDoc.getElementById(sel);
                     if (f) {
                         const v = (f.value || f.textContent || '').trim();
                         if (v.length > 2) { _cachedOpenedByName = v; return v; }
                     }
                 }
-                const labelFields = document.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
+                const labelFields = ticketDoc.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
                 for (const f of labelFields) {
                     const v = (f.value || f.textContent || '').trim();
                     if (v.length > 2 && !v.includes('_')) { _cachedOpenedByName = v; return v; }
@@ -834,14 +869,15 @@ Version 1.4.3:
         // ── @mention insertion (best-effort: API → keystroke fallback) ──
 
         async function insertMentionViaAPI(textarea, name) {
+            const tWin = getTicketWin();
             try {
-                if (typeof $ !== 'undefined' && $(textarea).data('atwho')) {
-                    const atwho = $(textarea).data('atwho');
+                if (typeof tWin.$ !== 'undefined' && tWin.$(textarea).data('atwho')) {
+                    const atwho = tWin.$(textarea).data('atwho');
                     if (atwho && atwho.insert) { atwho.insert('@', name); return true; }
                 }
-                if (typeof angular !== 'undefined') {
+                if (typeof tWin.angular !== 'undefined') {
                     try {
-                        const scope = angular.element(textarea).scope();
+                        const scope = tWin.angular.element(textarea).scope();
                         if (scope && scope.insertMention) { await scope.insertMention(name); return true; }
                     } catch {}
                 }
@@ -849,11 +885,11 @@ Version 1.4.3:
                     const apiObj = textarea.mentionPlugin || textarea._mentionApi;
                     if (apiObj.insert || apiObj.addMention) { (apiObj.insert || apiObj.addMention).call(apiObj, name); return true; }
                 }
-                if (typeof window.SNMention !== 'undefined' && window.SNMention.insert) {
-                    window.SNMention.insert(textarea, name); return true;
+                if (typeof tWin.SNMention !== 'undefined' && tWin.SNMention.insert) {
+                    tWin.SNMention.insert(textarea, name); return true;
                 }
-                if (typeof window.GlideMention !== 'undefined' && window.GlideMention.insert) {
-                    window.GlideMention.insert(textarea, name); return true;
+                if (typeof tWin.GlideMention !== 'undefined' && tWin.GlideMention.insert) {
+                    tWin.GlideMention.insert(textarea, name); return true;
                 }
             } catch {}
             return false;
@@ -884,8 +920,9 @@ Version 1.4.3:
                 '.mention-suggestion', '.at-view-ul li', '[role="option"]',
                 '.atwho-view li', '.atwho-view-ul li', '.mentions-autocomplete li', '[data-mention-item]',
             ];
+            const ticketDoc = getTicketDoc();
             for (const sel of suggestionSelectors) {
-                const node = document.querySelector(sel);
+                const node = ticketDoc.querySelector(sel);
                 if (node && node.offsetParent !== null) { node.click(); await sleep(180); return true; }
             }
             return false;
@@ -2849,6 +2886,7 @@ Version 1.4.3:
      * ==========================================================*/
 
     function showSidebar() {
+        _ctx = getTicketContext();
         const sidebar = document.getElementById('ct-sidebar');
         if (!sidebar) return;
 
