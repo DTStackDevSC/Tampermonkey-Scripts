@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.0
+// @version      1.5.1
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,20 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.5.0 loading...');
+    console.log('🔧 Netskope URL List Manager v1.5.1 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.0';
-    const CHANGELOG = `Version 1.5.0:
+    const SCRIPT_VERSION = '1.5.1';
+    const CHANGELOG = `Version 1.5.1:
+- Fixed modal clipping at the bottom of the screen. The tenant override selector was
+  moved into the API Configuration section header row, adding no extra height.
+  Added box-sizing: border-box to the modal so the declared height always includes
+  padding regardless of the page CSS context.
+
+Version 1.5.0:
 - Temporary tenant switch: a dropdown in the API Configuration panel lets you override
   the auto-detected tenant for the current session. The override resets automatically
   when the modal is closed and is never saved to storage. If the target tenant has a
@@ -1163,7 +1169,7 @@ Version 1.4.1:
             zIndex: '999998', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
             display: 'none', flexDirection: 'column', alignItems: 'center', gap: '15px',
             minWidth: '650px', maxWidth: '750px', height: 'calc(100vh - 80px)',
-            maxHeight: 'calc(100vh - 80px)', overflowY: 'auto'
+            maxHeight: 'calc(100vh - 80px)', overflowY: 'auto', boxSizing: 'border-box'
         }, { id: 'netskope-urllist-modal' });
 
         // Close button
@@ -1211,21 +1217,19 @@ Version 1.4.1:
         const sectionHeader = UI.createElement('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: '10px' });
         sectionHeader.innerHTML = `
             <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 0;">API Configuration</h3>
-            <span id="api-config-collapse-icon" style="font-size: 12px; color: #666; transition: transform 0.3s ease;">▼</span>
+            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                <span style="font-size: 11px; color: #666; white-space: nowrap;">⚡ Override:</span>
+                <select id="tenant-switch-select" style="padding: 2px 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; color: #333; background: #fff; max-width: 200px;">
+                    <option value="">Auto-detect</option>
+                </select>
+                <span id="api-config-collapse-icon" style="font-size: 12px; color: #666; transition: transform 0.3s ease;">▼</span>
+            </div>
         `;
-
         const apiConfigContent = UI.createElement('div', { width: '100%' }, { id: 'api-config-content' });
         apiConfigContent.innerHTML = `
             <div style="width: 100%; margin-bottom: 10px;">
                 <label style="display: block; font-weight: bold; font-size: 13px; color: #555; margin-bottom: 5px;">Detected Tenant:</label>
                 <div id="tenant-display" style="padding: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #e8f4f8; font-size: 13px; color: #0066cc; font-weight: bold; box-sizing: border-box;">Detecting...</div>
-            </div>
-            <div style="width: 100%; margin-bottom: 10px;">
-                <label style="display: block; font-size: 12px; font-weight: bold; color: #555; margin-bottom: 4px;">Temporary Tenant Override:</label>
-                <select id="tenant-switch-select" style="width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box; color: #333; background-color: #fff;">
-                    <option value="">— Use auto-detected tenant —</option>
-                </select>
-                <div style="font-size: 11px; color: #888; margin-top: 4px;">Session-only override. Resets automatically when the modal closes.</div>
             </div>
             <div id="api-token-container" style="width: 100%;"></div>
         `;
@@ -1243,6 +1247,7 @@ Version 1.4.1:
         apiSection.appendChild(expiryAlert);
 
         modal.appendChild(apiSection);
+        sectionHeader.querySelector('#tenant-switch-select')?.addEventListener('click', e => e.stopPropagation());
         modal.appendChild(UI.createElement('hr', { width: '100%', border: 'none', borderTop: '1px solid #ddd', margin: '10px 0' }));
 
         // Action buttons — added Domain Lookup button
