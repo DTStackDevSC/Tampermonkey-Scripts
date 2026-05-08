@@ -427,8 +427,36 @@ Version 1.1.4:
         Object.assign(versionRow.style, {
             marginTop: '16px', fontSize: '11px', color: '#aaa',
             textAlign: 'right', fontFamily: 'Arial, sans-serif',
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px',
         });
-        versionRow.textContent = `v${SCRIPT_VERSION}`;
+
+        if (isNewVersion() && !hasSeenChangelog()) {
+            const whatsNewLink = document.createElement('span');
+            whatsNewLink.textContent = "What's new";
+            Object.assign(whatsNewLink.style, {
+                fontSize: '11px', color: '#667eea', cursor: 'pointer',
+                textDecoration: 'underline', fontFamily: 'Arial, sans-serif',
+            });
+            whatsNewLink.onclick = () => { hideModal(); showChangelogModal(); };
+
+            const dot = document.createElement('span');
+            Object.assign(dot.style, {
+                width: '7px', height: '7px', borderRadius: '50%',
+                background: '#007bff', display: 'inline-block', flexShrink: '0',
+            });
+            let dotBlue = true;
+            setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+
+            versionRow.appendChild(whatsNewLink);
+            versionRow.appendChild(dot);
+        }
+
+        const versionLabel = document.createElement('span');
+        versionLabel.textContent = `v${SCRIPT_VERSION}`;
+        versionRow.appendChild(versionLabel);
         view.appendChild(versionRow);
 
         body.appendChild(view);
@@ -1019,7 +1047,7 @@ Version 1.1.4:
         }
 
         if (isNewVersion() && !hasSeenChangelog()) {
-            setTimeout(showChangelogModal, 800);
+            saveVersion(SCRIPT_VERSION);
         }
     }
 

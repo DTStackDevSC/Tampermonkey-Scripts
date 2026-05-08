@@ -542,8 +542,8 @@ Version 1.3:
         }
 
         if (isNewVersion() && !hasSeenChangelog()) {
-            const showModal = () => showChangelogModal();
-            document.body ? setTimeout(showModal, 500) : document.addEventListener('DOMContentLoaded', () => setTimeout(showModal, 500));
+            saveVersion(SCRIPT_VERSION);
+            markChangelogSeen();
         }
     }
 
