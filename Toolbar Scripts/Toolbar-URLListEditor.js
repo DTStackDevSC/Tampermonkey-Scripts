@@ -3,11 +3,12 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.2
+// @version      1.4.3
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
+// @match        https://*.service-now.com/now/nav/ui/classic/params/target/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -19,14 +20,20 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.4.2 loading...');
+    console.log('🔧 Netskope URL List Manager v1.4.3 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.2';
-    const CHANGELOG = `Version 1.4.2:
+    const SCRIPT_VERSION = '1.4.3';
+    const CHANGELOG = `Version 1.4.3:
+- Added dual mode support for Polaris (Dashboard) and Classic (New Tab) ticket access.
+  RITM field in the Insert Log Entry and Delete Log Entry modals now resolves correctly
+  when tickets are opened from the ServiceNow dashboard via shadow DOM iframe traversal.
+  Script now also matches the dashboard URL pattern.
+
+Version 1.4.2:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -1731,9 +1738,30 @@ Version 1.4.1:
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
+                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
+            }
+        }
+        if (window.g_form) {
+            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        }
+        return null;
+    }
+
     function getTicketNumber() {
+        const ctx = getTicketContext();
+        if (ctx && ctx.gForm) {
+            const num = ctx.gForm.getValue('number');
+            if (num) return num.trim();
+        }
+        const doc = (ctx && ctx.doc) || document;
         for (const id of ['sc_req_item.number', 'incident.number']) {
-            const n = document.getElementById(id);
+            const n = doc.getElementById(id);
             if (n?.value?.trim()) return n.value.trim();
         }
         const m = window.location.search.match(/[?&]sys_id=([^&]+)/);
