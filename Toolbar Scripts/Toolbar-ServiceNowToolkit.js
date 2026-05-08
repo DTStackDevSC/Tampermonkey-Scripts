@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.1
+// @version      1.2.2
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,12 +22,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.1';
-    const CHANGELOG = `Version 1.2.1:
-- Changelog modal now renders as collapsible version cards - most recent
-  expanded by default, older entries can be opened individually.
-- Toolbar button now shows a pulsing notification dot when a new version
-  is available and has not been seen yet.
+    const SCRIPT_VERSION = '1.2.2';
+    const CHANGELOG = `Version 1.2.2:
+- Changelog is now accessible via a "What's new" link in the settings modal
+  footer instead of an auto-popup on page load.
+- Toolbar button shows a pulsing notification dot when a new version has not
+  been seen yet.
+- Changelog modal renders as collapsible version cards - most recent expanded
+  by default, older entries can be opened individually.
 
 Version 1.2.0:
 - Drafts older than 7 days are now automatically deleted on page load

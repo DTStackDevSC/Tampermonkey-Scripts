@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.2
+// @version      1.3.3
 // @description  Display color-coded SLA warning banner based on days remaining
 // @author       You
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -16,8 +16,10 @@
 (function() {
     'use strict';
 
-    const SCRIPT_VERSION = '1.3.2';
-    const CHANGELOG = `Version 1.3.2:
+    const SCRIPT_VERSION = '1.3.3';
+    const CHANGELOG = `Version 1.3.3:
+- Added a "What's new" link with pulsing dot to the date format picker footer -
+  links to the changelog when a new version has not been seen yet.
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 
