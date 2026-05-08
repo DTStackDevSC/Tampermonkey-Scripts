@@ -3,11 +3,13 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyDeletionScheduler.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyDeletionScheduler.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.9.1
+// @version      1.0
 // @description  Registers a policy deletion reminder by opening a pre-filled form with the policy URL, name, and expiry date - Integrated with Toolbar
 // @author       J.R.
 // @match        https://*.goskope.com/*
 // @grant        GM_openInTab
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-start
 // ==/UserScript==
 
@@ -15,6 +17,35 @@
     'use strict';
 
     console.log('🗑️ Policy Deletion Reminder loading...');
+
+    /* ==========================================================
+     *  VERSION CONTROL
+     * ==========================================================*/
+
+    const SCRIPT_VERSION = '1.0';
+    const CHANGELOG = `Version 1.0:
+- Added version tracking and changelog system with collapsible version cards.
+- Toolbar button now shows a pulsing notification dot when a new version
+  is available and has not been seen yet.
+
+Version 0.9.1:
+- Initial release.`;
+
+    function getStoredVersion()    { return GM_getValue('pdrVersion', null); }
+    function saveVersion(v)        { GM_setValue('pdrVersion', v); }
+    function hasSeenChangelog()    { return GM_getValue('pdrChangelogSeen', null) === SCRIPT_VERSION; }
+    function markChangelogSeen()   { GM_setValue('pdrChangelogSeen', SCRIPT_VERSION); }
+
+    function compareVersions(v1, v2) {
+        if (!v1) return true;
+        const a = v1.split('.').map(Number), b = v2.split('.').map(Number);
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+            if ((b[i] || 0) > (a[i] || 0)) return true;
+            if ((b[i] || 0) < (a[i] || 0)) return false;
+        }
+        return false;
+    }
+    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
 
     /* ==========================================================
      *  ⚙️  USER CONFIGURATION — Edit these values as needed
@@ -101,6 +132,216 @@
         const encodedName = encodeURIComponent(policyName);
         const encodedDate = encodeURIComponent(`"${futureDate}"`);
         return `${FORM_BASE_URL}&${PARAM_PAGE_URL}=${encodedUrl}&${PARAM_POLICY_NAME}=${encodedName}&${PARAM_EXPIRY_DATE}=${encodedDate}`;
+    }
+
+    /* ==========================================================
+     *  CHANGELOG MODAL
+     * ==========================================================*/
+
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
+
+    function showChangelogModal() {
+        if (document.getElementById('pdr-changelog-modal')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'pdr-changelog-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', inset: '0',
+            background: 'rgba(0,0,0,0.5)', zIndex: '1000000',
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'pdr-changelog-modal';
+        Object.assign(modal.style, {
+            position:     'fixed',
+            top:          '50%', left: '50%',
+            transform:    'translate(-50%, -50%)',
+            zIndex:       '1000001',
+            background:   '#ffffff',
+            border:       '2px solid #333333',
+            borderRadius: '10px',
+            padding:      '20px',
+            boxShadow:    '0 4px 12px rgba(0,0,0,0.3)',
+            fontFamily:   'Arial, sans-serif',
+            maxWidth:     '520px',
+            width:        '90vw',
+            maxHeight:    '80vh',
+            overflowY:    'auto',
+            color:        '#333333',
+            boxSizing:    'border-box',
+        });
+
+        const title = document.createElement('h2');
+        title.textContent = `What's New — v${SCRIPT_VERSION}`;
+        Object.assign(title.style, {
+            marginTop:     '0', marginBottom: '15px',
+            color:         '#333333',
+            borderBottom:  '2px solid #667eea',
+            paddingBottom: '10px',
+            fontSize:      '18px', fontWeight: 'bold',
+            fontFamily:    'Arial, sans-serif',
+        });
+
+        const info = document.createElement('div');
+        info.textContent = `You've been updated to v${SCRIPT_VERSION}!`;
+        Object.assign(info.style, {
+            background:   '#f0f4ff',
+            color:        '#333333',
+            padding:      '10px',
+            borderRadius: '5px',
+            marginBottom: '15px',
+            borderLeft:   '4px solid #667eea',
+            fontFamily:   'Arial, sans-serif',
+            fontSize:     '13px',
+        });
+
+        const cardsWrap = document.createElement('div');
+        cardsWrap.style.marginBottom = '0';
+
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center',
+                justifyContent: 'space-between',
+                padding:    '9px 12px',
+                background: isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor: 'pointer', userSelect: 'none',
+            });
+
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold', fontSize: '13px',
+                color: isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.textContent = 'Latest';
+                Object.assign(tag.style, {
+                    fontSize: '10px', fontWeight: 'bold',
+                    background: '#667eea', color: '#fff',
+                    borderRadius: '3px', padding: '1px 6px',
+                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+                });
+                versionWrap.appendChild(tag);
+            }
+
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding: isLatest ? '10px 14px' : '0',
+                display: isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '3px 0',
+                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                    color: '#444', lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+
+            card.appendChild(body);
+
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            cardsWrap.appendChild(card);
+        });
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Got it!';
+        Object.assign(closeBtn.style, {
+            display: 'block', marginTop: '15px',
+            padding: '10px 20px', background: '#667eea', color: '#fff',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontWeight: 'bold', width: '100%',
+            fontFamily: 'Arial, sans-serif', fontSize: '14px',
+            boxSizing: 'border-box',
+        });
+        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#5568d3'; });
+        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#667eea'; });
+        closeBtn.onclick = () => {
+            overlay.remove();
+            modal.remove();
+            markChangelogSeen();
+            saveVersion(SCRIPT_VERSION);
+            removeToolbarNotificationDot();
+            const notif = document.getElementById('pdr-changelog-notif');
+            if (notif) notif.remove();
+        };
+
+        modal.appendChild(title);
+        modal.appendChild(info);
+        modal.appendChild(cardsWrap);
+        modal.appendChild(closeBtn);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = () => closeBtn.click();
     }
 
     /* ==========================================================
@@ -232,6 +473,58 @@
         btnOpen.onclick = openForm;
         modal.appendChild(btnOpen);
 
+        // ── Footer: version + changelog badge ────────────────
+        const footer = document.createElement('div');
+        Object.assign(footer.style, {
+            display:        'flex',
+            alignItems:     'center',
+            justifyContent: 'space-between',
+            marginTop:      '8px',
+            paddingTop:     '8px',
+            borderTop:      '1px solid #e0e0e0',
+        });
+
+        const versionLabel = document.createElement('span');
+        Object.assign(versionLabel.style, { fontSize: '11px', color: '#999', fontFamily: 'Arial, sans-serif' });
+        versionLabel.textContent = `v${SCRIPT_VERSION}`;
+        footer.appendChild(versionLabel);
+
+        if (isNewVersion() && !hasSeenChangelog()) {
+            const notif = document.createElement('span');
+            notif.id = 'pdr-changelog-notif';
+            Object.assign(notif.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                cursor: 'pointer', padding: '3px 8px', borderRadius: '4px',
+            });
+            notif.addEventListener('mouseenter', () => { notif.style.backgroundColor = '#e0e0e0'; });
+            notif.addEventListener('mouseleave', () => { notif.style.backgroundColor = 'transparent'; });
+
+            const dot = document.createElement('span');
+            Object.assign(dot.style, {
+                display: 'inline-block', width: '8px', height: '8px',
+                borderRadius: '50%', background: '#007bff', flexShrink: '0',
+            });
+            let dotBlue = true;
+            setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+
+            const notifText = document.createElement('span');
+            notifText.textContent = "What's new";
+            Object.assign(notifText.style, {
+                fontSize: '11px', color: '#0066cc', textDecoration: 'underline',
+                fontFamily: 'Arial, sans-serif', fontWeight: 'normal',
+            });
+
+            notif.appendChild(dot);
+            notif.appendChild(notifText);
+            notif.onclick = showChangelogModal;
+            footer.appendChild(notif);
+        }
+
+        modal.appendChild(footer);
+
         document.body.appendChild(modal);
     }
 
@@ -298,6 +591,58 @@
     }
 
     /* ==========================================================
+     *  TOOLBAR NOTIFICATION DOT
+     * ==========================================================*/
+
+    const TOOLBAR_DOT_CLASS = 'pdr-notif-dot';
+
+    function addToolbarNotificationDot() {
+        if (!isNewVersion() || hasSeenChangelog()) return;
+
+        const tryAdd = (attempts) => {
+            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+            if (!toolEl) {
+                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
+                return;
+            }
+            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
+
+            toolEl.style.position = 'relative';
+
+            const dot = document.createElement('div');
+            dot.className = TOOLBAR_DOT_CLASS;
+            Object.assign(dot.style, {
+                position:      'absolute',
+                top:           '2px', right: '2px',
+                width:         '8px', height: '8px',
+                borderRadius:  '50%',
+                background:    '#007bff',
+                pointerEvents: 'none',
+                zIndex:        '10',
+            });
+
+            let dotBlue = true;
+            const intervalId = setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+            dot.dataset.intervalId = intervalId;
+
+            toolEl.appendChild(dot);
+        };
+
+        setTimeout(() => tryAdd(0), 500);
+    }
+
+    function removeToolbarNotificationDot() {
+        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
+        if (dot) {
+            clearInterval(Number(dot.dataset.intervalId));
+            dot.remove();
+        }
+    }
+
+    /* ==========================================================
      *  TOOLBAR REGISTRATION
      * ==========================================================*/
 
@@ -332,6 +677,7 @@
 
             isRegistered = true;
             console.log('✅ Policy Deletion Reminder registered successfully!');
+            addToolbarNotificationDot();
         } else {
             console.log(`⏳ Toolbar not ready (toolbar: ${!!toolbarExists}, menu: ${!!menuExists}), will retry...`);
             setTimeout(attemptRegistration, REGISTRATION_RETRY_DELAY);

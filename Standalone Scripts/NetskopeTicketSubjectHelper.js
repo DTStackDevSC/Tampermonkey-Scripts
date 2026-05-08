@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.3
+// @version      1.0.4
 // @description  Adds a helper button to the Netskope support ticket form to quickly build a formatted Subject line
 // @author       J.R.
 // @match        https://support.netskope.com/*
@@ -19,8 +19,12 @@
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.0.3';
-    const CHANGELOG = `Version 1.0.3:
+    const SCRIPT_VERSION = '1.0.4';
+    const CHANGELOG = `Version 1.0.4:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+
+Version 1.0.3:
 - Changed Update URL
 
 Version 1.0.0:
@@ -484,16 +488,63 @@ Version 1.0.0:
             font-size: 14px !important;
             font-weight: normal !important;
         }
-        #nsTktChangelogModal .ns-cl-content {
-            white-space: pre-wrap !important;
-            line-height: 1.6 !important;
-            color: #333333 !important;
-            font-family: 'Courier New', Courier, monospace !important;
+        .ns-cl-card {
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 6px !important;
+            margin-bottom: 8px !important;
+            overflow: hidden !important;
+        }
+        .ns-cl-card.ns-cl-card-latest { border-color: #667eea !important; }
+        .ns-cl-card-header {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            padding: 9px 12px !important;
+            background: #f8f8f8 !important;
+            cursor: pointer !important;
+            user-select: none !important;
+        }
+        .ns-cl-card.ns-cl-card-latest .ns-cl-card-header { background: #f0f0ff !important; }
+        .ns-cl-card-version {
+            font-weight: bold !important;
             font-size: 13px !important;
-            font-weight: normal !important;
-            background-color: #fafafa !important;
-            padding: 10px !important;
-            border-radius: 5px !important;
+            color: #555 !important;
+            font-family: Arial, sans-serif !important;
+        }
+        .ns-cl-card.ns-cl-card-latest .ns-cl-card-version { color: #667eea !important; }
+        .ns-cl-latest-tag {
+            font-size: 10px !important;
+            font-weight: bold !important;
+            background: #667eea !important;
+            color: #fff !important;
+            border-radius: 3px !important;
+            padding: 1px 6px !important;
+            margin-left: 8px !important;
+            font-family: Arial, sans-serif !important;
+        }
+        .ns-cl-card-chevron {
+            font-size: 12px !important;
+            color: #999 !important;
+            transition: transform 0.2s !important;
+            display: inline-block !important;
+        }
+        .ns-cl-card-body {
+            background: #fff !important;
+            padding: 10px 14px !important;
+        }
+        .ns-cl-bullet {
+            display: flex !important;
+            gap: 8px !important;
+            padding: 3px 0 !important;
+            font-size: 13px !important;
+            font-family: Arial, sans-serif !important;
+            color: #444 !important;
+            line-height: 1.5 !important;
+        }
+        .ns-cl-bullet-dot {
+            color: #667eea !important;
+            flex-shrink: 0 !important;
+            font-weight: bold !important;
         }
         #nsTktChangelogModal .ns-cl-close {
             margin-top: 15px !important;
@@ -522,6 +573,29 @@ Version 1.0.0:
      *  PANEL
      * ========================================================== */
 
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
+
     function showChangelogModal() {
         const overlay = document.createElement('div');
         overlay.id = 'nsTktChangelogOverlay';
@@ -536,9 +610,68 @@ Version 1.0.0:
         info.className = 'ns-cl-info';
         info.textContent = `You've been updated to v${SCRIPT_VERSION}!`;
 
-        const body = document.createElement('div');
-        body.className = 'ns-cl-content';
-        body.textContent = CHANGELOG;
+        const cardsWrap = document.createElement('div');
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+
+            const card = document.createElement('div');
+            card.className = 'ns-cl-card' + (isLatest ? ' ns-cl-card-latest' : '');
+
+            const header = document.createElement('div');
+            header.className = 'ns-cl-card-header';
+
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+
+            const versionLabel = document.createElement('span');
+            versionLabel.className = 'ns-cl-card-version';
+            versionLabel.textContent = `Version ${entry.version}`;
+            versionWrap.appendChild(versionLabel);
+
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.className = 'ns-cl-latest-tag';
+                tag.textContent = 'Latest';
+                versionWrap.appendChild(tag);
+            }
+
+            const chevron = document.createElement('span');
+            chevron.className = 'ns-cl-card-chevron';
+            chevron.textContent = '▾';
+            chevron.style.transform = isLatest ? 'rotate(0deg)' : 'rotate(-90deg)';
+
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+
+            const body = document.createElement('div');
+            body.className = 'ns-cl-card-body';
+            body.style.display = isLatest ? 'block' : 'none';
+
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                row.className = 'ns-cl-bullet';
+                const dot = document.createElement('span');
+                dot.className = 'ns-cl-bullet-dot';
+                dot.textContent = '•';
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+
+            card.appendChild(body);
+
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            cardsWrap.appendChild(card);
+        });
 
         const closeBtn = document.createElement('button');
         closeBtn.className = 'ns-cl-close';
@@ -554,7 +687,7 @@ Version 1.0.0:
 
         modal.appendChild(title);
         modal.appendChild(info);
-        modal.appendChild(body);
+        modal.appendChild(cardsWrap);
         modal.appendChild(closeBtn);
 
         document.body.appendChild(overlay);
