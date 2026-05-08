@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.0
+// @version      1.5.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.0';
-    const CHANGELOG = `Version 1.5.0:
+    const SCRIPT_VERSION = '1.5.1';
+    const CHANGELOG = `Version 1.5.1:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.5.0:
 - Added support for tickets opened from the ServiceNow dashboard (Polaris mode).
   All ticket field access, activity stream detection, and mention insertion now
   route through the shadow DOM iframe when the tool is opened from the dashboard,
@@ -2220,7 +2223,7 @@ Version 1.4.3:
             const dot = mk('span', { id:'ct-changelog-dot' });
             const d = mk('span', { className:'ct-dot' });
             const l = mk('span', { className:'ct-dot-label' });
-            l.textContent = 'Changelog';
+            l.textContent = "What's New";
             dot.append(d, l); dot.onclick = showChangelogModal;
             verRow.appendChild(dot);
         }

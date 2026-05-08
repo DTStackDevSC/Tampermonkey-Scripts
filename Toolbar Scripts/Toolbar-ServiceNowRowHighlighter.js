@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.3.3
+// @version      2.3.4
 // @description  Highlights rows on any ServiceNow ticket list when Updated By column is present; applies SLA heat-map when Due Date column is present
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.3';
-    const CHANGELOG = `Version 2.3.3:
+    const SCRIPT_VERSION = '2.3.4';
+    const CHANGELOG = `Version 2.3.4:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 2.3.3:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -868,7 +871,7 @@ Version 2.3.1:
 
             const notificationText = document.createElement('span');
             notificationText.className = 'highlighter-notification-text';
-            notificationText.textContent = 'Changelog';
+            notificationText.textContent = "What's New";
 
             changelogNotification.appendChild(notificationDot);
             changelogNotification.appendChild(notificationText);

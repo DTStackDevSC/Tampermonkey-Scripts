@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.12.1
+// @version      2.12.2
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.12.1';
-    const CHANGELOG = `Version 2.12.1:
+    const SCRIPT_VERSION = '2.12.2';
+    const CHANGELOG = `Version 2.12.2:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 2.12.1:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 
@@ -2602,7 +2605,7 @@ Regards.`,
 
             const notificationText = document.createElement('span');
             notificationText.className = 'notification-text';
-            notificationText.textContent = 'Changelog';
+            notificationText.textContent = "What's New";
             Object.assign(notificationText.style, { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' });
 
             changelogNotification.appendChild(notificationDot);

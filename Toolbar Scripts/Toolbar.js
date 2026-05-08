@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.3
+// @version      1.3.4
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,8 +26,11 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.3';
-    const CHANGELOG = `Version 1.3.3:
+    const SCRIPT_VERSION = '1.3.4';
+    const CHANGELOG = `Version 1.3.4:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.3.3:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 
@@ -1318,7 +1321,7 @@ Version 1.3.1:
                                     <span class="version-label">Current Version: ${SCRIPT_VERSION}</span>
                                     <span id="toolbarChangelogNotification" class="hidden">
                                         <span class="toolbar-notification-dot"></span>
-                                        <span class="toolbar-notification-text">Changelog</span>
+                                        <span class="toolbar-notification-text">What's New</span>
                                     </span>
                                 </div>
                             </div>

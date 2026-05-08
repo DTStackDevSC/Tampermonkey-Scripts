@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.3
+// @version      1.1.4
 // @description  Opens a pre-filled Office Forms submission with RITM auto-populated from the current ServiceNow ticket - Integrated with Toolbar
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,8 +22,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.3';
-    const CHANGELOG = `Version 1.1.3:
+    const SCRIPT_VERSION = '1.1.4';
+    const CHANGELOG = `Version 1.1.4:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.1.3:
 - Added dual mode support for Polaris (Dashboard) and Classic (New Tab) ticket access.
   RITM field now resolves correctly when tickets are opened from the ServiceNow dashboard
   via shadow DOM iframe traversal, not just when opened in a new tab directly.
@@ -417,7 +420,7 @@ Version 1.1.1:
             dot.className = 'erl-notif-dot';
             const txt = document.createElement('span');
             txt.className = 'erl-notif-text';
-            txt.textContent = 'Changelog';
+            txt.textContent = "What's New";
             clNotif.appendChild(dot);
             clNotif.appendChild(txt);
             clNotif.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showChangelogModal(); });

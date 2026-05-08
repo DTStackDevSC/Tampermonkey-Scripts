@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainExtractor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainExtractor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.5
+// @version      1.0.6
 // @description  Extract domains from text
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.5';
-    const CHANGELOG = `Version 1.0.5:
+    const SCRIPT_VERSION = '1.0.6';
+    const CHANGELOG = `Version 1.0.6:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.0.5:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -469,7 +472,7 @@ Version 1.0.4:
 
             const notificationText = document.createElement('span');
             notificationText.className = 'notification-text';
-            notificationText.textContent = 'Changelog';
+            notificationText.textContent = "What's New";
 
             changelogNotification.appendChild(notificationDot);
             changelogNotification.appendChild(notificationText);

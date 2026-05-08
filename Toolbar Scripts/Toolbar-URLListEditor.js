@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.4
+// @version      1.4.5
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,17 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.4.4 loading...');
+    console.log('🔧 Netskope URL List Manager v1.4.5 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.4';
-    const CHANGELOG = `Version 1.4.4:
+    const SCRIPT_VERSION = '1.4.5';
+    const CHANGELOG = `Version 1.4.5:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.4.4:
 - Fixed tenant auto-detection in Polaris (Dashboard) mode. The member firm field scan
   now searches inside the shadow DOM iframe instead of the top-level document, so the
   correct Netskope tenant is resolved when tickets are opened from the dashboard.
@@ -1068,7 +1071,7 @@ Version 1.4.1:
 
         if (VersionManager.shouldShowChangelog()) {
             const changelogNotif = UI.createElement('span', {}, { id: 'netskopeChangelogNotification', onclick: showChangelogModal });
-            changelogNotif.innerHTML = `<span class="netskope-notification-dot"></span><span class="netskope-notification-text">Changelog</span>`;
+            changelogNotif.innerHTML = `<span class="netskope-notification-dot"></span><span class="netskope-notification-text">What's New</span>`;
             versionRow.appendChild(changelogNotif);
         }
         modal.appendChild(versionRow);

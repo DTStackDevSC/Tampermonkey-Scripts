@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.4
+// @version      1.0.5
 // @description  Quick overview panel for ServiceNow tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.4';
-    const CHANGELOG = `Version 1.0.4:
+    const SCRIPT_VERSION = '1.0.5';
+    const CHANGELOG = `Version 1.0.5:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.0.4:
 - Added dual mode support for Polaris (Dashboard) and Classic (New Tab) ticket access.
   All field extraction now works when tickets are opened from the ServiceNow dashboard
   via shadow DOM iframe traversal. Script now also matches the dashboard URL pattern.
@@ -732,7 +735,7 @@ Version 1.0.2:
 
             const notificationText = document.createElement('span');
             notificationText.className = 'notification-text';
-            notificationText.textContent = 'Changelog';
+            notificationText.textContent = "What's New";
 
             changelogNotification.appendChild(notificationDot);
             changelogNotification.appendChild(notificationText);

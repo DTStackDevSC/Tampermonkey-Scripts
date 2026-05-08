@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.4
+// @version      1.0.5
 // @description  Adds a helper button to the Netskope support ticket form to quickly build a formatted Subject line
 // @author       J.R.
 // @match        https://support.netskope.com/*
@@ -19,8 +19,11 @@
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.0.4';
-    const CHANGELOG = `Version 1.0.4:
+    const SCRIPT_VERSION = '1.0.5';
+    const CHANGELOG = `Version 1.0.5:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.0.4:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 
@@ -811,7 +814,7 @@ Version 1.0.0:
             dot.className = 'ns-notif-dot';
             const txt = document.createElement('span');
             txt.className = 'ns-notif-txt';
-            txt.textContent = 'Changelog';
+            txt.textContent = "What's New";
             notif.appendChild(dot);
             notif.appendChild(txt);
             notif.onclick = showChangelogModal;

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.1
+// @version      1.3.2
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
+    const SCRIPT_VERSION = '1.3.2';
+    const CHANGELOG = `Version 1.3.2:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.3.1:
 - Fixed comment insertion when the activity stream is in dual worknotes/comments
   mode. The tool now checks for the split comments textarea first
   (activity-stream-comments-textarea) and falls back to the combined textarea
@@ -1317,7 +1320,7 @@ Version 1.2.1:
             notificationDot.className = 'notification-dot';
             const notificationText = document.createElement('span');
             notificationText.className = 'notification-text';
-            notificationText.textContent = 'Changelog';
+            notificationText.textContent = "What's New";
             changelogNotification.appendChild(notificationDot);
             changelogNotification.appendChild(notificationText);
             changelogNotification.onclick = () => showChangelogModal();

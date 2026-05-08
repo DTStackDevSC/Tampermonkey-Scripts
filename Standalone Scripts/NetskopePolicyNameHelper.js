@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.3
+// @version      1.2.4
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.3';
-    const CHANGELOG = `Version 1.2.3:
+    const SCRIPT_VERSION = '1.2.4';
+    const CHANGELOG = `Version 1.2.4:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.2.3:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 
@@ -1264,7 +1267,7 @@ Version 1.2.0:
             dot.className = 'netskope-notification-dot';
             const txt = document.createElement('span');
             txt.className = 'netskope-notification-text';
-            txt.textContent = 'Changelog';
+            txt.textContent = "What's New";
             clNotif.appendChild(dot);
             clNotif.appendChild(txt);
             clNotif.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showChangelogModal(); });
