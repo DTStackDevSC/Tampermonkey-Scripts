@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.2
+// @version      1.2.3
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,8 +22,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.2';
-    const CHANGELOG = `Version 1.2.2:
+    const SCRIPT_VERSION = '1.2.3';
+    const CHANGELOG = `Version 1.2.3:
+- Fixed the "What's new" link not appearing in the settings modal. The stored
+  version was being saved on page load before the changelog was ever seen,
+  causing the new version check to always return false on subsequent loads.
+  Version is now only saved when the changelog modal is dismissed.
+
+Version 1.2.2:
 - Changelog is now accessible via a "What's new" link in the settings modal
   footer instead of an auto-popup on page load.
 - Toolbar button shows a pulsing notification dot when a new version has not
@@ -1048,9 +1054,6 @@ Version 1.1.4:
             initTicketPage();
         }
 
-        if (isNewVersion() && !hasSeenChangelog()) {
-            saveVersion(SCRIPT_VERSION);
-        }
     }
 
     if (document.readyState === 'loading') {
