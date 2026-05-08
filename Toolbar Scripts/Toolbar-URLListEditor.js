@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.3
+// @version      1.4.4
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,19 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.4.3 loading...');
+    console.log('🔧 Netskope URL List Manager v1.4.4 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.3';
-    const CHANGELOG = `Version 1.4.3:
+    const SCRIPT_VERSION = '1.4.4';
+    const CHANGELOG = `Version 1.4.4:
+- Fixed tenant auto-detection in Polaris (Dashboard) mode. The member firm field scan
+  now searches inside the shadow DOM iframe instead of the top-level document, so the
+  correct Netskope tenant is resolved when tickets are opened from the dashboard.
+
+Version 1.4.3:
 - Added dual mode support for Polaris (Dashboard) and Classic (New Tab) ticket access.
   RITM field in the Insert Log Entry and Delete Log Entry modals now resolves correctly
   when tickets are opened from the ServiceNow dashboard via shadow DOM iframe traversal.
@@ -346,13 +351,16 @@ Version 1.4.1:
      *  Updated detectTenant() — resolves via GM-stored hosts
      * ----------------------------------------------------------*/
     function detectTenant() {
+        const ctx = getTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+
         const selectors = [
             'input.form-control.element_reference_input',
             'input[type="hidden"][id*="display_hidden"]'
         ];
 
         for (const selector of selectors) {
-            for (const input of document.querySelectorAll(selector)) {
+            for (const input of doc.querySelectorAll(selector)) {
                 const value = input.value.trim();
                 if (value.startsWith('Deloitte')) {
                     const region = value.replace('Deloitte', '').trim();
