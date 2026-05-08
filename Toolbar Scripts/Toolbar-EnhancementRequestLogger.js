@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-EnhancementRequestLogger.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.2
+// @version      1.1.3
 // @description  Opens a pre-filled Office Forms submission with RITM auto-populated from the current ServiceNow ticket - Integrated with Toolbar
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,8 +22,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.2';
-    const CHANGELOG = `Version 1.1.2:
+    const SCRIPT_VERSION = '1.1.3';
+    const CHANGELOG = `Version 1.1.3:
+- Added dual mode support for Polaris (Dashboard) and Classic (New Tab) ticket access.
+  RITM field now resolves correctly when tickets are opened from the ServiceNow dashboard
+  via shadow DOM iframe traversal, not just when opened in a new tab directly.
+
+Version 1.1.2:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -96,11 +101,32 @@ Version 1.1.1:
      *  HELPERS
      * ==========================================================*/
 
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
+                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
+            }
+        }
+        if (window.g_form) {
+            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        }
+        return null;
+    }
+
     function getTicketNumber() {
+        const ctx = getTicketContext();
+        if (ctx && ctx.gForm) {
+            const num = ctx.gForm.getValue('number');
+            if (num) return num.trim();
+        }
+        const doc = (ctx && ctx.doc) || document;
         const el =
-            document.querySelector('input[id*="sc_req_item.number"]') ||
-            document.querySelector('input[id*="incident.number"]')     ||
-            document.querySelector('input[id$=".number"][readonly]');
+            doc.querySelector('input[id*="sc_req_item.number"]') ||
+            doc.querySelector('input[id*="incident.number"]')     ||
+            doc.querySelector('input[id$=".number"][readonly]');
         return el?.value?.trim() || null;
     }
 

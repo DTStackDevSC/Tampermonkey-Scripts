@@ -3,11 +3,12 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1
+// @version      1.1.1
 // @description  Extract domains from text and check their security reputation. Replaces Domain Extractor and Domain Security Check.
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
+// @match        https://*.service-now.com/now/nav/*
 // @grant        GM_setClipboard
 // @grant        GM_openInTab
 // @grant        GM_getValue
@@ -22,8 +23,8 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1';
-    const CHANGELOG = `Version 1.1:
+    const SCRIPT_VERSION = '1.1.1';
+    const CHANGELOG = `Version 1.1.1:
 - Extract tab: each domain row now has a checkbox for selection, and clicking anywhere on
   the row (except the Check button) toggles it.
 - Extract tab: "Select all / Deselect all" toggle appears above the domain list after extraction.
