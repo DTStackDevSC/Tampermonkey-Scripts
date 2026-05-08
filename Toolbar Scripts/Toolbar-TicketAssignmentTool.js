@@ -3,11 +3,12 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.3
+// @version      1.3.0
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
+// @match        https://*.service-now.com/now/nav/*
 // @grant        GM_openInTab
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -26,8 +27,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.3';
-    const CHANGELOG = `Version 1.2.3:
+    const SCRIPT_VERSION = '1.3.0';
+    const CHANGELOG = `Version 1.3.0:
+- Added support for tickets opened from the ServiceNow dashboard (Polaris mode).
+  The tool now detects whether the form lives in a shadow DOM iframe (dashboard)
+  or directly on the page (new tab), then reads and writes all ticket fields
+  through the correct document context in each case.
+
+Version 1.2.3:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -835,6 +842,7 @@ Version 1.2.1:
     let registrationAttempts = 0;
     const MAX_REGISTRATION_ATTEMPTS = 10;
     const REGISTRATION_RETRY_DELAY = 500;
+    let _ctx = null;
 
     /* ==========================================================
      *  MODAL STYLES
@@ -1480,8 +1488,9 @@ Version 1.2.1:
             '[data-mention-item]'
         ];
 
+        const ticketDoc = _ctx ? _ctx.doc : document;
         for (const selector of suggestionSelectors) {
-            const suggestion = document.querySelector(selector);
+            const suggestion = ticketDoc.querySelector(selector);
             if (suggestion && suggestion.offsetParent !== null) {
                 console.log('✓ Found mention suggestion, clicking:', selector);
                 suggestion.click();
@@ -1549,6 +1558,21 @@ Version 1.2.1:
      *  TICKET ASSIGNMENT FUNCTIONALITY
      * ==========================================================*/
 
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
+                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
+            }
+        }
+        if (window.g_form) {
+            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        }
+        return null;
+    }
+
     async function performAssignment() {
         const dropdown = document.getElementById('sn-assign-team-dropdown');
         const selectedValue = dropdown.value;
@@ -1562,7 +1586,12 @@ Version 1.2.1:
         const useFreezeReminder = freezeCheckbox.checked;
         const shortDescVal = document.getElementById('sn-assign-short-desc')?.value?.trim() || '';
 
-        console.log('🎫 Starting ticket assignment to:', assigneeName);
+        _ctx = getTicketContext();
+        if (!_ctx) {
+            alert('Could not detect the ticket form. Make sure you are on a ticket page.');
+            return;
+        }
+        console.log('🎫 Starting ticket assignment to:', assigneeName, '| Mode:', _ctx.mode);
         showLoading();
 
         try {
@@ -1595,8 +1624,9 @@ Version 1.2.1:
     }
 
     async function assignToTeamMember(assigneeName) {
-        const assignedToInput = document.getElementById('sys_display.sc_req_item.assigned_to') ||
-                               document.getElementById('sys_display.incident.assigned_to');
+        const ticketDoc = _ctx ? _ctx.doc : document;
+        const assignedToInput = ticketDoc.getElementById('sys_display.sc_req_item.assigned_to') ||
+                               ticketDoc.getElementById('sys_display.incident.assigned_to');
         if (!assignedToInput) throw new Error('Could not find "Assigned to" field');
 
         assignedToInput.value = '';
@@ -1637,7 +1667,7 @@ Version 1.2.1:
         ];
 
         for (const selector of dropdownSelectors) {
-            const suggestion = document.querySelector(selector);
+            const suggestion = ticketDoc.querySelector(selector);
             if (suggestion && suggestion.offsetParent !== null) {
                 console.log('✓ Found autocomplete suggestion, clicking:', selector);
                 suggestion.click();
@@ -1655,8 +1685,9 @@ Version 1.2.1:
     function updateShortDescription() {
         return new Promise((resolve, reject) => {
             try {
-                const shortDescInput = document.getElementById('sc_req_item.short_description') ||
-                                      document.getElementById('incident.short_description');
+                const ticketDoc = _ctx ? _ctx.doc : document;
+                const shortDescInput = ticketDoc.getElementById('sc_req_item.short_description') ||
+                                      ticketDoc.getElementById('incident.short_description');
                 if (!shortDescInput) throw new Error('Could not find "Short Description" field');
                 shortDescInput.value = SHORT_DESC_TEMPLATE;
                 shortDescInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1668,10 +1699,11 @@ Version 1.2.1:
     }
 
     function getOpenedByName() {
-        const openedByInput = document.getElementById('sc_req_item.opened_by_label') ||
-                             document.getElementById('sys_display.sc_req_item.opened_by') ||
-                             document.getElementById('incident.opened_by_label') ||
-                             document.getElementById('sys_display.incident.opened_by');
+        const ticketDoc = _ctx ? _ctx.doc : document;
+        const openedByInput = ticketDoc.getElementById('sc_req_item.opened_by_label') ||
+                             ticketDoc.getElementById('sys_display.sc_req_item.opened_by') ||
+                             ticketDoc.getElementById('incident.opened_by_label') ||
+                             ticketDoc.getElementById('sys_display.incident.opened_by');
         if (openedByInput) {
             return (openedByInput.value || openedByInput.textContent).trim();
         }
@@ -1680,8 +1712,9 @@ Version 1.2.1:
     }
 
     function getTicketNumber() {
-        const numField = document.getElementById('sc_req_item.number') ||
-                         document.getElementById('incident.number');
+        const ticketDoc = _ctx ? _ctx.doc : document;
+        const numField = ticketDoc.getElementById('sc_req_item.number') ||
+                         ticketDoc.getElementById('incident.number');
         if (numField) return (numField.value || numField.textContent).trim();
         return '';
     }
@@ -1692,8 +1725,9 @@ Version 1.2.1:
             'input.element_reference_input',
             'input.questionsetreference',
         ];
+        const ticketDoc = _ctx ? _ctx.doc : document;
         for (const selector of selectors) {
-            for (const input of document.querySelectorAll(selector)) {
+            for (const input of ticketDoc.querySelectorAll(selector)) {
                 const value = input.value.trim();
                 if (value && MF_CODE_MAP[value]) return MF_CODE_MAP[value];
             }
@@ -1702,7 +1736,8 @@ Version 1.2.1:
     }
 
     async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder) {
-        const textarea = document.getElementById('activity-stream-textarea');
+        const ticketDoc = _ctx ? _ctx.doc : document;
+        const textarea = ticketDoc.getElementById('activity-stream-textarea');
         if (!textarea) throw new Error('Could not find Additional Comments textarea');
 
         const greeting = `Hi @[${openedByName}],
@@ -1743,7 +1778,8 @@ Thank you for your cooperation.` : '';
     function openSCTASKInBackground() {
         return new Promise((resolve) => {
             try {
-                const sctaskLinks = Array.from(document.querySelectorAll('a[href*="sc_task.do"]'))
+                const ticketDoc = _ctx ? _ctx.doc : document;
+                const sctaskLinks = Array.from(ticketDoc.querySelectorAll('a[href*="sc_task.do"]'))
                     .filter(link => link.textContent.trim().startsWith('SCTASK'));
                 if (sctaskLinks.length > 0) {
                     GM_openInTab(sctaskLinks[0].href, { active: false, insert: true });
