@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.13.0
+// @version      2.13.1
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.13.0';
-    const CHANGELOG = `Version 2.13.0:
+    const SCRIPT_VERSION = '2.13.1';
+    const CHANGELOG = `Version 2.13.1:
+- Parent items with submenus can now be pinned. When pinned, the full flyout submenu
+  is available directly from the Pinned section.
+
+Version 2.13.0:
 - Added pinned responses: click the pin icon on any response to keep it at
   the top of the list in a dedicated Pinned section. Pinned items still appear
   in their original category. Click the pin again to unpin.
@@ -2713,21 +2717,25 @@ Regards.`,
 
             pinnedItems.forEach(entry => {
                 const ft = entry.fieldType || 'comments';
-                const option = buildMenuOption(entry.label, ft, async () => {
-                    trackRecentlyUsed(entry);
-                    const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
-                    const textarea = getTargetTextarea(ft);
-                    if (textarea) {
-                        const text = entry.isCustom
-                            ? resolveCustomResponseText(entry.customText, vars)
-                            : team.responses[entry.key](vars);
-                        await insertTextWithMention(textarea, text, ft);
-                        flashTargetField(textarea);
-                    }
-                    dropdown.style.display = 'none';
-                });
-                attachPinButton(option, entry, rebuildFn);
-                pinnedItemsContainer.appendChild(option);
+                if (entry.hasSubmenu) {
+                    pinnedItemsContainer.appendChild(buildSubmenuParentOption(entry.key, entry.label, ft, team, dropdown, rebuildFn));
+                } else {
+                    const option = buildMenuOption(entry.label, ft, async () => {
+                        trackRecentlyUsed(entry);
+                        const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                        const textarea = getTargetTextarea(ft);
+                        if (textarea) {
+                            const text = entry.isCustom
+                                ? resolveCustomResponseText(entry.customText, vars)
+                                : team.responses[entry.key](vars);
+                            await insertTextWithMention(textarea, text, ft);
+                            flashTargetField(textarea);
+                        }
+                        dropdown.style.display = 'none';
+                    });
+                    attachPinButton(option, entry, rebuildFn);
+                    pinnedItemsContainer.appendChild(option);
+                }
             });
 
             pinnedSection.appendChild(pinnedHeader);
@@ -2831,75 +2839,7 @@ Regards.`,
                 const fieldType = (metadata && metadata.fieldType) ? metadata.fieldType : 'comments';
 
                 if (metadata && metadata.hasSubmenu) {
-                    // Parent item with submenu
-                    const parentOption = document.createElement('div');
-                    Object.assign(parentOption.style, { padding: '10px 15px', cursor: 'pointer', fontSize: '13px', color: '#000', borderBottom: '1px solid #f0f0f0', transition: 'background-color 0.2s ease', position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' });
-
-                    const labelSpan = document.createElement('span');
-                    labelSpan.textContent = item.label;
-
-                    const rightGroup = document.createElement('span');
-                    Object.assign(rightGroup.style, { display: 'flex', alignItems: 'center', gap: '6px' });
-                    rightGroup.appendChild(makeFieldTypePip(fieldType));
-                    const arrowSpan = document.createElement('span');
-                    arrowSpan.textContent = '❯';
-                    arrowSpan.style.fontSize = '10px';
-                    arrowSpan.style.color = '#666';
-                    rightGroup.appendChild(arrowSpan);
-
-                    parentOption.appendChild(labelSpan);
-                    parentOption.appendChild(rightGroup);
-
-                    const submenu = document.createElement('div');
-                    submenu.className = 'bypass-submenu';
-                    Object.assign(submenu.style, { position: 'fixed', backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', minWidth: '200px', display: 'none', zIndex: '10001' });
-                    document.body.appendChild(submenu);
-
-                    const submenuItems = team.enabledResponses
-                        .map(responseKey => {
-                            const subMeta = team.responseMetadata[responseKey];
-                            return (subMeta && subMeta.parentItem === item.value)
-                                ? { value: responseKey, label: subMeta.label, fieldType: subMeta.fieldType || 'comments' }
-                                : null;
-                        })
-                        .filter(Boolean);
-
-                    parentOption.dataset.filterLabel = [item.label, ...submenuItems.map(s => s.label)].join(' ').toLowerCase();
-
-                    submenuItems.forEach(subItem => {
-                        const subOption = buildMenuOption(subItem.label, subItem.fieldType, async (e) => {
-                            e.stopPropagation();
-                            trackRecentlyUsed({ key: subItem.value, label: subItem.label, fieldType: subItem.fieldType });
-                            const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
-                            const textarea = getTargetTextarea(subItem.fieldType);
-                            if (textarea) {
-                                await insertTextWithMention(textarea, team.responses[subItem.value](vars), subItem.fieldType);
-                                flashTargetField(textarea);
-                            }
-                            dropdown.style.display = 'none';
-                            submenu.style.display = 'none';
-                        });
-                        attachPinButton(subOption, { key: subItem.value, label: subItem.label, fieldType: subItem.fieldType }, rebuildFn);
-                        submenu.appendChild(subOption);
-                    });
-
-                    parentOption.onmouseover = () => {
-                        parentOption.style.backgroundColor = '#f0f0f0';
-                        const rect = parentOption.getBoundingClientRect();
-                        submenu.style.top  = `${rect.top}px`;
-                        submenu.style.left = `${rect.right}px`;
-                        submenu.style.display = 'block';
-                    };
-                    parentOption.onmouseout = (e) => {
-                        if (!submenu.contains(e.relatedTarget)) {
-                            parentOption.style.backgroundColor = 'transparent';
-                            submenu.style.display = 'none';
-                        }
-                    };
-                    submenu.onmouseleave  = () => { submenu.style.display = 'none'; parentOption.style.backgroundColor = 'transparent'; };
-                    submenu.onmouseenter  = () => { parentOption.style.backgroundColor = '#f0f0f0'; };
-
-                    itemsContainer.appendChild(parentOption);
+                    itemsContainer.appendChild(buildSubmenuParentOption(item.value, item.label, fieldType, team, dropdown, rebuildFn));
 
                 } else if (!metadata || !metadata.parentItem) {
                     const option = buildMenuOption(item.label, fieldType, async () => {
@@ -3026,6 +2966,79 @@ Regards.`,
             rebuildFn();
         };
         rightGroup.appendChild(pinBtn);
+    }
+
+    function buildSubmenuParentOption(key, label, fieldType, team, dropdown, rebuildFn) {
+        const parentOption = document.createElement('div');
+        Object.assign(parentOption.style, { padding: '10px 15px', cursor: 'pointer', fontSize: '13px', color: '#000', borderBottom: '1px solid #f0f0f0', transition: 'background-color 0.2s ease', position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' });
+
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = label;
+
+        const rightGroup = document.createElement('span');
+        rightGroup.className = 'menu-option-right-group';
+        Object.assign(rightGroup.style, { display: 'flex', alignItems: 'center', gap: '6px' });
+        rightGroup.appendChild(makeFieldTypePip(fieldType));
+        const arrowSpan = document.createElement('span');
+        arrowSpan.textContent = '❯';
+        arrowSpan.style.fontSize = '10px';
+        arrowSpan.style.color = '#666';
+        rightGroup.appendChild(arrowSpan);
+
+        parentOption.appendChild(labelSpan);
+        parentOption.appendChild(rightGroup);
+
+        const submenu = document.createElement('div');
+        submenu.className = 'bypass-submenu';
+        Object.assign(submenu.style, { position: 'fixed', backgroundColor: '#fff', border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', minWidth: '200px', display: 'none', zIndex: '10001' });
+        document.body.appendChild(submenu);
+
+        const submenuItems = team.enabledResponses
+            .map(responseKey => {
+                const subMeta = team.responseMetadata[responseKey];
+                return (subMeta && subMeta.parentItem === key)
+                    ? { value: responseKey, label: subMeta.label, fieldType: subMeta.fieldType || 'comments' }
+                    : null;
+            })
+            .filter(Boolean);
+
+        parentOption.dataset.filterLabel = [label, ...submenuItems.map(s => s.label)].join(' ').toLowerCase();
+
+        submenuItems.forEach(subItem => {
+            const subOption = buildMenuOption(subItem.label, subItem.fieldType, async (e) => {
+                e.stopPropagation();
+                trackRecentlyUsed({ key: subItem.value, label: subItem.label, fieldType: subItem.fieldType });
+                const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                const textarea = getTargetTextarea(subItem.fieldType);
+                if (textarea) {
+                    await insertTextWithMention(textarea, team.responses[subItem.value](vars), subItem.fieldType);
+                    flashTargetField(textarea);
+                }
+                dropdown.style.display = 'none';
+                submenu.style.display = 'none';
+            });
+            attachPinButton(subOption, { key: subItem.value, label: subItem.label, fieldType: subItem.fieldType }, rebuildFn);
+            submenu.appendChild(subOption);
+        });
+
+        parentOption.onmouseover = () => {
+            parentOption.style.backgroundColor = '#f0f0f0';
+            const rect = parentOption.getBoundingClientRect();
+            submenu.style.top  = `${rect.top}px`;
+            submenu.style.left = `${rect.right}px`;
+            submenu.style.display = 'block';
+        };
+        parentOption.onmouseout = (e) => {
+            if (!submenu.contains(e.relatedTarget)) {
+                parentOption.style.backgroundColor = 'transparent';
+                submenu.style.display = 'none';
+            }
+        };
+        submenu.onmouseleave  = () => { submenu.style.display = 'none'; parentOption.style.backgroundColor = 'transparent'; };
+        submenu.onmouseenter  = () => { parentOption.style.backgroundColor = '#f0f0f0'; };
+
+        attachPinButton(parentOption, { key, label, fieldType, hasSubmenu: true }, rebuildFn);
+        return parentOption;
     }
 
     /* ==========================================================
