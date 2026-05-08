@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2
+// @version      1.3
 // @description  Highlight a RITM, PER, or Netskope case number on any page to get a floating button that opens it in a new tab. Toggle via Toolbar.
 // @author       J.R.
 // @match        *://*/*
@@ -19,13 +19,15 @@
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.2';
-    const CHANGELOG = `Version 1.2:
-- Added INC (Incident) ticket type support. Highlight any INC number on any page to open it in ServiceNow alongside RITM and PER.
+    const SCRIPT_VERSION = '1.3';
+    const CHANGELOG = `Version 1.3:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+- Toolbar button now shows a pulsing notification dot when a new version
+  is available and has not been seen yet.
 
-Version 1.1:
-- Added Netskope support case detection (006XXXXX format). Highlight any 006-prefixed 8-digit case number to open it in Netskope's global search.
-- Settings modal now has separate ServiceNow and Netskope sections with independent toggles.`;
+Version 1.2:
+- Added INC (Incident) ticket type support. Highlight any INC number on any page to open it in ServiceNow alongside RITM and PER.`;
 
     function getStoredVersion()    { return GM_getValue('tqo_version', null); }
     function saveVersion(v)        { GM_setValue('tqo_version', v); }
@@ -91,6 +93,48 @@ Version 1.1:
     };
 
     // ─────────────────────────────────────────────────────────────
+    // TOOLBAR NOTIFICATION DOT
+    // ─────────────────────────────────────────────────────────────
+
+    const TOOLBAR_DOT_CLASS = 'tqo-notif-dot';
+
+    function addToolbarNotificationDot() {
+        if (!isNewVersion() || hasSeenChangelog()) return;
+        const tryAdd = (attempts) => {
+            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+            if (!toolEl) {
+                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
+                return;
+            }
+            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
+            toolEl.style.position = 'relative';
+            const dot = document.createElement('div');
+            dot.className = TOOLBAR_DOT_CLASS;
+            Object.assign(dot.style, {
+                position: 'absolute', top: '2px', right: '2px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#007bff', pointerEvents: 'none', zIndex: '10',
+            });
+            let dotBlue = true;
+            const intervalId = setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+            dot.dataset.intervalId = intervalId;
+            toolEl.appendChild(dot);
+        };
+        setTimeout(() => tryAdd(0), 500);
+    }
+
+    function removeToolbarNotificationDot() {
+        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
+        if (dot) {
+            clearInterval(Number(dot.dataset.intervalId));
+            dot.remove();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
 
@@ -122,6 +166,7 @@ Version 1.1:
                 detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'General Toolkit', position: TOOL_POSITION }
             }));
             isRegistered = true;
+            addToolbarNotificationDot();
             console.log('✅ TQO: registered in toolbar');
         } else {
             setTimeout(attemptRegistration, RETRY_DELAY);
@@ -136,6 +181,29 @@ Version 1.1:
     // ─────────────────────────────────────────────────────────────
     // CHANGELOG MODAL
     // ─────────────────────────────────────────────────────────────
+
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
 
     function showChangelogModal() {
         if (document.getElementById('tqo-changelog-modal')) return;
@@ -165,14 +233,6 @@ Version 1.1:
             color: '#333', borderBottom: '2px solid #0073e6', paddingBottom: '8px',
         });
 
-        const body = document.createElement('div');
-        body.textContent = CHANGELOG;
-        Object.assign(body.style, {
-            whiteSpace: 'pre-wrap', lineHeight: '1.6', fontSize: '13px',
-            fontFamily: "'Courier New', monospace", background: '#fafafa',
-            padding: '10px', borderRadius: '5px', marginBottom: '0',
-        });
-
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'Got it!';
         Object.assign(closeBtn.style, {
@@ -186,10 +246,93 @@ Version 1.1:
         closeBtn.onclick = () => {
             overlay.remove(); modal.remove();
             markChangelogAsSeen(); saveVersion(SCRIPT_VERSION);
+            removeToolbarNotificationDot();
             document.getElementById('tqo-changelog-notif')?.remove();
         };
 
-        modal.append(title, body, closeBtn);
+        const cardsWrap = document.createElement('div');
+        cardsWrap.style.marginBottom = '0';
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px',
+                background: isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor: 'pointer', userSelect: 'none',
+            });
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold', fontSize: '13px',
+                color: isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.textContent = 'Latest';
+                Object.assign(tag.style, {
+                    fontSize: '10px', fontWeight: 'bold',
+                    background: '#667eea', color: '#fff',
+                    borderRadius: '3px', padding: '1px 6px',
+                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+                });
+                versionWrap.appendChild(tag);
+            }
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding: isLatest ? '10px 14px' : '0',
+                display: isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '3px 0',
+                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                    color: '#444', lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+            card.appendChild(body);
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            cardsWrap.appendChild(card);
+        });
+
+        modal.append(title, cardsWrap, closeBtn);
         document.body.append(overlay, modal);
         overlay.onclick = () => closeBtn.click();
     }

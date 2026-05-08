@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.8
+// @version      1.2.9
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -24,8 +24,14 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.8';
-    const CHANGELOG = `Version 1.2.8:
+    const SCRIPT_VERSION = '1.2.9';
+    const CHANGELOG = `Version 1.2.9:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+- Toolbar button now shows a pulsing notification dot when a new version
+  is available and has not been seen yet.
+
+Version 1.2.8:
 - Added Custom Categories group: Created / URL Lists Added / URL Lists Removed / Removed
   - Fully reconciled in Worknote summary (same net-change model as URL Lists)
   - Fields: category name + URL Lists textarea
@@ -280,6 +286,29 @@ Version 1.0.0:
      *  CHANGELOG MODAL
      * ==========================================================*/
 
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
+
     function showChangelogModal() {
         const overlay = mk('div', { id: 'ct-changelog-overlay' });
         const modal   = mk('div', { id: 'ct-changelog-modal'   });
@@ -290,8 +319,87 @@ Version 1.0.0:
         const info = mk('div', { className: 'ct-cl-info' });
         info.textContent = `Updated to version ${SCRIPT_VERSION}!`;
 
-        const body = mk('div', { className: 'ct-cl-body' });
-        body.textContent = CHANGELOG;
+        const cardsWrap = document.createElement('div');
+        cardsWrap.style.marginBottom = '0';
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px',
+                background: isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor: 'pointer', userSelect: 'none',
+            });
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold', fontSize: '13px',
+                color: isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.textContent = 'Latest';
+                Object.assign(tag.style, {
+                    fontSize: '10px', fontWeight: 'bold',
+                    background: '#667eea', color: '#fff',
+                    borderRadius: '3px', padding: '1px 6px',
+                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+                });
+                versionWrap.appendChild(tag);
+            }
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding: isLatest ? '10px 14px' : '0',
+                display: isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '3px 0',
+                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                    color: '#444', lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+            card.appendChild(body);
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            cardsWrap.appendChild(card);
+        });
 
         const btn = mk('button', { className: 'ct-cl-ok' });
         btn.textContent = 'Got it!';
@@ -299,9 +407,10 @@ Version 1.0.0:
             overlay.remove(); modal.remove();
             markChangelogAsSeen(); saveVersion(SCRIPT_VERSION);
             document.getElementById('ct-changelog-dot')?.remove();
+            removeToolbarNotificationDot();
         };
 
-        modal.append(h2, info, body, btn);
+        modal.append(h2, info, cardsWrap, btn);
         document.body.append(overlay, modal);
         overlay.onclick = () => btn.click();
     }
@@ -1587,6 +1696,54 @@ Version 1.0.0:
     function toggleSidebar() { sidebarVisible ? hideSidebar() : showSidebar(); }
 
     /* ==========================================================
+     *  TOOLBAR NOTIFICATION DOT
+     * ==========================================================*/
+
+    const TOOL_ID = 'changeTracker';
+
+    // ─────────────────────────────────────────────────────────────
+    // TOOLBAR NOTIFICATION DOT
+    // ─────────────────────────────────────────────────────────────
+
+    const TOOLBAR_DOT_CLASS = 'changeTracker-notif-dot';
+
+    function addToolbarNotificationDot() {
+        if (!isNewVersion() || hasSeenChangelog()) return;
+        const tryAdd = (attempts) => {
+            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+            if (!toolEl) {
+                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
+                return;
+            }
+            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
+            toolEl.style.position = 'relative';
+            const dot = document.createElement('div');
+            dot.className = TOOLBAR_DOT_CLASS;
+            Object.assign(dot.style, {
+                position: 'absolute', top: '2px', right: '2px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#007bff', pointerEvents: 'none', zIndex: '10',
+            });
+            let dotBlue = true;
+            const intervalId = setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+            dot.dataset.intervalId = intervalId;
+            toolEl.appendChild(dot);
+        };
+        setTimeout(() => tryAdd(0), 500);
+    }
+
+    function removeToolbarNotificationDot() {
+        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
+        if (dot) {
+            clearInterval(Number(dot.dataset.intervalId));
+            dot.remove();
+        }
+    }
+
+    /* ==========================================================
      *  TOOLBAR REGISTRATION
      * ==========================================================*/
 
@@ -1603,6 +1760,7 @@ Version 1.0.0:
                 detail: { id:'changeTracker', icon:TOOL_ICON, tooltip:'Change Tracker', position:7 }
             }));
             isRegistered = true;
+            addToolbarNotificationDot();
             console.log('✅ Change Tracker registered!');
         } else {
             setTimeout(attemptRegistration, RETRY_DELAY);

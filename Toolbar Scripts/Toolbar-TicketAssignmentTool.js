@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.2
+// @version      1.2.3
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -26,8 +26,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.2';
-    const CHANGELOG = `Version 1.2.2:
+    const SCRIPT_VERSION = '1.2.3';
+    const CHANGELOG = `Version 1.2.3:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+- Toolbar button now shows a pulsing notification dot when a new version
+  is available and has not been seen yet.
+
+Version 1.2.2:
 - Assignment loading overlay now shows whether the clipboard snippet was copied or not before closing.
 
 Version 1.2.1:
@@ -619,6 +625,29 @@ Version 1.2.1:
      *  CHANGELOG MODAL
      * ==========================================================*/
 
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
+
     function showChangelogModal() {
         const overlay = document.createElement('div');
         overlay.id = 'ticketAssignmentChangelogOverlay';
@@ -633,10 +662,6 @@ Version 1.2.1:
         versionInfo.className = 'version-info';
         versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
 
-        const changelogContent = document.createElement('div');
-        changelogContent.className = 'changelog-content';
-        changelogContent.textContent = CHANGELOG;
-
         const closeButton = document.createElement('button');
         closeButton.className = 'close-changelog';
         closeButton.textContent = 'Got it!';
@@ -645,13 +670,96 @@ Version 1.2.1:
             modal.remove();
             markChangelogAsSeen();
             saveVersion(SCRIPT_VERSION);
+            removeToolbarNotificationDot();
             const notification = document.getElementById('ticketAssignmentChangelogNotification');
             if (notification) notification.remove();
         };
 
         modal.appendChild(title);
         modal.appendChild(versionInfo);
-        modal.appendChild(changelogContent);
+
+        const cardsWrap = document.createElement('div');
+        cardsWrap.style.marginBottom = '0';
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px',
+                background: isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor: 'pointer', userSelect: 'none',
+            });
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold', fontSize: '13px',
+                color: isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.textContent = 'Latest';
+                Object.assign(tag.style, {
+                    fontSize: '10px', fontWeight: 'bold',
+                    background: '#667eea', color: '#fff',
+                    borderRadius: '3px', padding: '1px 6px',
+                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+                });
+                versionWrap.appendChild(tag);
+            }
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding: isLatest ? '10px 14px' : '0',
+                display: isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '3px 0',
+                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                    color: '#444', lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+            card.appendChild(body);
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            cardsWrap.appendChild(card);
+        });
+        modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
 
         document.body.appendChild(overlay);
@@ -718,6 +826,8 @@ Version 1.2.1:
     const toolIcon = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
     </svg>`;
+
+    const TOOL_ID = 'ticketAssignment';
 
     // Global flags
     let isInitialized = false;
@@ -1649,6 +1759,48 @@ Thank you for your cooperation.` : '';
         });
     }
 
+    // ─────────────────────────────────────────────────────────────
+    // TOOLBAR NOTIFICATION DOT
+    // ─────────────────────────────────────────────────────────────
+
+    const TOOLBAR_DOT_CLASS = 'ticketAssign-notif-dot';
+
+    function addToolbarNotificationDot() {
+        if (!isNewVersion() || hasSeenChangelog()) return;
+        const tryAdd = (attempts) => {
+            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+            if (!toolEl) {
+                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
+                return;
+            }
+            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
+            toolEl.style.position = 'relative';
+            const dot = document.createElement('div');
+            dot.className = TOOLBAR_DOT_CLASS;
+            Object.assign(dot.style, {
+                position: 'absolute', top: '2px', right: '2px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#007bff', pointerEvents: 'none', zIndex: '10',
+            });
+            let dotBlue = true;
+            const intervalId = setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+            dot.dataset.intervalId = intervalId;
+            toolEl.appendChild(dot);
+        };
+        setTimeout(() => tryAdd(0), 500);
+    }
+
+    function removeToolbarNotificationDot() {
+        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
+        if (dot) {
+            clearInterval(Number(dot.dataset.intervalId));
+            dot.remove();
+        }
+    }
+
     /* ==========================================================
      *  TOOLBAR REGISTRATION
      * ==========================================================*/
@@ -1670,6 +1822,7 @@ Thank you for your cooperation.` : '';
                 detail: { id: 'ticketAssignment', icon: toolIcon, tooltip: 'Assign Ticket', position: 5 }
             }));
             isRegistered = true;
+            addToolbarNotificationDot();
             console.log('✅ Ticket Assignment Tool registered successfully!');
         } else {
             console.log(`⏳ Toolbar not ready, will retry...`);

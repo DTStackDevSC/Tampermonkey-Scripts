@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.1
+// @version      1.4.2
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -19,21 +19,22 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.4.1 loading...');
+    console.log('🔧 Netskope URL List Manager v1.4.2 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.1';
-    const CHANGELOG = `Version 1.4.1:
-- Insert RITM and Log Entry now insert at exact cursor position with no auto-newlines
-- Insert RITM button now prefixes the ticket number with #
+    const SCRIPT_VERSION = '1.4.2';
+    const CHANGELOG = `Version 1.4.2:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+- Toolbar button now shows a pulsing notification dot when a new version
+  is available and has not been seen yet.
 
-Version 1.4.0:
-- Added log buttons to Create and Update URL list forms
-- Buttons: + Log Entry, Delete Selected, View History (same as Netskope Toolkit)
-- Added Insert RITM button - inserts the current ServiceNow ticket number at cursor`;
+Version 1.4.1:
+- Insert RITM and Log Entry now insert at exact cursor position with no auto-newlines
+- Insert RITM button now prefixes the ticket number with #`;
 
     const TOOL_ICON = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>`;
     const MAX_REGISTRATION_ATTEMPTS = 10;
@@ -717,6 +718,29 @@ Version 1.4.0:
     `;
     document.head.appendChild(changelogStyle);
 
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
+
     function showChangelogModal() {
         const overlay = UI.createElement('div', { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: '1000000' }, { id: 'netskopeChangelogModalOverlay' });
         const modal   = UI.createElement('div', {
@@ -726,13 +750,100 @@ Version 1.4.0:
             borderRadius: '10px', maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto', color: '#333333'
         }, { id: 'netskopeChangelogModal' });
 
-        const closeModal = () => { overlay.remove(); modal.remove(); VersionManager.markChangelogSeen(); document.getElementById('netskopeChangelogNotification')?.remove(); };
+        const closeModal = () => { overlay.remove(); modal.remove(); VersionManager.markChangelogSeen(); document.getElementById('netskopeChangelogNotification')?.remove(); removeToolbarNotificationDot(); };
 
-        modal.innerHTML = `
-            <h2 style="margin-top: 0; margin-bottom: 15px; color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; font-size: 1.5em;">What's New - Version ${SCRIPT_VERSION}</h2>
-            <div style="background-color: #f8f9fa; color: #333; padding: 10px; border-radius: 5px; margin-bottom: 15px; border-left: 4px solid #667eea;">You've been updated to version ${SCRIPT_VERSION}!</div>
-            <div style="white-space: pre-wrap; line-height: 1.6; color: #333; font-family: 'Courier New', Courier, monospace; font-size: 13px; background-color: #fafafa; padding: 10px; border-radius: 5px;">${CHANGELOG}</div>
-        `;
+        const h2 = document.createElement('h2');
+        h2.textContent = `What's New - Version ${SCRIPT_VERSION}`;
+        Object.assign(h2.style, { marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea', paddingBottom: '10px', fontSize: '1.5em' });
+        modal.appendChild(h2);
+
+        const infoDiv = document.createElement('div');
+        infoDiv.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
+        Object.assign(infoDiv.style, { backgroundColor: '#f8f9fa', color: '#333', padding: '10px', borderRadius: '5px', marginBottom: '15px', borderLeft: '4px solid #667eea' });
+        modal.appendChild(infoDiv);
+
+        const cardsWrap = document.createElement('div');
+        cardsWrap.style.marginBottom = '0';
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px',
+                background: isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor: 'pointer', userSelect: 'none',
+            });
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold', fontSize: '13px',
+                color: isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.textContent = 'Latest';
+                Object.assign(tag.style, {
+                    fontSize: '10px', fontWeight: 'bold',
+                    background: '#667eea', color: '#fff',
+                    borderRadius: '3px', padding: '1px 6px',
+                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+                });
+                versionWrap.appendChild(tag);
+            }
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding: isLatest ? '10px 14px' : '0',
+                display: isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '3px 0',
+                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                    color: '#444', lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+            card.appendChild(body);
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            cardsWrap.appendChild(card);
+        });
+        modal.appendChild(cardsWrap);
 
         const closeBtn = UI.createButton('Got it!', '#667eea', closeModal);
         Object.assign(closeBtn.style, { marginTop: '15px', width: '100%', background: '#667eea' });
@@ -2295,6 +2406,54 @@ Version 1.4.0:
     }
 
     /* ==========================================================
+     *  TOOLBAR NOTIFICATION DOT
+     * ==========================================================*/
+
+    const TOOL_ID = 'netskopeUrlListManager';
+
+    // ─────────────────────────────────────────────────────────────
+    // TOOLBAR NOTIFICATION DOT
+    // ─────────────────────────────────────────────────────────────
+
+    const TOOLBAR_DOT_CLASS = 'urlListEditor-notif-dot';
+
+    function addToolbarNotificationDot() {
+        if (!VersionManager.isNewer() || VersionManager.changelogSeen) return;
+        const tryAdd = (attempts) => {
+            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+            if (!toolEl) {
+                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
+                return;
+            }
+            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
+            toolEl.style.position = 'relative';
+            const dot = document.createElement('div');
+            dot.className = TOOLBAR_DOT_CLASS;
+            Object.assign(dot.style, {
+                position: 'absolute', top: '2px', right: '2px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#007bff', pointerEvents: 'none', zIndex: '10',
+            });
+            let dotBlue = true;
+            const intervalId = setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+            dot.dataset.intervalId = intervalId;
+            toolEl.appendChild(dot);
+        };
+        setTimeout(() => tryAdd(0), 500);
+    }
+
+    function removeToolbarNotificationDot() {
+        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
+        if (dot) {
+            clearInterval(Number(dot.dataset.intervalId));
+            dot.remove();
+        }
+    }
+
+    /* ==========================================================
      *  TOOLBAR REGISTRATION
      * ==========================================================*/
 
@@ -2307,6 +2466,7 @@ Version 1.4.0:
                 detail: { id: 'netskopeUrlListManager', icon: TOOL_ICON, tooltip: 'Netskope URL List Manager', position: 2 }
             }));
             isRegistered = true;
+            addToolbarNotificationDot();
             console.log('✅ Netskope URL List Manager registered successfully!');
         } else {
             setTimeout(attemptRegistration, REGISTRATION_RETRY_DELAY);
