@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0
+// @version      1.1
 // @description  Extract domains from text and check their security reputation. Replaces Domain Extractor and Domain Security Check.
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -22,8 +22,17 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0';
-    const CHANGELOG = `Version 1.0:
+    const SCRIPT_VERSION = '1.1';
+    const CHANGELOG = `Version 1.1:
+- Extract tab: each domain row now has a checkbox for selection, and clicking anywhere on
+  the row (except the Check button) toggles it.
+- Extract tab: "Select all / Deselect all" toggle appears above the domain list after extraction.
+- Extract tab: "Check Selected (N)" button in the action row opens security checks for all
+  selected domains with an 800ms stagger between each to avoid tab overload.
+- Security Check tab: new Single / Multiple mode toggle. In Multiple mode, paste one domain
+  per line and check all at once. A progress indicator shows which domain is being opened.
+
+Version 1.0:
 - Initial release combining Domain Extractor and Domain Security Check into one toolbar tool.
 - Extracted domains appear as clickable rows. Clicking any domain sends it directly to the
   Security Check tab with one click.
@@ -483,12 +492,24 @@
             fontWeight: 'bold', fontSize: '13px',
         });
 
+        const countRow = document.createElement('div');
+        Object.assign(countRow.style, {
+            display: 'none', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px',
+        });
+
         const countBadge = document.createElement('div');
         Object.assign(countBadge.style, {
             padding: '7px 12px', background: '#e8f4f8', borderRadius: '4px',
-            color: '#0066cc', fontSize: '12px', fontWeight: 'bold', display: 'none',
-            marginTop: '12px',
+            color: '#0066cc', fontSize: '12px', fontWeight: 'bold',
         });
+
+        const selectAllBtn = document.createElement('button');
+        selectAllBtn.textContent = 'Select all';
+        Object.assign(selectAllBtn.style, {
+            fontSize: '11px', color: '#667eea', background: 'none', border: 'none',
+            cursor: 'pointer', textDecoration: 'underline', padding: '0',
+        });
+        countRow.append(countBadge, selectAllBtn);
 
         const domainList = document.createElement('div');
         Object.assign(domainList.style, {
@@ -498,7 +519,7 @@
 
         const copyRow = document.createElement('div');
         Object.assign(copyRow.style, {
-            display: 'none', gap: '8px', marginTop: '10px',
+            display: 'none', gap: '8px', marginTop: '10px', flexWrap: 'wrap', alignItems: 'center',
         });
 
         const copyLineBtn = document.createElement('button');
@@ -509,8 +530,17 @@
         copyCommaBtn.textContent = 'Copy Comma Separated';
         styleCopyBtn(copyCommaBtn);
 
-        copyRow.append(copyLineBtn, copyCommaBtn);
-        extractPanel.append(textareaLabel, textarea, extractBtn, countBadge, domainList, copyRow);
+        const checkSelectedBtn = document.createElement('button');
+        checkSelectedBtn.textContent = 'Check Selected (0)';
+        checkSelectedBtn.style.display = 'none';
+        Object.assign(checkSelectedBtn.style, {
+            padding: '6px 14px', background: 'linear-gradient(135deg,#667eea 0%,#764ba2 100%)',
+            color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer',
+            fontSize: '12px', fontWeight: 'bold',
+        });
+
+        copyRow.append(copyLineBtn, copyCommaBtn, checkSelectedBtn);
+        extractPanel.append(textareaLabel, textarea, extractBtn, countRow, domainList, copyRow);
 
         /* Security Check panel */
         const checkPanel = document.createElement('div');
@@ -602,7 +632,112 @@
             '✓ VirusTotal<br>' +
             '✓ ServiceNow SPM Request Form (if checked and URL is configured)';
 
-        checkPanel.append(checkDescription, checkInputLabel, checkInput, checkPreview, spmRow, checkBtn, infoBox);
+        /* ── Mode toggle ── */
+        const modeToggleRow = document.createElement('div');
+        Object.assign(modeToggleRow.style, { display: 'flex', gap: '6px', marginBottom: '14px' });
+
+        function makeModeBtn(label) {
+            const btn = document.createElement('button');
+            btn.textContent = label;
+            Object.assign(btn.style, {
+                padding: '4px 16px', border: '1px solid #ccc', borderRadius: '20px',
+                background: '#f0f0f0', color: '#555', fontSize: '12px',
+                cursor: 'pointer', fontWeight: 'bold', transition: 'all 0.15s',
+            });
+            return btn;
+        }
+
+        const singleModeBtn = makeModeBtn('Single');
+        const multiModeBtn  = makeModeBtn('Multiple');
+        modeToggleRow.append(singleModeBtn, multiModeBtn);
+
+        const singleContent = document.createElement('div');
+        singleContent.append(checkDescription, checkInputLabel, checkInput, checkPreview, spmRow, checkBtn, infoBox);
+
+        /* ── Multi-domain content ── */
+        const multiContent = document.createElement('div');
+        multiContent.style.display = 'none';
+
+        const multiLabel = document.createElement('label');
+        multiLabel.textContent = 'Domains to check (one per line):';
+        Object.assign(multiLabel.style, {
+            display: 'block', fontWeight: 'bold', fontSize: '13px', color: '#555', marginBottom: '6px',
+        });
+
+        const multiTextarea = document.createElement('textarea');
+        multiTextarea.placeholder = 'google.com\nexample.com\ngithub.com';
+        Object.assign(multiTextarea.style, {
+            width: '100%', minHeight: '100px', padding: '10px', border: '1px solid #ccc',
+            borderRadius: '6px', fontSize: '13px', fontFamily: '"Courier New", monospace',
+            resize: 'vertical', boxSizing: 'border-box',
+        });
+
+        const multiCountLabel = document.createElement('div');
+        Object.assign(multiCountLabel.style, {
+            fontSize: '11px', color: '#999', marginTop: '4px', minHeight: '16px',
+        });
+
+        const multiCheckBtn = document.createElement('button');
+        multiCheckBtn.textContent = '🔍 Check All Domains';
+        Object.assign(multiCheckBtn.style, {
+            marginTop: '12px', padding: '10px 20px', border: 'none', borderRadius: '6px',
+            cursor: 'pointer', background: 'linear-gradient(135deg,#667eea 0%,#764ba2 100%)',
+            color: '#fff', fontWeight: 'bold', fontSize: '14px', width: '100%',
+            transition: 'transform 0.15s',
+        });
+        multiCheckBtn.onmouseover = () => multiCheckBtn.style.transform = 'scale(1.02)';
+        multiCheckBtn.onmouseout  = () => multiCheckBtn.style.transform = 'scale(1)';
+
+        const bulkProgress = document.createElement('div');
+        Object.assign(bulkProgress.style, {
+            marginTop: '10px', padding: '8px 12px', background: '#e8f4f8',
+            borderRadius: '6px', fontSize: '12px', color: '#0066cc', display: 'none',
+        });
+
+        multiTextarea.addEventListener('input', () => {
+            const n = multiTextarea.value.split('\n').filter(l => l.trim()).length;
+            multiCountLabel.textContent = n > 0 ? `${n} domain${n !== 1 ? 's' : ''} entered` : '';
+            multiCheckBtn.textContent = `🔍 Check All Domains${n > 0 ? ` (${n})` : ''}`;
+        });
+
+        multiCheckBtn.addEventListener('click', () => {
+            const domains = multiTextarea.value.split('\n')
+                .map(l => stripToDomain(l.trim())).filter(Boolean);
+            if (!domains.length) { alert('Please enter at least one domain.'); multiTextarea.focus(); return; }
+            multiCheckBtn.disabled = true;
+            runBulkCheck(domains,
+                (current, total) => {
+                    bulkProgress.style.display = 'block';
+                    bulkProgress.textContent = `Checking domain ${current} of ${total}...`;
+                },
+                () => {
+                    multiCheckBtn.disabled = false;
+                    bulkProgress.textContent = `Done. Opened tabs for ${domains.length} domain${domains.length !== 1 ? 's' : ''}.`;
+                    setTimeout(() => { bulkProgress.style.display = 'none'; }, 4000);
+                }
+            );
+        });
+
+        multiContent.append(multiLabel, multiTextarea, multiCountLabel, multiCheckBtn, bulkProgress);
+
+        function setCheckMode(isMulti) {
+            singleContent.style.display = isMulti ? 'none' : 'block';
+            multiContent.style.display  = isMulti ? 'block' : 'none';
+
+            singleModeBtn.style.background = isMulti ? '#f0f0f0' : '#667eea';
+            singleModeBtn.style.color      = isMulti ? '#555'    : '#fff';
+            singleModeBtn.style.border     = isMulti ? '1px solid #ccc' : '1px solid #667eea';
+
+            multiModeBtn.style.background = isMulti ? '#667eea' : '#f0f0f0';
+            multiModeBtn.style.color      = isMulti ? '#fff'    : '#555';
+            multiModeBtn.style.border     = isMulti ? '1px solid #667eea' : '1px solid #ccc';
+        }
+
+        setCheckMode(false);
+        singleModeBtn.addEventListener('click', () => { setCheckMode(false); setTimeout(() => checkInput.focus(), 50); });
+        multiModeBtn.addEventListener('click',  () => { setCheckMode(true);  setTimeout(() => multiTextarea.focus(), 50); });
+
+        checkPanel.append(modeToggleRow, singleContent, multiContent);
 
         panels.append(extractPanel, checkPanel);
         modal.append(header, tabBar, panels);
@@ -625,6 +760,7 @@
 
         function sendToSecurityCheck(domain) {
             activateTab(false);
+            setCheckMode(false);
             checkInput.value = domain;
             checkInput.dispatchEvent(new Event('input'));
             setTimeout(() => checkInput.focus(), 50);
@@ -632,12 +768,22 @@
 
         /* ── Extract logic ── */
         let lastDomains = [];
+        const selectedDomains = new Set();
+
+        function updateCheckSelectedBtn() {
+            const n = selectedDomains.size;
+            checkSelectedBtn.textContent = `Check Selected (${n})`;
+            checkSelectedBtn.style.display = n > 0 ? 'inline-block' : 'none';
+        }
 
         function runExtract() {
             const raw = textarea.value;
             domainList.innerHTML = '';
             copyRow.style.display = 'none';
-            countBadge.style.display = 'none';
+            countRow.style.display = 'none';
+            selectedDomains.clear();
+            updateCheckSelectedBtn();
+            selectAllBtn.textContent = 'Select all';
 
             if (!raw.trim()) return;
 
@@ -652,14 +798,24 @@
             }
 
             countBadge.textContent = `Found ${lastDomains.length} unique domain${lastDomains.length !== 1 ? 's' : ''}`;
-            countBadge.style.display = 'block';
+            countRow.style.display = 'flex';
 
             lastDomains.forEach(domain => {
                 const row = document.createElement('div');
                 Object.assign(row.style, {
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5',
-                    borderRadius: '5px', gap: '10px',
+                    borderRadius: '5px', gap: '10px', cursor: 'pointer',
+                });
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                Object.assign(cb.style, { width: '14px', height: '14px', margin: '0', cursor: 'pointer', flexShrink: '0' });
+                cb.addEventListener('change', () => {
+                    if (cb.checked) selectedDomains.add(domain);
+                    else selectedDomains.delete(domain);
+                    updateCheckSelectedBtn();
+                    selectAllBtn.textContent = selectedDomains.size === lastDomains.length ? 'Deselect all' : 'Select all';
                 });
 
                 const domainText = document.createElement('span');
@@ -679,12 +835,35 @@
                 });
                 checkRowBtn.onclick = () => sendToSecurityCheck(domain);
 
-                row.append(domainText, checkRowBtn);
+                row.addEventListener('click', e => {
+                    if (e.target === cb || e.target === checkRowBtn) return;
+                    cb.checked = !cb.checked;
+                    cb.dispatchEvent(new Event('change'));
+                });
+
+                row.append(cb, domainText, checkRowBtn);
                 domainList.appendChild(row);
             });
 
             copyRow.style.display = 'flex';
         }
+
+        selectAllBtn.addEventListener('click', () => {
+            const allSelected = selectedDomains.size === lastDomains.length;
+            domainList.querySelectorAll('input[type=checkbox]').forEach((cb, i) => {
+                cb.checked = !allSelected;
+                if (!allSelected) selectedDomains.add(lastDomains[i]);
+                else selectedDomains.delete(lastDomains[i]);
+            });
+            updateCheckSelectedBtn();
+            selectAllBtn.textContent = allSelected ? 'Select all' : 'Deselect all';
+        });
+
+        checkSelectedBtn.addEventListener('click', () => {
+            const domains = Array.from(selectedDomains).map(d => stripToDomain(d)).filter(Boolean);
+            if (!domains.length) return;
+            runBulkCheck(domains);
+        });
 
         extractBtn.addEventListener('click', runExtract);
         textarea.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') runExtract(); });
@@ -733,9 +912,27 @@
             }
         }
 
-        modal._activateTab        = activateTab;
+        function runBulkCheck(domains, onProgress, onComplete) {
+            const total = domains.length;
+            let current = 0;
+            function checkNext() {
+                if (current >= total) { if (onComplete) onComplete(); return; }
+                const domain = domains[current];
+                GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${domain}`, { active: false, insert: true });
+                GM_openInTab(`https://exchange.xforce.ibmcloud.com/url/${domain}`,          { active: false, insert: true });
+                GM_openInTab(`https://www.virustotal.com/gui/domain/${domain}`,             { active: false, insert: true });
+                current++;
+                if (onProgress) onProgress(current, total);
+                if (current < total) setTimeout(checkNext, 800);
+                else if (onComplete) onComplete();
+            }
+            checkNext();
+        }
+
+        modal._activateTab         = activateTab;
         modal._sendToSecurityCheck = sendToSecurityCheck;
         modal._checkInput          = checkInput;
+        modal._setCheckMode        = setCheckMode;
     }
 
     function styleCopyBtn(btn) {
@@ -762,6 +959,7 @@
             const domain = stripToDomain(selected);
             if (domain) {
                 modal._activateTab(false);
+                modal._setCheckMode(false);
                 modal._checkInput.value = selected;
                 modal._checkInput.dispatchEvent(new Event('input'));
                 setTimeout(() => modal._checkInput.focus(), 100);
