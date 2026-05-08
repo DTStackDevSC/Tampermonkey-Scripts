@@ -3,11 +3,12 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.3
+// @version      1.0.4
 // @description  Quick overview panel for ServiceNow tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
+// @match        https://*.service-now.com/now/nav/ui/classic/params/target/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-start
@@ -22,8 +23,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.3';
-    const CHANGELOG = `Version 1.0.3:
+    const SCRIPT_VERSION = '1.0.4';
+    const CHANGELOG = `Version 1.0.4:
+- Added dual mode support for Polaris (Dashboard) and Classic (New Tab) ticket access.
+  All field extraction now works when tickets are opened from the ServiceNow dashboard
+  via shadow DOM iframe traversal. Script now also matches the dashboard URL pattern.
+- Standard ticket fields prefer g_form.getDisplayValue() over DOM queries for
+  more reliable value resolution in both modes.
+
+Version 1.0.3:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -390,27 +398,53 @@ Version 1.0.2:
      *  DATA EXTRACTION FUNCTIONS
      * ==========================================================*/
 
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
+                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
+            }
+        }
+        if (window.g_form) {
+            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        }
+        return null;
+    }
+
     function getFieldValue(fieldId) {
-        // Try different field ID formats - prioritize display values over system IDs
+        const ctx = getTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+
+        // Prefer g_form display values for standard ticket fields
+        if (ctx && ctx.gForm) {
+            const bareField = fieldId.includes('.') ? fieldId.split('.').slice(1).join('.') : fieldId;
+            try {
+                const dv = ctx.gForm.getDisplayValue(bareField);
+                if (dv && dv.trim() && !/^[a-f0-9]{32}$/i.test(dv.trim())) return dv.trim();
+                const v = ctx.gForm.getValue(bareField);
+                if (v && v.trim() && !/^[a-f0-9]{32}$/i.test(v.trim())) return v.trim();
+            } catch(e) { /* field not on form, fall through to DOM */ }
+        }
+
+        // DOM fallback — uses ctx.doc so it works inside the Polaris iframe
         const patterns = [
-            `${fieldId}_label`,           // For reference fields (e.g., requested_for_label)
-            `sys_display.${fieldId}`,     // Display value for reference fields
-            `sys_readonly.${fieldId}`,    // Read-only display values
-            `sys_readonly.sys_display.${fieldId}`, // Combo read-only + display
-            fieldId                        // Direct field (last resort)
+            `${fieldId}_label`,
+            `sys_display.${fieldId}`,
+            `sys_readonly.${fieldId}`,
+            `sys_readonly.sys_display.${fieldId}`,
+            fieldId
         ];
 
         for (const pattern of patterns) {
-            const element = document.getElementById(pattern);
+            const element = doc.getElementById(pattern);
             if (element) {
-                // Check value attribute first
                 if (element.value && element.value.trim()) {
-                    // Skip if it looks like a sys_id (32 character hex string)
                     if (!/^[a-f0-9]{32}$/i.test(element.value.trim())) {
                         return element.value.trim();
                     }
                 }
-                // Check textContent for readonly fields
                 if (element.textContent && element.textContent.trim()) {
                     const text = element.textContent.trim();
                     if (!/^[a-f0-9]{32}$/i.test(text)) {
@@ -420,9 +454,8 @@ Version 1.0.2:
             }
         }
 
-        // Special handling for select elements (state, priority, etc.)
-        const selectElement = document.getElementById(fieldId) ||
-                             document.getElementById(`sys_readonly.${fieldId}`);
+        const selectElement = doc.getElementById(fieldId) ||
+                             doc.getElementById(`sys_readonly.${fieldId}`);
         if (selectElement && selectElement.tagName === 'SELECT') {
             const selectedOption = selectElement.options[selectElement.selectedIndex];
             if (selectedOption && selectedOption.text) {
@@ -434,14 +467,16 @@ Version 1.0.2:
     }
 
     function getVariableValue(variableName) {
-        // Try to find sys_display fields for reference variables
+        const ctx = getTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+
         const displayPatterns = [
             `sys_display.ni.VE${variableName}`,
             `ni.VE${variableName}_label`
         ];
 
         for (const pattern of displayPatterns) {
-            const elements = document.querySelectorAll(`input[id*="${pattern}"]`);
+            const elements = doc.querySelectorAll(`input[id*="${pattern}"]`);
             for (const elem of elements) {
                 if (elem.value && elem.value.trim() && !/^[a-f0-9]{32}$/i.test(elem.value.trim())) {
                     return elem.value.trim();
@@ -449,8 +484,7 @@ Version 1.0.2:
             }
         }
 
-        // Try direct ID lookup for textareas and inputs
-        const directElement = document.getElementById(`ni.VE${variableName}`);
+        const directElement = doc.getElementById(`ni.VE${variableName}`);
         if (directElement) {
             if (directElement.tagName === 'TEXTAREA' && directElement.value && directElement.value.trim()) {
                 return directElement.value.trim();
@@ -460,18 +494,17 @@ Version 1.0.2:
             }
         }
 
-        // Try to get catalog variable values by name attribute
-        const textarea = document.querySelector(`textarea[name*="${variableName}"], textarea[id*="${variableName}"]`);
+        const textarea = doc.querySelector(`textarea[name*="${variableName}"], textarea[id*="${variableName}"]`);
         if (textarea && textarea.value && textarea.value.trim()) {
             return textarea.value.trim();
         }
 
-        const input = document.querySelector(`input[name*="${variableName}"][type="text"], input[name*="${variableName}"][type="hidden"]`);
+        const input = doc.querySelector(`input[name*="${variableName}"][type="text"], input[name*="${variableName}"][type="hidden"]`);
         if (input && input.value && input.value.trim() && !/^[a-f0-9]{32}$/i.test(input.value.trim())) {
             return input.value.trim();
         }
 
-        const select = document.querySelector(`select[name*="${variableName}"], select[id*="${variableName}"]`);
+        const select = doc.querySelector(`select[name*="${variableName}"], select[id*="${variableName}"]`);
         if (select && select.value && select.value !== '') {
             const selectedOption = select.options[select.selectedIndex];
             return selectedOption ? selectedOption.text : select.value;
@@ -481,6 +514,8 @@ Version 1.0.2:
     }
 
     function extractSummaryData() {
+        const ctx = getTicketContext();
+        const doc = (ctx && ctx.doc) || document;
         const data = {};
 
         // Basic fields
@@ -497,14 +532,13 @@ Version 1.0.2:
         data.catalogItem = getFieldValue('sc_req_item.cat_item');
 
         // Try to get business justification by finding span with aria-label inside label
-        const businessJustSpan = document.querySelector('span[aria-label="Business Justification"]');
+        const businessJustSpan = doc.querySelector('span[aria-label="Business Justification"]');
         if (businessJustSpan) {
-            // Get the parent label and find its 'for' attribute
             const parentLabel = businessJustSpan.closest('label');
             if (parentLabel) {
                 const labelFor = parentLabel.getAttribute('for');
                 if (labelFor) {
-                    const businessJustTextarea = document.getElementById(labelFor);
+                    const businessJustTextarea = doc.getElementById(labelFor);
                     if (businessJustTextarea && businessJustTextarea.value && businessJustTextarea.value.trim()) {
                         data.description = businessJustTextarea.value.trim();
                     }
@@ -520,13 +554,13 @@ Version 1.0.2:
         }
 
         // Get web protection platform - search by span aria-label
-        const platformSpan = document.querySelector('span[aria-label="Web Protection Platform"]');
+        const platformSpan = doc.querySelector('span[aria-label="Web Protection Platform"]');
         if (platformSpan) {
             const parentLabel = platformSpan.closest('label');
             if (parentLabel) {
                 const labelFor = parentLabel.getAttribute('for');
                 if (labelFor) {
-                    const platformSelect = document.getElementById(labelFor);
+                    const platformSelect = doc.getElementById(labelFor);
                     if (platformSelect && platformSelect.value) {
                         const selectedOption = platformSelect.options[platformSelect.selectedIndex];
                         data.platform = selectedOption ? selectedOption.text : platformSelect.value;
@@ -539,13 +573,13 @@ Version 1.0.2:
         }
 
         // Get type of request - search by span aria-label
-        const typeSpan = document.querySelector('span[aria-label="Type of Request"]');
+        const typeSpan = doc.querySelector('span[aria-label="Type of Request"]');
         if (typeSpan) {
             const parentLabel = typeSpan.closest('label');
             if (parentLabel) {
                 const labelFor = parentLabel.getAttribute('for');
                 if (labelFor) {
-                    const typeSelect = document.getElementById(labelFor);
+                    const typeSelect = doc.getElementById(labelFor);
                     if (typeSelect && typeSelect.value) {
                         const selectedOption = typeSelect.options[typeSelect.selectedIndex];
                         data.requestType = selectedOption ? selectedOption.text : typeSelect.value;
@@ -558,14 +592,13 @@ Version 1.0.2:
         }
 
         // Get requesting member firm - search by span aria-label
-        const firmSpan = document.querySelector('span[aria-label="Requesting Member Firm"]');
+        const firmSpan = doc.querySelector('span[aria-label="Requesting Member Firm"]');
         if (firmSpan) {
             const parentLabel = firmSpan.closest('label');
             if (parentLabel) {
                 const labelFor = parentLabel.getAttribute('for');
                 if (labelFor) {
-                    // labelFor is "sys_display.ni.VE..." so use it directly
-                    const firmInput = document.getElementById(labelFor);
+                    const firmInput = doc.getElementById(labelFor);
                     if (firmInput && firmInput.value && firmInput.value.trim() && !/^[a-f0-9]{32}$/i.test(firmInput.value.trim())) {
                         data.memberFirm = firmInput.value.trim();
                     }
@@ -578,13 +611,13 @@ Version 1.0.2:
         }
 
         // Get application/URL - search by span aria-label
-        const appSpan = document.querySelector('span[aria-label="Application / URL"]');
+        const appSpan = doc.querySelector('span[aria-label="Application / URL"]');
         if (appSpan) {
             const parentLabel = appSpan.closest('label');
             if (parentLabel) {
                 const labelFor = parentLabel.getAttribute('for');
                 if (labelFor) {
-                    const appInput = document.getElementById(labelFor);
+                    const appInput = doc.getElementById(labelFor);
                     if (appInput && appInput.value && appInput.value.trim()) {
                         data.applicationUrl = appInput.value.trim();
                     }
