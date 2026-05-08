@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.15
-// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, and URL list history. Integrated with Toolbar v2.
+// @version      1.16
+// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, and DLP entity character counter. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
 // @grant        GM_getValue
@@ -23,13 +23,14 @@
     // ─────────────────────────────────────────────────────────────
 
     const SETTING_KEYS = {
-        copyButtons:    'toolkit_copyButtons',
-        openButtons:    'toolkit_openButtons',
-        smtpAutofill:   'toolkit_smtpAutofill',
-        saveReminder:   'toolkit_saveReminder',
-        descriptionLog: 'toolkit_descriptionLog',
-        urlListHistory: 'toolkit_urlListHistory',
-        sslDomainLog:   'toolkit_sslDomainLog',
+        copyButtons:     'toolkit_copyButtons',
+        openButtons:     'toolkit_openButtons',
+        smtpAutofill:    'toolkit_smtpAutofill',
+        saveReminder:    'toolkit_saveReminder',
+        descriptionLog:  'toolkit_descriptionLog',
+        urlListHistory:  'toolkit_urlListHistory',
+        sslDomainLog:    'toolkit_sslDomainLog',
+        dlpCharCounter:  'toolkit_dlpCharCounter',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -39,16 +40,17 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.15';
-    const CHANGELOG = `Version 1.15:
+    const SCRIPT_VERSION = '1.16';
+    const CHANGELOG = `Version 1.16:
+- Added DLP Entity Character Counter feature - shows a live character count
+  below the regex/keyword input field in the DLP Edit Entity modal.
+- Feature can be toggled on/off from the toolkit settings like all others.
+
+Version 1.15:
 - Settings modal: Log Buttons (Description Log, URL List History, SSL Removal)
   are now grouped under a collapsible category to reduce clutter.
 - Settings modal now scrolls when content doesn't fit the screen.
-- Added "Your Name" field directly in the settings modal for quick edits.
-
-Version 1.14:
-- SSL Removal Entry modal now has an optional "Domains Removed" field.
-  When filled, the inserted entry becomes: #RITM | Date | Name | Removed | domains.`;
+- Added "Your Name" field directly in the settings modal for quick edits.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -292,6 +294,11 @@ Version 1.14:
             label:       '🔒 SSL Decryption Removal Entry Button',
             description: 'On SSL Decryption policy pages, adds an "+ Add Removal Entry" button alongside the description log buttons. Inserts a #RITM | Date | Name | Removed marker at cursor. Also adapts the "Add Log Entry" modal label to "Domain Changes".',
         },
+        {
+            key:         'dlpCharCounter',
+            label:       '🔢 DLP Entity Character Counter',
+            description: 'Adds a live character count below the regex/keyword input field in the DLP Edit Entity modal.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -512,6 +519,12 @@ Version 1.14:
                         });
                         injectDescriptionLogButtons();
                     }
+                    if (key === 'dlpCharCounter') {
+                        removeAll('.char-counter');
+                        document.querySelectorAll('[data-counter-added]').forEach(el => {
+                            delete el.dataset.counterAdded;
+                        });
+                    }
                 }
                 showReloadNotice();
             });
@@ -545,7 +558,7 @@ Version 1.14:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'smtpAutofill', 'saveReminder'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -1984,7 +1997,43 @@ Version 1.14:
     }
 
     // ─────────────────────────────────────────────────────────────
-    // FEATURE 7 — URL LIST HISTORY
+    // FEATURE 7 — DLP ENTITY CHARACTER COUNTER
+    // ─────────────────────────────────────────────────────────────
+
+    function addDlpCharCounter(input) {
+        if (input.nextElementSibling && input.nextElementSibling.classList.contains('char-counter')) return;
+
+        const counter = document.createElement('div');
+        counter.className = 'char-counter';
+        counter.style.cssText = 'margin-top: 4px; font-size: 12px; color: #666; font-family: inherit;';
+        counter.textContent = `Characters: ${input.value.length}`;
+
+        const flexContainer = input.closest('.ns-flex');
+        if (flexContainer && flexContainer.parentNode) {
+            flexContainer.parentNode.insertBefore(counter, flexContainer.nextSibling);
+        }
+
+        input.addEventListener('input', function () {
+            counter.textContent = `Characters: ${this.value.length}`;
+        });
+
+        const attrObserver = new MutationObserver(function () {
+            counter.textContent = `Characters: ${input.value.length}`;
+        });
+        attrObserver.observe(input, { attributes: true, attributeFilter: ['value'] });
+    }
+
+    function checkDlpCharCounters() {
+        if (!getSetting('dlpCharCounter')) return;
+        const input = document.querySelector('input[placeholder*="Add a regex, keyword or predefined data identifier"]');
+        if (input && !input.dataset.counterAdded) {
+            input.dataset.counterAdded = 'true';
+            addDlpCharCounter(input);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FEATURE 8 — URL LIST HISTORY
     // ─────────────────────────────────────────────────────────────
 
     const URL_LIST_TA_SELECTORS = [
@@ -2729,6 +2778,7 @@ Version 1.14:
         interceptSaveButtons();
         injectDescriptionLogButtons();
         injectUrlListHistoryButtons();
+        checkDlpCharCounters();
     }
 
     let burst = 0;
@@ -2764,6 +2814,8 @@ Version 1.14:
                     n.querySelector?.('button.ns-btn-primary') ||
                     n.querySelector?.('textarea.ns-form-textarea') ||
                     n.querySelector?.('textarea#category-description') ||
+                    n.querySelector?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
+                    n.matches?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
                     URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel))
                 );
             })
