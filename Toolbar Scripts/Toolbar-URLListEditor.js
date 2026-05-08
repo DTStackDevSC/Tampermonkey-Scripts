@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.6
+// @version      1.5.0
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,24 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.4.5 loading...');
+    console.log('🔧 Netskope URL List Manager v1.5.0 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.6';
-    const CHANGELOG = `Version 1.4.6:
+    const SCRIPT_VERSION = '1.5.0';
+    const CHANGELOG = `Version 1.5.0:
+- Temporary tenant switch: a dropdown in the API Configuration panel lets you override
+  the auto-detected tenant for the current session. The override resets automatically
+  when the modal is closed and is never saved to storage. If the target tenant has a
+  saved token, its passphrase is prompted on switch.
+- Inline domain lookup in the URL Lists view: a search bar next to the list filter lets
+  you search a URL or domain across all loaded lists without leaving the list view.
+  Results show which lists contain a match, with matched entries expandable per list.
+  Clearing the search restores the normal list view.
+
+Version 1.4.6:
 - Fixed dark mode compatibility: all modals now force light backgrounds and dark text
   via injected CSS with !important so ServiceNow dark mode cannot override script UI
   inputs, selects, and textareas.
@@ -358,6 +368,10 @@ Version 1.4.1:
     /* ----------------------------------------------------------
      *  Updated detectTenant() — resolves via GM-stored hosts
      * ----------------------------------------------------------*/
+    function getActiveTenant() {
+        return temporaryTenant || detectTenant();
+    }
+
     function detectTenant() {
         const ctx = getTicketContext();
         const doc = (ctx && ctx.doc) || document;
@@ -403,6 +417,7 @@ Version 1.4.1:
     let registrationAttempts = 0;
     let currentUrlLists = [];
     let sessionPassphrases = {};
+    let temporaryTenant = null;
 
     /* ==========================================================
      *  SESSION MANAGEMENT (Tenant-Specific)
@@ -1037,6 +1052,95 @@ Version 1.4.1:
     }
 
     /* ==========================================================
+     *  TENANT SWITCH HELPERS
+     * ==========================================================*/
+
+    function populateTenantSwitchSelect() {
+        const select = document.getElementById('tenant-switch-select');
+        if (!select) return;
+        select.innerHTML = '<option value="">— Use auto-detected tenant —</option>';
+        for (const { key } of TENANT_HOST_KEYS) {
+            const host = GM_getValue(key, null);
+            if (!host || !host.trim()) continue;
+            const type = Object.entries(TENANT_TYPE_TO_KEY).find(([, k]) => k === key)?.[0];
+            const opt = document.createElement('option');
+            opt.value = host.trim();
+            opt.dataset.tenantType = type || '';
+            opt.textContent = `${type}: ${host.trim()}`;
+            select.appendChild(opt);
+        }
+        select.value = temporaryTenant || '';
+        select.onchange = async () => {
+            const opt = select.options[select.selectedIndex];
+            await applyTenantSwitch(opt.dataset.tenantType || '', select.value || null);
+        };
+    }
+
+    async function applyTenantSwitch(tenantType, tenantHost) {
+        if (tenantHost && Storage.hasToken(tenantHost) && !SessionManager.hasPassphrase(tenantHost)) {
+            let attempts = 0;
+            const maxAttempts = 3;
+            while (attempts < maxAttempts) {
+                try {
+                    const passphrase = await UI.promptPassphrase(
+                        attempts === 0 ? `Unlock ${tenantType} Token` : `Unlock ${tenantType} Token (Attempt ${attempts + 1}/${maxAttempts})`,
+                        attempts === 0
+                            ? `Enter the passphrase for your ${tenantType} API token (${tenantHost}).`
+                            : '❌ Invalid passphrase. Please try again.',
+                        false
+                    );
+                    if (await Storage.verifyPassphrase(tenantHost, passphrase)) {
+                        SessionManager.setPassphrase(tenantHost, passphrase);
+                        break;
+                    } else {
+                        attempts++;
+                        if (attempts >= maxAttempts) {
+                            alert('❌ Maximum unlock attempts reached.');
+                            const sel = document.getElementById('tenant-switch-select');
+                            if (sel) sel.value = temporaryTenant || '';
+                            return;
+                        }
+                    }
+                } catch (err) {
+                    const sel = document.getElementById('tenant-switch-select');
+                    if (sel) sel.value = temporaryTenant || '';
+                    if (err.message !== 'USER_CANCELLED') alert('❌ Failed to unlock token: ' + err.message);
+                    return;
+                }
+            }
+        }
+
+        temporaryTenant = tenantHost || null;
+        currentUrlLists = [];
+        resetModal();
+
+        const tenantDisplay = document.getElementById('tenant-display');
+        if (tenantDisplay) {
+            if (tenantHost) {
+                tenantDisplay.innerHTML = `⚡ <strong>${tenantType}</strong>: ${tenantHost} <span style="font-size:10px;font-weight:normal;">(temporary override)</span>`;
+                tenantDisplay.style.backgroundColor = '#fff3cd';
+                tenantDisplay.style.color = '#856404';
+                tenantDisplay.style.border = '1px solid #ffeaa7';
+            } else {
+                const detected = detectTenant();
+                if (detected) {
+                    tenantDisplay.textContent = detected;
+                    tenantDisplay.style.backgroundColor = '#d4edda';
+                    tenantDisplay.style.color = '#155724';
+                    tenantDisplay.style.border = '1px solid #ccc';
+                } else {
+                    tenantDisplay.textContent = 'Not detected — Please select a Member Firm in ServiceNow (or configure tenant hosts via ⚙ Tenant Hosts)';
+                    tenantDisplay.style.backgroundColor = '#fff3cd';
+                    tenantDisplay.style.color = '#856404';
+                    tenantDisplay.style.border = '1px solid #ccc';
+                }
+            }
+        }
+
+        await buildTokenUI(getActiveTenant());
+    }
+
+    /* ==========================================================
      *  MODAL INITIALIZATION
      * ==========================================================*/
 
@@ -1048,7 +1152,7 @@ Version 1.4.1:
             backgroundColor: 'rgba(0, 0, 0, 0.5)', zIndex: '999997', display: 'none'
         }, { id: 'netskope-urllist-backdrop' });
 
-        const closeModal = () => { modal.style.display = 'none'; backdrop.style.display = 'none'; resetModal(); };
+        const closeModal = () => { temporaryTenant = null; modal.style.display = 'none'; backdrop.style.display = 'none'; resetModal(); const sel = document.getElementById('tenant-switch-select'); if (sel) sel.value = ''; };
         backdrop.onclick = closeModal;
         document.body.appendChild(backdrop);
 
@@ -1115,6 +1219,13 @@ Version 1.4.1:
             <div style="width: 100%; margin-bottom: 10px;">
                 <label style="display: block; font-weight: bold; font-size: 13px; color: #555; margin-bottom: 5px;">Detected Tenant:</label>
                 <div id="tenant-display" style="padding: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #e8f4f8; font-size: 13px; color: #0066cc; font-weight: bold; box-sizing: border-box;">Detecting...</div>
+            </div>
+            <div style="width: 100%; margin-bottom: 10px;">
+                <label style="display: block; font-size: 12px; font-weight: bold; color: #555; margin-bottom: 4px;">Temporary Tenant Override:</label>
+                <select id="tenant-switch-select" style="width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; box-sizing: border-box; color: #333; background-color: #fff;">
+                    <option value="">— Use auto-detected tenant —</option>
+                </select>
+                <div style="font-size: 11px; color: #888; margin-top: 4px;">Session-only override. Resets automatically when the modal closes.</div>
             </div>
             <div id="api-token-container" style="width: 100%;"></div>
         `;
@@ -1208,6 +1319,7 @@ Version 1.4.1:
 
         modal.style.display = 'flex';
         if (backdrop) backdrop.style.display = 'block';
+        populateTenantSwitchSelect();
 
         const tenantDisplay = document.getElementById('tenant-display');
         if (tenantDisplay) {
@@ -1275,7 +1387,7 @@ Version 1.4.1:
      * ==========================================================*/
 
     async function makeApiRequest(method, endpoint, data, onSuccess, onError) {
-        const tenant = detectTenant();
+        const tenant = getActiveTenant();
 
         if (!tenant)                        return UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning');
         if (!Storage.hasToken(tenant))      return UI.showStatus('⚠️ Please save your API token first', 'warning');
@@ -1335,15 +1447,22 @@ Version 1.4.1:
 
         container.innerHTML = `
             <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Available URL Lists</h3>
-            <div style="margin-bottom: 10px;">
-                <input id="urllist-search" type="text" placeholder="🔍 Search lists by name..."
-                    style="width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+            <div style="margin-bottom: 8px;">
+                <input id="urllist-search" type="text" placeholder="🔍 Filter lists by name..."
+                    style="width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; color: #333;">
+            </div>
+            <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: stretch;">
+                <input id="urllist-domain-search" type="text" placeholder="🔎 Search URL or domain across all lists…"
+                    style="flex: 1; padding: 8px 12px; border: 2px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: monospace; color: #333; background-color: #fff; transition: border-color 0.2s;">
+                <button id="urllist-domain-search-btn" style="padding: 8px 14px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; white-space: nowrap; flex-shrink: 0;">🔎 Search</button>
             </div>
             <div id="urllist-wrapper" style="flex: 1; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; min-height: 200px;"></div>
         `;
 
-        const wrapper = document.getElementById('urllist-wrapper');
-        const search  = document.getElementById('urllist-search');
+        const wrapper          = document.getElementById('urllist-wrapper');
+        const search           = document.getElementById('urllist-search');
+        const domainSearch     = document.getElementById('urllist-domain-search');
+        const domainSearchBtn  = document.getElementById('urllist-domain-search-btn');
 
         function renderLists(filteredLists) {
             wrapper.innerHTML = filteredLists.length === 0
@@ -1364,11 +1483,43 @@ Version 1.4.1:
             });
         }
 
+        function runDomainSearch() {
+            const raw = domainSearch.value.trim();
+            if (!raw) {
+                const nameTerm = search.value.toLowerCase().trim();
+                renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(nameTerm)));
+                return;
+            }
+            const query = raw.toLowerCase()
+                .replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+            const matches = [];
+            for (const list of lists) {
+                const urls = list.data?.urls || [];
+                const matchedEntries = urls.filter(e => domainMatches(query, e.toLowerCase().trim()));
+                if (matchedEntries.length > 0) matches.push({ list, matchedEntries, totalUrls: urls.length });
+            }
+            renderLookupResults(wrapper, query, matches);
+        }
+
         renderLists(lists);
+
         search.oninput = (e) => {
+            if (domainSearch.value.trim()) return;
             const term = e.target.value.toLowerCase().trim();
             renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(term)));
         };
+
+        domainSearch.onfocus = () => { domainSearch.style.borderColor = '#f5576c'; };
+        domainSearch.onblur  = () => { domainSearch.style.borderColor = domainSearch.value.trim() ? '#f5576c' : '#ccc'; };
+        domainSearch.oninput = (e) => {
+            if (!e.target.value.trim()) {
+                domainSearch.style.borderColor = '#ccc';
+                const nameTerm = search.value.toLowerCase().trim();
+                renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(nameTerm)));
+            }
+        };
+        domainSearch.onkeydown = (e) => { if (e.key === 'Enter') runDomainSearch(); };
+        domainSearchBtn.onclick = runDomainSearch;
     }
 
     function showCreateForm() {
@@ -1444,7 +1595,7 @@ Version 1.4.1:
 
         UI.showStatus('🔄 Creating URL list...', 'info');
         await makeApiRequest('POST', '/api/v2/policy/urllist', { data: { type: 'exact', urls }, name: listName },
-            () => { const t = detectTenant(); UI.showStatus(`✅ URL list "${listName}" created successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
+            () => { const t = getActiveTenant(); UI.showStatus(`✅ URL list "${listName}" created successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
             (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
         );
     }
@@ -1458,7 +1609,7 @@ Version 1.4.1:
 
         UI.showStatus('🔄 Updating URL list...', 'info');
         await makeApiRequest('PATCH', `/api/v2/policy/urllist/${listId}/replace`, { data: { type: 'exact', urls } },
-            () => { const t = detectTenant(); UI.showStatus(`✅ URL list "${listName}" updated successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
+            () => { const t = getActiveTenant(); UI.showStatus(`✅ URL list "${listName}" updated successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
             (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
         );
     }
