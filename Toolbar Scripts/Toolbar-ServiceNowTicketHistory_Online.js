@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.2
+// @version      1.5.4
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,20 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.2';
-    const CHANGELOG = `Version 1.5.2:
+    const SCRIPT_VERSION = '1.5.4';
+    const CHANGELOG = `Version 1.5.4:
+- Added automatic local cache expiry: ticket logs not opened within the
+  configured number of days are deleted from GM storage on startup. The
+  server copy is never affected and reloads on next open.
+- Cache expiry is configurable in the settings modal (default 30 days).
+  A warning appears if the value is set above 30 days.
+
+Version 1.5.3:
+- Fixed new entries showing "unknown" as the author immediately after being added.
+  After a successful push the script now re-syncs from the server so the
+  server-assigned author label is in the local cache before the log re-renders.
+
+Version 1.5.2:
 - Fixed dark mode compatibility: sidebar, edit modal, and setup modal now force light
   backgrounds and dark text via CSS with !important so ServiceNow dark mode cannot
   override script UI inputs, selects, and textareas.
@@ -309,6 +321,12 @@ Version 1.4.3:
     const AUTO_WRITE_KEY = 'changeTrackerAutoWriteEnabled';
     function getAutoWriteEnabled()  { return GM_getValue(AUTO_WRITE_KEY, true) !== false; }
     function setAutoWriteEnabled(v) { GM_setValue(AUTO_WRITE_KEY, !!v); }
+
+    const CACHE_TTL_KEY = 'changeTrackerCacheTtlDays';
+    const CACHE_TTL_DEFAULT = 30;
+    const CACHE_TTL_WARN_THRESHOLD = 30;
+    function getCacheTtlDays()  { return Number(GM_getValue(CACHE_TTL_KEY, CACHE_TTL_DEFAULT)) || CACHE_TTL_DEFAULT; }
+    function setCacheTtlDays(v) { GM_setValue(CACHE_TTL_KEY, Math.max(1, Number(v) || CACHE_TTL_DEFAULT)); }
 
     function compareVersions(v1, v2) {
         if (!v1) return true;
@@ -644,6 +662,57 @@ Version 1.4.3:
     // Internal: update GM cache only (no API call)
     function _cacheEntries(ticket, entries) {
         GM_setValue(storeKey(ticket), JSON.stringify(entries));
+    }
+
+    /* ==========================================================
+     *  CACHE EXPIRY
+     *  Tracks the last time each ticket's cache was consulted (sidebar
+     *  opened). On startup, any ticket cache older than the configured
+     *  TTL is deleted — the server remains the source of truth and will
+     *  re-populate the cache on next open.
+     * ==========================================================*/
+
+    const LAST_ACCESS_KEY = 'changeTracker_lastAccess';
+
+    function _getLastAccessMap() {
+        try { return JSON.parse(GM_getValue(LAST_ACCESS_KEY, '{}')); }
+        catch { return {}; }
+    }
+
+    function touchTicketAccess(ticket) {
+        const map = _getLastAccessMap();
+        map[ticket] = Date.now();
+        GM_setValue(LAST_ACCESS_KEY, JSON.stringify(map));
+    }
+
+    function purgeStaleCache() {
+        const ttlMs  = getCacheTtlDays() * 24 * 60 * 60 * 1000;
+        const now    = Date.now();
+        const map    = _getLastAccessMap();
+        const allKeys = GM_listValues();
+        let changed  = false;
+
+        for (const key of allKeys) {
+            if (!key.startsWith(PREFIX)) continue;
+            const ticket = key.slice(PREFIX.length);
+            const last   = map[ticket] || 0;
+            if (now - last > ttlMs) {
+                GM_deleteValue(key);
+                delete map[ticket];
+                changed = true;
+                console.log(`CT: purged stale local cache for ${ticket} (not consulted in ${getCacheTtlDays()}d)`);
+            }
+        }
+
+        // Clean up orphaned access entries whose cache key is already gone
+        for (const ticket of Object.keys(map)) {
+            if (!allKeys.includes(storeKey(ticket))) {
+                delete map[ticket];
+                changed = true;
+            }
+        }
+
+        if (changed) GM_setValue(LAST_ACCESS_KEY, JSON.stringify(map));
     }
 
     /* ==========================================================
@@ -1360,8 +1429,9 @@ Version 1.4.3:
         if (connState === 'ONLINE') {
             const res = await api.pushEntries([{ ...entry, ticket }]);
             handleApiResponse(res);
+            if (res.ok) await syncTicket(ticket);
         }
-        return current;
+        return loadEntries(ticket);
     }
 
     async function updateEntry(ticket, entryId, type, fields, note) {
@@ -2800,6 +2870,49 @@ Version 1.4.3:
         autoWriteRow.append(autoWriteInput, autoWriteText);
         modal.appendChild(autoWriteRow);
 
+        // Cache TTL row
+        const ttlRow = css(mk('div'), {
+            padding:'8px 10px', marginBottom:'14px',
+            background:'#f6f8fa', border:'1px solid #e1e4e8', borderRadius:'4px',
+            fontFamily:'Arial, sans-serif'
+        });
+        const ttlLabel = css(mk('label', { htmlFor:'ct-setup-ttl' }), {
+            display:'block', fontSize:'12px', fontWeight:'bold',
+            color:'#333', marginBottom:'4px'
+        });
+        ttlLabel.textContent = 'Local cache expiry (days)';
+        const ttlDesc = css(mk('div'), { fontSize:'11px', color:'#666', marginBottom:'6px', lineHeight:'1.4' });
+        ttlDesc.textContent =
+            'Ticket logs not opened within this many days are removed from local storage. ' +
+            'The server copy is never affected and will reload on next open.';
+
+        const ttlInputRow = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px' });
+        const ttlInput = css(mk('input', { id:'ct-setup-ttl', type:'number', min:'1', max:'365' }), {
+            width:'70px', padding:'5px 8px', border:'1px solid #ccc',
+            borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif',
+            background:'#fff', color:'#333'
+        });
+        ttlInput.value = getCacheTtlDays();
+        const ttlUnit = css(mk('span'), { fontSize:'12px', color:'#555' });
+        ttlUnit.textContent = 'days  (default: 30)';
+        ttlInputRow.append(ttlInput, ttlUnit);
+
+        const ttlWarn = css(mk('div', { id:'ct-setup-ttl-warn' }), {
+            display:'none', marginTop:'6px', padding:'5px 8px',
+            background:'#fff3cd', border:'1px solid #ffc107', color:'#856404',
+            borderRadius:'4px', fontSize:'11px', lineHeight:'1.4'
+        });
+        ttlWarn.textContent =
+            'Setting this above 30 days may cause GM storage to grow large and ' +
+            'slow down the script. Keep it at 30 days or lower for best performance.';
+
+        ttlInput.addEventListener('input', () => {
+            ttlWarn.style.display = Number(ttlInput.value) > CACHE_TTL_WARN_THRESHOLD ? 'block' : 'none';
+        });
+
+        ttlRow.append(ttlLabel, ttlDesc, ttlInputRow, ttlWarn);
+        modal.appendChild(ttlRow);
+
         // Inline error area
         const errEl = css(mk('div', { id:'ct-setup-error' }), {
             display:'none', marginBottom:'10px', padding:'7px 10px',
@@ -2871,6 +2984,7 @@ Version 1.4.3:
             GM_setValue('changeTrackerWorkerUrl', url);
             GM_setValue('changeTrackerToken',     token);
             setAutoWriteEnabled(autoWriteInput.checked);
+            setCacheTtlDays(ttlInput.value);
 
             // Try to connect using the current ticket
             const ticket = getTicketNumber();
@@ -2917,6 +3031,7 @@ Version 1.4.3:
         }
 
         const ticket = getTicketNumber();
+        touchTicketAccess(ticket);
         const badge  = document.getElementById('ct-ticket-badge');
         if (badge) badge.textContent = `Ticket: ${ticket}`;
 
@@ -3032,6 +3147,7 @@ Version 1.4.3:
         initializeSidebar();
         console.log('✅ Change Tracker ready!');
         setTimeout(attemptRegistration, 1000);
+        setTimeout(purgeStaleCache, 3000);
     }
 
     if (document.readyState === 'loading') {
