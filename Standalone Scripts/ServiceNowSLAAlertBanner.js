@@ -323,7 +323,42 @@ Version 1.3:
             btnGroup.appendChild(cancel);
         }
 
-        box.append(title, hint, howTo, btnGroup);
+        const versionFooter = document.createElement('div');
+        Object.assign(versionFooter.style, {
+            marginTop: '16px', fontSize: '11px', color: '#aaa',
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px',
+            fontFamily: 'Arial, sans-serif',
+        });
+
+        if (isNewVersion() && !hasSeenChangelog()) {
+            const whatsNewLink = document.createElement('span');
+            whatsNewLink.textContent = "What's new";
+            Object.assign(whatsNewLink.style, {
+                fontSize: '11px', color: '#667eea', cursor: 'pointer',
+                textDecoration: 'underline', fontFamily: 'Arial, sans-serif',
+            });
+            whatsNewLink.onclick = () => { overlay.remove(); showChangelogModal(); };
+
+            const notifDot = document.createElement('span');
+            Object.assign(notifDot.style, {
+                width: '7px', height: '7px', borderRadius: '50%',
+                background: '#007bff', display: 'inline-block', flexShrink: '0',
+            });
+            let dotBlue = true;
+            setInterval(() => {
+                dotBlue = !dotBlue;
+                notifDot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+
+            versionFooter.appendChild(whatsNewLink);
+            versionFooter.appendChild(notifDot);
+        }
+
+        const versionLabel = document.createElement('span');
+        versionLabel.textContent = `v${SCRIPT_VERSION}`;
+        versionFooter.appendChild(versionLabel);
+
+        box.append(title, hint, howTo, btnGroup, versionFooter);
         overlay.appendChild(box);
         document.body.appendChild(overlay);
     }
