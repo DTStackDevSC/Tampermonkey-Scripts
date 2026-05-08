@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.0
+// @version      1.3.1
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Fixed comment insertion when the activity stream is in dual worknotes/comments
+  mode. The tool now checks for the split comments textarea first
+  (activity-stream-comments-textarea) and falls back to the combined textarea
+  for single-mode instances.
+
+Version 1.3.0:
 - Added support for tickets opened from the ServiceNow dashboard (Polaris mode).
   The tool now detects whether the form lives in a shadow DOM iframe (dashboard)
   or directly on the page (new tab), then reads and writes all ticket fields
@@ -1737,7 +1743,8 @@ Version 1.2.1:
 
     async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder) {
         const ticketDoc = _ctx ? _ctx.doc : document;
-        const textarea = ticketDoc.getElementById('activity-stream-textarea');
+        const textarea = ticketDoc.getElementById('activity-stream-comments-textarea') ||
+                         ticketDoc.getElementById('activity-stream-textarea');
         if (!textarea) throw new Error('Could not find Additional Comments textarea');
 
         const greeting = `Hi @[${openedByName}],

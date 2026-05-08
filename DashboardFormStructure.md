@@ -182,6 +182,29 @@ function setReferenceField(doc, win, tableName, fieldName, sysId, displayName) {
 
 This is the most complex case. There are **two parallel systems** — the hidden form textareas and the Angular activity stream. You must update both so the value persists on save.
 
+### Single-textarea vs. dual-textarea mode
+
+ServiceNow instances can be configured in two ways:
+
+| Mode | What you see | Activity stream textarea ID |
+|---|---|---|
+| **Single (combined)** | One shared textarea for both work notes and comments | `activity-stream-textarea` |
+| **Dual (split)** | Separate tabs/textareas for work notes and comments | `activity-stream-work_notes-textarea` / `activity-stream-comments-textarea` |
+
+**Always write a two-candidate lookup** so your code works on both configurations:
+
+```javascript
+// For comments (public, customer-facing):
+const textarea = doc.getElementById('activity-stream-comments-textarea') ||
+                 doc.getElementById('activity-stream-textarea');
+
+// For work notes (internal):
+const textarea = doc.getElementById('activity-stream-work_notes-textarea') ||
+                 doc.getElementById('activity-stream-textarea');
+```
+
+Prefer the split ID first — if the instance is in dual mode and you fall through to the combined ID, the field won't exist and you get `null`. If the instance is in single mode, the split ID won't exist and the fallback fires correctly.
+
 ```javascript
 function setJournalField(doc, win, fieldName, text) {
   // fieldName is 'work_notes' or 'comments'
