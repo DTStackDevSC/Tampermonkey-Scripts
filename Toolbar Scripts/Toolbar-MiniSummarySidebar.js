@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.5
+// @version      1.0.6
 // @description  Quick overview panel for ServiceNow tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.5';
-    const CHANGELOG = `Version 1.0.5:
+    const SCRIPT_VERSION = '1.0.6';
+    const CHANGELOG = `Version 1.0.6:
+- Fixed sidebar peeking on the right edge in dashboard (Polaris) mode. The hidden
+  offset now accounts for padding and border, pushing the sidebar fully off-screen.
+
+Version 1.0.5:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.0.4:
@@ -647,7 +651,7 @@ Version 1.0.2:
         Object.assign(sidebar.style, {
             position: 'fixed',
             top: '60px',
-            right: '-360px', // Hidden by default
+            right: '-420px', // Hidden by default — must exceed actual rendered width (350px content + 40px padding + 1px border = 391px)
             width: '350px',
             maxHeight: 'calc(100vh - 80px)',
             backgroundColor: '#f9f9f9',
@@ -1173,7 +1177,7 @@ Version 1.0.2:
     function hideSidebar() {
         const sidebar = document.getElementById('mini-summary-sidebar');
         if (sidebar) {
-            sidebar.style.right = '-360px';
+            sidebar.style.right = '-420px';
             sidebarVisible = false;
         }
     }
