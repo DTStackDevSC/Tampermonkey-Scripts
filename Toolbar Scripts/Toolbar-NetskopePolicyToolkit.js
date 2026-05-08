@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.16
+// @version      1.17
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, and DLP entity character counter. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -40,17 +40,17 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.16';
-    const CHANGELOG = `Version 1.16:
+    const SCRIPT_VERSION = '1.17';
+    const CHANGELOG = `Version 1.17:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+- Toolbar button now shows a pulsing notification dot when a new version
+  is available and the changelog hasn't been seen yet.
+
+Version 1.16:
 - Added DLP Entity Character Counter feature - shows a live character count
   below the regex/keyword input field in the DLP Edit Entity modal.
-- Feature can be toggled on/off from the toolkit settings like all others.
-
-Version 1.15:
-- Settings modal: Log Buttons (Description Log, URL List History, SSL Removal)
-  are now grouped under a collapsible category to reduce clutter.
-- Settings modal now scrolls when content doesn't fit the screen.
-- Added "Your Name" field directly in the settings modal for quick edits.`;
+- Feature can be toggled on/off from the toolkit settings like all others.`;
 
     function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
     function saveVersion(v)        { GM_setValue('toolkit_version', v); }
@@ -74,6 +74,29 @@ Version 1.15:
     // ─────────────────────────────────────────────────────────────
     // CHANGELOG MODAL — 100% inline styles, no stylesheet dependency
     // ─────────────────────────────────────────────────────────────
+
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
 
     function showChangelogModal() {
         if (document.getElementById('nsToolkitChangelogModal')) return;
@@ -143,20 +166,113 @@ Version 1.15:
             fontWeight:      'normal',
         });
 
-        /* ── Changelog body ── */
-        const changelogContent = document.createElement('div');
-        changelogContent.textContent = CHANGELOG;
-        Object.assign(changelogContent.style, {
-            whiteSpace:      'pre-wrap',
-            lineHeight:      '1.6',
-            color:           '#333333',
-            fontFamily:      "'Courier New', Courier, monospace",
-            fontSize:        '13px',
-            fontWeight:      'normal',
-            backgroundColor: '#fafafa',
-            padding:         '10px',
-            borderRadius:    '5px',
-            marginBottom:    '0',
+        /* ── Version cards ── */
+        const cardsContainer = document.createElement('div');
+        cardsContainer.style.marginBottom = '0';
+
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display:        'flex',
+                alignItems:     'center',
+                justifyContent: 'space-between',
+                padding:        '9px 12px',
+                background:     isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor:         'pointer',
+                userSelect:     'none',
+            });
+
+            const versionWrap = document.createElement('div');
+            Object.assign(versionWrap.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold',
+                fontSize:   '13px',
+                color:      isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+
+            if (isLatest) {
+                const latestTag = document.createElement('span');
+                latestTag.textContent = 'Latest';
+                Object.assign(latestTag.style, {
+                    fontSize:     '10px',
+                    fontWeight:   'bold',
+                    background:   '#667eea',
+                    color:        '#fff',
+                    borderRadius: '3px',
+                    padding:      '1px 6px',
+                    fontFamily:   'Arial, sans-serif',
+                });
+                versionWrap.appendChild(latestTag);
+            }
+
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize:   '12px',
+                color:      '#999',
+                transition: 'transform 0.2s',
+                display:    'inline-block',
+                transform:  isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding:    isLatest ? '10px 14px' : '0',
+                display:    isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display:    'flex',
+                    gap:        '8px',
+                    padding:    '3px 0',
+                    fontSize:   '13px',
+                    fontFamily: 'Arial, sans-serif',
+                    color:      '#444',
+                    lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+
+            card.appendChild(body);
+
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            cardsContainer.appendChild(card);
         });
 
         /* ── Close button ── */
@@ -184,19 +300,74 @@ Version 1.15:
             modal.remove();
             markChangelogAsSeen();
             saveVersion(SCRIPT_VERSION);
+            removeToolbarNotificationDot();
             const notification = document.getElementById('nsToolkitChangelogNotification');
             if (notification) notification.remove();
         };
 
         modal.appendChild(title);
         modal.appendChild(versionInfo);
-        modal.appendChild(changelogContent);
+        modal.appendChild(cardsContainer);
         modal.appendChild(closeButton);
 
         document.body.appendChild(overlay);
         document.body.appendChild(modal);
 
         overlay.onclick = () => closeButton.click();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // TOOLBAR NOTIFICATION DOT
+    // ─────────────────────────────────────────────────────────────
+
+    const TOOLBAR_DOT_CLASS = 'nstk-notif-dot';
+
+    function addToolbarNotificationDot() {
+        if (!isNewVersion() || hasSeenChangelog()) return;
+
+        const tryAdd = (attempts) => {
+            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+            if (!toolEl) {
+                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
+                return;
+            }
+            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
+
+            toolEl.style.position = 'relative';
+
+            const dot = document.createElement('div');
+            dot.className = TOOLBAR_DOT_CLASS;
+            Object.assign(dot.style, {
+                position:      'absolute',
+                top:           '2px',
+                right:         '2px',
+                width:         '8px',
+                height:        '8px',
+                borderRadius:  '50%',
+                background:    '#007bff',
+                pointerEvents: 'none',
+                zIndex:        '10',
+            });
+
+            let dotBlue = true;
+            const intervalId = setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+            dot.dataset.intervalId = intervalId;
+
+            toolEl.appendChild(dot);
+        };
+
+        setTimeout(() => tryAdd(0), 500);
+    }
+
+    function removeToolbarNotificationDot() {
+        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
+        if (dot) {
+            clearInterval(Number(dot.dataset.intervalId));
+            dot.remove();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -234,6 +405,7 @@ Version 1.15:
             }));
             isRegistered = true;
             console.log('✅ NS Toolkit registered in toolbar');
+            addToolbarNotificationDot();
         } else {
             console.log(`⏳ Toolbar not ready, retrying…`);
             setTimeout(attemptRegistration, REGISTRATION_RETRY_DELAY);
