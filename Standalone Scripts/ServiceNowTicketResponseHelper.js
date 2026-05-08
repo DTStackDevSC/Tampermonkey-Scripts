@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.12.3
+// @version      2.13.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.12.3';
-    const CHANGELOG = `Version 2.12.3:
+    const SCRIPT_VERSION = '2.13.0';
+    const CHANGELOG = `Version 2.13.0:
+- Added pinned responses: click the pin icon on any response to keep it at
+  the top of the list in a dedicated Pinned section. Pinned items still appear
+  in their original category. Click the pin again to unpin.
+
+Version 2.12.3:
 - Fixed dark mode compatibility: the response dropdown, custom responses modal, team
   selector, and changelog modal now force light backgrounds and dark text via CSS with
   !important so ServiceNow dark mode cannot override their inputs and controls.
@@ -1486,6 +1491,30 @@ Regards.`,
     }
 
     /* ==========================================================
+     *  PINNED RESPONSES STORAGE
+     * ==========================================================*/
+
+    function getPinnedResponses() {
+        return GM_getValue('ticketResponsePinned', []);
+    }
+
+    function savePinnedResponses(pinned) {
+        GM_setValue('ticketResponsePinned', pinned);
+    }
+
+    function isPinned(key) {
+        return getPinnedResponses().some(p => p.key === key);
+    }
+
+    function togglePinned(entry) {
+        const pinned = getPinnedResponses();
+        const idx = pinned.findIndex(p => p.key === entry.key);
+        if (idx >= 0) pinned.splice(idx, 1);
+        else pinned.push(entry);
+        savePinnedResponses(pinned);
+    }
+
+    /* ==========================================================
      *  CUSTOM RESPONSES STORAGE (GM_getValue/GM_setValue)
      * ==========================================================*/
 
@@ -2662,6 +2691,49 @@ Regards.`,
 
         const sectionStates = getSectionStates();
         const sectionOrder  = getSectionOrder(teamKey);
+        const rebuildFn     = () => rebuildDropdownContent(dropdown, team, teamKey);
+
+        // ── Pinned section ──
+        const pinnedItems = getPinnedResponses();
+        if (pinnedItems.length > 0) {
+            const pinnedSection = document.createElement('div');
+            pinnedSection.className = 'category-section';
+            pinnedSection.dataset.categoryKey = 'pinned';
+
+            const pinnedHeader = document.createElement('div');
+            Object.assign(pinnedHeader.style, {
+                padding: '8px 15px', fontSize: '11px', fontWeight: 'bold', color: '#555',
+                backgroundColor: '#eef0ff', borderTop: '1px solid #d4d8de', borderBottom: '2px solid #d4d8de',
+                textTransform: 'uppercase', letterSpacing: '0.7px',
+            });
+            pinnedHeader.textContent = '📌 Pinned';
+
+            const pinnedItemsContainer = document.createElement('div');
+            pinnedItemsContainer.className = 'category-items';
+
+            pinnedItems.forEach(entry => {
+                const ft = entry.fieldType || 'comments';
+                const option = buildMenuOption(entry.label, ft, async () => {
+                    trackRecentlyUsed(entry);
+                    const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                    const textarea = getTargetTextarea(ft);
+                    if (textarea) {
+                        const text = entry.isCustom
+                            ? resolveCustomResponseText(entry.customText, vars)
+                            : team.responses[entry.key](vars);
+                        await insertTextWithMention(textarea, text, ft);
+                        flashTargetField(textarea);
+                    }
+                    dropdown.style.display = 'none';
+                });
+                attachPinButton(option, entry, rebuildFn);
+                pinnedItemsContainer.appendChild(option);
+            });
+
+            pinnedSection.appendChild(pinnedHeader);
+            pinnedSection.appendChild(pinnedItemsContainer);
+            optionsContainer.appendChild(pinnedSection);
+        }
 
         // ── Recently Used section ──
         const recentItems = getRecentlyUsed();
@@ -2750,6 +2822,7 @@ Regards.`,
                         }
                         dropdown.style.display = 'none';
                     });
+                    attachPinButton(option, { key: item.value, label: item.label, fieldType: item.fieldType || 'comments', isCustom: true, customText: item.customText }, rebuildFn);
                     itemsContainer.appendChild(option);
                     return;
                 }
@@ -2806,6 +2879,7 @@ Regards.`,
                             dropdown.style.display = 'none';
                             submenu.style.display = 'none';
                         });
+                        attachPinButton(subOption, { key: subItem.value, label: subItem.label, fieldType: subItem.fieldType }, rebuildFn);
                         submenu.appendChild(subOption);
                     });
 
@@ -2838,6 +2912,7 @@ Regards.`,
                         }
                         dropdown.style.display = 'none';
                     });
+                    attachPinButton(option, { key: item.value, label: item.label, fieldType }, rebuildFn);
                     itemsContainer.appendChild(option);
                 }
             });
@@ -2918,13 +2993,39 @@ Regards.`,
         const labelSpan = document.createElement('span');
         labelSpan.textContent = label;
 
+        const rightGroup = document.createElement('span');
+        rightGroup.className = 'menu-option-right-group';
+        Object.assign(rightGroup.style, { display: 'flex', alignItems: 'center', gap: '6px', flexShrink: '0' });
+        rightGroup.appendChild(makeFieldTypePip(fieldType));
+
         option.appendChild(labelSpan);
-        option.appendChild(makeFieldTypePip(fieldType));
+        option.appendChild(rightGroup);
 
         option.onmouseover = () => option.style.backgroundColor = '#f0f0f0';
         option.onmouseout  = () => option.style.backgroundColor = 'transparent';
         option.onclick     = onClickHandler;
         return option;
+    }
+
+    function attachPinButton(option, entry, rebuildFn) {
+        const rightGroup = option.querySelector('.menu-option-right-group');
+        if (!rightGroup) return;
+        const pinBtn = document.createElement('span');
+        const pinned = isPinned(entry.key);
+        pinBtn.textContent = '📌';
+        pinBtn.title = pinned ? 'Unpin' : 'Pin to top';
+        Object.assign(pinBtn.style, {
+            fontSize: '11px', cursor: 'pointer', lineHeight: '1', flexShrink: '0',
+            opacity: pinned ? '1' : '0.25', transition: 'opacity 0.15s ease',
+        });
+        pinBtn.onmouseover = () => { pinBtn.style.opacity = '0.85'; };
+        pinBtn.onmouseout  = () => { pinBtn.style.opacity = isPinned(entry.key) ? '1' : '0.25'; };
+        pinBtn.onclick = (e) => {
+            e.stopPropagation();
+            togglePinned(entry);
+            rebuildFn();
+        };
+        rightGroup.appendChild(pinBtn);
     }
 
     /* ==========================================================
