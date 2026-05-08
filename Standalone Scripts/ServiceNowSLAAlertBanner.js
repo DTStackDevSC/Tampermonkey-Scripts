@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowSLAAlertBanner.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.1
+// @version      1.3.2
 // @description  Display color-coded SLA warning banner based on days remaining
 // @author       You
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -16,12 +16,193 @@
 (function() {
     'use strict';
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
+    const SCRIPT_VERSION = '1.3.2';
+    const CHANGELOG = `Version 1.3.2:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+
+Version 1.3.1:
 - Banner now suppresses on all terminal states (Closed Incomplete, Cancelled, Resolved, Closed) not just Closed Complete.
 
 Version 1.3:
 - Added configurable date format picker with ⚙ button next to the Due Date field.`;
+
+    // ─── Version Control ──────────────────────────────────────────────────────
+
+    const SLA_VERSION_KEY   = 'sla_banner_version';
+    const SLA_CHANGELOG_KEY = 'sla_banner_changelog_seen';
+
+    function getStoredVersion()    { return GM_getValue(SLA_VERSION_KEY, null); }
+    function saveVersion(v)        { GM_setValue(SLA_VERSION_KEY, v); }
+    function hasSeenChangelog()    { return GM_getValue(SLA_CHANGELOG_KEY, null) === SCRIPT_VERSION; }
+    function markChangelogSeen()   { GM_setValue(SLA_CHANGELOG_KEY, SCRIPT_VERSION); }
+
+    function isNewVersion() {
+        const stored = getStoredVersion();
+        if (!stored) return true;
+        const a = stored.split('.').map(Number);
+        const b = SCRIPT_VERSION.split('.').map(Number);
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+            if ((b[i] || 0) > (a[i] || 0)) return true;
+            if ((b[i] || 0) < (a[i] || 0)) return false;
+        }
+        return false;
+    }
+
+    function parseChangelog() {
+        const entries = [];
+        let current = null;
+        let currentBullet = null;
+        for (const line of CHANGELOG.split('\n')) {
+            const versionMatch = line.match(/^Version\s+([\d.]+):/);
+            if (versionMatch) {
+                if (currentBullet !== null && current) current.bullets.push(currentBullet);
+                currentBullet = null;
+                if (current) entries.push(current);
+                current = { version: versionMatch[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (currentBullet !== null) current.bullets.push(currentBullet);
+                currentBullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && currentBullet !== null) {
+                currentBullet += ' ' + line.trim();
+            }
+        }
+        if (currentBullet !== null && current) current.bullets.push(currentBullet);
+        if (current) entries.push(current);
+        return entries;
+    }
+
+    function showChangelogModal() {
+        const overlay = document.createElement('div');
+        Object.assign(overlay.style, {
+            position: 'fixed', inset: '0',
+            background: 'rgba(0,0,0,0.55)',
+            zIndex: '999999',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+        });
+
+        const modal = document.createElement('div');
+        Object.assign(modal.style, {
+            background: '#fff', borderRadius: '8px',
+            padding: '24px', width: '420px', maxWidth: '90vw',
+            maxHeight: '80vh', overflowY: 'auto',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+            fontFamily: 'Arial, sans-serif',
+        });
+
+        const title = document.createElement('h2');
+        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
+        Object.assign(title.style, { margin: '0 0 6px', fontSize: '16px', color: '#1d1d1d' });
+
+        const versionInfo = document.createElement('div');
+        versionInfo.textContent = `SLA Alert Banner updated to v${SCRIPT_VERSION}!`;
+        Object.assign(versionInfo.style, { fontSize: '13px', color: '#666', marginBottom: '16px' });
+
+        const cardsWrap = document.createElement('div');
+        cardsWrap.style.marginBottom = '16px';
+        parseChangelog().forEach((entry, index) => {
+            const isLatest = index === 0;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px',
+                background: isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor: 'pointer', userSelect: 'none',
+            });
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold', fontSize: '13px',
+                color: isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.textContent = 'Latest';
+                Object.assign(tag.style, {
+                    fontSize: '10px', fontWeight: 'bold',
+                    background: '#667eea', color: '#fff',
+                    borderRadius: '3px', padding: '1px 6px',
+                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+                });
+                versionWrap.appendChild(tag);
+            }
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding: isLatest ? '10px 14px' : '0',
+                display: isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '3px 0',
+                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                    color: '#444', lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+            card.appendChild(body);
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            cardsWrap.appendChild(card);
+        });
+
+        const closeButton = document.createElement('button');
+        closeButton.textContent = 'Got it!';
+        Object.assign(closeButton.style, {
+            display: 'block', margin: '0 auto',
+            padding: '8px 28px', borderRadius: '6px',
+            background: '#667eea', color: '#fff',
+            border: 'none', cursor: 'pointer',
+            fontSize: '14px', fontFamily: 'Arial, sans-serif',
+        });
+        closeButton.onclick = () => {
+            overlay.remove();
+            markChangelogSeen();
+            saveVersion(SCRIPT_VERSION);
+        };
+
+        modal.appendChild(title);
+        modal.appendChild(versionInfo);
+        modal.appendChild(cardsWrap);
+        modal.appendChild(closeButton);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', e => { if (e.target === overlay) closeButton.click(); });
+    }
 
     // ─── Date Format Config ───────────────────────────────────────────────────
 
@@ -358,6 +539,11 @@ Version 1.3:
         } else {
             const showPicker = () => showFormatPicker(false, formatKey => monitorDueDate(formatKey));
             document.body ? showPicker() : document.addEventListener('DOMContentLoaded', showPicker);
+        }
+
+        if (isNewVersion() && !hasSeenChangelog()) {
+            const showModal = () => showChangelogModal();
+            document.body ? setTimeout(showModal, 500) : document.addEventListener('DOMContentLoaded', () => setTimeout(showModal, 500));
         }
     }
 
