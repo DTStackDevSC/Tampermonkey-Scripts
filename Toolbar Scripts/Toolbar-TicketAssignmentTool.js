@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.4
+// @version      1.3.5
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,22 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.4';
-    const CHANGELOG = `Version 1.3.4:
+    const SCRIPT_VERSION = '1.3.5';
+    const CHANGELOG = `Version 1.3.5:
+- Rewrote the activity stream textarea detection and text insertion to fix the
+  comments field not being populated in both classic new-tab mode and dashboard mode.
+  Three root causes addressed: (1) In single-input journal mode the dedicated
+  activity-stream-comments-textarea exists in the DOM but is hidden inside an ng-hide
+  container. The previous code found it by ID and then wrote into a hidden element.
+  Detection now checks visibility and uses the data-stream-text-input attribute to find
+  the correct visible textarea regardless of single or dual mode. (2) Direct .value
+  assignment is silently overridden by Angular's ng-model digest on the next cycle.
+  All text insertion now goes through the HTMLTextAreaElement native setter so Angular
+  sees the change as a real user edit. (3) In classic new-tab mode without an iframe,
+  the page context now always resolves to the top document even when g_form is not yet
+  available, preventing a false null context on ticket pages.
+
+Version 1.3.4:
 - Fixed two separate failures in Polaris mode. First: getTicketContext no longer
   requires g_form to be initialized on the iframe window. In a fresh browser tab
   the macroponent and iframe are present before g_form is set, which previously
@@ -1453,13 +1467,21 @@ Version 1.2.1:
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    const _nativeSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+
+    function setNativeValue(textarea, value) {
+        _nativeSetter.call(textarea, value);
+        textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     function insertTextDirectly(textarea, text) {
         const start = textarea.selectionStart || 0;
-        const end = textarea.selectionEnd || 0;
-        const currentValue = textarea.value;
-        textarea.value = currentValue.substring(0, start) + text + currentValue.substring(end);
+        const end   = textarea.selectionEnd   || 0;
+        const newValue = textarea.value.substring(0, start) + text + textarea.value.substring(end);
+        _nativeSetter.call(textarea, newValue);
         textarea.selectionStart = textarea.selectionEnd = start + text.length;
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('input',  { bubbles: true }));
         textarea.dispatchEvent(new Event('change', { bubbles: true }));
         textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
     }
@@ -1536,9 +1558,8 @@ Version 1.2.1:
         const matches = text.match(mentionRegex);
 
         if (!matches || matches.length === 0) {
-            textarea.value = textarea.value.trim() ? textarea.value + "\n\n" + text : text;
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            const existing = textarea.value.trim();
+            setNativeValue(textarea, existing ? existing + "\n\n" + text : text);
             console.groupEnd();
             return;
         }
@@ -1552,7 +1573,7 @@ Version 1.2.1:
 
         const parts = text.split(mentionRegex);
         const existingContent = textarea.value.trim();
-        textarea.value = existingContent ? existingContent + "\n\n" : '';
+        _nativeSetter.call(textarea, existingContent ? existingContent + "\n\n" : '');
         textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
         textarea.focus();
         await sleep(100);
@@ -1607,10 +1628,8 @@ Version 1.2.1:
                 mode: 'classic'
             };
         }
-        if (window.g_form) {
-            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
-        }
-        return null;
+        // Classic direct page: return the top document even if g_form is not yet set
+        return { win: window, doc: document, gForm: window.g_form || null, mode: 'classic' };
     }
 
     async function performAssignment() {
@@ -1775,16 +1794,35 @@ Version 1.2.1:
         return '';
     }
 
+    async function findCommentsTextarea(ctxDoc) {
+        // Search the form doc first, then the outer page (Polaris keeps activity stream outside iframe)
+        const docsToSearch = [ctxDoc];
+        if (ctxDoc !== document) docsToSearch.push(document);
+
+        for (const doc of docsToSearch) {
+            // Find the visible textarea already showing comments mode.
+            // data-stream-text-input="comments" matches:
+            //   - #activity-stream-textarea in single mode (when comments is selected)
+            //   - #activity-stream-comments-textarea in dual mode
+            // Checking offsetParent skips the hidden counterpart that lives in the ng-hide container.
+            for (const el of doc.querySelectorAll('textarea[data-stream-text-input="comments"]')) {
+                if (el.offsetParent !== null) return el;
+            }
+
+            // Single mode with work_notes currently selected: toggle to comments then return.
+            const singleTA = doc.getElementById('activity-stream-textarea');
+            if (singleTA && singleTA.offsetParent !== null) {
+                const toggle = doc.querySelector('input[name="comments-journal-checkbox"]');
+                if (toggle) { toggle.click(); await sleep(300); }
+                if (singleTA.getAttribute('data-stream-text-input') === 'comments') return singleTA;
+            }
+        }
+        return null;
+    }
+
     async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder) {
         const iframeDoc = _ctx ? _ctx.doc : document;
-        let textarea = iframeDoc.getElementById('activity-stream-comments-textarea') ||
-                       iframeDoc.getElementById('activity-stream-textarea');
-        // In Polaris mode the activity stream is rendered by the outer page, not inside the
-        // gsft_main form iframe, so fall back to the outer document when not found in the iframe.
-        if (!textarea && iframeDoc !== document) {
-            textarea = document.getElementById('activity-stream-comments-textarea') ||
-                       document.getElementById('activity-stream-textarea');
-        }
+        const textarea = await findCommentsTextarea(iframeDoc);
         if (!textarea) throw new Error('Could not find Additional Comments textarea');
 
         const greeting = `Hi @[${openedByName}],
