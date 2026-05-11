@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.3
+// @version      1.3.4
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,19 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.3';
-    const CHANGELOG = `Version 1.3.3:
+    const SCRIPT_VERSION = '1.3.4';
+    const CHANGELOG = `Version 1.3.4:
+- Fixed two separate failures in Polaris mode. First: getTicketContext no longer
+  requires g_form to be initialized on the iframe window. In a fresh browser tab
+  the macroponent and iframe are present before g_form is set, which previously
+  caused the tool to report that no ticket form could be detected. Second: the
+  activity stream textarea is rendered by the outer Polaris page, not inside the
+  gsft_main form iframe. addAdditionalComments now searches the outer document as
+  a fallback when the textarea is not found in the form iframe, so the comments
+  field is correctly populated in dashboard mode. The mention suggestion lookup
+  also now searches the textarea's own document instead of the form iframe.
+
+Version 1.3.3:
 - Fixed field detection failure when a ticket is opened in a new tab in classic mode.
   ServiceNow's nav wrapper loads the form inside a direct gsft_main iframe. The tool
   now checks for that iframe before falling back to window.g_form, so field access
@@ -1503,7 +1514,7 @@ Version 1.2.1:
             '[data-mention-item]'
         ];
 
-        const ticketDoc = _ctx ? _ctx.doc : document;
+        const ticketDoc = textarea.ownerDocument;
         for (const selector of suggestionSelectors) {
             const suggestion = ticketDoc.querySelector(selector);
             if (suggestion && suggestion.offsetParent !== null) {
@@ -1578,13 +1589,23 @@ Version 1.2.1:
             .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
         if (macro && macro.shadowRoot) {
             const iframe = macro.shadowRoot.querySelector('#gsft_main');
-            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
-                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
+            if (iframe && iframe.contentDocument) {
+                return {
+                    win: iframe.contentWindow,
+                    doc: iframe.contentDocument,
+                    gForm: (iframe.contentWindow && iframe.contentWindow.g_form) || null,
+                    mode: 'polaris'
+                };
             }
         }
         const directIframe = document.getElementById('gsft_main');
-        if (directIframe && directIframe.contentWindow && directIframe.contentWindow.g_form) {
-            return { win: directIframe.contentWindow, doc: directIframe.contentDocument, gForm: directIframe.contentWindow.g_form, mode: 'classic' };
+        if (directIframe && directIframe.contentDocument) {
+            return {
+                win: directIframe.contentWindow,
+                doc: directIframe.contentDocument,
+                gForm: (directIframe.contentWindow && directIframe.contentWindow.g_form) || null,
+                mode: 'classic'
+            };
         }
         if (window.g_form) {
             return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
@@ -1755,9 +1776,15 @@ Version 1.2.1:
     }
 
     async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder) {
-        const ticketDoc = _ctx ? _ctx.doc : document;
-        const textarea = ticketDoc.getElementById('activity-stream-comments-textarea') ||
-                         ticketDoc.getElementById('activity-stream-textarea');
+        const iframeDoc = _ctx ? _ctx.doc : document;
+        let textarea = iframeDoc.getElementById('activity-stream-comments-textarea') ||
+                       iframeDoc.getElementById('activity-stream-textarea');
+        // In Polaris mode the activity stream is rendered by the outer page, not inside the
+        // gsft_main form iframe, so fall back to the outer document when not found in the iframe.
+        if (!textarea && iframeDoc !== document) {
+            textarea = document.getElementById('activity-stream-comments-textarea') ||
+                       document.getElementById('activity-stream-textarea');
+        }
         if (!textarea) throw new Error('Could not find Additional Comments textarea');
 
         const greeting = `Hi @[${openedByName}],
