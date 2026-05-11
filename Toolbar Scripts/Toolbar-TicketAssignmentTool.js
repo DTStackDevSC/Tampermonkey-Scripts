@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.2
+// @version      1.3.3
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.2';
-    const CHANGELOG = `Version 1.3.2:
+    const SCRIPT_VERSION = '1.3.3';
+    const CHANGELOG = `Version 1.3.3:
+- Fixed field detection failure when a ticket is opened in a new tab in classic mode.
+  ServiceNow's nav wrapper loads the form inside a direct gsft_main iframe. The tool
+  now checks for that iframe before falling back to window.g_form, so field access
+  works correctly in both new tab and dashboard modes.
+
+Version 1.3.2:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.3.1:
@@ -1575,6 +1581,10 @@ Version 1.2.1:
             if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
                 return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
             }
+        }
+        const directIframe = document.getElementById('gsft_main');
+        if (directIframe && directIframe.contentWindow && directIframe.contentWindow.g_form) {
+            return { win: directIframe.contentWindow, doc: directIframe.contentDocument, gForm: directIframe.contentWindow.g_form, mode: 'classic' };
         }
         if (window.g_form) {
             return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
