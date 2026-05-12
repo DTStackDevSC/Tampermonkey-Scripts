@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.1.0
+// @version      3.1.1
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.1.0';
-    const CHANGELOG = `Version 3.1.0:
+    const SCRIPT_VERSION = '3.1.1';
+    const CHANGELOG = `Version 3.1.1:
+- Searchable dropdown trigger now shows a chevron arrow on the right side, matching
+  the native dropdown style. The arrow rotates 180 degrees when the list is open and
+  resets when it closes.
+
+Version 3.1.0:
 - All dropdowns now support live text filtering. Clicking any dropdown opens a search
   box with the cursor placed in it automatically. Use Arrow Up/Down to navigate the list
   and Enter to confirm a selection. Escape closes the dropdown without changing the value.
@@ -1120,21 +1125,33 @@ Version 3.0.8.1:
 
         .custom-select-trigger {
             width: 100%;
-            padding: 6px 30px 6px 10px;
+            padding: 6px 10px;
             border: 1px solid #ccc;
             border-radius: 6px;
             background-color: #f9f9f9;
             font-size: 14px;
             box-sizing: border-box;
             cursor: pointer;
-            text-align: left;
             font-family: Arial, sans-serif;
             color: black;
             transition: all 0.2s ease;
-            background-image: url('data:image/svg+xml;utf8,<svg fill="%23333" height="24" width="24" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>');
-            background-repeat: no-repeat;
-            background-position: right 10px center;
-            background-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .custom-select-arrow {
+            font-size: 10px;
+            color: #666;
+            flex-shrink: 0;
+            pointer-events: none;
+            transition: transform 0.15s ease;
+            display: inline-block;
+        }
+
+        .custom-select-trigger.open .custom-select-arrow {
+            transform: rotate(180deg);
         }
 
         .custom-select-trigger:hover,
@@ -1417,7 +1434,19 @@ Version 3.0.8.1:
         trigger.type = 'button';
         trigger.id = id + '-trigger';
         trigger.className = 'custom-select-trigger';
-        trigger.textContent = selectedLabel;
+
+        const triggerText = document.createElement('span');
+        triggerText.textContent = selectedLabel;
+        triggerText.style.overflow = 'hidden';
+        triggerText.style.textOverflow = 'ellipsis';
+        triggerText.style.whiteSpace = 'nowrap';
+
+        const triggerArrow = document.createElement('span');
+        triggerArrow.className = 'custom-select-arrow';
+        triggerArrow.textContent = '▼';
+
+        trigger.appendChild(triggerText);
+        trigger.appendChild(triggerArrow);
 
         const dropdown = document.createElement('div');
         dropdown.className = 'custom-select-dropdown';
@@ -1460,15 +1489,20 @@ Version 3.0.8.1:
         function pickOption(value, lbl) {
             selectedValue = value;
             selectedLabel = lbl;
-            trigger.textContent = lbl;
+            triggerText.textContent = lbl;
         }
 
         function openDropdown() {
             if (trigger.disabled) return;
             document.querySelectorAll('.custom-select-dropdown').forEach(dd => {
-                if (dd !== dropdown) dd.style.display = 'none';
+                if (dd !== dropdown) {
+                    dd.style.display = 'none';
+                    const otherTrigger = dd.parentElement && dd.parentElement.querySelector('.custom-select-trigger');
+                    if (otherTrigger) otherTrigger.classList.remove('open');
+                }
             });
             dropdown.style.display = 'block';
+            trigger.classList.add('open');
             searchInput.value = '';
             renderList('');
             setTimeout(() => {
@@ -1480,6 +1514,7 @@ Version 3.0.8.1:
 
         function closeDropdown() {
             dropdown.style.display = 'none';
+            trigger.classList.remove('open');
         }
 
         trigger.addEventListener('click', (e) => {
