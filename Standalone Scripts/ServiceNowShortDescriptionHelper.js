@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.0.11
+// @version      3.1.0
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.0.11';
-    const CHANGELOG = `Version 3.0.11:
+    const SCRIPT_VERSION = '3.1.0';
+    const CHANGELOG = `Version 3.1.0:
+- All dropdowns now support live text filtering. Clicking any dropdown opens a search
+  box with the cursor placed in it automatically. Use Arrow Up/Down to navigate the list
+  and Enter to confirm a selection. Escape closes the dropdown without changing the value.
+- Added a "Searchable dropdowns" toggle in the panel header to enable or disable the
+  feature. The setting is on by default and persists across sessions.
+
+Version 3.0.11:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 3.0.10:
@@ -1102,6 +1109,117 @@ Version 3.0.8.1:
             font-weight: bold;
             font-style: normal;
         }
+
+        /* Custom searchable dropdown */
+        .custom-select-container {
+            position: relative;
+            display: inline-block;
+            width: 280px;
+            box-sizing: border-box;
+        }
+
+        .custom-select-trigger {
+            width: 100%;
+            padding: 6px 30px 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background-color: #f9f9f9;
+            font-size: 14px;
+            box-sizing: border-box;
+            cursor: pointer;
+            text-align: left;
+            font-family: Arial, sans-serif;
+            color: black;
+            transition: all 0.2s ease;
+            background-image: url('data:image/svg+xml;utf8,<svg fill="%23333" height="24" width="24" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 12px;
+        }
+
+        .custom-select-trigger:hover,
+        .custom-select-trigger:focus {
+            border-color: #888;
+            background-color: #fff;
+            outline: none;
+        }
+
+        .custom-select-trigger:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            background-color: #e9e9e9;
+        }
+
+        .custom-select-dropdown {
+            position: absolute;
+            top: calc(100% + 2px);
+            left: 0;
+            z-index: 99999;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 100%;
+            max-width: 360px;
+            overflow: hidden;
+        }
+
+        #shortDescPanel .custom-select-search {
+            width: 100%;
+            padding: 6px 10px;
+            border: none;
+            border-bottom: 1px solid #eee;
+            border-radius: 0;
+            font-size: 13px;
+            box-sizing: border-box;
+            outline: none;
+            background-color: #fff;
+            color: #333;
+            background-image: none;
+        }
+
+        .custom-select-list {
+            list-style: none;
+            margin: 0;
+            padding: 4px 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .custom-select-list li {
+            padding: 7px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            font-family: Arial, sans-serif;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .custom-select-list li:hover,
+        .custom-select-list li.cs-highlighted {
+            background-color: #e8f0fe;
+            color: #333;
+        }
+
+        .custom-select-list li.cs-selected {
+            background-color: #667eea;
+            color: #fff;
+        }
+
+        .custom-select-list li.cs-selected:hover,
+        .custom-select-list li.cs-selected.cs-highlighted {
+            background-color: #5568d3;
+            color: #fff;
+        }
+
+        .custom-select-list .cs-no-results {
+            color: #999;
+            font-style: italic;
+            cursor: default;
+            pointer-events: none;
+        }
     `;
     document.head.appendChild(style);
 
@@ -1273,6 +1391,168 @@ Version 3.0.8.1:
     }
 
     /* ==========================================================
+     *  SEARCHABLE DROPDOWN COMPONENT
+     * ==========================================================*/
+
+    function createSearchableDropdown(labelText, optionsArray, id) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'field-wrapper';
+
+        const label = document.createElement('label');
+        label.textContent = `${labelText}: `;
+        label.setAttribute('for', id + '-trigger');
+
+        const container = document.createElement('div');
+        container.className = 'custom-select-container';
+        container.id = id;
+
+        const normalized = optionsArray.map(o =>
+            typeof o === 'object' ? { value: o.value, label: o.label } : { value: o, label: o }
+        );
+
+        let selectedValue = normalized[0] ? normalized[0].value : '';
+        let selectedLabel = normalized[0] ? normalized[0].label : '';
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.id = id + '-trigger';
+        trigger.className = 'custom-select-trigger';
+        trigger.textContent = selectedLabel;
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'custom-select-dropdown';
+        dropdown.style.display = 'none';
+
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'custom-select-search';
+        searchInput.placeholder = 'Type to filter...';
+
+        const list = document.createElement('ul');
+        list.className = 'custom-select-list';
+
+        function renderList(filter) {
+            list.innerHTML = '';
+            const q = filter.toLowerCase();
+            const filtered = normalized.filter(o => o.label.toLowerCase().includes(q));
+            if (filtered.length === 0) {
+                const li = document.createElement('li');
+                li.className = 'cs-no-results';
+                li.textContent = 'No results';
+                list.appendChild(li);
+                return;
+            }
+            for (const opt of filtered) {
+                const li = document.createElement('li');
+                li.textContent = opt.label;
+                li.dataset.value = opt.value;
+                if (opt.value === selectedValue) li.classList.add('cs-selected');
+                li.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    pickOption(opt.value, opt.label);
+                    closeDropdown();
+                    trigger.focus();
+                });
+                list.appendChild(li);
+            }
+        }
+
+        function pickOption(value, lbl) {
+            selectedValue = value;
+            selectedLabel = lbl;
+            trigger.textContent = lbl;
+        }
+
+        function openDropdown() {
+            if (trigger.disabled) return;
+            document.querySelectorAll('.custom-select-dropdown').forEach(dd => {
+                if (dd !== dropdown) dd.style.display = 'none';
+            });
+            dropdown.style.display = 'block';
+            searchInput.value = '';
+            renderList('');
+            setTimeout(() => {
+                searchInput.focus();
+                const sel = list.querySelector('.cs-selected');
+                if (sel) sel.scrollIntoView({ block: 'nearest' });
+            }, 0);
+        }
+
+        function closeDropdown() {
+            dropdown.style.display = 'none';
+        }
+
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dropdown.style.display === 'none' ? openDropdown() : closeDropdown();
+        });
+
+        searchInput.addEventListener('input', () => renderList(searchInput.value));
+
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeDropdown();
+                trigger.focus();
+                return;
+            }
+            const items = [...list.querySelectorAll('li:not(.cs-no-results)')];
+            if (items.length === 0) return;
+            const highlighted = list.querySelector('.cs-highlighted');
+            const idx = highlighted ? items.indexOf(highlighted) : -1;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                items.forEach(i => i.classList.remove('cs-highlighted'));
+                const next = items[Math.min(idx + 1, items.length - 1)];
+                if (next) { next.classList.add('cs-highlighted'); next.scrollIntoView({ block: 'nearest' }); }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                items.forEach(i => i.classList.remove('cs-highlighted'));
+                const prev = items[Math.max(idx - 1, 0)];
+                if (prev) { prev.classList.add('cs-highlighted'); prev.scrollIntoView({ block: 'nearest' }); }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const target = highlighted || items[0];
+                if (target && target.dataset.value !== undefined) {
+                    const opt = normalized.find(o => o.value === target.dataset.value);
+                    if (opt) { pickOption(opt.value, opt.label); closeDropdown(); trigger.focus(); }
+                }
+            }
+        });
+
+        Object.defineProperty(container, 'value', {
+            get() { return selectedValue; },
+            set(v) {
+                const opt = normalized.find(o => o.value === v);
+                if (opt) pickOption(opt.value, opt.label);
+            },
+            configurable: true
+        });
+
+        Object.defineProperty(container, 'disabled', {
+            get() { return trigger.disabled; },
+            set(v) {
+                trigger.disabled = !!v;
+                if (v) closeDropdown();
+            },
+            configurable: true
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!container.contains(e.target)) closeDropdown();
+        });
+
+        dropdown.appendChild(searchInput);
+        dropdown.appendChild(list);
+        container.appendChild(trigger);
+        container.appendChild(dropdown);
+        wrapper.appendChild(label);
+        wrapper.appendChild(container);
+
+        return wrapper;
+    }
+
+    /* ==========================================================
      *  MAIN PANEL INITIALIZATION
      * ==========================================================*/
 
@@ -1406,6 +1686,43 @@ Version 3.0.8.1:
         };
         versionRow.appendChild(configureTenantLink);
 
+        // Searchable dropdowns toggle
+        const searchableWrapper = document.createElement('span');
+        Object.assign(searchableWrapper.style, {
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            cursor: 'pointer'
+        });
+        const searchableCheckbox = document.createElement('input');
+        searchableCheckbox.type = 'checkbox';
+        searchableCheckbox.id = 'searchableDropdownsToggle';
+        searchableCheckbox.checked = GM_getValue('shortDescSearchableDropdowns', true);
+        Object.assign(searchableCheckbox.style, {
+            width: '12px',
+            height: '12px',
+            margin: '0',
+            cursor: 'pointer',
+            accentColor: '#667eea'
+        });
+        const searchableToggleLabel = document.createElement('label');
+        searchableToggleLabel.htmlFor = 'searchableDropdownsToggle';
+        searchableToggleLabel.textContent = 'Searchable dropdowns';
+        Object.assign(searchableToggleLabel.style, {
+            fontSize: '11px',
+            color: '#666',
+            cursor: 'pointer',
+            userSelect: 'none'
+        });
+        searchableCheckbox.onchange = () => {
+            GM_setValue('shortDescSearchableDropdowns', searchableCheckbox.checked);
+            showLoadingOverlay();
+            setTimeout(() => location.reload(), 100);
+        };
+        searchableWrapper.appendChild(searchableCheckbox);
+        searchableWrapper.appendChild(searchableToggleLabel);
+        versionRow.appendChild(searchableWrapper);
+
         // Changelog notification
         const showChangelog = isNewVersion() && !hasSeenChangelog();
         if (showChangelog) {
@@ -1469,6 +1786,10 @@ Version 3.0.8.1:
         };
 
         const createDropdown = (labelText, optionsArray, id) => {
+            if (GM_getValue('shortDescSearchableDropdowns', true)) {
+                return createSearchableDropdown(labelText, optionsArray, id);
+            }
+
             const wrapper = document.createElement('div');
             wrapper.className = 'field-wrapper';
 
