@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.6';
-    const CHANGELOG = `Version 1.0.6:
+    const SCRIPT_VERSION = '1.0.7';
+    const CHANGELOG = `Version 1.0.7:
+- Business Justification is now shown in the SPM copy modal only when the actual
+  Business Justification field is populated on the ticket form. It no longer falls
+  back to the short description, so the label always reflects the true field value.
+
+Version 1.0.6:
 - Fixed sidebar peeking on the right edge in dashboard (Polaris) mode. The hidden
   offset now accounts for padding and border, pushing the sidebar fully off-screen.
 
@@ -548,12 +553,19 @@ Version 1.0.2:
                     const businessJustTextarea = doc.getElementById(labelFor);
                     if (businessJustTextarea && businessJustTextarea.value && businessJustTextarea.value.trim()) {
                         data.description = businessJustTextarea.value.trim();
+                        data.businessJustification = businessJustTextarea.value.trim();
                     }
                 }
             }
         }
 
-        // Fallback to other methods if not found
+        // Fallback business justification via variable (no short_description fallback)
+        if (!data.businessJustification) {
+            const bjVar = getVariableValue('business_justification');
+            if (bjVar && bjVar !== 'N/A') data.businessJustification = bjVar;
+        }
+
+        // Fallback to other methods if not found for description
         if (!data.description || data.description === 'N/A') {
             data.description = getVariableValue('business_justification') ||
                               getVariableValue('short_description') ||
@@ -1130,7 +1142,7 @@ Version 1.0.2:
         const fields = [
             { label: 'Opened By', value: data.openedBy, icon: '🔓' },
             { label: 'Requesting Member Firm', value: data.memberFirm, icon: '🏢' },
-            { label: 'Business Justification', value: data.description, icon: '📝' },
+            { label: 'Business Justification', value: data.businessJustification, icon: '📝' },
             { label: 'Number', value: data.number, icon: '🎫' }
         ];
 
