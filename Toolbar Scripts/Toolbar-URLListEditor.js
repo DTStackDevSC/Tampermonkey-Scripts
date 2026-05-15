@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.4
+// @version      1.5.5
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,17 +20,24 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.5.4 loading...');
+    console.log('🔧 Netskope URL List Manager v1.5.5 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.4';
-    const CHANGELOG = `Version 1.5.4:
-- Added URL List Lookup by ID: a new "🔗 List by ID" action button lets you fetch any
-  URL list by numeric ID, see its metadata (type, pending state, modify audit), and edit
-  its URL entries in-place with the full log-button toolbar, then save directly.
+    const SCRIPT_VERSION = '1.5.5';
+    const CHANGELOG = `Version 1.5.5:
+- Renamed action buttons to "🔗 URL List by ID" and "🏷️ Category by ID" for clarity.
+- Fixed "[object PointerEvent]" appearing in the URL List by ID input on open — the
+  button now correctly calls the lookup with no pre-fill instead of forwarding the click event.
+- Included/Excluded URL List pills in Category results now show a ↗ arrow, lift on hover
+  with a subtle shadow, and display a clearer tooltip to signal they are clickable links.
+
+Version 1.5.4:
+- Added URL List Lookup by ID: a new action button lets you fetch any URL list by numeric
+  ID, see its metadata (type, pending state, modify audit), and edit its URL entries
+  in-place with the full log-button toolbar, then save directly.
 - Custom Category Lookup: Included/Excluded URL List ID pills are now clickable — clicking
   any ID immediately opens the URL list editable view, with a "← Back to Category" button
   to return to the category result without re-fetching.
@@ -1278,9 +1285,9 @@ Version 1.4.1:
         actionBtns.appendChild(UI.createButton('🔍 Fetch URL Lists',  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fetchUrlLists));
         actionBtns.appendChild(UI.createButton('✨ Create New List', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', showCreateForm));
         actionBtns.appendChild(UI.createButton('🔎 Domain Lookup', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', showDomainLookup));
-        actionBtns.appendChild(UI.createButton('🏷️ Category Lookup', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', showCustomCategoryLookup));
+        actionBtns.appendChild(UI.createButton('🏷️ Category by ID', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', showCustomCategoryLookup));
         actionBtns.lastChild.style.color = '#333';
-        actionBtns.appendChild(UI.createButton('🔗 List by ID', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', showUrlListByIdLookup));
+        actionBtns.appendChild(UI.createButton('🔗 URL List by ID', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => showUrlListByIdLookup()));
         modal.appendChild(actionBtns);
 
         modal.appendChild(UI.createElement('div', {
@@ -1963,7 +1970,7 @@ Version 1.4.1:
         container.style.minHeight     = '0';
 
         const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
-        header.textContent = '🏷️ Custom Category Lookup';
+        header.textContent = '🏷️ Custom Category by ID';
         container.appendChild(header);
 
         const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
@@ -2089,16 +2096,36 @@ Version 1.4.1:
                     const pill = UI.createElement('span', {
                         padding: '3px 10px',
                         backgroundColor: clickable ? '#d1ecf1' : '#e8f4f8',
-                        border: '1px solid #bee5eb',
+                        border: `1px solid ${clickable ? '#7cc8dc' : '#bee5eb'}`,
                         borderRadius: '12px', fontSize: '12px', color: '#0c5460', fontFamily: 'monospace',
                         cursor: clickable ? 'pointer' : 'default',
-                        textDecoration: clickable ? 'underline' : 'none'
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        transition: clickable ? 'all 0.15s ease' : 'none',
+                        userSelect: 'none'
                     });
                     pill.textContent = item;
                     if (clickable) {
-                        pill.title = 'Click to look up this URL list';
-                        pill.onmouseover = () => { pill.style.backgroundColor = '#bee5eb'; };
-                        pill.onmouseout  = () => { pill.style.backgroundColor = '#d1ecf1'; };
+                        const arrow = document.createElement('span');
+                        arrow.textContent = '↗';
+                        Object.assign(arrow.style, { fontSize: '11px', opacity: '0.7', lineHeight: '1' });
+                        pill.appendChild(arrow);
+                        pill.title = `Open URL list ${item} in the editable lookup view`;
+                        pill.onmouseover = () => {
+                            pill.style.backgroundColor = '#9ddff0';
+                            pill.style.borderColor     = '#0083b0';
+                            pill.style.color           = '#005f7a';
+                            pill.style.boxShadow       = '0 2px 6px rgba(0, 131, 176, 0.25)';
+                            pill.style.transform       = 'translateY(-1px)';
+                            arrow.style.opacity        = '1';
+                        };
+                        pill.onmouseout = () => {
+                            pill.style.backgroundColor = '#d1ecf1';
+                            pill.style.borderColor     = '#7cc8dc';
+                            pill.style.color           = '#0c5460';
+                            pill.style.boxShadow       = 'none';
+                            pill.style.transform       = 'translateY(0)';
+                            arrow.style.opacity        = '0.7';
+                        };
                         pill.onclick = () => onPillClick(item);
                     }
                     pillRow.appendChild(pill);
