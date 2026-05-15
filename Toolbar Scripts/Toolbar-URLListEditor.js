@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.2
+// @version      1.5.3
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,20 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.5.2 loading...');
+    console.log('🔧 Netskope URL List Manager v1.5.3 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.2';
-    const CHANGELOG = `Version 1.5.2:
+    const SCRIPT_VERSION = '1.5.3';
+    const CHANGELOG = `Version 1.5.3:
+- Added Custom Category Lookup: a new action button lets you look up any Custom
+  Category by its numeric ID via the /api/v2/profiles/customcategories/{id} endpoint.
+  Results display the category name, status, description, included/excluded URL list IDs,
+  included predefined categories, and full audit info (created/modified by + timestamps).
+
+Version 1.5.2:
 - Fixed status bubble ("Found X URL lists") not displaying properly: it was appended
   after the content containers, so the flex:1 container pushed it off-screen. Moved
   it above the containers so it appears between the action buttons and the list.
@@ -1258,11 +1264,13 @@ Version 1.4.1:
         sectionHeader.querySelector('#tenant-switch-select')?.addEventListener('click', e => e.stopPropagation());
         modal.appendChild(UI.createElement('hr', { width: '100%', border: 'none', borderTop: '1px solid #ddd', margin: '10px 0' }));
 
-        // Action buttons — added Domain Lookup button
-        const actionBtns = UI.createElement('div', { display: 'flex', gap: '10px', width: '100%' });
+        // Action buttons
+        const actionBtns = UI.createElement('div', { display: 'flex', gap: '10px', width: '100%', flexWrap: 'wrap' });
         actionBtns.appendChild(UI.createButton('🔍 Fetch URL Lists',  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fetchUrlLists));
         actionBtns.appendChild(UI.createButton('✨ Create New List', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', showCreateForm));
         actionBtns.appendChild(UI.createButton('🔎 Domain Lookup', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', showDomainLookup));
+        actionBtns.appendChild(UI.createButton('🏷️ Category Lookup', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', showCustomCategoryLookup));
+        actionBtns.lastChild.style.color = '#333';
         modal.appendChild(actionBtns);
 
         modal.appendChild(UI.createElement('div', {
@@ -1270,7 +1278,7 @@ Version 1.4.1:
             textAlign: 'center', display: 'none'
         }, { id: 'urllist-status' }));
 
-        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container'].forEach(id => {
+        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container', 'custom-category-container'].forEach(id => {
             modal.appendChild(UI.createElement('div', { display: 'none', width: '100%' }, { id }));
         });
 
@@ -1388,7 +1396,7 @@ Version 1.4.1:
     }
 
     function resetModal() {
-        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container'].forEach(id => {
+        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container', 'custom-category-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.innerHTML = ''; }
         });
@@ -1927,6 +1935,180 @@ Version 1.4.1:
     function escapeHtml(str) {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
         return str.replace(/[&<>"']/g, c => map[c]);
+    }
+
+    /* ==========================================================
+     *  CUSTOM CATEGORY LOOKUP
+     * ==========================================================*/
+
+    function showCustomCategoryLookup() {
+        resetModal();
+        const container = document.getElementById('custom-category-container');
+        if (!container) return;
+
+        container.innerHTML = '';
+        container.style.display       = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.flex          = '1';
+        container.style.minHeight     = '0';
+
+        const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
+        header.textContent = '🏷️ Custom Category Lookup';
+        container.appendChild(header);
+
+        const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
+        desc.textContent = 'Look up a Custom Category by its numeric ID to see its name, status, URL list assignments, and audit info.';
+        container.appendChild(desc);
+
+        const inputRow = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
+
+        const idInput = UI.createElement('input', {
+            flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px',
+            fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace',
+            outline: 'none', transition: 'border-color 0.2s'
+        }, { id: 'custom-category-id-input', type: 'text', placeholder: 'e.g. 10042' });
+
+        idInput.onfocus = () => { idInput.style.borderColor = '#f7971e'; };
+        idInput.onblur  = () => { idInput.style.borderColor = '#ccc'; };
+
+        const lookupBtn = UI.createButton('🔍 Lookup', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', executeCustomCategoryLookup);
+        Object.assign(lookupBtn.style, { flex: '0 0 120px', color: '#333' });
+
+        inputRow.appendChild(idInput);
+        inputRow.appendChild(lookupBtn);
+        container.appendChild(inputRow);
+
+        const resultsArea = UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'custom-category-results' });
+        container.appendChild(resultsArea);
+
+        const cancelRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
+        const cancelBtn = UI.createButton('✖️ Cancel', 'white', resetModal);
+        cancelBtn.style.border = '1px solid #ccc';
+        cancelBtn.style.color  = '#333';
+        cancelRow.appendChild(cancelBtn);
+        container.appendChild(cancelRow);
+
+        idInput.onkeydown = (e) => { if (e.key === 'Enter') executeCustomCategoryLookup(); };
+        setTimeout(() => idInput.focus(), 100);
+    }
+
+    async function executeCustomCategoryLookup() {
+        const input      = document.getElementById('custom-category-id-input');
+        const resultsArea = document.getElementById('custom-category-results');
+        if (!input || !resultsArea) return;
+
+        const id = input.value.trim();
+        if (!id) return UI.showStatus('⚠️ Please enter a category ID', 'warning');
+        if (!/^\d+$/.test(id)) return UI.showStatus('⚠️ Category ID must be a numeric value', 'warning');
+
+        UI.showStatus('🔄 Looking up custom category...', 'info');
+        resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching category data...</div>';
+
+        await makeApiRequest('GET', `/api/v2/profiles/customcategories/${id}?details=true`, null,
+            (data) => {
+                UI.hideStatus();
+                renderCustomCategoryResult(resultsArea, data);
+            },
+            (error) => {
+                UI.showStatus(`❌ Failed: ${error}`, 'error');
+                resultsArea.innerHTML = `<div style="text-align:center;padding:30px;color:#dc3545;font-size:13px;">Could not retrieve category. ${escapeHtml(String(error))}</div>`;
+            }
+        );
+    }
+
+    function renderCustomCategoryResult(resultsArea, data) {
+        resultsArea.innerHTML = '';
+
+        const STATUS_BADGE = {
+            'applied': { bg: '#d4edda', border: '#c3e6cb', color: '#155724' },
+            'pending': { bg: '#fff3cd', border: '#ffeaa7', color: '#856404' },
+            'error':   { bg: '#f8d7da', border: '#f5c6cb', color: '#721c24' }
+        };
+        const badge = STATUS_BADGE[(data.status || '').toLowerCase()] || { bg: '#e9ecef', border: '#dee2e6', color: '#495057' };
+
+        const formatDate = (iso) => {
+            if (!iso) return '—';
+            try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
+        };
+
+        const card = UI.createElement('div', {
+            padding: '16px', border: '1px solid #ccc', borderRadius: '8px',
+            backgroundColor: '#fff', fontSize: '13px', fontFamily: 'Arial, sans-serif'
+        });
+
+        // Name + status
+        const titleRow = UI.createElement('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
+        const nameEl = UI.createElement('div', { fontWeight: 'bold', fontSize: '16px', color: '#333' });
+        nameEl.textContent = data.name || '(unnamed)';
+        const statusBadge = UI.createElement('span', {
+            padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold',
+            backgroundColor: badge.bg, border: `1px solid ${badge.border}`, color: badge.color
+        });
+        statusBadge.textContent = data.status || 'unknown';
+        titleRow.appendChild(nameEl);
+        titleRow.appendChild(statusBadge);
+        card.appendChild(titleRow);
+
+        // ID
+        const idRow = UI.createElement('div', { fontSize: '12px', color: '#888', marginBottom: '14px' });
+        idRow.textContent = `ID: ${data.id}`;
+        card.appendChild(idRow);
+
+        // Description
+        if (data.description) {
+            const descRow = UI.createElement('div', { marginBottom: '12px', color: '#555', fontSize: '13px' });
+            descRow.innerHTML = `<strong>Description:</strong> ${escapeHtml(data.description)}`;
+            card.appendChild(descRow);
+        }
+
+        // Helper: labelled pill list
+        const renderPillField = (label, items) => {
+            const wrap = UI.createElement('div', { marginBottom: '10px' });
+            const lbl = UI.createElement('div', { fontWeight: 'bold', color: '#555', marginBottom: '5px', fontSize: '12px' });
+            lbl.textContent = label;
+            wrap.appendChild(lbl);
+            if (!items || items.length === 0) {
+                const none = UI.createElement('span', { color: '#aaa', fontStyle: 'italic', fontSize: '12px' });
+                none.textContent = '(none)';
+                wrap.appendChild(none);
+            } else {
+                const pillRow = UI.createElement('div', { display: 'flex', flexWrap: 'wrap', gap: '6px' });
+                items.forEach(item => {
+                    const pill = UI.createElement('span', {
+                        padding: '3px 10px', backgroundColor: '#e8f4f8', border: '1px solid #bee5eb',
+                        borderRadius: '12px', fontSize: '12px', color: '#0c5460', fontFamily: 'monospace'
+                    });
+                    pill.textContent = item;
+                    pillRow.appendChild(pill);
+                });
+                wrap.appendChild(pillRow);
+            }
+            return wrap;
+        };
+
+        card.appendChild(renderPillField('Included URL Lists:', data.included_url_lists));
+        card.appendChild(renderPillField('Excluded URL Lists:', data.excluded_url_lists));
+        card.appendChild(renderPillField('Included Predefined Categories:', data.included_predefined_categories));
+
+        card.appendChild(UI.createElement('hr', { border: 'none', borderTop: '1px solid #eee', margin: '10px 0' }));
+
+        // Audit grid
+        const grid = UI.createElement('div', {
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px',
+            fontSize: '12px', color: '#666'
+        });
+        const mkCell = (label, value) => {
+            const cell = UI.createElement('div');
+            cell.innerHTML = `<span style="font-weight:bold;">${escapeHtml(label)}</span><br>${escapeHtml(value || '—')}`;
+            return cell;
+        };
+        grid.appendChild(mkCell('Created by:', data.create_by));
+        grid.appendChild(mkCell('Created:', formatDate(data.create_time)));
+        grid.appendChild(mkCell('Modified by:', data.modify_by));
+        grid.appendChild(mkCell('Modified:', formatDate(data.modify_time)));
+        card.appendChild(grid);
+
+        resultsArea.appendChild(card);
     }
 
     /* ==========================================================
