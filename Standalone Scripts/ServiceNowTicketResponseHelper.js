@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.13.1
+// @version      2.15.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,24 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.13.1';
-    const CHANGELOG = `Version 2.13.1:
+    const SCRIPT_VERSION = '2.15.0';
+    const CHANGELOG = `Version 2.15.0:
+- Added short description field transforms: responses can now declare a
+  shortDescTransforms array in their metadata to rewrite specific pipe-segment
+  fields when the response is inserted.
+- Solved Closure now automatically sets the short description status segment
+  to "Closed" on insert across all teams.
+
+Version 2.14.0:
+- Added a Settings button in the dropdown header that opens a Settings modal.
+- New setting: "Auto-update date on insert" updates the short description date
+  to today whenever a response is inserted. The setting is on by default and
+  persists across sessions.
+
+Version 2.13.2:
+- EMEA: Added "SPM Request Loaded" response to the Responses section.
+
+Version 2.13.1:
 - Parent items with submenus can now be pinned. When pinned, the full flyout submenu
   is available directly from the Pinned section.
 
@@ -178,7 +194,8 @@ Version 2.11.1:
             solved: {
                 label: 'Solved Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             timeout: {
                 label: 'Timeout Closure',
@@ -349,6 +366,11 @@ Version 2.11.1:
                 label: 'Working on the request Reminder',
                 category: 'reminders',
                 fieldType: 'comments'
+            },
+            spmLoaded: {
+                label: 'SPM Request Loaded',
+                category: 'responses',
+                fieldType: 'comments'
             }
         },
 
@@ -400,6 +422,7 @@ Version 2.11.1:
             'moreinfo',
             'vpninfo',
             'tier2SOCreq',
+            'spmLoaded',
         ],
 
         responses: {
@@ -775,6 +798,11 @@ Just a quick note to let you know that we are currently working on your request 
 We’ll keep you updated as we move forward.
 
 Kind regards,
+Global Data Security Enablement`,
+                spmLoaded: (vars) => `Hi @[${vars.openedByName}],
+We have loaded SPM request #. The SPM team will work on it and contact you if additional information is required.
+
+Best regards,
 Global Data Security Enablement`
         }
     },
@@ -852,7 +880,8 @@ Global Data Security Enablement`
             solved: {
                 label: 'Solved Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             timeout: {
                 label: 'Timeout Closure',
@@ -1072,7 +1101,8 @@ Regards.`,
             solved: {
                 label: 'Solved Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             timeout: {
                 label: 'Timeout Closure',
@@ -1538,6 +1568,77 @@ Regards.`,
         return rawText
             .replace(/\{\{openedByName\}\}/g, vars.openedByName || 'User')
             .replace(/\{\{pageType\}\}/g, vars.pageType || 'ticket');
+    }
+
+    /* ==========================================================
+     *  SETTINGS STORAGE
+     * ==========================================================*/
+
+    function getAutoUpdateDateEnabled() {
+        return GM_getValue('ticketResponseAutoUpdateDate', true);
+    }
+
+    function setAutoUpdateDateEnabled(val) {
+        GM_setValue('ticketResponseAutoUpdateDate', val);
+    }
+
+    /* ==========================================================
+     *  DATE UPDATE HELPERS
+     * ==========================================================*/
+
+    function getFormattedDate() {
+        const today = new Date();
+        const day   = String(today.getDate()).padStart(2, '0');
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const year  = today.getFullYear();
+        return `${day}-${month}-${year}`;
+    }
+
+    function getShortDescriptionInput() {
+        return document.getElementById('sc_req_item.short_description') ||
+               document.getElementById('incident.short_description') ||
+               document.getElementById('sc_task.short_description');
+    }
+
+    function maybeUpdateShortDescriptionDate() {
+        if (!getAutoUpdateDateEnabled()) return;
+        const input = getShortDescriptionInput();
+        if (!input) return;
+        const currentValue = input.value.trim();
+        if (!currentValue) return;
+        const newDate = getFormattedDate();
+        const datePattern = /^\d{2}-\d{2}-\d{4}/;
+        const newValue = datePattern.test(currentValue)
+            ? currentValue.replace(datePattern, newDate)
+            : `${newDate} | ${currentValue}`;
+        if (newValue === currentValue) return;
+        input.value = newValue;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    // Named indices for the pipe-delimited short description format:
+    // DD-MM-YYYY | MF | Product | Status | Vendor Case | Type | Complexity | PER | Tenant
+    const SHORT_DESC_FIELDS = {
+        date: 0, mf: 1, product: 2, status: 3,
+        vendorCase: 4, type: 5, complexity: 6, per: 7, tenant: 8
+    };
+
+    function applyShortDescTransforms(transforms) {
+        if (!transforms || !transforms.length) return;
+        const input = getShortDescriptionInput();
+        if (!input || !input.value.includes('|')) return;
+        const parts = input.value.split('|').map(p => p.trim());
+        let changed = false;
+        transforms.forEach(t => {
+            const idx = SHORT_DESC_FIELDS[t.field];
+            if (idx !== undefined && idx < parts.length) {
+                parts[idx] = t.value;
+                changed = true;
+            }
+        });
+        if (!changed) return;
+        input.value = parts.join(' | ');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     /* ==========================================================
@@ -2504,6 +2605,97 @@ Regards.`,
         overlay.onclick = () => closeButton.click();
     }
 
+    function showSettingsModal() {
+        if (document.getElementById('responseHelperSettingsOverlay')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'responseHelperSettingsOverlay';
+        Object.assign(overlay.style, { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: '10000' });
+
+        const modal = document.createElement('div');
+        modal.id = 'responseHelperSettingsModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: '10001', background: '#fff', border: '2px solid #333',
+            padding: '0', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            fontFamily: 'Arial, sans-serif', borderRadius: '10px',
+            minWidth: '360px', maxWidth: '460px'
+        });
+
+        const headerBar = document.createElement('div');
+        Object.assign(headerBar.style, {
+            padding: '14px 18px', borderBottom: '2px solid #667eea',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            background: '#f8f9fa', borderRadius: '8px 8px 0 0'
+        });
+        const title = document.createElement('h2');
+        title.textContent = 'Settings';
+        Object.assign(title.style, { margin: '0', fontSize: '15px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, { background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer', color: '#666', padding: '0', lineHeight: '1' });
+        closeX.onmouseover = () => closeX.style.color = '#333';
+        closeX.onmouseout  = () => closeX.style.color = '#666';
+        closeX.onclick = () => { overlay.remove(); modal.remove(); };
+        headerBar.appendChild(title);
+        headerBar.appendChild(closeX);
+
+        const body = document.createElement('div');
+        Object.assign(body.style, { padding: '16px 18px' });
+
+        // Toggle row: auto-update date
+        const toggleRow = document.createElement('div');
+        Object.assign(toggleRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' });
+
+        const labelCol = document.createElement('div');
+        const labelText = document.createElement('div');
+        labelText.textContent = 'Auto-update date on insert';
+        Object.assign(labelText.style, { fontSize: '13px', fontWeight: 'bold', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const labelDesc = document.createElement('div');
+        labelDesc.textContent = 'Updates the short description date to today when a response is inserted.';
+        Object.assign(labelDesc.style, { fontSize: '11px', color: '#777', marginTop: '3px', fontFamily: 'Arial, sans-serif' });
+        labelCol.appendChild(labelText);
+        labelCol.appendChild(labelDesc);
+
+        const toggleLabel = document.createElement('label');
+        Object.assign(toggleLabel.style, { position: 'relative', display: 'inline-block', width: '40px', height: '22px', flexShrink: '0', marginLeft: '16px' });
+        const toggleInput = document.createElement('input');
+        toggleInput.type = 'checkbox';
+        toggleInput.checked = getAutoUpdateDateEnabled();
+        Object.assign(toggleInput.style, { opacity: '0', width: '0', height: '0', position: 'absolute' });
+        const slider = document.createElement('span');
+        Object.assign(slider.style, {
+            position: 'absolute', cursor: 'pointer', top: '0', left: '0', right: '0', bottom: '0',
+            backgroundColor: toggleInput.checked ? '#667eea' : '#ccc',
+            borderRadius: '22px', transition: 'background-color 0.25s'
+        });
+        const knob = document.createElement('span');
+        Object.assign(knob.style, {
+            position: 'absolute', height: '16px', width: '16px', left: '3px', bottom: '3px',
+            backgroundColor: '#fff', borderRadius: '50%', transition: 'transform 0.25s',
+            transform: toggleInput.checked ? 'translateX(18px)' : 'translateX(0)'
+        });
+        slider.appendChild(knob);
+        toggleInput.onchange = () => {
+            const on = toggleInput.checked;
+            setAutoUpdateDateEnabled(on);
+            slider.style.backgroundColor = on ? '#667eea' : '#ccc';
+            knob.style.transform = on ? 'translateX(18px)' : 'translateX(0)';
+        };
+        toggleLabel.appendChild(toggleInput);
+        toggleLabel.appendChild(slider);
+
+        toggleRow.appendChild(labelCol);
+        toggleRow.appendChild(toggleLabel);
+        body.appendChild(toggleRow);
+
+        modal.appendChild(headerBar);
+        modal.appendChild(body);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); modal.remove(); } };
+    }
+
     function showTeamSelector() {
         if (document.getElementById('teamSelector')) return;
 
@@ -2616,6 +2808,17 @@ Regards.`,
             setTimeout(() => location.reload(), 100);
         };
         actionButtons.appendChild(switchTeamBtn);
+
+        const settingsBtn = document.createElement('button');
+        settingsBtn.textContent = '⚙ Settings';
+        Object.assign(settingsBtn.style, { fontSize: '11px', background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: '0', textDecoration: 'underline' });
+        settingsBtn.onmouseover = () => settingsBtn.style.color = '#0052a3';
+        settingsBtn.onmouseout  = () => settingsBtn.style.color = '#0066cc';
+        settingsBtn.onclick = () => {
+            dropdown.style.display = 'none';
+            showSettingsModal();
+        };
+        actionButtons.appendChild(settingsBtn);
 
         const manageCustomRow = document.createElement('div');
         Object.assign(manageCustomRow.style, { marginTop: '8px' });
@@ -2730,6 +2933,11 @@ Regards.`,
                                 : team.responses[entry.key](vars);
                             await insertTextWithMention(textarea, text, ft);
                             flashTargetField(textarea);
+                            maybeUpdateShortDescriptionDate();
+                            if (!entry.isCustom) {
+                                const pinnedMeta = team.responseMetadata[entry.key];
+                                if (pinnedMeta && pinnedMeta.shortDescTransforms) applyShortDescTransforms(pinnedMeta.shortDescTransforms);
+                            }
                         }
                         dropdown.style.display = 'none';
                     });
@@ -2773,6 +2981,11 @@ Regards.`,
                             : team.responses[entry.key](vars);
                         await insertTextWithMention(textarea, text, ft);
                         flashTargetField(textarea);
+                        maybeUpdateShortDescriptionDate();
+                        if (!entry.isCustom) {
+                            const recentMeta = team.responseMetadata[entry.key];
+                            if (recentMeta && recentMeta.shortDescTransforms) applyShortDescTransforms(recentMeta.shortDescTransforms);
+                        }
                     }
                     dropdown.style.display = 'none';
                 });
@@ -2827,6 +3040,7 @@ Regards.`,
                         if (textarea) {
                             await insertTextWithMention(textarea, resolveCustomResponseText(item.customText, vars), item.fieldType || 'comments');
                             flashTargetField(textarea);
+                            maybeUpdateShortDescriptionDate();
                         }
                         dropdown.style.display = 'none';
                     });
@@ -2849,6 +3063,8 @@ Regards.`,
                         if (textarea) {
                             await insertTextWithMention(textarea, team.responses[item.value](vars), fieldType);
                             flashTargetField(textarea);
+                            maybeUpdateShortDescriptionDate();
+                            if (metadata && metadata.shortDescTransforms) applyShortDescTransforms(metadata.shortDescTransforms);
                         }
                         dropdown.style.display = 'none';
                     });
@@ -3013,6 +3229,9 @@ Regards.`,
                 if (textarea) {
                     await insertTextWithMention(textarea, team.responses[subItem.value](vars), subItem.fieldType);
                     flashTargetField(textarea);
+                    maybeUpdateShortDescriptionDate();
+                    const subMeta = team.responseMetadata[subItem.value];
+                    if (subMeta && subMeta.shortDescTransforms) applyShortDescTransforms(subMeta.shortDescTransforms);
                 }
                 dropdown.style.display = 'none';
                 submenu.style.display = 'none';
@@ -3126,19 +3345,23 @@ Regards.`,
 
         /* Dark mode isolation */
         #ticket-response-dropdown, #customResponsesModal,
-        #teamSelector, #changelogModal { color: #333333 !important; }
+        #teamSelector, #changelogModal,
+        #responseHelperSettingsModal { color: #333333 !important; }
         #ticket-response-dropdown input, #ticket-response-dropdown select,
         #ticket-response-dropdown textarea,
         #customResponsesModal input, #customResponsesModal select,
         #customResponsesModal textarea,
         #teamSelector input, #teamSelector select, #teamSelector textarea,
-        #changelogModal input, #changelogModal select, #changelogModal textarea {
+        #changelogModal input, #changelogModal select, #changelogModal textarea,
+        #responseHelperSettingsModal input, #responseHelperSettingsModal select,
+        #responseHelperSettingsModal textarea {
             background-color: #ffffff !important;
             color: #333333 !important;
         }
         #ticket-response-dropdown { background-color: #ffffff !important; }
         #customResponsesModal { background-color: #ffffff !important; }
         #changelogModal { background-color: #ffffff !important; }
+        #responseHelperSettingsModal { background-color: #ffffff !important; }
     `;
     document.head.appendChild(style);
 
