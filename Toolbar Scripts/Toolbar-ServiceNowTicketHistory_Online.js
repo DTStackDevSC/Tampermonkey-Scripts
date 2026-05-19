@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.7.0
+// @version      1.7.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.0';
-    const CHANGELOG = `Version 1.7.0:
+    const SCRIPT_VERSION = '1.7.1';
+    const CHANGELOG = `Version 1.7.1:
+- Searchable dropdown group headers now use a filled background with top and
+  bottom borders, matching the section title style from the Response Helper.
+
+Version 1.7.0:
 - Added a searchable snippet dropdown that replaces the native change-type
   select in the sidebar and edit modal. Typing filters by group name or item
   label: searching "dlp" shows all items under "DLP Policies" and "DLP
@@ -767,9 +771,10 @@ Version 1.4.3:
             max-height: 220px; overflow-y: auto;
         }
         .ct-cs-group-header {
-            padding: 5px 10px 3px; font-size: 10px; font-weight: bold; color: #888;
-            text-transform: uppercase; letter-spacing: .5px; font-family: Arial, sans-serif;
-            cursor: default; pointer-events: none;
+            padding: 6px 12px; font-size: 10px; font-weight: bold; color: #555;
+            background-color: #e9edf2; border-top: 1px solid #d4d8de; border-bottom: 1px solid #d4d8de;
+            text-transform: uppercase; letter-spacing: .7px; font-family: Arial, sans-serif;
+            cursor: default; pointer-events: none; user-select: none;
         }
         .ct-cs-item {
             padding: 6px 12px 6px 20px; font-size: 12px; cursor: pointer;
@@ -799,7 +804,7 @@ Version 1.4.3:
         .ct-cs-trigger  { background-color: #ffffff !important; color: #333333 !important; }
         .ct-cs-search   { background-color: #ffffff !important; color: #333333 !important; }
         .ct-cs-item     { color: #333333 !important; }
-        .ct-cs-group-header { color: #888888 !important; }
+        .ct-cs-group-header { background-color: #e9edf2 !important; color: #555555 !important; }
     `;
     document.head.appendChild(styleEl);
 
