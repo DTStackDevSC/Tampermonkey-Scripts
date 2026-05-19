@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.6.0
+// @version      1.7.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,17 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.0';
-    const CHANGELOG = `Version 1.6.0:
+    const SCRIPT_VERSION = '1.7.0';
+    const CHANGELOG = `Version 1.7.0:
+- Added a searchable snippet dropdown that replaces the native change-type
+  select in the sidebar and edit modal. Typing filters by group name or item
+  label: searching "dlp" shows all items under "DLP Policies" and "DLP
+  Process Exceptions". The search input is auto-focused whenever the
+  dropdown is opened.
+- The feature is enabled by default and can be toggled off in the settings
+  modal via a new "Searchable change-type dropdown" checkbox.
+
+Version 1.6.0:
 - Added DLP Process Exceptions group with "DLP Process Exception Added" and
   "DLP Process Exception Removed" change types. Each entry captures Process
   executable path, Operating System, and Description.
@@ -303,6 +312,172 @@ Version 1.4.3:
         });
     }
 
+    /**
+     * Returns a native <select> or a custom searchable snippet dropdown
+     * depending on the searchable-dropdown setting. Either way the returned
+     * element has `.value` (get/set), `.disabled` (get/set), and dispatches
+     * a native 'change' event on selection — same API as a native <select>.
+     */
+    function makeSnippetSelect(id, selectedValue, addPlaceholder) {
+        if (!getSearchableDropdown()) {
+            const sel = css(mk('select', { id }), {
+                width:'100%', padding:'7px 10px', borderRadius:'4px', border:'1px solid #ccc',
+                fontSize:'12px', fontFamily:'Arial, sans-serif', marginBottom:'8px',
+                background:'#fff', color:'#333', boxSizing:'border-box', cursor:'pointer'
+            });
+            populateSnippetSelect(sel, selectedValue, addPlaceholder);
+            return sel;
+        }
+
+        const container = mk('div', { id });
+        Object.assign(container.style, {
+            position:'relative', width:'100%', marginBottom:'8px', boxSizing:'border-box'
+        });
+
+        let _value    = selectedValue || '';
+        let _disabled = false;
+
+        const trigger = mk('button', { type:'button' });
+        trigger.className = 'ct-cs-trigger';
+
+        const triggerText = mk('span');
+        Object.assign(triggerText.style, { overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', flex:'1', textAlign:'left' });
+        const triggerArrow = mk('span');
+        triggerArrow.className = 'ct-cs-arrow';
+        triggerArrow.textContent = '▼';
+        trigger.append(triggerText, triggerArrow);
+
+        const dropdown = mk('div');
+        dropdown.className = 'ct-cs-dropdown';
+        dropdown.style.display = 'none';
+
+        const searchInput = mk('input', { type:'text', placeholder:'Type to filter...' });
+        searchInput.className = 'ct-cs-search';
+
+        const listEl = mk('ul');
+        listEl.className = 'ct-cs-list';
+
+        function labelForValue(v) {
+            if (!v) return addPlaceholder ? '— Select a change type —' : '';
+            return getSnippet(v)?.label || v;
+        }
+
+        function updateTriggerText() { triggerText.textContent = labelForValue(_value); }
+        updateTriggerText();
+
+        function renderList(filter) {
+            listEl.innerHTML = '';
+            const q = filter.toLowerCase();
+            let hasAny = false;
+            SNIPPET_GROUPS.forEach(({ group, items }) => {
+                const groupMatch   = group.toLowerCase().includes(q);
+                const visibleItems = groupMatch ? items : items.filter(s => s.label.toLowerCase().includes(q));
+                if (!visibleItems.length) return;
+                hasAny = true;
+                const header = mk('li');
+                header.className = 'ct-cs-group-header';
+                header.textContent = group;
+                listEl.appendChild(header);
+                visibleItems.forEach(s => {
+                    const li = mk('li');
+                    li.className = 'ct-cs-item' + (s.value === _value ? ' ct-cs-selected' : '');
+                    li.textContent = s.label;
+                    li.dataset.value = s.value;
+                    li.addEventListener('mousedown', e => {
+                        e.preventDefault();
+                        pickOption(s.value);
+                        closeDropdown();
+                        trigger.focus();
+                    });
+                    listEl.appendChild(li);
+                });
+            });
+            if (!hasAny) {
+                const li = mk('li');
+                li.className = 'ct-cs-no-results';
+                li.textContent = 'No results';
+                listEl.appendChild(li);
+            }
+        }
+
+        function pickOption(v) {
+            _value = v;
+            updateTriggerText();
+            container.dispatchEvent(new Event('change', { bubbles:true }));
+        }
+
+        function openDropdown() {
+            if (_disabled) return;
+            document.querySelectorAll('.ct-cs-dropdown').forEach(dd => {
+                if (dd !== dropdown && dd.style.display !== 'none') {
+                    dd.style.display = 'none';
+                    dd.parentElement?.querySelector('.ct-cs-trigger')?.classList.remove('ct-cs-open');
+                }
+            });
+            dropdown.style.display = 'block';
+            trigger.classList.add('ct-cs-open');
+            searchInput.value = '';
+            renderList('');
+            setTimeout(() => {
+                searchInput.focus();
+                listEl.querySelector('.ct-cs-selected')?.scrollIntoView({ block:'nearest' });
+            }, 0);
+        }
+
+        function closeDropdown() {
+            dropdown.style.display = 'none';
+            trigger.classList.remove('ct-cs-open');
+        }
+
+        trigger.addEventListener('click', e => {
+            e.stopPropagation();
+            dropdown.style.display === 'none' ? openDropdown() : closeDropdown();
+        });
+
+        searchInput.addEventListener('input', () => renderList(searchInput.value));
+
+        searchInput.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { e.preventDefault(); closeDropdown(); trigger.focus(); return; }
+            const items = [...listEl.querySelectorAll('.ct-cs-item')];
+            if (!items.length) return;
+            const highlighted = listEl.querySelector('.ct-cs-highlighted');
+            const idx = highlighted ? items.indexOf(highlighted) : -1;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                items.forEach(i => i.classList.remove('ct-cs-highlighted'));
+                const next = items[Math.min(idx + 1, items.length - 1)];
+                if (next) { next.classList.add('ct-cs-highlighted'); next.scrollIntoView({ block:'nearest' }); }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                items.forEach(i => i.classList.remove('ct-cs-highlighted'));
+                const prev = items[Math.max(idx - 1, 0)];
+                if (prev) { prev.classList.add('ct-cs-highlighted'); prev.scrollIntoView({ block:'nearest' }); }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const target = highlighted || items[0];
+                if (target?.dataset.value !== undefined) { pickOption(target.dataset.value); closeDropdown(); trigger.focus(); }
+            }
+        });
+
+        document.addEventListener('click', e => { if (!container.contains(e.target)) closeDropdown(); });
+
+        Object.defineProperty(container, 'value', {
+            get() { return _value; },
+            set(v) { _value = v || ''; updateTriggerText(); },
+            configurable: true
+        });
+        Object.defineProperty(container, 'disabled', {
+            get()  { return _disabled; },
+            set(v) { _disabled = !!v; trigger.disabled = !!v; if (v) closeDropdown(); },
+            configurable: true
+        });
+        container.focus = () => trigger.focus();
+
+        dropdown.append(searchInput, listEl);
+        container.append(trigger, dropdown);
+        return container;
+    }
+
     /* ==========================================================
      *  CATEGORY GROUPS  (for grouped summary)
      * ==========================================================*/
@@ -345,6 +520,10 @@ Version 1.4.3:
     const CACHE_TTL_WARN_THRESHOLD = 30;
     function getCacheTtlDays()  { return Number(GM_getValue(CACHE_TTL_KEY, CACHE_TTL_DEFAULT)) || CACHE_TTL_DEFAULT; }
     function setCacheTtlDays(v) { GM_setValue(CACHE_TTL_KEY, Math.max(1, Number(v) || CACHE_TTL_DEFAULT)); }
+
+    const SEARCHABLE_DROPDOWN_KEY = 'changeTrackerSearchableDropdown';
+    function getSearchableDropdown()  { return GM_getValue(SEARCHABLE_DROPDOWN_KEY, true) !== false; }
+    function setSearchableDropdown(v) { GM_setValue(SEARCHABLE_DROPDOWN_KEY, !!v); }
 
     function compareVersions(v1, v2) {
         if (!v1) return true;
@@ -559,6 +738,53 @@ Version 1.4.3:
             background: rgba(0,0,0,.5) !important; z-index: 20000 !important;
         }
 
+        /* Custom searchable snippet dropdown */
+        .ct-cs-trigger {
+            width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 4px;
+            background: #fff; color: #333; font-size: 12px; font-family: Arial, sans-serif;
+            cursor: pointer; box-sizing: border-box; display: flex; align-items: center;
+            justify-content: space-between; gap: 6px; transition: border-color .15s;
+        }
+        .ct-cs-trigger:hover, .ct-cs-trigger:focus { border-color: #888; outline: none; }
+        .ct-cs-trigger:disabled { opacity: .45; cursor: not-allowed; background: #e9e9e9; }
+        .ct-cs-trigger.ct-cs-open .ct-cs-arrow { transform: rotate(180deg); }
+        .ct-cs-arrow {
+            font-size: 10px; color: #666; flex-shrink: 0;
+            pointer-events: none; transition: transform .15s; display: inline-block;
+        }
+        .ct-cs-dropdown {
+            position: absolute; top: calc(100% + 2px); left: 0; z-index: 99999;
+            background: #fff; border: 1px solid #ccc; border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,.15); min-width: 100%; max-width: 360px; overflow: hidden;
+        }
+        .ct-cs-search {
+            width: 100%; padding: 6px 10px; border: none; border-bottom: 1px solid #eee;
+            border-radius: 0; font-size: 13px; box-sizing: border-box; outline: none;
+            background: #fff; color: #333; font-family: Arial, sans-serif;
+        }
+        .ct-cs-list {
+            list-style: none; margin: 0; padding: 4px 0;
+            max-height: 220px; overflow-y: auto;
+        }
+        .ct-cs-group-header {
+            padding: 5px 10px 3px; font-size: 10px; font-weight: bold; color: #888;
+            text-transform: uppercase; letter-spacing: .5px; font-family: Arial, sans-serif;
+            cursor: default; pointer-events: none;
+        }
+        .ct-cs-item {
+            padding: 6px 12px 6px 20px; font-size: 12px; cursor: pointer;
+            font-family: Arial, sans-serif; color: #333;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .ct-cs-item:hover, .ct-cs-item.ct-cs-highlighted { background: #e8f0fe; color: #333; }
+        .ct-cs-item.ct-cs-selected { background: #667eea; color: #fff; }
+        .ct-cs-item.ct-cs-selected:hover,
+        .ct-cs-item.ct-cs-selected.ct-cs-highlighted { background: #5568d3; color: #fff; }
+        .ct-cs-no-results {
+            padding: 7px 12px; font-size: 12px; color: #999;
+            font-style: italic; cursor: default; font-family: Arial, sans-serif;
+        }
+
         /* Dark mode isolation: force light theme on all script UI */
         #ct-sidebar { background-color: #f9f9f9 !important; color: #333333 !important; }
         #ct-edit-modal { background-color: #f9f9f9 !important; color: #333333 !important; }
@@ -569,6 +795,11 @@ Version 1.4.3:
             background-color: #ffffff !important;
             color: #333333 !important;
         }
+        .ct-cs-dropdown { background-color: #ffffff !important; color: #333333 !important; }
+        .ct-cs-trigger  { background-color: #ffffff !important; color: #333333 !important; }
+        .ct-cs-search   { background-color: #ffffff !important; color: #333333 !important; }
+        .ct-cs-item     { color: #333333 !important; }
+        .ct-cs-group-header { color: #888888 !important; }
     `;
     document.head.appendChild(styleEl);
 
@@ -2218,12 +2449,8 @@ Version 1.4.3:
         }));
 
         // Type dropdown — all types, grouped, pre-selected to current entry type
-        const typeSelect = css(mk('select', { id:'ct-edit-type' }), {
-            width:'100%', padding:'7px 10px', borderRadius:'4px', border:'1px solid #ccc',
-            fontSize:'12px', fontFamily:'Arial, sans-serif', marginBottom:'12px',
-            background:'#fff', boxSizing:'border-box', cursor:'pointer'
-        });
-        populateSnippetSelect(typeSelect, entry.type, false);
+        const typeSelect = makeSnippetSelect('ct-edit-type', entry.type, false);
+        typeSelect.style.marginBottom = '12px';
         modal.appendChild(typeSelect);
 
         // Dynamic fields container
@@ -2382,12 +2609,7 @@ Version 1.4.3:
         );
 
         // Snippet dropdown
-        const select = css(mk('select', { id:'ct-snippet-select' }), {
-            width:'100%', padding:'7px 10px', borderRadius:'4px', border:'1px solid #ccc',
-            fontSize:'12px', fontFamily:'Arial, sans-serif', marginBottom:'8px',
-            background:'#fff', color:'#333', boxSizing:'border-box', cursor:'pointer'
-        });
-        populateSnippetSelect(select, '', true);
+        const select = makeSnippetSelect('ct-snippet-select', '', true);
         inputArea.appendChild(select);
 
         // Dynamic fields container (starts as freeform textarea)
@@ -2931,6 +3153,29 @@ Version 1.4.3:
         ttlRow.append(ttlLabel, ttlDesc, ttlInputRow, ttlWarn);
         modal.appendChild(ttlRow);
 
+        // Searchable dropdown toggle
+        const searchableRow = css(mk('label', { htmlFor:'ct-setup-searchable' }), {
+            display:'flex', alignItems:'flex-start', gap:'8px',
+            padding:'8px 10px', marginBottom:'14px',
+            background:'#f6f8fa', border:'1px solid #e1e4e8', borderRadius:'4px',
+            cursor:'pointer', fontFamily:'Arial, sans-serif'
+        });
+        const searchableInput = css(mk('input', { id:'ct-setup-searchable', type:'checkbox' }), {
+            marginTop:'2px', cursor:'pointer'
+        });
+        searchableInput.checked = getSearchableDropdown();
+        const searchableText = css(mk('div'), { fontSize:'12px', color:'#333', lineHeight:'1.4' });
+        const searchableTitle = css(mk('div'), { fontWeight:'bold', marginBottom:'2px' });
+        searchableTitle.textContent = 'Searchable change-type dropdown';
+        const searchableDesc = css(mk('div'), { fontSize:'11px', color:'#666' });
+        searchableDesc.textContent =
+            'Replaces the change-type select with a searchable dropdown. ' +
+            'Type a group name (e.g. "dlp") to filter all items in that group, ' +
+            'or type part of an item label to filter directly.';
+        searchableText.append(searchableTitle, searchableDesc);
+        searchableRow.append(searchableInput, searchableText);
+        modal.appendChild(searchableRow);
+
         // Inline error area
         const errEl = css(mk('div', { id:'ct-setup-error' }), {
             display:'none', marginBottom:'10px', padding:'7px 10px',
@@ -3003,6 +3248,7 @@ Version 1.4.3:
             GM_setValue('changeTrackerToken',     token);
             setAutoWriteEnabled(autoWriteInput.checked);
             setCacheTtlDays(ttlInput.value);
+            setSearchableDropdown(searchableInput.checked);
 
             // Try to connect using the current ticket
             const ticket = getTicketNumber();
