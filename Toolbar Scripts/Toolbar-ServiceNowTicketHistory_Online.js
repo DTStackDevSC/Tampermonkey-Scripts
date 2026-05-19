@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.4
+// @version      1.6.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.4';
-    const CHANGELOG = `Version 1.5.4:
+    const SCRIPT_VERSION = '1.6.0';
+    const CHANGELOG = `Version 1.6.0:
+- Added DLP Process Exceptions group with "DLP Process Exception Added" and
+  "DLP Process Exception Removed" change types. Each entry captures Process
+  executable path, Operating System, and Description.
+
+Version 1.5.4:
 - Added automatic local cache expiry: ticket logs not opened within the
   configured number of days are deleted from GM storage on startup. The
   server copy is never affected and reloads on next open.
@@ -136,6 +141,11 @@ Version 1.4.3:
             { key: 'urlRequested',        label: 'URL Requested',        type: 'text' },
             { key: 'categoriesRequested', label: 'Categories requested', type: 'text' },
         ],
+        dlp_process_exception: [
+            { key: 'processPath',      label: 'Process executable path', type: 'text'     },
+            { key: 'operatingSystem',  label: 'Operating System',        type: 'text'     },
+            { key: 'description',      label: 'Description',             type: 'textarea' },
+        ],
     };
 
     /* ==========================================================
@@ -159,6 +169,13 @@ Version 1.4.3:
                 { label: 'DLP Policy Created',  value: 'DLP Policy Created',  color: '#007bff', schema: 'dlp_policy_full' },
                 { label: 'DLP Policy Modified', value: 'DLP Policy Modified', color: '#6610f2', schema: 'dlp_policy_full' },
                 { label: 'DLP Policy Deleted',  value: 'DLP Policy Deleted',  color: '#c0392b', schema: 'policy_deleted'  },
+            ],
+        },
+        {
+            group: 'DLP Process Exceptions',
+            items: [
+                { label: 'DLP Process Exception Added',   value: 'DLP Process Exception Added',   color: '#28a745', schema: 'dlp_process_exception' },
+                { label: 'DLP Process Exception Removed', value: 'DLP Process Exception Removed', color: '#dc3545', schema: 'dlp_process_exception' },
             ],
         },
         {
@@ -293,6 +310,7 @@ Version 1.4.3:
     const CATEGORY_GROUPS = [
         { label: 'Policy Changes',              types: ['Policy Created', 'Policy Modified', 'Policy Deleted'] },
         { label: 'DLP Policy Changes',          types: ['DLP Policy Created', 'DLP Policy Modified', 'DLP Policy Deleted'] },
+        { label: 'DLP Process Exceptions',      types: ['DLP Process Exception Added', 'DLP Process Exception Removed'] },
         { label: 'URL Lists',                   types: ['URL List Created', 'URL List — URLs Added', 'URL List — URLs Removed', 'URL List Removed'] },
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
         { label: 'Custom Categories',           types: ['Custom Category Created', 'Custom Category — URL Lists Added', 'Custom Category — URL Lists Removed', 'Custom Category Removed'] },
