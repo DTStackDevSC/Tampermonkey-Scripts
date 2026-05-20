@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3
+// @version      1.3.1
 // @description  Highlight a RITM, PER, or Netskope case number on any page to get a floating button that opens it in a new tab. Toggle via Toolbar.
 // @author       J.R.
 // @match        *://*/*
@@ -19,8 +19,11 @@
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.3';
-    const CHANGELOG = `Version 1.3:
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- The settings modal now explains how to use each tool group: highlight a ticket or case number on any page, then click the floating button that appears.
+
+Version 1.3:
 - Changelog modal now renders as collapsible version cards - most recent
   expanded by default, older entries can be opened individually.
 - Toolbar button now shows a pulsing notification dot when a new version
@@ -501,7 +504,7 @@ Version 1.2:
             toggleId:    'tqo-snow-toggle',
             description: {
                 title: 'Enable ServiceNow tickets',
-                body:  'Detect RITM, INC, and PER numbers and open them in ServiceNow.',
+                body:  'Detect RITM, INC, and PER numbers on any page. To open a ticket: highlight the number with your mouse, then click the floating button that appears.',
             },
             typeKeys: ['RITM', 'INC', 'PER'],
         });
@@ -516,7 +519,7 @@ Version 1.2:
             toggleId:    'tqo-ns-toggle',
             description: {
                 title: 'Enable Netskope support cases',
-                body:  'Detect 006XXXXX case numbers and search for them in the Netskope support portal.',
+                body:  'Detect 006XXXXX case numbers on any page. To look up a case: highlight the number with your mouse, then click the floating button that appears.',
             },
             typeKeys: ['NS'],
             note:     'ℹ️ Opens Netskope global search — no direct case URL can be computed from the case number.',
