@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.7.2
+// @version      1.8.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,18 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.2';
-    const CHANGELOG = `Version 1.7.2:
+    const SCRIPT_VERSION = '1.8.0';
+    const CHANGELOG = `Version 1.8.0:
+- Policy, DLP Policy, and Steering Config entries now have an "+ Add fields"
+  button below Source and below Destination. Clicking it opens a panel of
+  optional fields you can add one by one: Source has Source IP, Source IP
+  (Egress), Source Country, OS Family, Browsers, Access Method, Device
+  Classification, and HTTP Header. Destination has App Instance, Destination
+  Country, and Additional Details. Each added field can be removed with the
+  × button next to it. Fields added this way are saved and displayed alongside
+  the other entry details.
+
+Version 1.7.2:
 - The "AD group" field on policy, DLP policy, and steering config entries has been renamed to "Source" to better reflect that it can hold values other than AD groups.
 - Existing entries that were saved with the old field name are migrated automatically on first load, so no data is lost.
 
@@ -84,6 +94,29 @@ Version 1.4.3:
 - Entry IDs now use crypto.randomUUID() instead of a Math.random()-based generator, making IDs cryptographically unpredictable.`;
 
     /* ==========================================================
+     *  OPTIONAL EXTRA FIELDS
+     *  Attached to specific schema fields via extraFields:[].
+     *  Shown via an "+ Add fields" button; stored alongside main fields.
+     * ==========================================================*/
+
+    const SOURCE_EXTRA_FIELDS = [
+        { key: 'sourceIp',             label: 'Source IP'             },
+        { key: 'sourceIpEgress',       label: 'Source IP (Egress)'    },
+        { key: 'sourceCountry',        label: 'Source Country'        },
+        { key: 'osFamily',             label: 'OS Family'             },
+        { key: 'browsers',             label: 'Browsers'              },
+        { key: 'accessMethod',         label: 'Access Method'         },
+        { key: 'deviceClassification', label: 'Device Classification' },
+        { key: 'httpHeader',           label: 'HTTP Header'           },
+    ];
+
+    const DESTINATION_EXTRA_FIELDS = [
+        { key: 'appInstance',         label: 'App Instance'        },
+        { key: 'destinationCountry',  label: 'Destination Country' },
+        { key: 'additionalDetails',   label: 'Additional Details'  },
+    ];
+
+    /* ==========================================================
      *  FIELD SCHEMAS
      *  Each schema is an array of { key, label, type:'text'|'textarea' }
      * ==========================================================*/
@@ -91,8 +124,8 @@ Version 1.4.3:
     const FIELD_SCHEMAS = {
         policy_full: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
-            { key: 'source',        label: 'Source',             type: 'text'     },
-            { key: 'destination',   label: 'Destination',        type: 'text'     },
+            { key: 'source',        label: 'Source',             type: 'text',     extraFields: SOURCE_EXTRA_FIELDS      },
+            { key: 'destination',   label: 'Destination',        type: 'text',     extraFields: DESTINATION_EXTRA_FIELDS },
             { key: 'description',   label: 'Policy description', type: 'textarea' },
             { key: 'groupPosition', label: 'Group position',     type: 'text'     },
             { key: 'action',        label: 'Action',             type: 'text'     },
@@ -102,8 +135,8 @@ Version 1.4.3:
         ],
         dlp_policy_full: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
-            { key: 'source',        label: 'Source',             type: 'text'     },
-            { key: 'destination',   label: 'Destination',        type: 'text'     },
+            { key: 'source',        label: 'Source',             type: 'text',     extraFields: SOURCE_EXTRA_FIELDS      },
+            { key: 'destination',   label: 'Destination',        type: 'text',     extraFields: DESTINATION_EXTRA_FIELDS },
             { key: 'activities',    label: 'Activities',         type: 'text'     },
             { key: 'profileAction', label: 'Profile & Action',   type: 'text'     },
             { key: 'dlpProfile',    label: 'DLP Profile',        type: 'text'     },
@@ -125,7 +158,7 @@ Version 1.4.3:
         ],
         steering_config_full: [
             { key: 'configName',    label: 'Steering/Client Config name',      type: 'text' },
-            { key: 'source',        label: 'Source',                           type: 'text' },
+            { key: 'source',        label: 'Source',                           type: 'text', extraFields: SOURCE_EXTRA_FIELDS },
             { key: 'partnerTenant', label: 'Partner Tenant Access configured', type: 'text' },
         ],
         steering_config_deleted: [
@@ -1815,6 +1848,102 @@ Version 1.4.3:
 
             wrap.append(lbl, input);
             container.appendChild(wrap);
+
+            if (f.extraFields && f.extraFields.length) {
+                const addedKeys    = new Set();
+                const addedContainer = mk('div');
+                const chips        = {};
+
+                const panel = css(mk('div'), {
+                    display: 'none', flexWrap: 'wrap', gap: '5px',
+                    padding: '6px 8px', marginBottom: '6px',
+                    background: '#f6f8fa', border: '1px solid #e1e4e8', borderRadius: '4px',
+                });
+
+                const addBtn = css(mk('button'), {
+                    display: 'block', fontSize: '11px', fontFamily: 'Arial, sans-serif',
+                    color: '#0066cc', background: 'none', border: 'none',
+                    padding: '0 0 6px 0', cursor: 'pointer', textDecoration: 'underline',
+                });
+                addBtn.textContent = '+ Add fields';
+                addBtn.onclick = (e) => {
+                    e.preventDefault();
+                    panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+                };
+
+                function addExtraRow(ef, val) {
+                    if (addedKeys.has(ef.key)) return;
+                    addedKeys.add(ef.key);
+
+                    const row = css(mk('div'), {
+                        display: 'flex', alignItems: 'flex-end', gap: '4px', marginBottom: '7px',
+                    });
+                    const inner = css(mk('div'), { flex: '1' });
+
+                    const rLbl = css(mk('label'), {
+                        display: 'block', fontSize: '11px', fontWeight: 'bold',
+                        color: '#888', marginBottom: '3px', fontFamily: 'Arial, sans-serif',
+                    });
+                    rLbl.textContent = ef.label;
+                    rLbl.htmlFor = `${prefix}-${ef.key}`;
+
+                    const rInput = css(mk('input'), {
+                        width: '100%', padding: '6px 8px', border: '1px solid #ccc',
+                        borderRadius: '4px', fontSize: '12px', fontFamily: 'Arial, sans-serif',
+                        background: '#fafafa', color: '#333', boxSizing: 'border-box', outline: 'none',
+                    });
+                    rInput.type = 'text';
+                    rInput.id = `${prefix}-${ef.key}`;
+                    rInput.placeholder = ef.label;
+                    rInput.dataset.extraKey = ef.key;
+                    if (val) rInput.value = val;
+
+                    const rmBtn = css(mk('button'), {
+                        flexShrink: '0', padding: '4px 7px', fontSize: '13px', lineHeight: '1',
+                        border: '1px solid #ccc', borderRadius: '4px', background: '#f5f5f5',
+                        color: '#888', cursor: 'pointer',
+                    });
+                    rmBtn.textContent = '×';
+                    rmBtn.title = 'Remove field';
+                    rmBtn.onclick = (e) => {
+                        e.preventDefault();
+                        row.remove();
+                        addedKeys.delete(ef.key);
+                        if (chips[ef.key]) chips[ef.key].style.display = '';
+                        addBtn.style.display = '';
+                    };
+
+                    inner.append(rLbl, rInput);
+                    row.append(inner, rmBtn);
+                    addedContainer.appendChild(row);
+
+                    if (chips[ef.key]) chips[ef.key].style.display = 'none';
+                    if (addedKeys.size === f.extraFields.length) {
+                        panel.style.display = 'none';
+                        addBtn.style.display = 'none';
+                    }
+                }
+
+                f.extraFields.forEach(ef => {
+                    const chip = css(mk('button'), {
+                        padding: '3px 8px', fontSize: '11px', fontFamily: 'Arial, sans-serif',
+                        border: '1px solid #c8d0d9', borderRadius: '12px',
+                        background: '#fff', color: '#444', cursor: 'pointer',
+                    });
+                    chip.textContent = ef.label;
+                    chip.onclick = (e) => { e.preventDefault(); addExtraRow(ef, ''); };
+                    chips[ef.key] = chip;
+                    panel.appendChild(chip);
+                });
+
+                f.extraFields.forEach(ef => {
+                    if (values && values[ef.key]) addExtraRow(ef, values[ef.key]);
+                });
+
+                const extrasSection = mk('div');
+                extrasSection.append(addedContainer, addBtn, panel);
+                container.appendChild(extrasSection);
+            }
         });
     }
 
@@ -1846,12 +1975,18 @@ Version 1.4.3:
         }
     }
 
-    /** Collects values from schema field inputs. */
+    /** Collects values from schema field inputs, including any added extra fields. */
     function collectFieldValues(schema, prefix) {
         const vals = {};
         schema.forEach(f => {
             const el = document.getElementById(`${prefix}-${f.key}`);
             vals[f.key] = el ? el.value.trim() : '';
+            if (f.extraFields) {
+                f.extraFields.forEach(ef => {
+                    const el = document.getElementById(`${prefix}-${ef.key}`);
+                    if (el) vals[ef.key] = el.value.trim();
+                });
+            }
         });
         return vals;
     }
@@ -1864,10 +1999,20 @@ Version 1.4.3:
         if (entry.fields && typeof entry.fields === 'object') {
             const schema = getSchema(entry.type);
             if (schema) {
-                const lines = schema
-                    .filter(f => entry.fields[f.key])
-                    .map(f => `${f.label}: ${entry.fields[f.key]}`);
-                return lines.join(forExport ? '\n' : '\n') || '(all fields empty)';
+                const labelMap = {};
+                const orderedKeys = [];
+                schema.forEach(f => {
+                    labelMap[f.key] = f.label;
+                    orderedKeys.push(f.key);
+                    if (f.extraFields) f.extraFields.forEach(ef => {
+                        labelMap[ef.key] = ef.label;
+                        orderedKeys.push(ef.key);
+                    });
+                });
+                const lines = orderedKeys
+                    .filter(k => entry.fields[k])
+                    .map(k => `${labelMap[k] || k}: ${entry.fields[k]}`);
+                return lines.join('\n') || '(all fields empty)';
             }
             return Object.entries(entry.fields)
                 .filter(([, v]) => v)
