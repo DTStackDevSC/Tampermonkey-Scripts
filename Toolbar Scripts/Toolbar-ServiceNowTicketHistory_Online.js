@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.8.1
+// @version      1.8.2
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.8.1';
-    const CHANGELOG = `Version 1.8.1:
+    const SCRIPT_VERSION = '1.8.2';
+    const CHANGELOG = `Version 1.8.2:
+- Steering Config entries no longer show extra fields under Source.
+
+Version 1.8.1:
 - DLP Policy entries now show different optional fields: no extra fields under
   Source, and Destination offers Activity Constraints and File Constraints only.
   The full set of Source and Destination extras remains on regular policies.
@@ -168,7 +171,7 @@ Version 1.4.3:
         ],
         steering_config_full: [
             { key: 'configName',    label: 'Steering/Client Config name',      type: 'text' },
-            { key: 'source',        label: 'Source',                           type: 'text', extraFields: SOURCE_EXTRA_FIELDS },
+            { key: 'source',        label: 'Source',                           type: 'text' },
             { key: 'partnerTenant', label: 'Partner Tenant Access configured', type: 'text' },
         ],
         steering_config_deleted: [
