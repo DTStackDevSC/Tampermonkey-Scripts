@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.8.0
+// @version      1.8.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.8.0';
-    const CHANGELOG = `Version 1.8.0:
+    const SCRIPT_VERSION = '1.8.1';
+    const CHANGELOG = `Version 1.8.1:
+- DLP Policy entries now show different optional fields: no extra fields under
+  Source, and Destination offers Activity Constraints and File Constraints only.
+  The full set of Source and Destination extras remains on regular policies.
+
+Version 1.8.0:
 - Policy, DLP Policy, and Steering Config entries now have an "+ Add fields"
   button below Source and below Destination. Clicking it opens a panel of
   optional fields you can add one by one: Source has Source IP, Source IP
@@ -116,6 +121,11 @@ Version 1.4.3:
         { key: 'additionalDetails',   label: 'Additional Details'  },
     ];
 
+    const DESTINATION_DLP_EXTRA_FIELDS = [
+        { key: 'activityConstraints', label: 'Activity Constraints' },
+        { key: 'fileConstraints',     label: 'File Constraints'     },
+    ];
+
     /* ==========================================================
      *  FIELD SCHEMAS
      *  Each schema is an array of { key, label, type:'text'|'textarea' }
@@ -135,8 +145,8 @@ Version 1.4.3:
         ],
         dlp_policy_full: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
-            { key: 'source',        label: 'Source',             type: 'text',     extraFields: SOURCE_EXTRA_FIELDS      },
-            { key: 'destination',   label: 'Destination',        type: 'text',     extraFields: DESTINATION_EXTRA_FIELDS },
+            { key: 'source',        label: 'Source',             type: 'text'     },
+            { key: 'destination',   label: 'Destination',        type: 'text',     extraFields: DESTINATION_DLP_EXTRA_FIELDS },
             { key: 'activities',    label: 'Activities',         type: 'text'     },
             { key: 'profileAction', label: 'Profile & Action',   type: 'text'     },
             { key: 'dlpProfile',    label: 'DLP Profile',        type: 'text'     },
