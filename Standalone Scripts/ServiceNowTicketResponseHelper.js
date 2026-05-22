@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.15.0
+// @version      2.16.1
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.15.0';
-    const CHANGELOG = `Version 2.15.0:
+    const SCRIPT_VERSION = '2.16.1';
+    const CHANGELOG = `Version 2.16.1:
+- The search bar now receives focus automatically when the dropdown is opened, so you can start typing a filter immediately without clicking it first.
+
+Version 2.16.0:
+- EMEA: Added "NPA Access" response to the Responses section with two submenu options: "First NPA Access for MF" and "Additional NPA Access".
+
+Version 2.15.0:
 - Added short description field transforms: responses can now declare a
   shortDescTransforms array in their metadata to rewrite specific pipe-segment
   fields when the response is inserted.
@@ -371,6 +377,24 @@ Version 2.11.1:
                 label: 'SPM Request Loaded',
                 category: 'responses',
                 fieldType: 'comments'
+            },
+            npaAccess: {
+                label: 'NPA Access',
+                category: 'responses',
+                hasSubmenu: true,
+                fieldType: 'comments'
+            },
+            npaAccessFirst: {
+                label: 'First NPA Access for MF',
+                category: 'responses',
+                parentItem: 'npaAccess',
+                fieldType: 'comments'
+            },
+            npaAccessAdditional: {
+                label: 'Additional NPA Access',
+                category: 'responses',
+                parentItem: 'npaAccess',
+                fieldType: 'comments'
             }
         },
 
@@ -423,6 +447,9 @@ Version 2.11.1:
             'vpninfo',
             'tier2SOCreq',
             'spmLoaded',
+            'npaAccess',
+            'npaAccessFirst',
+            'npaAccessAdditional',
         ],
 
         responses: {
@@ -803,7 +830,30 @@ Global Data Security Enablement`,
 We have loaded SPM request #. The SPM team will work on it and contact you if additional information is required.
 
 Best regards,
-Global Data Security Enablement`
+Global Data Security Enablement`,
+                npaAccess: (vars) => ``,
+                npaAccessFirst: (vars) => `Hi @[${vars.openedByName}],
+Hope you are doing well.
+
+Since this is the first NPA to be created in your Firm, we require the following:
+• (1) An AD group that will contain all sub-groups for each client's NPA now or in the future.
+• (2) An AD group containing the required members needed for a specific client's NPA. This group must be nested into the Firm group of point 1.
+
+Example of AD groups:
+
+(1) ES NPA Access → (2) Client 1 NPA, (2) Client 2 NPA, (2) Client 3 NPA
+
+Please let us know once the required AD groups are updated and available.
+Regards,`,
+                npaAccessAdditional: (vars) => `Hi @[${vars.openedByName}],
+Hope you are doing well.
+
+Since there are already other NPAs in your firm, we need the following:
+• An AD group containing the required members needed for this specific NPA.
+• In addition, the group of point 1 must be nested into the following AD group that contains all the users in your Firm using NPAs: <Firm_Level_NPA_AD_Group>
+
+Please let us know once the required AD groups are updated and available.
+Regards,`
         }
     },
 
@@ -3421,6 +3471,7 @@ Regards.`,
                 positionDropdown(dropdown, inlineButton);
                 dropdown.style.display = 'flex';
                 refreshFieldTypePips(dropdown);
+                if (srchInput) setTimeout(() => srchInput.focus(), 0);
             }
         };
 
