@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.8.2
+// @version      1.9.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,15 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.8.2';
-    const CHANGELOG = `Version 1.8.2:
+    const SCRIPT_VERSION = '1.9.0';
+    const CHANGELOG = `Version 1.9.0:
+- All structured entry types now have an "+ Add field" button at the bottom
+  of the form. Clicking it reveals an "Additional Details" free-text area
+  where you can write any extra information not covered by the other fields.
+  The value is saved with the entry, shown in the entry card, included in
+  worknote auto-write, and pre-filled when editing.
+
+Version 1.8.2:
 - Steering Config entries no longer show extra fields under Source.
 
 Version 1.8.1:
@@ -1978,11 +1985,52 @@ Version 1.4.3:
         container.appendChild(ta);
     }
 
+    /** Optional "Additional Details" textarea appended below all schema fields. */
+    function buildOptionalNoteInput(note, prefix, container) {
+        const hasValue = Boolean(note);
+
+        const taWrap = css(mk('div'), { display: hasValue ? 'block' : 'none', marginTop: '4px' });
+        const lbl = css(mk('label'), {
+            display: 'block', fontSize: '11px', fontWeight: 'bold',
+            color: '#666', marginBottom: '3px', fontFamily: 'Arial, sans-serif',
+        });
+        lbl.textContent = 'Additional Details';
+        lbl.htmlFor = `${prefix}-note`;
+
+        const ta = css(mk('textarea', { id: `${prefix}-note` }), {
+            width: '100%', height: '52px', resize: 'vertical',
+            fontFamily: '"Courier New", Courier, monospace', fontSize: '12px',
+            padding: '6px', border: '1px solid #ccc', borderRadius: '4px',
+            background: '#fafafa', color: '#333', boxSizing: 'border-box', outline: 'none',
+        });
+        ta.placeholder = 'Additional details (optional)';
+        if (note) ta.value = note;
+
+        taWrap.append(lbl, ta);
+
+        const addBtn = css(mk('button'), {
+            display: hasValue ? 'none' : 'block', fontSize: '11px',
+            fontFamily: 'Arial, sans-serif', color: '#0066cc', background: 'none',
+            border: 'none', padding: '4px 0 2px 0', cursor: 'pointer',
+            textDecoration: 'underline', marginTop: '4px',
+        });
+        addBtn.textContent = '+ Add field';
+        addBtn.onclick = (e) => {
+            e.preventDefault();
+            taWrap.style.display = 'block';
+            addBtn.style.display = 'none';
+            ta.focus();
+        };
+
+        container.append(addBtn, taWrap);
+    }
+
     /** Rebuilds the dynamic input area based on selected type. */
     function rebuildInputFields(type, values, note, prefix, container) {
         const schema = getSchema(type);
         if (schema) {
             buildFieldInputs(schema, values || {}, prefix, container);
+            buildOptionalNoteInput(note || '', prefix, container);
         } else {
             buildFreeformInput(note || '', prefix, container);
         }
@@ -2025,6 +2073,7 @@ Version 1.4.3:
                 const lines = orderedKeys
                     .filter(k => entry.fields[k])
                     .map(k => `${labelMap[k] || k}: ${entry.fields[k]}`);
+                if (entry.note) lines.push(`Additional Details: ${entry.note}`);
                 return lines.join('\n') || '(all fields empty)';
             }
             return Object.entries(entry.fields)
@@ -2672,9 +2721,7 @@ Version 1.4.3:
             const newType  = typeSelect.value;
             const schema   = getSchema(newType);
             const newFields = schema ? collectFieldValues(schema, 'ct-edit-field') : null;
-            const newNote   = !schema
-                ? (document.getElementById('ct-edit-field-note')?.value.trim() || '')
-                : null;
+            const newNote   = (document.getElementById('ct-edit-field-note')?.value.trim() || null);
 
             await updateEntry(ticket, entry.id, newType, newFields, newNote);
             overlay.remove(); modal.remove();
@@ -3058,7 +3105,9 @@ Version 1.4.3:
 
         if (schema) {
             fields = collectFieldValues(schema, 'ct-field');
-            const hasValue = Object.values(fields).some(v => v !== '');
+            const noteTa = document.getElementById('ct-field-note');
+            note = noteTa ? (noteTa.value.trim() || null) : null;
+            const hasValue = Object.values(fields).some(v => v !== '') || Boolean(note);
             if (!hasValue) { flashStatus('⚠️ Fill in at least one field.', '#e67e22'); return; }
         } else {
             const ta = document.getElementById('ct-field-note');
