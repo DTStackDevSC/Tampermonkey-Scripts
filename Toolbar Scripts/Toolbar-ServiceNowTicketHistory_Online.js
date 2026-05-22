@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.9.0
+// @version      1.9.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.9.0';
-    const CHANGELOG = `Version 1.9.0:
+    const SCRIPT_VERSION = '1.9.1';
+    const CHANGELOG = `Version 1.9.1:
+- Removed "Additional Details" from the Destination extra fields on policies,
+  as the entry-level "Additional Details" field at the bottom covers that need.
+
+Version 1.9.0:
 - All structured entry types now have an "+ Add field" button at the bottom
   of the form. Clicking it reveals an "Additional Details" free-text area
   where you can write any extra information not covered by the other fields.
@@ -126,9 +130,8 @@ Version 1.4.3:
     ];
 
     const DESTINATION_EXTRA_FIELDS = [
-        { key: 'appInstance',         label: 'App Instance'        },
-        { key: 'destinationCountry',  label: 'Destination Country' },
-        { key: 'additionalDetails',   label: 'Additional Details'  },
+        { key: 'appInstance',        label: 'App Instance'        },
+        { key: 'destinationCountry', label: 'Destination Country' },
     ];
 
     const DESTINATION_DLP_EXTRA_FIELDS = [
