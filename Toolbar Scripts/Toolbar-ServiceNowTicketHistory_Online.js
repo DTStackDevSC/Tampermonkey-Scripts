@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.7.1
+// @version      1.7.2
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.1';
-    const CHANGELOG = `Version 1.7.1:
+    const SCRIPT_VERSION = '1.7.2';
+    const CHANGELOG = `Version 1.7.2:
+- The "AD group" field on policy, DLP policy, and steering config entries has been renamed to "Source" to better reflect that it can hold values other than AD groups.
+- Existing entries that were saved with the old field name are migrated automatically on first load, so no data is lost.
+
+Version 1.7.1:
 - Searchable dropdown group headers now use a filled background with top and
   bottom borders, matching the section title style from the Response Helper.
 
@@ -87,7 +91,7 @@ Version 1.4.3:
     const FIELD_SCHEMAS = {
         policy_full: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
-            { key: 'adGroup',       label: 'AD group',           type: 'text'     },
+            { key: 'source',        label: 'Source',             type: 'text'     },
             { key: 'destination',   label: 'Destination',        type: 'text'     },
             { key: 'description',   label: 'Policy description', type: 'textarea' },
             { key: 'groupPosition', label: 'Group position',     type: 'text'     },
@@ -98,7 +102,7 @@ Version 1.4.3:
         ],
         dlp_policy_full: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
-            { key: 'adGroup',       label: 'AD group',           type: 'text'     },
+            { key: 'source',        label: 'Source',             type: 'text'     },
             { key: 'destination',   label: 'Destination',        type: 'text'     },
             { key: 'activities',    label: 'Activities',         type: 'text'     },
             { key: 'profileAction', label: 'Profile & Action',   type: 'text'     },
@@ -121,7 +125,7 @@ Version 1.4.3:
         ],
         steering_config_full: [
             { key: 'configName',    label: 'Steering/Client Config name',      type: 'text' },
-            { key: 'adGroup',       label: 'AD group',                         type: 'text' },
+            { key: 'source',        label: 'Source',                           type: 'text' },
             { key: 'partnerTenant', label: 'Partner Tenant Access configured', type: 'text' },
         ],
         steering_config_deleted: [
@@ -907,15 +911,35 @@ Version 1.4.3:
 
     function storeKey(ticket) { return PREFIX + ticket; }
 
+    // Renames the legacy 'adGroup' field key to 'source' in stored entries.
+    function migrateEntry(e) {
+        if (e.fields && 'adGroup' in e.fields) {
+            const f = { ...e.fields };
+            f.source = f.adGroup;
+            delete f.adGroup;
+            return { ...e, fields: f };
+        }
+        return e;
+    }
+
     // Sync read from GM cache — never blocks
     function loadEntries(ticket) {
-        try { return JSON.parse(GM_getValue(storeKey(ticket), '[]')); }
+        try {
+            const raw      = JSON.parse(GM_getValue(storeKey(ticket), '[]'));
+            const migrated = raw.map(migrateEntry);
+            if (migrated.some((e, i) => e !== raw[i])) {
+                GM_setValue(storeKey(ticket), JSON.stringify(migrated));
+            }
+            return migrated;
+        }
         catch { return []; }
     }
 
     // Internal: update GM cache only (no API call)
+    // Migration is applied here so server-fetched data (which may still use
+    // the old 'adGroup' key) is normalised before being written locally.
     function _cacheEntries(ticket, entries) {
-        GM_setValue(storeKey(ticket), JSON.stringify(entries));
+        GM_setValue(storeKey(ticket), JSON.stringify(entries.map(migrateEntry)));
     }
 
     /* ==========================================================
