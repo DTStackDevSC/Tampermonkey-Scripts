@@ -1263,6 +1263,7 @@ Version 1.3.1:
 
         // ── Close on outside click (respects pin) ────────────────────
         document.addEventListener('click', function(e) {
+            if (!(e.target instanceof Element)) return;
             if (!e.target.closest('#custom-toolbar-container')) {
                 if (!menu.classList.contains('pinned-open')) {
                     menu.classList.remove('active');
