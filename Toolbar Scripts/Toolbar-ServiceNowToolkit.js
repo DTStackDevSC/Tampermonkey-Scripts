@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.3
+// @version      1.3.4
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.3';
-    const CHANGELOG = `Version 1.3.3:
+    const SCRIPT_VERSION = '1.3.4';
+    const CHANGELOG = `Version 1.3.4:
+- Temporarily simplified the Closed ticket action to verify button interception
+  is working correctly before restoring the full SCTASK behaviour.
+
+Version 1.3.3:
 - Fixed Save and Update button interception by switching to event delegation
   with capture. Buttons are no longer looked up at page load time, so the
   feature now works even when ServiceNow re-renders or replaces the form
@@ -99,7 +103,6 @@ Version 1.1.4:
 
     const GM_KEY_DRAFTS        = 'sn_toolkit_drafts';
     const GM_KEY_AUTOSAVE      = 'sn_toolkit_autosave_enabled';
-    const GM_KEY_AUTOOPEN_TAB  = 'sn_toolkit_autoopen_tab_enabled';
     const AUTOSAVE_DELAY  = 3000;
     const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -132,8 +135,6 @@ Version 1.1.4:
 
     function getAutosaveEnabled()    { return GM_getValue(GM_KEY_AUTOSAVE, true); }
     function setAutosaveEnabled(v)   { GM_setValue(GM_KEY_AUTOSAVE, v); }
-    function getAutoOpenTabEnabled() { return GM_getValue(GM_KEY_AUTOOPEN_TAB, true); }
-    function setAutoOpenTabEnabled(v){ GM_setValue(GM_KEY_AUTOOPEN_TAB, v); }
 
     /* ==========================================================
      *  DRAFT STORAGE  (GM storage — persists across sessions)
@@ -458,50 +459,6 @@ Version 1.1.4:
         updateRowStyle(featureRow, toggle.checked);
         view.appendChild(featureRow);
 
-        // ── Feature: Auto-open tab on Closed ──
-        const autoOpenRow = document.createElement('div');
-        Object.assign(autoOpenRow.style, {
-            display: 'flex', alignItems: 'flex-start', gap: '14px',
-            background: '#fff', border: '1px solid #e0e0e0',
-            borderRadius: '8px', padding: '12px 14px', cursor: 'pointer',
-            transition: 'border-color 0.15s', marginTop: '10px',
-        });
-
-        const autoOpenToggleWrapper = document.createElement('div');
-        Object.assign(autoOpenToggleWrapper.style, { flexShrink: '0', marginTop: '2px' });
-
-        const autoOpenToggle = document.createElement('input');
-        autoOpenToggle.type    = 'checkbox';
-        autoOpenToggle.id      = MODAL_ID + '-autoopen-toggle';
-        autoOpenToggle.checked = getAutoOpenTabEnabled();
-        Object.assign(autoOpenToggle.style, { width: '36px', height: '20px', cursor: 'pointer', accentColor: '#1a73e8' });
-        autoOpenToggle.addEventListener('change', () => {
-            setAutoOpenTabEnabled(autoOpenToggle.checked);
-            updateRowStyle(autoOpenRow, autoOpenToggle.checked);
-        });
-        autoOpenToggleWrapper.appendChild(autoOpenToggle);
-
-        const autoOpenTextBlock = document.createElement('div');
-        Object.assign(autoOpenTextBlock.style, { flex: '1' });
-
-        const autoOpenLabel = document.createElement('div');
-        autoOpenLabel.textContent = '🔗 Open SCTASK on Closed Save';
-        Object.assign(autoOpenLabel.style, {
-            fontWeight: 'bold', fontSize: '13px', color: '#222', marginBottom: '3px',
-        });
-
-        const autoOpenDesc = document.createElement('div');
-        autoOpenDesc.textContent = 'When you click Save and Stay or Update on a ticket whose short description contains "Closed", the associated SCTASK is automatically opened in a background tab.';
-        Object.assign(autoOpenDesc.style, { fontSize: '12px', color: '#666', lineHeight: '1.4' });
-
-        autoOpenTextBlock.appendChild(autoOpenLabel);
-        autoOpenTextBlock.appendChild(autoOpenDesc);
-        autoOpenRow.appendChild(autoOpenToggleWrapper);
-        autoOpenRow.appendChild(autoOpenTextBlock);
-        autoOpenRow.addEventListener('click', e => { if (e.target !== autoOpenToggle) autoOpenToggle.click(); });
-        updateRowStyle(autoOpenRow, autoOpenToggle.checked);
-        view.appendChild(autoOpenRow);
-
         // ── Version footer ──
         const versionRow = document.createElement('div');
         Object.assign(versionRow.style, {
@@ -767,102 +724,13 @@ Version 1.1.4:
         showPrompt(pending);
     }
 
-    function getShortDescription() {
-        // Polaris mode: form lives inside a macroponent shadow DOM iframe
-        const macro = Array.from(document.querySelectorAll('*'))
-            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
-        if (macro && macro.shadowRoot) {
-            const iframe = macro.shadowRoot.querySelector('#gsft_main');
-            if (iframe) {
-                if (iframe.contentWindow && iframe.contentWindow.g_form) {
-                    try {
-                        const val = iframe.contentWindow.g_form.getDisplayValue('short_description');
-                        if (val) return val;
-                    } catch(e) {}
-                }
-                if (iframe.contentDocument) {
-                    const el = iframe.contentDocument.querySelector('[id*="short_description"]');
-                    if (el) return el.value || '';
-                }
-            }
-        }
-        // Classic mode
-        if (window.g_form) {
-            try {
-                const val = window.g_form.getDisplayValue('short_description');
-                if (val) return val;
-            } catch(e) {}
-        }
-        const el = document.querySelector('[id*="short_description"]');
-        return el ? (el.value || '') : '';
-    }
-
-    async function openRelatedSCTASK() {
-        try {
-            // Resolve the correct document context
-            let ticketDoc = document;
-            let ctxWin = window;
-            const macro = Array.from(document.querySelectorAll('*'))
-                .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
-            if (macro && macro.shadowRoot) {
-                const iframe = macro.shadowRoot.querySelector('#gsft_main');
-                if (iframe && iframe.contentDocument) { ticketDoc = iframe.contentDocument; ctxWin = iframe.contentWindow; }
-            } else {
-                const directIframe = document.getElementById('gsft_main');
-                if (directIframe && directIframe.contentDocument) { ticketDoc = directIframe.contentDocument; ctxWin = directIframe.contentWindow; }
-            }
-
-            // 1. Try DOM links first (works when the Tasks related list is already loaded)
-            const sctaskLinks = Array.from(ticketDoc.querySelectorAll('a[href*="sc_task"]'))
-                .filter(link => link.textContent.trim().startsWith('SCTASK'));
-            if (sctaskLinks.length > 0) {
-                GM_openInTab(sctaskLinks[0].href, { active: false, insert: true });
-                console.log('🛠️ Toolkit: opened SCTASK via DOM link');
-                return;
-            }
-
-            // 2. REST API fallback — Tasks related list may not be loaded yet
-            console.log('🛠️ Toolkit: no SCTASK DOM links found, trying REST API');
-            let ritmSysId = null;
-            if (ctxWin && ctxWin.g_form) {
-                try { ritmSysId = ctxWin.g_form.getUniqueValue(); } catch(e) {}
-            }
-            if (!ritmSysId) {
-                ritmSysId = new URLSearchParams(location.search).get('sys_id');
-            }
-            if (!ritmSysId) {
-                console.log('🛠️ Toolkit: could not determine RITM sys_id');
-                return;
-            }
-
-            const resp = await fetch(`/api/now/table/sc_task?sysparm_query=request_item=${ritmSysId}&sysparm_fields=sys_id&sysparm_limit=1`);
-            if (!resp.ok) { console.warn('🛠️ Toolkit: REST API request failed'); return; }
-            const data = await resp.json();
-            if (data.result && data.result.length > 0) {
-                const url = `${location.origin}/sc_task.do?sys_id=${data.result[0].sys_id}`;
-                GM_openInTab(url, { active: false, insert: true });
-                console.log('🛠️ Toolkit: opened SCTASK via REST API');
-            } else {
-                console.log('🛠️ Toolkit: no SCTASK found for this ticket');
-            }
-        } catch(e) {
-            console.warn('🛠️ Toolkit: could not open SCTASK:', e);
-        }
-    }
-
     function attachSubmitListeners(ticketNum, fields) {
         function onSubmitClick() {
             storeSubmitIntent(ticketNum, fields.map(f => f.label));
-
-            if (getAutoOpenTabEnabled()) {
-                const shortDesc = getShortDescription();
-                if (shortDesc && shortDesc.toLowerCase().includes('closed')) {
-                    openRelatedSCTASK();
-                }
-            }
+            window.open('https://www.google.es', '_blank');
         }
 
-        const SUBMIT_SELECTOR = '#sysverb_update, #sysverb_update_and_stay, #sysverb_save, [name="sysverb_update"], [name="sysverb_update_and_stay"], [name="sysverb_save"]';
+        const SUBMIT_SELECTOR = '#sysverb_update, #sysverb_update_and_stay, #sysverb_save';
 
         // Event delegation with capture: fires before ServiceNow can stop propagation
         // and does not require buttons to exist in the DOM at setup time.
