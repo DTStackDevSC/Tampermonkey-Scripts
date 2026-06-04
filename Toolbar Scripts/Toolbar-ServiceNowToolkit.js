@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.3
+// @version      1.3.0
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -22,8 +22,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.3';
-    const CHANGELOG = `Version 1.2.3:
+    const SCRIPT_VERSION = '1.3.0';
+    const CHANGELOG = `Version 1.3.0:
+- Added an option to automatically open the current ticket in a new tab when
+  clicking Save and Stay or Update on a ticket whose short description contains
+  the word "Closed". This can be toggled on or off in the toolkit settings.
+
+Version 1.2.3:
 - Fixed the "What's new" link not appearing in the settings modal. The stored
   version was being saved on page load before the changelog was ever seen,
   causing the new version check to always return false on subsequent loads.
@@ -72,8 +77,9 @@ Version 1.1.4:
     const TOOL_POSITION = 10;
     const MODAL_ID      = 'sn-toolkit-modal';
 
-    const GM_KEY_DRAFTS   = 'sn_toolkit_drafts';
-    const GM_KEY_AUTOSAVE = 'sn_toolkit_autosave_enabled';
+    const GM_KEY_DRAFTS        = 'sn_toolkit_drafts';
+    const GM_KEY_AUTOSAVE      = 'sn_toolkit_autosave_enabled';
+    const GM_KEY_AUTOOPEN_TAB  = 'sn_toolkit_autoopen_tab_enabled';
     const AUTOSAVE_DELAY  = 3000;
     const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -104,8 +110,10 @@ Version 1.1.4:
      *  SETTINGS
      * ==========================================================*/
 
-    function getAutosaveEnabled() { return GM_getValue(GM_KEY_AUTOSAVE, true); }
-    function setAutosaveEnabled(v) { GM_setValue(GM_KEY_AUTOSAVE, v); }
+    function getAutosaveEnabled()    { return GM_getValue(GM_KEY_AUTOSAVE, true); }
+    function setAutosaveEnabled(v)   { GM_setValue(GM_KEY_AUTOSAVE, v); }
+    function getAutoOpenTabEnabled() { return GM_getValue(GM_KEY_AUTOOPEN_TAB, true); }
+    function setAutoOpenTabEnabled(v){ GM_setValue(GM_KEY_AUTOOPEN_TAB, v); }
 
     /* ==========================================================
      *  DRAFT STORAGE  (GM storage — persists across sessions)
@@ -430,6 +438,50 @@ Version 1.1.4:
         updateRowStyle(featureRow, toggle.checked);
         view.appendChild(featureRow);
 
+        // ── Feature: Auto-open tab on Closed ──
+        const autoOpenRow = document.createElement('div');
+        Object.assign(autoOpenRow.style, {
+            display: 'flex', alignItems: 'flex-start', gap: '14px',
+            background: '#fff', border: '1px solid #e0e0e0',
+            borderRadius: '8px', padding: '12px 14px', cursor: 'pointer',
+            transition: 'border-color 0.15s', marginTop: '10px',
+        });
+
+        const autoOpenToggleWrapper = document.createElement('div');
+        Object.assign(autoOpenToggleWrapper.style, { flexShrink: '0', marginTop: '2px' });
+
+        const autoOpenToggle = document.createElement('input');
+        autoOpenToggle.type    = 'checkbox';
+        autoOpenToggle.id      = MODAL_ID + '-autoopen-toggle';
+        autoOpenToggle.checked = getAutoOpenTabEnabled();
+        Object.assign(autoOpenToggle.style, { width: '36px', height: '20px', cursor: 'pointer', accentColor: '#1a73e8' });
+        autoOpenToggle.addEventListener('change', () => {
+            setAutoOpenTabEnabled(autoOpenToggle.checked);
+            updateRowStyle(autoOpenRow, autoOpenToggle.checked);
+        });
+        autoOpenToggleWrapper.appendChild(autoOpenToggle);
+
+        const autoOpenTextBlock = document.createElement('div');
+        Object.assign(autoOpenTextBlock.style, { flex: '1' });
+
+        const autoOpenLabel = document.createElement('div');
+        autoOpenLabel.textContent = '🔗 Open Ticket Tab on Closed Save';
+        Object.assign(autoOpenLabel.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#222', marginBottom: '3px',
+        });
+
+        const autoOpenDesc = document.createElement('div');
+        autoOpenDesc.textContent = 'When you click Save and Stay or Update on a ticket whose short description contains "Closed", the ticket is automatically opened in a new tab.';
+        Object.assign(autoOpenDesc.style, { fontSize: '12px', color: '#666', lineHeight: '1.4' });
+
+        autoOpenTextBlock.appendChild(autoOpenLabel);
+        autoOpenTextBlock.appendChild(autoOpenDesc);
+        autoOpenRow.appendChild(autoOpenToggleWrapper);
+        autoOpenRow.appendChild(autoOpenTextBlock);
+        autoOpenRow.addEventListener('click', e => { if (e.target !== autoOpenToggle) autoOpenToggle.click(); });
+        updateRowStyle(autoOpenRow, autoOpenToggle.checked);
+        view.appendChild(autoOpenRow);
+
         // ── Version footer ──
         const versionRow = document.createElement('div');
         Object.assign(versionRow.style, {
@@ -695,6 +747,36 @@ Version 1.1.4:
         showPrompt(pending);
     }
 
+    function getShortDescription() {
+        // Polaris mode: form lives inside a macroponent shadow DOM iframe
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe) {
+                if (iframe.contentWindow && iframe.contentWindow.g_form) {
+                    try {
+                        const val = iframe.contentWindow.g_form.getDisplayValue('short_description');
+                        if (val) return val;
+                    } catch(e) {}
+                }
+                if (iframe.contentDocument) {
+                    const el = iframe.contentDocument.querySelector('[id*="short_description"]');
+                    if (el) return el.value || '';
+                }
+            }
+        }
+        // Classic mode
+        if (window.g_form) {
+            try {
+                const val = window.g_form.getDisplayValue('short_description');
+                if (val) return val;
+            } catch(e) {}
+        }
+        const el = document.querySelector('[id*="short_description"]');
+        return el ? (el.value || '') : '';
+    }
+
     const SUBMIT_SELECTORS = [
         '#sysverb_update',
         '#sysverb_update_and_stay',
@@ -706,10 +788,14 @@ Version 1.1.4:
 
     function attachSubmitListeners(ticketNum, fields) {
         function onSubmitClick() {
-            // Record intent but do NOT delete drafts yet — we don't know if the
-            // save will succeed.  The next ticket page load will confirm success
-            // and clear them, or they'll survive if the session was expired.
             storeSubmitIntent(ticketNum, fields.map(f => f.label));
+
+            if (getAutoOpenTabEnabled()) {
+                const shortDesc = getShortDescription();
+                if (shortDesc && shortDesc.toLowerCase().includes('closed')) {
+                    window.open(location.href, '_blank');
+                }
+            }
         }
 
         SUBMIT_SELECTORS.forEach(sel => {
