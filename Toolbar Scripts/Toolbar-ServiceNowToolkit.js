@@ -3,13 +3,14 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.0
+// @version      1.3.1
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @grant        GM_openInTab
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -22,8 +23,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Fixed the "Open SCTASK on Closed Save" feature to open the SCTASK linked to
+  the current ticket in a background tab, rather than opening the current
+  ticket page itself. Uses the same background tab method as the Ticket
+  Assignment Tool.
+
+Version 1.3.0:
 - Added an option to automatically open the current ticket in a new tab when
   clicking Save and Stay or Update on a ticket whose short description contains
   the word "Closed". This can be toggled on or off in the toolkit settings.
@@ -465,13 +472,13 @@ Version 1.1.4:
         Object.assign(autoOpenTextBlock.style, { flex: '1' });
 
         const autoOpenLabel = document.createElement('div');
-        autoOpenLabel.textContent = '🔗 Open Ticket Tab on Closed Save';
+        autoOpenLabel.textContent = '🔗 Open SCTASK on Closed Save';
         Object.assign(autoOpenLabel.style, {
             fontWeight: 'bold', fontSize: '13px', color: '#222', marginBottom: '3px',
         });
 
         const autoOpenDesc = document.createElement('div');
-        autoOpenDesc.textContent = 'When you click Save and Stay or Update on a ticket whose short description contains "Closed", the ticket is automatically opened in a new tab.';
+        autoOpenDesc.textContent = 'When you click Save and Stay or Update on a ticket whose short description contains "Closed", the associated SCTASK is automatically opened in a background tab.';
         Object.assign(autoOpenDesc.style, { fontSize: '12px', color: '#666', lineHeight: '1.4' });
 
         autoOpenTextBlock.appendChild(autoOpenLabel);
@@ -777,6 +784,31 @@ Version 1.1.4:
         return el ? (el.value || '') : '';
     }
 
+    function openRelatedSCTASK() {
+        try {
+            let ticketDoc = document;
+            const macro = Array.from(document.querySelectorAll('*'))
+                .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+            if (macro && macro.shadowRoot) {
+                const iframe = macro.shadowRoot.querySelector('#gsft_main');
+                if (iframe && iframe.contentDocument) ticketDoc = iframe.contentDocument;
+            } else {
+                const directIframe = document.getElementById('gsft_main');
+                if (directIframe && directIframe.contentDocument) ticketDoc = directIframe.contentDocument;
+            }
+            const sctaskLinks = Array.from(ticketDoc.querySelectorAll('a[href*="sc_task.do"]'))
+                .filter(link => link.textContent.trim().startsWith('SCTASK'));
+            if (sctaskLinks.length > 0) {
+                GM_openInTab(sctaskLinks[0].href, { active: false, insert: true });
+                console.log('🛠️ Toolkit: opened SCTASK in background');
+            } else {
+                console.log('🛠️ Toolkit: no SCTASK links found on this page');
+            }
+        } catch(e) {
+            console.warn('🛠️ Toolkit: could not open SCTASK:', e);
+        }
+    }
+
     const SUBMIT_SELECTORS = [
         '#sysverb_update',
         '#sysverb_update_and_stay',
@@ -793,7 +825,7 @@ Version 1.1.4:
             if (getAutoOpenTabEnabled()) {
                 const shortDesc = getShortDescription();
                 if (shortDesc && shortDesc.toLowerCase().includes('closed')) {
-                    window.open(location.href, '_blank');
+                    openRelatedSCTASK();
                 }
             }
         }
