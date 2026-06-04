@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.4
+// @version      1.3.5
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.4';
-    const CHANGELOG = `Version 1.3.4:
+    const SCRIPT_VERSION = '1.3.5';
+    const CHANGELOG = `Version 1.3.5:
+- When clicking Save and Stay or Update on a ticket whose short description
+  contains "Closed", the associated SCTASK now opens automatically in a
+  background tab without disrupting your current view.
+
+Version 1.3.4:
 - Temporarily simplified the Closed ticket action to verify button interception
   is working correctly before restoring the full SCTASK behaviour.
 
@@ -724,10 +729,54 @@ Version 1.1.4:
         showPrompt(pending);
     }
 
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentDocument) {
+                return {
+                    win:   iframe.contentWindow,
+                    doc:   iframe.contentDocument,
+                    gForm: (iframe.contentWindow && iframe.contentWindow.g_form) || null,
+                };
+            }
+        }
+        const directIframe = document.getElementById('gsft_main');
+        if (directIframe && directIframe.contentDocument) {
+            return {
+                win:   directIframe.contentWindow,
+                doc:   directIframe.contentDocument,
+                gForm: (directIframe.contentWindow && directIframe.contentWindow.g_form) || null,
+            };
+        }
+        return { win: window, doc: document, gForm: window.g_form || null };
+    }
+
     function attachSubmitListeners(ticketNum, fields) {
         function onSubmitClick() {
             storeSubmitIntent(ticketNum, fields.map(f => f.label));
-            window.open('https://www.google.es', '_blank');
+
+            const ctx = getTicketContext();
+            const doc = ctx.doc;
+
+            let shortDesc = '';
+            if (ctx.gForm) {
+                try { shortDesc = ctx.gForm.getDisplayValue('short_description') || ''; } catch(e) {}
+            }
+            if (!shortDesc) {
+                const el = doc.getElementById('sc_req_item.short_description') ||
+                           doc.getElementById('incident.short_description');
+                shortDesc = el ? (el.value || '') : '';
+            }
+
+            if (!shortDesc.includes('Closed')) return;
+
+            const sctaskLinks = Array.from(doc.querySelectorAll('a[href*="sc_task.do"]'))
+                .filter(link => link.textContent.trim().startsWith('SCTASK'));
+            if (sctaskLinks.length > 0) {
+                GM_openInTab(sctaskLinks[0].href, { active: false, insert: true });
+            }
         }
 
         const SUBMIT_SELECTOR = '#sysverb_update, #sysverb_update_and_stay, #sysverb_save';
