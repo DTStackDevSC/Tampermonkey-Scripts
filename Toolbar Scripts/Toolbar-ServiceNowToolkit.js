@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.2
+// @version      1.3.3
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.2';
-    const CHANGELOG = `Version 1.3.2:
+    const SCRIPT_VERSION = '1.3.3';
+    const CHANGELOG = `Version 1.3.3:
+- Fixed Save and Update button interception by switching to event delegation
+  with capture. Buttons are no longer looked up at page load time, so the
+  feature now works even when ServiceNow re-renders or replaces the form
+  buttons dynamically.
+
+Version 1.3.2:
 - Fixed the SCTASK opener to work even when the Tasks related list has not been
   loaded on the page. It now falls back to a REST API lookup using the ticket
   sys_id when no SCTASK links are found in the DOM.
@@ -844,15 +850,6 @@ Version 1.1.4:
         }
     }
 
-    const SUBMIT_SELECTORS = [
-        '#sysverb_update',
-        '#sysverb_update_and_stay',
-        '#sysverb_save',
-        'button[name="sysverb_update"]',
-        'button[name="sysverb_update_and_stay"]',
-        'button[name="sysverb_save"]',
-    ];
-
     function attachSubmitListeners(ticketNum, fields) {
         function onSubmitClick() {
             storeSubmitIntent(ticketNum, fields.map(f => f.label));
@@ -865,25 +862,26 @@ Version 1.1.4:
             }
         }
 
-        function bindInDoc(doc) {
-            SUBMIT_SELECTORS.forEach(sel => {
-                doc.querySelectorAll(sel).forEach(btn => {
-                    if (!btn.dataset.snToolkitBound) {
-                        btn.dataset.snToolkitBound = '1';
-                        btn.addEventListener('click', onSubmitClick);
-                    }
-                });
-            });
+        const SUBMIT_SELECTOR = '#sysverb_update, #sysverb_update_and_stay, #sysverb_save, [name="sysverb_update"], [name="sysverb_update_and_stay"], [name="sysverb_save"]';
+
+        // Event delegation with capture: fires before ServiceNow can stop propagation
+        // and does not require buttons to exist in the DOM at setup time.
+        function delegateClicks(doc) {
+            doc.addEventListener('click', function(e) {
+                if (e.target && e.target.closest && e.target.closest(SUBMIT_SELECTOR)) {
+                    onSubmitClick();
+                }
+            }, true);
         }
 
-        bindInDoc(document);
+        delegateClicks(document);
 
-        // Also bind inside gsft_main iframe (Polaris and classic nav-frame mode)
+        // Also cover the gsft_main iframe (Polaris and classic nav-frame mode)
         const macro = Array.from(document.querySelectorAll('*'))
             .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
         const iframeDoc = (macro && macro.shadowRoot && macro.shadowRoot.querySelector('#gsft_main')?.contentDocument) ||
                           document.getElementById('gsft_main')?.contentDocument;
-        if (iframeDoc && iframeDoc !== document) bindInDoc(iframeDoc);
+        if (iframeDoc && iframeDoc !== document) delegateClicks(iframeDoc);
     }
 
     function startAutosave(ticketNum, fieldEl, fieldLabel) {
