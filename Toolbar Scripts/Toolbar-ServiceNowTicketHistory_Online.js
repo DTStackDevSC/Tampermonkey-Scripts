@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.9.1
+// @version      1.9.2
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.9.1';
-    const CHANGELOG = `Version 1.9.1:
+    const SCRIPT_VERSION = '1.9.2';
+    const CHANGELOG = `Version 1.9.2:
+- Fixed a Firefox-specific issue where the toolbar button would occasionally not appear when opening a ticket, caused by the style block being injected before the page head was ready.
+
+Version 1.9.1:
 - Removed "Additional Details" from the Destination extra fields on policies,
   as the entry-level "Additional Details" field at the bottom covers that need.
 
@@ -866,7 +869,7 @@ Version 1.4.3:
         .ct-cs-item     { color: #333333 !important; }
         .ct-cs-group-header { background-color: #e9edf2 !important; color: #555555 !important; }
     `;
-    document.head.appendChild(styleEl);
+    (document.head || document.documentElement).appendChild(styleEl);
 
     /* ==========================================================
      *  TOOL ICON  (pencil)
