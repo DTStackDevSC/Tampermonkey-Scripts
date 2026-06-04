@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.1
+// @version      1.3.2
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
+    const SCRIPT_VERSION = '1.3.2';
+    const CHANGELOG = `Version 1.3.2:
+- Fixed the SCTASK opener to work even when the Tasks related list has not been
+  loaded on the page. It now falls back to a REST API lookup using the ticket
+  sys_id when no SCTASK links are found in the DOM.
+- Fixed the Save and Update button listeners to also bind inside the gsft_main
+  iframe for setups where the ticket form loads inside a navigation frame.
+
+Version 1.3.1:
 - Fixed the "Open SCTASK on Closed Save" feature to open the SCTASK linked to
   the current ticket in a background tab, rather than opening the current
   ticket page itself. Uses the same background tab method as the Ticket
@@ -784,25 +791,53 @@ Version 1.1.4:
         return el ? (el.value || '') : '';
     }
 
-    function openRelatedSCTASK() {
+    async function openRelatedSCTASK() {
         try {
+            // Resolve the correct document context
             let ticketDoc = document;
+            let ctxWin = window;
             const macro = Array.from(document.querySelectorAll('*'))
                 .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
             if (macro && macro.shadowRoot) {
                 const iframe = macro.shadowRoot.querySelector('#gsft_main');
-                if (iframe && iframe.contentDocument) ticketDoc = iframe.contentDocument;
+                if (iframe && iframe.contentDocument) { ticketDoc = iframe.contentDocument; ctxWin = iframe.contentWindow; }
             } else {
                 const directIframe = document.getElementById('gsft_main');
-                if (directIframe && directIframe.contentDocument) ticketDoc = directIframe.contentDocument;
+                if (directIframe && directIframe.contentDocument) { ticketDoc = directIframe.contentDocument; ctxWin = directIframe.contentWindow; }
             }
-            const sctaskLinks = Array.from(ticketDoc.querySelectorAll('a[href*="sc_task.do"]'))
+
+            // 1. Try DOM links first (works when the Tasks related list is already loaded)
+            const sctaskLinks = Array.from(ticketDoc.querySelectorAll('a[href*="sc_task"]'))
                 .filter(link => link.textContent.trim().startsWith('SCTASK'));
             if (sctaskLinks.length > 0) {
                 GM_openInTab(sctaskLinks[0].href, { active: false, insert: true });
-                console.log('🛠️ Toolkit: opened SCTASK in background');
+                console.log('🛠️ Toolkit: opened SCTASK via DOM link');
+                return;
+            }
+
+            // 2. REST API fallback — Tasks related list may not be loaded yet
+            console.log('🛠️ Toolkit: no SCTASK DOM links found, trying REST API');
+            let ritmSysId = null;
+            if (ctxWin && ctxWin.g_form) {
+                try { ritmSysId = ctxWin.g_form.getUniqueValue(); } catch(e) {}
+            }
+            if (!ritmSysId) {
+                ritmSysId = new URLSearchParams(location.search).get('sys_id');
+            }
+            if (!ritmSysId) {
+                console.log('🛠️ Toolkit: could not determine RITM sys_id');
+                return;
+            }
+
+            const resp = await fetch(`/api/now/table/sc_task?sysparm_query=request_item=${ritmSysId}&sysparm_fields=sys_id&sysparm_limit=1`);
+            if (!resp.ok) { console.warn('🛠️ Toolkit: REST API request failed'); return; }
+            const data = await resp.json();
+            if (data.result && data.result.length > 0) {
+                const url = `${location.origin}/sc_task.do?sys_id=${data.result[0].sys_id}`;
+                GM_openInTab(url, { active: false, insert: true });
+                console.log('🛠️ Toolkit: opened SCTASK via REST API');
             } else {
-                console.log('🛠️ Toolkit: no SCTASK links found on this page');
+                console.log('🛠️ Toolkit: no SCTASK found for this ticket');
             }
         } catch(e) {
             console.warn('🛠️ Toolkit: could not open SCTASK:', e);
@@ -830,14 +865,25 @@ Version 1.1.4:
             }
         }
 
-        SUBMIT_SELECTORS.forEach(sel => {
-            document.querySelectorAll(sel).forEach(btn => {
-                if (!btn.dataset.snToolkitBound) {
-                    btn.dataset.snToolkitBound = '1';
-                    btn.addEventListener('click', onSubmitClick);
-                }
+        function bindInDoc(doc) {
+            SUBMIT_SELECTORS.forEach(sel => {
+                doc.querySelectorAll(sel).forEach(btn => {
+                    if (!btn.dataset.snToolkitBound) {
+                        btn.dataset.snToolkitBound = '1';
+                        btn.addEventListener('click', onSubmitClick);
+                    }
+                });
             });
-        });
+        }
+
+        bindInDoc(document);
+
+        // Also bind inside gsft_main iframe (Polaris and classic nav-frame mode)
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        const iframeDoc = (macro && macro.shadowRoot && macro.shadowRoot.querySelector('#gsft_main')?.contentDocument) ||
+                          document.getElementById('gsft_main')?.contentDocument;
+        if (iframeDoc && iframeDoc !== document) bindInDoc(iframeDoc);
     }
 
     function startAutosave(ticketNum, fieldEl, fieldLabel) {
