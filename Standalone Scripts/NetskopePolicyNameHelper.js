@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.4
+// @version      1.2.5
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.4';
-    const CHANGELOG = `Version 1.2.4:
+    const SCRIPT_VERSION = '1.2.5';
+    const CHANGELOG = `Version 1.2.5:
+- The "What's New" notification now uses the same blue color and blue-to-orange pulsing dot as the other scripts, making it consistent and easier to spot.
+
+Version 1.2.4:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.2.3:
@@ -379,12 +382,12 @@ Version 1.2.0:
             animation: netskopeColorPulse 1s ease-in-out infinite !important;
         }
         @keyframes netskopeColorPulse {
-            0%, 100% { background-color: #667eea; }
-            50% { background-color: #5568d3; }
+            0%, 100% { background-color: #007bff; }
+            50% { background-color: #ff8c00; }
         }
         #netskopeChangelogNotification .netskope-notification-text {
-            font-size: 11px !important; color: #667eea !important; text-decoration: underline !important;
-            font-family: Arial, sans-serif !important; font-weight: normal !important;
+            font-size: 11px !important; color: #0066cc !important; text-decoration: underline !important;
+            font-family: Arial, sans-serif !important;
         }
         #netskopeChangelogModal {
             position: fixed !important; top: 50% !important; left: 50% !important;
