@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.6
+// @version      1.2.7
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.6';
-    const CHANGELOG = `Version 1.2.6:
+    const SCRIPT_VERSION = '1.2.7';
+    const CHANGELOG = `Version 1.2.7:
+- Fixed the pulsing dot on the "What's New" notification not appearing. CSS animations cannot override Netskope's page styles, so the dot color is now toggled via JavaScript, which always takes effect.
+
+Version 1.2.6:
 - Fixed the "What's New" notification appearing as plain black text on the Netskope page. Styles are now applied directly on the element to override Netskope's CSS cascade layers, which were preventing the stylesheet rules from taking effect.
 
 Version 1.2.5:
@@ -373,11 +376,7 @@ Version 1.2.0:
 
     const style = document.createElement('style');
     style.textContent = `
-        @keyframes netskopeColorPulse {
-            0%, 100% { background-color: #007bff; }
-            50%       { background-color: #ff8c00; }
-        }
-        #netskopeChangelogModal {
+#netskopeChangelogModal {
             position: fixed !important; top: 50% !important; left: 50% !important;
             transform: translate(-50%,-50%) !important; z-index: 20001 !important;
             background: #ffffff !important; border: 2px solid #333 !important;
@@ -1268,12 +1267,18 @@ Version 1.2.0:
             clNotif.onmouseout  = () => clNotif.style.setProperty('background-color', 'transparent','important');
 
             const dot = document.createElement('span');
-            dot.style.setProperty('display',       'inline-block',                              'important');
-            dot.style.setProperty('width',         '8px',                                       'important');
-            dot.style.setProperty('height',        '8px',                                       'important');
-            dot.style.setProperty('border-radius', '50%',                                       'important');
-            dot.style.setProperty('flex-shrink',   '0',                                         'important');
-            dot.style.setProperty('animation',     'netskopeColorPulse 1s ease-in-out infinite','important');
+            dot.style.setProperty('display',          'inline-block', 'important');
+            dot.style.setProperty('width',            '8px',          'important');
+            dot.style.setProperty('height',           '8px',          'important');
+            dot.style.setProperty('border-radius',    '50%',          'important');
+            dot.style.setProperty('flex-shrink',      '0',            'important');
+            dot.style.setProperty('background-color', '#007bff',      'important');
+            let dotToggle = true;
+            const dotPulse = setInterval(() => {
+                if (!document.contains(dot)) { clearInterval(dotPulse); return; }
+                dotToggle = !dotToggle;
+                dot.style.setProperty('background-color', dotToggle ? '#007bff' : '#ff8c00', 'important');
+            }, 500);
 
             const txt = document.createElement('span');
             txt.textContent = "What's New";
