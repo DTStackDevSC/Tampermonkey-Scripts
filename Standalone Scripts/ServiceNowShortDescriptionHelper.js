@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.1.1
+// @version      3.1.2
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.1.1';
-    const CHANGELOG = `Version 3.1.1:
+    const SCRIPT_VERSION = '3.1.2';
+    const CHANGELOG = `Version 3.1.2:
+- Saving tenant URLs in the setup and edit modals now applies immediately without reloading the page.
+
+Version 3.1.1:
 - Searchable dropdown trigger now shows a chevron arrow on the right side, matching
   the native dropdown style. The arrow rotates 180 degrees when the list is open and
   resets when it closes.
@@ -319,11 +322,12 @@ Version 3.0.8.1:
             overlay.remove();
             modal.remove();
 
-            showLoadingOverlay();
-            setTimeout(() => {
-                if (onComplete) onComplete();
-                else location.reload();
-            }, 100);
+            if (onComplete) {
+                onComplete();
+            } else {
+                showLoadingOverlay();
+                setTimeout(() => location.reload(), 100);
+            }
         };
 
         modal.appendChild(saveBtn);
@@ -723,10 +727,7 @@ Version 3.0.8.1:
             btn.onclick = () => {
                 saveTeam(key);
                 selectorContainer.remove();
-                showLoadingOverlay();
-                setTimeout(() => {
-                    location.reload();
-                }, 100);
+                initializePanel();
             };
 
             buttonContainer.appendChild(btn);
@@ -1717,7 +1718,7 @@ Version 3.0.8.1:
         configureTenantLink.title = 'Edit stored Netskope tenant URLs';
         configureTenantLink.onclick = () => {
             closeMainPanel();
-            showTenantURLSetup(() => location.reload());
+            showTenantURLSetup(() => {});
         };
         versionRow.appendChild(configureTenantLink);
 
@@ -2320,7 +2321,7 @@ Version 3.0.8.1:
                 if (!getCurrentTeam()) {
                     showTeamSelector();
                 } else {
-                    location.reload();
+                    initializePanel();
                 }
             });
             return;
