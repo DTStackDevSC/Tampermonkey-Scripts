@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.9.2
+// @version      1.9.3
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.9.2';
-    const CHANGELOG = `Version 1.9.2:
+    const SCRIPT_VERSION = '1.9.3';
+    const CHANGELOG = `Version 1.9.3:
+- Fixed an intermittent Firefox issue where the script would silently abort on load, preventing the toolbar button from appearing. Style injection is now deferred until the page head is ready.
+
+Version 1.9.2:
 - Fixed a Firefox-specific issue where the toolbar button would occasionally not appear when opening a ticket, caused by the style block being injected before the page head was ready.
 
 Version 1.9.1:
@@ -869,7 +872,7 @@ Version 1.4.3:
         .ct-cs-item     { color: #333333 !important; }
         .ct-cs-group-header { background-color: #e9edf2 !important; color: #555555 !important; }
     `;
-    (document.head || document.documentElement).appendChild(styleEl);
+    // Deferred to initialize() where document.head is guaranteed to exist.
 
     /* ==========================================================
      *  TOOL ICON  (pencil)
@@ -3650,6 +3653,7 @@ Version 1.4.3:
         if (!document.body) { setTimeout(initialize, 50); return; }
         if (isInitialized) return;
         isInitialized = true;
+        document.head.appendChild(styleEl);
         initializeSidebar();
         console.log('✅ Change Tracker ready!');
         setTimeout(attemptRegistration, 1000);
