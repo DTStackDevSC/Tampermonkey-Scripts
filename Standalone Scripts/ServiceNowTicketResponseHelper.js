@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.16.2
+// @version      2.16.3
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.2';
-    const CHANGELOG = `Version 2.16.2:
+    const SCRIPT_VERSION = '2.16.3';
+    const CHANGELOG = `Version 2.16.3:
+- The team selection modal now has a purple top border, purple title, and purple buttons to visually distinguish it from the Short Description Helper modal when both scripts are active at the same time.
+
+Version 2.16.2:
 - Selecting a team on first setup now applies immediately without reloading the page.
 - The loading screen shown when switching teams now displays an animated "Reloading page to select team" message with cycling dots.
 
@@ -2778,25 +2781,27 @@ Regards.`,
     }
 
     function showTeamSelector() {
-        if (document.getElementById('teamSelector')) return;
+        if (document.getElementById('ticketResponseTeamSelector')) return;
 
         const selectorContainer = document.createElement('div');
-        selectorContainer.id = 'teamSelector';
-        Object.assign(selectorContainer.style, { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: '10000', background: '#fff', border: '2px solid #333', padding: '30px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif', borderRadius: '10px', textAlign: 'center', minWidth: '400px' });
+        selectorContainer.id = 'ticketResponseTeamSelector';
+        Object.assign(selectorContainer.style, { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: '10000', background: '#fff', border: '1px solid #ddd', borderTop: '4px solid #667eea', padding: '30px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif', borderRadius: '10px', textAlign: 'center', minWidth: '400px' });
 
         const title = document.createElement('h2');
         title.textContent = 'Select Your Team';
-        title.style.marginBottom = '20px';
-        title.style.color = '#333';
+        title.style.marginBottom = '8px';
+        title.style.color = '#667eea';
         selectorContainer.appendChild(title);
 
         const subtitle = document.createElement('p');
         subtitle.textContent = 'Ticket Response Helper Script';
         subtitle.style.marginTop = '0';
         subtitle.style.marginBottom = '20px';
-        subtitle.style.color = '#666';
-        subtitle.style.fontSize = '14px';
-        subtitle.style.fontStyle = 'italic';
+        subtitle.style.color = '#667eea';
+        subtitle.style.fontSize = '12px';
+        subtitle.style.fontWeight = 'bold';
+        subtitle.style.letterSpacing = '0.5px';
+        subtitle.style.textTransform = 'uppercase';
         selectorContainer.appendChild(subtitle);
 
         const buttonContainer = document.createElement('div');
@@ -2807,9 +2812,9 @@ Regards.`,
         for (const [key, team] of Object.entries(TEAMS)) {
             const btn = document.createElement('button');
             btn.textContent = team.name;
-            Object.assign(btn.style, { padding: '12px 20px', fontSize: '16px', fontWeight: 'bold', border: '2px solid #007bff', borderRadius: '6px', backgroundColor: '#007bff', color: 'white', cursor: 'pointer', transition: 'all 0.3s ease' });
-            btn.onmouseover = () => { btn.style.backgroundColor = '#0056b3'; btn.style.borderColor = '#0056b3'; };
-            btn.onmouseout  = () => { btn.style.backgroundColor = '#007bff'; btn.style.borderColor = '#007bff'; };
+            Object.assign(btn.style, { padding: '12px 20px', fontSize: '16px', fontWeight: 'bold', border: '2px solid #667eea', borderRadius: '6px', backgroundColor: '#667eea', color: 'white', cursor: 'pointer', transition: 'all 0.3s ease' });
+            btn.onmouseover = () => { btn.style.backgroundColor = '#5568d3'; btn.style.borderColor = '#5568d3'; };
+            btn.onmouseout  = () => { btn.style.backgroundColor = '#667eea'; btn.style.borderColor = '#667eea'; };
             btn.onclick = () => {
                 saveTeam(key);
                 selectorContainer.remove();

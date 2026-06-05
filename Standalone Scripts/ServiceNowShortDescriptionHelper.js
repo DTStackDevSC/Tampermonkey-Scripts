@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.1.4
+// @version      3.1.5
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.1.4';
-    const CHANGELOG = `Version 3.1.4:
+    const SCRIPT_VERSION = '3.1.5';
+    const CHANGELOG = `Version 3.1.5:
+- The team selection modal now has a blue top border and blue title to visually distinguish it from the Ticket Response Helper modal when both scripts are active at the same time.
+
+Version 3.1.4:
 - The loading screen shown when switching teams now displays an animated "Reloading page to select team" message with cycling dots.
 
 Version 3.1.3:
@@ -668,7 +671,7 @@ Version 3.0.8.1:
 
     function showTeamSelector() {
         const selectorContainer = document.createElement('div');
-        selectorContainer.id = 'teamSelector';
+        selectorContainer.id = 'shortDescTeamSelector';
         Object.assign(selectorContainer.style, {
             position: 'fixed',
             top: '50%',
@@ -676,7 +679,8 @@ Version 3.0.8.1:
             transform: 'translate(-50%, -50%)',
             zIndex: '10000',
             background: '#fff',
-            border: '2px solid #333',
+            border: '1px solid #ddd',
+            borderTop: '4px solid #007bff',
             padding: '30px',
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             fontFamily: 'Arial, sans-serif',
@@ -687,17 +691,19 @@ Version 3.0.8.1:
 
         const title = document.createElement('h2');
         title.textContent = 'Select Your Team';
-        title.style.marginBottom = '20px';
-        title.style.color = '#333';
+        title.style.marginBottom = '8px';
+        title.style.color = '#007bff';
         selectorContainer.appendChild(title);
 
         const subtitle = document.createElement('p');
         subtitle.textContent = 'Short Description Helper Script';
         subtitle.style.marginTop = '0';
         subtitle.style.marginBottom = '20px';
-        subtitle.style.color = '#666';
-        subtitle.style.fontSize = '14px';
-        subtitle.style.fontStyle = 'italic';
+        subtitle.style.color = '#007bff';
+        subtitle.style.fontSize = '12px';
+        subtitle.style.fontWeight = 'bold';
+        subtitle.style.letterSpacing = '0.5px';
+        subtitle.style.textTransform = 'uppercase';
         selectorContainer.appendChild(subtitle);
 
         const buttonContainer = document.createElement('div');
