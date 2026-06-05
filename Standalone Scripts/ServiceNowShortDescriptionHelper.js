@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.1.3
+// @version      3.1.4
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.1.3';
-    const CHANGELOG = `Version 3.1.3:
+    const SCRIPT_VERSION = '3.1.4';
+    const CHANGELOG = `Version 3.1.4:
+- The loading screen shown when switching teams now displays an animated "Reloading page to select team" message with cycling dots.
+
+Version 3.1.3:
 - Fixed an issue where the URL setup and team selection modals would appear twice on page load.
 
 Version 3.1.2:
@@ -1248,12 +1251,49 @@ Version 3.0.8.1:
      *  CHANGELOG MODAL
      * ==========================================================*/
 
-    function showLoadingOverlay() {
+    function showLoadingOverlay(message) {
         const overlay = document.createElement('div');
         overlay.id = 'loadingOverlay';
+
+        const content = document.createElement('div');
+        Object.assign(content.style, {
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px'
+        });
+
         const spinner = document.createElement('div');
         spinner.className = 'loading-spinner';
-        overlay.appendChild(spinner);
+        content.appendChild(spinner);
+
+        if (message) {
+            const msgEl = document.createElement('div');
+            Object.assign(msgEl.style, {
+                fontSize: '14px',
+                color: '#555',
+                fontFamily: 'Arial, sans-serif',
+                textAlign: 'center'
+            });
+
+            const msgText = document.createElement('span');
+            msgText.textContent = message;
+
+            const dotsEl = document.createElement('span');
+            dotsEl.textContent = '.';
+
+            let dotCount = 1;
+            setInterval(() => {
+                dotCount = dotCount >= 3 ? 1 : dotCount + 1;
+                dotsEl.textContent = '.'.repeat(dotCount);
+            }, 500);
+
+            msgEl.appendChild(msgText);
+            msgEl.appendChild(dotsEl);
+            content.appendChild(msgEl);
+        }
+
+        overlay.appendChild(content);
         document.body.appendChild(overlay);
     }
 
@@ -1688,7 +1728,7 @@ Version 3.0.8.1:
         changeTeamButtonTop.onmouseout  = () => changeTeamButtonTop.style.color = '#0066cc';
         changeTeamButtonTop.onclick = () => {
             GM_deleteValue('shortDescTeam');
-            showLoadingOverlay();
+            showLoadingOverlay('Reloading page to select team');
             setTimeout(() => location.reload(), 100);
         };
 
