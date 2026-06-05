@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.2.0
+// @version      3.3.0
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.2.0';
-    const CHANGELOG = `Version 3.2.0:
+    const SCRIPT_VERSION = '3.3.0';
+    const CHANGELOG = `Version 3.3.0:
+- Added a dedicated Settings modal. The "Switch Team" control and the searchable dropdowns toggle have moved there, accessed via a new "Settings" button in the panel header.
+- The panel header is reorganized: "Settings" and "Help" buttons now sit together at the top right, next to the team name. The version and tenant URL link remain on the row below.
+
+Version 3.2.0:
 - Added a "? Help" button in the panel header that opens a full Feature Guide. The guide covers all features: the short description format, panel fields, quick action buttons, auto-complexity, searchable dropdowns, tenant detection, and settings configuration.
 
 Version 3.1.5:
@@ -1254,6 +1258,36 @@ Version 3.0.8.1:
             pointer-events: none;
         }
 
+        /* Settings Modal Styles */
+        #settingsModalOverlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+        }
+
+        #settingsModal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10001;
+            background: #fff;
+            border: 2px solid #333;
+            padding: 24px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            font-family: Arial, sans-serif;
+            border-radius: 10px;
+            width: 400px;
+            max-width: 92vw;
+            color: #333333 !important;
+        }
+
+        #settingsModal input[type="checkbox"] {
+            accent-color: #667eea;
+        }
+
         /* Help Modal Styles */
         #helpModalOverlay {
             position: fixed;
@@ -1480,6 +1514,182 @@ Version 3.0.8.1:
         document.body.appendChild(modal);
 
         overlay.onclick = () => closeButton.click();
+    }
+
+    /* ==========================================================
+     *  SETTINGS MODAL
+     * ==========================================================*/
+
+    function showSettingsModal() {
+        if (document.getElementById('settingsModal')) return;
+
+        const currentTeamKey = getCurrentTeam();
+        const currentTeam = currentTeamKey ? TEAMS[currentTeamKey] : null;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'settingsModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'settingsModal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '18px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '⚙';
+        titleIcon.style.fontSize = '20px';
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Settings';
+        Object.assign(titleMain.style, {
+            fontWeight: 'bold', fontSize: '16px', color: '#333', fontFamily: 'Arial, sans-serif'
+        });
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleMain);
+
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // ── Team section ──
+        const teamSection = document.createElement('div');
+        Object.assign(teamSection.style, {
+            marginBottom: '18px', paddingBottom: '18px', borderBottom: '1px solid #eee'
+        });
+
+        const teamSectionTitle = document.createElement('div');
+        teamSectionTitle.textContent = '👥 Team';
+        Object.assign(teamSectionTitle.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#333',
+            marginBottom: '10px', fontFamily: 'Arial, sans-serif'
+        });
+        teamSection.appendChild(teamSectionTitle);
+
+        const teamCurrentRow = document.createElement('div');
+        Object.assign(teamCurrentRow.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px'
+        });
+
+        const teamCurrentLabel = document.createElement('span');
+        teamCurrentLabel.textContent = `Current team: ${currentTeam ? currentTeam.name : 'None'}`;
+        Object.assign(teamCurrentLabel.style, {
+            fontSize: '13px', color: '#555', fontFamily: 'Arial, sans-serif'
+        });
+
+        const switchTeamBtn = document.createElement('button');
+        switchTeamBtn.textContent = 'Switch Team';
+        Object.assign(switchTeamBtn.style, {
+            padding: '6px 14px', background: '#007bff', color: 'white',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontSize: '12px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif',
+            transition: 'background 0.2s ease', flexShrink: '0'
+        });
+        switchTeamBtn.onmouseover = () => { switchTeamBtn.style.background = '#0056b3'; };
+        switchTeamBtn.onmouseout  = () => { switchTeamBtn.style.background = '#007bff'; };
+        switchTeamBtn.onclick = () => {
+            overlay.remove();
+            modal.remove();
+            GM_deleteValue('shortDescTeam');
+            showLoadingOverlay('Reloading page to select team');
+            setTimeout(() => location.reload(), 100);
+        };
+
+        teamCurrentRow.appendChild(teamCurrentLabel);
+        teamCurrentRow.appendChild(switchTeamBtn);
+        teamSection.appendChild(teamCurrentRow);
+        modal.appendChild(teamSection);
+
+        // ── Searchable dropdowns section ──
+        const dropdownSection = document.createElement('div');
+        dropdownSection.style.marginBottom = '8px';
+
+        const dropdownSectionTitle = document.createElement('div');
+        dropdownSectionTitle.textContent = '🔍 Dropdowns';
+        Object.assign(dropdownSectionTitle.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#333',
+            marginBottom: '10px', fontFamily: 'Arial, sans-serif'
+        });
+        dropdownSection.appendChild(dropdownSectionTitle);
+
+        const toggleRow = document.createElement('div');
+        Object.assign(toggleRow.style, {
+            display: 'flex', alignItems: 'flex-start', gap: '10px'
+        });
+
+        const toggleCheckbox = document.createElement('input');
+        toggleCheckbox.type = 'checkbox';
+        toggleCheckbox.id = 'settingsSearchableDropdownsToggle';
+        toggleCheckbox.checked = GM_getValue('shortDescSearchableDropdowns', true);
+        Object.assign(toggleCheckbox.style, {
+            width: '15px', height: '15px', margin: '2px 0 0 0',
+            cursor: 'pointer', flexShrink: '0'
+        });
+
+        const toggleTextWrap = document.createElement('div');
+        const toggleLabel = document.createElement('label');
+        toggleLabel.htmlFor = 'settingsSearchableDropdownsToggle';
+        toggleLabel.textContent = 'Searchable dropdowns';
+        Object.assign(toggleLabel.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#333',
+            cursor: 'pointer', display: 'block', marginBottom: '3px',
+            fontFamily: 'Arial, sans-serif'
+        });
+        const toggleDesc = document.createElement('span');
+        toggleDesc.textContent = 'Enable live text filtering in all dropdown fields. Changes take effect after a page reload.';
+        Object.assign(toggleDesc.style, {
+            fontSize: '12px', color: '#777', lineHeight: '1.4', display: 'block',
+            fontFamily: 'Arial, sans-serif'
+        });
+        toggleTextWrap.appendChild(toggleLabel);
+        toggleTextWrap.appendChild(toggleDesc);
+
+        toggleCheckbox.onchange = () => {
+            GM_setValue('shortDescSearchableDropdowns', toggleCheckbox.checked);
+            overlay.remove();
+            modal.remove();
+            showLoadingOverlay();
+            setTimeout(() => location.reload(), 100);
+        };
+
+        toggleRow.appendChild(toggleCheckbox);
+        toggleRow.appendChild(toggleTextWrap);
+        dropdownSection.appendChild(toggleRow);
+        modal.appendChild(dropdownSection);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '18px', padding: '10px 20px',
+            background: '#667eea', color: 'white',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontWeight: 'bold', width: '100%',
+            fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
     }
 
     /* ==========================================================
@@ -1730,12 +1940,14 @@ Version 3.0.8.1:
                 title: 'Settings and Configuration',
                 buildContent: (body) => {
                     const items = [
-                        ['⚙ Tenant URLs',
-                         'In the panel header. Opens a dialog to enter or update the Netskope tenant URL for each region (EMA, EU, CE, APA, AME). Find the correct URLs in the General Scripts User Guide Word document under "Required information & variables".'],
+                        ['⚙ Settings button',
+                         'Located at the top right of the panel header. Opens the Settings modal where you can switch your active team and toggle the searchable dropdowns feature.'],
                         ['Switch Team',
-                         'In the panel header. Changes your active team between EMEA, AME, and APAC. Each team has a different list of Member Firms. Switching teams reloads the page.'],
+                         'In the Settings modal. Changes your active team between EMEA, AME, and APAC. Each team has a different list of Member Firms. Switching teams reloads the page.'],
                         ['Searchable dropdowns toggle',
-                         'Checkbox in the panel header. Enables or disables live text filtering for all dropdowns. The change takes effect after a page reload.'],
+                         'In the Settings modal. Enables or disables live text filtering for all dropdowns. The change takes effect after a page reload.'],
+                        ['⚙ Tenant URLs',
+                         'Link in the version row at the bottom of the panel header. Opens a dialog to enter or update the Netskope tenant URL for each region (EMA, EU, CE, APA, AME). Find the correct URLs in the General Scripts User Guide Word document under "Required information & variables".'],
                         ['Auto-calculate complexity',
                          'Checkbox inside the panel, below the Complexity dropdown. Enables or disables automatic complexity calculation from the activity stream. The change takes effect immediately.']
                     ];
@@ -2157,29 +2369,60 @@ Version 3.0.8.1:
         const teamIndicator = document.createElement('span');
         teamIndicator.textContent = `Current Team: ${currentTeam.name}`;
 
-        const changeTeamButtonTop = document.createElement('button');
-        changeTeamButtonTop.textContent = 'Switch Team';
-        Object.assign(changeTeamButtonTop.style, {
-            background: 'none',
-            border: 'none',
-            color: '#0066cc',
+        const topRowRight = document.createElement('div');
+        Object.assign(topRowRight.style, {
+            display: 'flex',
+            gap: '6px',
+            alignItems: 'center',
+            marginRight: '30px'
+        });
+
+        const settingsBtn = document.createElement('span');
+        Object.assign(settingsBtn.style, {
+            color: '#555',
             cursor: 'pointer',
             fontSize: '11px',
-            textDecoration: 'underline',
-            padding: '2px 4px',
-            margin: '0px 30px 0px 0px',
-            transition: 'color 0.2s ease'
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '1px 6px',
+            borderRadius: '3px',
+            border: '1px solid #ccc',
+            fontWeight: 'bold',
+            userSelect: 'none',
+            backgroundColor: 'transparent',
+            transition: 'background-color 0.2s ease'
         });
-        changeTeamButtonTop.onmouseover = () => changeTeamButtonTop.style.color = '#0052a3';
-        changeTeamButtonTop.onmouseout  = () => changeTeamButtonTop.style.color = '#0066cc';
-        changeTeamButtonTop.onclick = () => {
-            GM_deleteValue('shortDescTeam');
-            showLoadingOverlay('Reloading page to select team');
-            setTimeout(() => location.reload(), 100);
-        };
+        settingsBtn.textContent = '⚙ Settings';
+        settingsBtn.title = 'Open settings';
+        settingsBtn.onmouseover = () => { settingsBtn.style.backgroundColor = '#f0f0f0'; };
+        settingsBtn.onmouseout  = () => { settingsBtn.style.backgroundColor = 'transparent'; };
+        settingsBtn.onclick = () => showSettingsModal();
 
+        const helpBtn = document.createElement('span');
+        Object.assign(helpBtn.style, {
+            color: '#667eea',
+            cursor: 'pointer',
+            fontSize: '11px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '1px 6px',
+            borderRadius: '3px',
+            border: '1px solid #c0c8f0',
+            fontWeight: 'bold',
+            userSelect: 'none',
+            backgroundColor: 'transparent',
+            transition: 'background-color 0.2s ease'
+        });
+        helpBtn.textContent = '? Help';
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+
+        topRowRight.appendChild(settingsBtn);
+        topRowRight.appendChild(helpBtn);
         topRow.appendChild(teamIndicator);
-        topRow.appendChild(changeTeamButtonTop);
+        topRow.appendChild(topRowRight);
         teamIndicatorContainer.appendChild(topRow);
 
         // Version + changelog row
@@ -2210,67 +2453,6 @@ Version 3.0.8.1:
             showTenantURLSetup(() => {});
         };
         versionRow.appendChild(configureTenantLink);
-
-        // Help / Feature Guide button
-        const helpLink = document.createElement('span');
-        Object.assign(helpLink.style, {
-            color: '#667eea',
-            cursor: 'pointer',
-            fontSize: '11px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '3px',
-            padding: '1px 6px',
-            borderRadius: '3px',
-            border: '1px solid #c0c8f0',
-            fontWeight: 'bold',
-            userSelect: 'none',
-            backgroundColor: 'transparent',
-            transition: 'background-color 0.2s ease'
-        });
-        helpLink.textContent = '? Help';
-        helpLink.title = 'View feature guide and documentation';
-        helpLink.onmouseover = () => { helpLink.style.backgroundColor = '#eef0ff'; };
-        helpLink.onmouseout  = () => { helpLink.style.backgroundColor = 'transparent'; };
-        helpLink.onclick = () => showHelpModal();
-        versionRow.appendChild(helpLink);
-
-        // Searchable dropdowns toggle
-        const searchableWrapper = document.createElement('span');
-        Object.assign(searchableWrapper.style, {
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '4px',
-            cursor: 'pointer'
-        });
-        const searchableCheckbox = document.createElement('input');
-        searchableCheckbox.type = 'checkbox';
-        searchableCheckbox.id = 'searchableDropdownsToggle';
-        searchableCheckbox.checked = GM_getValue('shortDescSearchableDropdowns', true);
-        Object.assign(searchableCheckbox.style, {
-            width: '12px',
-            height: '12px',
-            margin: '0',
-            cursor: 'pointer',
-            accentColor: '#667eea'
-        });
-        const searchableToggleLabel = document.createElement('label');
-        searchableToggleLabel.htmlFor = 'searchableDropdownsToggle';
-        searchableToggleLabel.textContent = 'Searchable dropdowns';
-        Object.assign(searchableToggleLabel.style, {
-            fontSize: '11px',
-            color: '#666',
-            cursor: 'pointer',
-            userSelect: 'none'
-        });
-        searchableCheckbox.onchange = () => {
-            GM_setValue('shortDescSearchableDropdowns', searchableCheckbox.checked);
-            showLoadingOverlay();
-            setTimeout(() => location.reload(), 100);
-        };
-        searchableWrapper.appendChild(searchableCheckbox);
-        searchableWrapper.appendChild(searchableToggleLabel);
-        versionRow.appendChild(searchableWrapper);
 
         // Changelog notification
         const showChangelog = isNewVersion() && !hasSeenChangelog();
