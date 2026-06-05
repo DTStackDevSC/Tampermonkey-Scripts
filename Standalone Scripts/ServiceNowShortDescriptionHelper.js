@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.1.2
+// @version      3.1.3
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.1.2';
-    const CHANGELOG = `Version 3.1.2:
+    const SCRIPT_VERSION = '3.1.3';
+    const CHANGELOG = `Version 3.1.3:
+- Fixed an issue where the URL setup and team selection modals would appear twice on page load.
+
+Version 3.1.2:
 - Saving tenant URLs in the setup and edit modals now applies immediately without reloading the page.
 
 Version 3.1.1:
@@ -2335,14 +2338,8 @@ Version 3.0.8.1:
         initializePanel();
     }
 
-    window.addEventListener('load', startScript);
-
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            if (!getCurrentTeam() && !areTenantURLsConfigured()) {
-                showTenantURLSetup(() => showTeamSelector());
-            }
-        });
+        window.addEventListener('load', startScript);
     } else {
         startScript();
     }
