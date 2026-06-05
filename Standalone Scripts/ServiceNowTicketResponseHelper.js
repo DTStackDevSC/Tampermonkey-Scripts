@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.16.1
+// @version      2.16.2
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.1';
-    const CHANGELOG = `Version 2.16.1:
+    const SCRIPT_VERSION = '2.16.2';
+    const CHANGELOG = `Version 2.16.2:
+- Selecting a team on first setup now applies immediately without reloading the page.
+- The loading screen shown when switching teams now displays an animated "Reloading page to select team" message with cycling dots.
+
+Version 2.16.1:
 - The search bar now receives focus automatically when the dropdown is opened, so you can start typing a filter immediately without clicking it first.
 
 Version 2.16.0:
@@ -2496,7 +2500,7 @@ Regards.`,
         GM_setValue('ticketResponseTeam', teamKey);
     }
 
-    function showLoadingOverlay() {
+    function showLoadingOverlay(message) {
         const overlay = document.createElement('div');
         overlay.id = 'loadingOverlay';
         Object.assign(overlay.style, {
@@ -2504,9 +2508,36 @@ Regards.`,
             background: 'rgba(255, 255, 255, 0.9)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
             zIndex: '99999', display: 'flex', justifyContent: 'center', alignItems: 'center'
         });
+
+        const content = document.createElement('div');
+        Object.assign(content.style, { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' });
+
         const spinner = document.createElement('div');
         Object.assign(spinner.style, { width: '60px', height: '60px', border: '6px solid #f3f3f3', borderTop: '6px solid #667eea', borderRadius: '50%', animation: 'spin 1s linear infinite' });
-        overlay.appendChild(spinner);
+        content.appendChild(spinner);
+
+        if (message) {
+            const msgEl = document.createElement('div');
+            Object.assign(msgEl.style, { fontSize: '14px', color: '#555', fontFamily: 'Arial, sans-serif', textAlign: 'center' });
+
+            const msgText = document.createElement('span');
+            msgText.textContent = message;
+
+            const dotsEl = document.createElement('span');
+            dotsEl.textContent = '.';
+
+            let dotCount = 1;
+            setInterval(() => {
+                dotCount = dotCount >= 3 ? 1 : dotCount + 1;
+                dotsEl.textContent = '.'.repeat(dotCount);
+            }, 500);
+
+            msgEl.appendChild(msgText);
+            msgEl.appendChild(dotsEl);
+            content.appendChild(msgEl);
+        }
+
+        overlay.appendChild(content);
         document.body.appendChild(overlay);
     }
 
@@ -2782,8 +2813,7 @@ Regards.`,
             btn.onclick = () => {
                 saveTeam(key);
                 selectorContainer.remove();
-                showLoadingOverlay();
-                setTimeout(() => location.reload(), 100);
+                initializeDropdown();
             };
             buttonContainer.appendChild(btn);
         }
@@ -2854,7 +2884,7 @@ Regards.`,
             dropdown.remove();
             inlineButton.remove();
             isInitialized = false;
-            showLoadingOverlay();
+            showLoadingOverlay('Reloading page to select team');
             setTimeout(() => location.reload(), 100);
         };
         actionButtons.appendChild(switchTeamBtn);
