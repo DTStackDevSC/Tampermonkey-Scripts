@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.16.3
+// @version      2.16.4
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.3';
-    const CHANGELOG = `Version 2.16.3:
+    const SCRIPT_VERSION = '2.16.4';
+    const CHANGELOG = `Version 2.16.4:
+- Switch Team moved into the Settings modal. A new "Team" section shows the current team and a "Switch Team" button. The inline link in the dropdown header has been removed.
+
+Version 2.16.3:
 - The team selection modal now has a purple top border, purple title, and purple buttons to visually distinguish it from the Short Description Helper modal when both scripts are active at the same time.
 
 Version 2.16.2:
@@ -2773,6 +2776,58 @@ Regards.`,
         toggleRow.appendChild(toggleLabel);
         body.appendChild(toggleRow);
 
+        // Separator
+        const separator = document.createElement('div');
+        Object.assign(separator.style, { borderTop: '1px solid #e0e0e0', margin: '10px 0' });
+        body.appendChild(separator);
+
+        // Team section
+        const teamSectionTitle = document.createElement('div');
+        teamSectionTitle.textContent = '👥 Team';
+        Object.assign(teamSectionTitle.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#333',
+            marginBottom: '8px', fontFamily: 'Arial, sans-serif'
+        });
+        body.appendChild(teamSectionTitle);
+
+        const teamRow = document.createElement('div');
+        Object.assign(teamRow.style, {
+            display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between', gap: '12px'
+        });
+
+        const currentTeamKey = getCurrentTeamKey();
+        const currentTeam = currentTeamKey ? TEAMS[currentTeamKey] : null;
+
+        const teamLabel = document.createElement('span');
+        teamLabel.textContent = `Current team: ${currentTeam ? currentTeam.name : 'None'}`;
+        Object.assign(teamLabel.style, {
+            fontSize: '13px', color: '#555', fontFamily: 'Arial, sans-serif'
+        });
+
+        const switchTeamModalBtn = document.createElement('button');
+        switchTeamModalBtn.textContent = 'Switch Team';
+        Object.assign(switchTeamModalBtn.style, {
+            padding: '6px 14px', background: '#667eea', color: 'white',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontSize: '12px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif',
+            transition: 'background 0.2s ease', flexShrink: '0'
+        });
+        switchTeamModalBtn.onmouseover = () => { switchTeamModalBtn.style.background = '#5568d3'; };
+        switchTeamModalBtn.onmouseout  = () => { switchTeamModalBtn.style.background = '#667eea'; };
+        switchTeamModalBtn.onclick = () => {
+            overlay.remove();
+            modal.remove();
+            GM_deleteValue('ticketResponseTeam');
+            isInitialized = false;
+            showLoadingOverlay('Reloading page to select team');
+            setTimeout(() => location.reload(), 100);
+        };
+
+        teamRow.appendChild(teamLabel);
+        teamRow.appendChild(switchTeamModalBtn);
+        body.appendChild(teamRow);
+
         modal.appendChild(headerBar);
         modal.appendChild(body);
         document.body.appendChild(overlay);
@@ -2878,21 +2933,6 @@ Regards.`,
 
         const actionButtons = document.createElement('div');
         Object.assign(actionButtons.style, { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' });
-
-        const switchTeamBtn = document.createElement('button');
-        switchTeamBtn.textContent = 'Switch Team';
-        Object.assign(switchTeamBtn.style, { fontSize: '11px', background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: '0', textDecoration: 'underline' });
-        switchTeamBtn.onmouseover = () => switchTeamBtn.style.color = '#0052a3';
-        switchTeamBtn.onmouseout  = () => switchTeamBtn.style.color = '#0066cc';
-        switchTeamBtn.onclick = () => {
-            GM_deleteValue('ticketResponseTeam');
-            dropdown.remove();
-            inlineButton.remove();
-            isInitialized = false;
-            showLoadingOverlay('Reloading page to select team');
-            setTimeout(() => location.reload(), 100);
-        };
-        actionButtons.appendChild(switchTeamBtn);
 
         const settingsBtn = document.createElement('button');
         settingsBtn.textContent = '⚙ Settings';
