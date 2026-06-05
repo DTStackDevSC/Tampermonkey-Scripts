@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.16.5
+// @version      2.17.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.5';
-    const CHANGELOG = `Version 2.16.5:
+    const SCRIPT_VERSION = '2.17.0';
+    const CHANGELOG = `Version 2.17.0:
+- Added a "? Help" button in the dropdown header that opens a Feature Guide modal documenting all script features.
+- The "Settings" and "Help" buttons now use a pill style matching the Short Description Helper.
+
+Version 2.16.5:
 - The "What's New" notification now appears directly to the right of the version number in the dropdown header.
 
 Version 2.16.4:
@@ -2695,6 +2699,266 @@ Regards.`,
         overlay.onclick = () => closeButton.click();
     }
 
+    function showHelpModal() {
+        if (document.getElementById('responseHelperHelpModal')) return;
+
+        function addParagraph(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        function addBulletList(body, items) {
+            const ul = document.createElement('div');
+            ul.style.marginBottom = '8px';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5',
+                    fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(text);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent: (body) => {
+                    addParagraph(body, 'The Ticket Response Helper adds an inline button next to the Short Description field on any ServiceNow ticket. It gives you instant access to a library of predefined response templates for your team.');
+                    addBulletList(body, [
+                        'Open a ticket (RITM or Incident) in ServiceNow.',
+                        'Click the inline button injected next to the Short Description field to open the response dropdown.',
+                        'Browse or search for a template, then click it to insert the response into the correct ticket field.',
+                        'Responses targeting "Comments" go to the customer-facing field. Responses targeting "Work Notes" go to the internal field.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'Response Templates',
+                buildContent: (body) => {
+                    addParagraph(body, 'Templates are organised into collapsible sections. Click a section header to expand or collapse it.');
+                    addBulletList(body, [
+                        'Each template targets either Comments (customer-facing) or Work Notes (internal). The destination is set by the template definition.',
+                        'Some templates have sub-options: hover over the item to reveal a flyout menu with variants to choose from.',
+                        'Clicking any template item immediately inserts the formatted text into the correct field on the ticket.',
+                        'The template text may include the requester\'s name via automatic name detection (see "Name Detection" section).'
+                    ]);
+                }
+            },
+            {
+                icon: '🔍',
+                title: 'Search',
+                buildContent: (body) => {
+                    addParagraph(body, 'A search box at the top of the dropdown filters all response templates in real time:');
+                    addBulletList(body, [
+                        'Type any word from a template label to narrow the list instantly.',
+                        'The search works across all sections and sub-options.',
+                        'Clear the search box to return to the full list.'
+                    ]);
+                }
+            },
+            {
+                icon: '👤',
+                title: 'Name Detection',
+                buildContent: (body) => {
+                    addParagraph(body, 'When a response is inserted, the script reads the "Opened by" field on the ticket and substitutes the requester\'s display name into the template automatically.');
+                    addBulletList(body, [
+                        'This works in both the classic (new tab) and Polaris (dashboard) ticket views.',
+                        'The name is extracted from the ticket form using the ServiceNow g_form API when available, with a DOM fallback for older views.',
+                        'If the name cannot be detected, the placeholder is left in place so you can fill it in manually before saving.'
+                    ]);
+                }
+            },
+            {
+                icon: '✦',
+                title: 'Custom Responses',
+                buildContent: (body) => {
+                    addParagraph(body, 'You can create your own personal response templates in addition to the team-provided ones:');
+                    addBulletList(body, [
+                        'Click "Manage Custom Responses" in the dropdown header to open the editor.',
+                        'Add a label and body text, choose Comments or Work Notes as the target field, then save.',
+                        'Custom responses appear in a dedicated "Custom" section at the bottom of the dropdown.',
+                        'Custom responses are stored locally in your browser and do not affect other users on your team.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Settings',
+                buildContent: (body) => {
+                    const items = [
+                        ['Auto-update date on insert',
+                         'When enabled, the date at the start of the short description is updated to today (DD-MM-YYYY) every time you insert a response. Toggle this in the Settings modal.'],
+                        ['Switch Team',
+                         'In the Settings modal. Changes your active team between EMEA, AME, and APAC. Each team has its own set of response templates and section layout. Switching teams reloads the page.'],
+                        ['⚙ Settings button',
+                         'Located in the dropdown header. Opens the Settings modal where you can toggle auto-date update and switch your active team.'],
+                        ['✦ Manage Custom Responses',
+                         'Button in the dropdown header. Opens the custom response editor where you can create, edit, and delete your personal templates.']
+                    ];
+                    for (const [name, desc] of items) {
+                        const row = document.createElement('div');
+                        row.style.marginBottom = '10px';
+                        const nameEl = document.createElement('div');
+                        nameEl.textContent = name;
+                        Object.assign(nameEl.style, {
+                            fontWeight: 'bold', fontSize: '12px', color: '#333',
+                            marginBottom: '2px', fontFamily: 'Arial, sans-serif'
+                        });
+                        const descEl = document.createElement('div');
+                        descEl.textContent = desc;
+                        Object.assign(descEl.style, {
+                            fontSize: '12px', color: '#555', lineHeight: '1.5',
+                            fontFamily: 'Arial, sans-serif'
+                        });
+                        row.appendChild(nameEl);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'responseHelperHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'responseHelperHelpModal';
+
+        // Modal header row
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, {
+            fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif'
+        });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Ticket Response Helper • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, {
+            fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif'
+        });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border: '1px solid #e8e8f0', borderRadius: '6px',
+                marginBottom: '8px', overflow: 'hidden'
+            });
+
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, {
+                fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif'
+            });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block'
+            });
+
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontWeight: 'bold', width: '100%',
+            fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
     function showSettingsModal() {
         if (document.getElementById('responseHelperSettingsOverlay')) return;
 
@@ -2967,14 +3231,33 @@ Regards.`,
 
         const settingsBtn = document.createElement('button');
         settingsBtn.textContent = '⚙ Settings';
-        Object.assign(settingsBtn.style, { fontSize: '11px', background: 'none', border: 'none', color: '#0066cc', cursor: 'pointer', padding: '0', textDecoration: 'underline' });
-        settingsBtn.onmouseover = () => settingsBtn.style.color = '#0052a3';
-        settingsBtn.onmouseout  = () => settingsBtn.style.color = '#0066cc';
+        Object.assign(settingsBtn.style, {
+            color: '#555', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px', border: '1px solid #ccc',
+            fontWeight: 'bold', userSelect: 'none', backgroundColor: 'transparent',
+            transition: 'background-color 0.2s ease', fontFamily: 'Arial, sans-serif'
+        });
+        settingsBtn.onmouseover = () => { settingsBtn.style.backgroundColor = '#f0f0f0'; };
+        settingsBtn.onmouseout  = () => { settingsBtn.style.backgroundColor = 'transparent'; };
         settingsBtn.onclick = () => {
             dropdown.style.display = 'none';
             showSettingsModal();
         };
         actionButtons.appendChild(settingsBtn);
+
+        const helpBtn = document.createElement('button');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px', border: '1px solid #c0c8f0',
+            fontWeight: 'bold', userSelect: 'none', backgroundColor: 'transparent',
+            transition: 'background-color 0.2s ease', fontFamily: 'Arial, sans-serif'
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => { dropdown.style.display = 'none'; showHelpModal(); };
+        actionButtons.appendChild(helpBtn);
 
         const manageCustomRow = document.createElement('div');
         Object.assign(manageCustomRow.style, { marginTop: '8px' });
@@ -3495,6 +3778,37 @@ Regards.`,
         #customResponsesModal { background-color: #ffffff !important; }
         #changelogModal { background-color: #ffffff !important; }
         #responseHelperSettingsModal { background-color: #ffffff !important; }
+
+        /* Help Modal */
+        #responseHelperHelpModalOverlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
+        }
+        #responseHelperHelpModal {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10001;
+            background: #fff;
+            border: 2px solid #333;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            font-family: Arial, sans-serif;
+            border-radius: 10px;
+            width: 640px;
+            max-width: 92vw;
+            max-height: 82vh;
+            overflow-y: auto;
+            color: #333333 !important;
+        }
+        #responseHelperHelpModal input, #responseHelperHelpModal select,
+        #responseHelperHelpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
     `;
     document.head.appendChild(style);
 
