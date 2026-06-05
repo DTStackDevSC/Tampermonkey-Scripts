@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.1.5
+// @version      3.2.0
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.1.5';
-    const CHANGELOG = `Version 3.1.5:
+    const SCRIPT_VERSION = '3.2.0';
+    const CHANGELOG = `Version 3.2.0:
+- Added a "? Help" button in the panel header that opens a full Feature Guide. The guide covers all features: the short description format, panel fields, quick action buttons, auto-complexity, searchable dropdowns, tenant detection, and settings configuration.
+
+Version 3.1.5:
 - The team selection modal now has a blue top border and blue title to visually distinguish it from the Ticket Response Helper modal when both scripts are active at the same time.
 
 Version 3.1.4:
@@ -1250,6 +1253,39 @@ Version 3.0.8.1:
             cursor: default;
             pointer-events: none;
         }
+
+        /* Help Modal Styles */
+        #helpModalOverlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+        }
+
+        #helpModal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10001;
+            background: #fff;
+            border: 2px solid #333;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            font-family: Arial, sans-serif;
+            border-radius: 10px;
+            width: 640px;
+            max-width: 92vw;
+            max-height: 82vh;
+            overflow-y: auto;
+            color: #333333 !important;
+        }
+
+        #helpModal input, #helpModal select, #helpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
     `;
     document.head.appendChild(style);
 
@@ -1444,6 +1480,410 @@ Version 3.0.8.1:
         document.body.appendChild(modal);
 
         overlay.onclick = () => closeButton.click();
+    }
+
+    /* ==========================================================
+     *  HELP / FEATURE GUIDE MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('helpModal')) return;
+
+        function addParagraph(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        function addBulletList(body, items) {
+            const ul = document.createElement('div');
+            ul.style.marginBottom = '8px';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5',
+                    fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(text);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent: (body) => {
+                    addParagraph(body, 'The Short Description Helper adds three buttons next to the Short Description field on any ServiceNow ticket. Use them to format and update short descriptions in the team standard format.');
+                    addBulletList(body, [
+                        'Open a ticket (RITM or Incident) in ServiceNow.',
+                        'Find the three buttons injected next to the Short Description field.',
+                        'Click the purple pencil button to open the panel, fill in the fields, and click "Change Short Description".',
+                        'If the ticket already has a short description in the standard format, all fields are pre-filled when you open the panel.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'Short Description Format',
+                buildContent: (body) => {
+                    addParagraph(body, 'All short descriptions follow this pipe-separated format:');
+
+                    const formatBox = document.createElement('div');
+                    Object.assign(formatBox.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                        marginBottom: '12px', overflowX: 'auto', whiteSpace: 'nowrap'
+                    });
+                    formatBox.textContent = 'DD-MM-YYYY | MF | Product | Status | Vendor | Type | Complexity | PER | MF Tenant';
+                    body.appendChild(formatBox);
+
+                    const fieldDescs = [
+                        ['DD-MM-YYYY', "Today's date, filled automatically by the script"],
+                        ['MF',         'Member Firm abbreviation (e.g. UK, FR, US)'],
+                        ['Product',    'Netskope product: DLP, SWG, CASB, DCRM, DCRM Scanner'],
+                        ['Status',     'Current workflow status (e.g. WIP, Waiting Requester)'],
+                        ['Vendor',     'Vendor case reference. Leave blank if not applicable.'],
+                        ['Type',       'Request category (e.g. Access, Policy, Config)'],
+                        ['Complexity', '1 = Low, 2 = Medium, 3 = High'],
+                        ['PER',        'PER reference number. Leave blank if not applicable.'],
+                        ['MF Tenant',  'Auto-detected Netskope tenant (e.g. EU Tenant, AME Tenant)']
+                    ];
+
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, {
+                        display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px'
+                    });
+                    for (const [field, desc] of fieldDescs) {
+                        const nameEl = document.createElement('span');
+                        nameEl.textContent = field;
+                        Object.assign(nameEl.style, {
+                            fontFamily: 'monospace', fontSize: '11px',
+                            color: '#667eea', fontWeight: 'bold', padding: '2px 0'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = desc;
+                        Object.assign(descEl.style, {
+                            fontSize: '12px', color: '#555', padding: '2px 0',
+                            fontFamily: 'Arial, sans-serif'
+                        });
+                        grid.appendChild(nameEl);
+                        grid.appendChild(descEl);
+                    }
+                    body.appendChild(grid);
+                }
+            },
+            {
+                icon: '⚡',
+                title: 'Quick Action Buttons',
+                buildContent: (body) => {
+                    addParagraph(body, 'Three buttons are added next to the Short Description field on the ticket form:');
+
+                    const buttons = [
+                        {
+                            bg: '#667eea', label: '📝 Helper',
+                            desc: 'Opens the Short Description panel. Fill in the dropdown fields and click "Change Short Description" to write the formatted value to the ticket.'
+                        },
+                        {
+                            bg: '#17a2b8', label: '📅 Update Date',
+                            desc: "Updates only the date at the start of the short description to today (DD-MM-YYYY). All other fields are left unchanged. If no date is present, today's date is prepended."
+                        },
+                        {
+                            bg: '#343434', label: 'N Open Tenant', border: '1px solid #0091c9',
+                            desc: "Opens the detected Member Firm's Netskope tenant portal in a new tab. Requires tenant URLs to be configured and a detectable Member Firm on the ticket."
+                        }
+                    ];
+
+                    for (const btn of buttons) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px',
+                            borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = btn.label;
+                        Object.assign(badge.style, {
+                            background: btn.bg, color: '#fff',
+                            borderRadius: '4px', padding: '4px 8px',
+                            fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0',
+                            fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start',
+                            border: btn.border || 'none'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = btn.desc;
+                        Object.assign(descEl.style, {
+                            fontSize: '12px', color: '#555', lineHeight: '1.5',
+                            fontFamily: 'Arial, sans-serif'
+                        });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                }
+            },
+            {
+                icon: '🤖',
+                title: 'Auto-Complexity',
+                buildContent: (body) => {
+                    addParagraph(body, 'When enabled, the Complexity field is calculated automatically from the number of "Additional comments" entries in the ticket activity stream. The Complexity dropdown is locked while auto mode is active.');
+
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, {
+                        display: 'grid', gridTemplateColumns: '1fr 1fr',
+                        gap: '4px 16px', background: '#f8f8ff',
+                        borderRadius: '6px', padding: '10px 14px',
+                        marginBottom: '10px', border: '1px solid #e8e8f8'
+                    });
+                    const pairs = [
+                        ['0 to 15 comments',    'Complexity 1 (Low)'],
+                        ['16 to 25 comments',   'Complexity 2 (Medium)'],
+                        ['26 or more comments', 'Complexity 3 (High)']
+                    ];
+                    for (const [range, level] of pairs) {
+                        const a = document.createElement('span');
+                        a.textContent = range;
+                        Object.assign(a.style, {
+                            fontSize: '12px', color: '#555', fontFamily: 'monospace'
+                        });
+                        const b = document.createElement('span');
+                        b.textContent = level;
+                        Object.assign(b.style, {
+                            fontSize: '12px', color: '#667eea', fontWeight: 'bold',
+                            fontFamily: 'Arial, sans-serif'
+                        });
+                        grid.appendChild(a);
+                        grid.appendChild(b);
+                    }
+                    body.appendChild(grid);
+                    addParagraph(body, 'Uncheck "Auto-calculate complexity" in the panel to enter complexity manually. The setting is saved across sessions.');
+                }
+            },
+            {
+                icon: '🔍',
+                title: 'Searchable Dropdowns',
+                buildContent: (body) => {
+                    addParagraph(body, 'All dropdowns in the panel support live text filtering when the feature is enabled:');
+                    addBulletList(body, [
+                        'Click any dropdown to open it. A search box appears with focus automatically.',
+                        'Type to filter the list in real time.',
+                        'Use the Up and Down arrow keys to navigate filtered results.',
+                        'Press Enter to confirm the selection, or Escape to close without changing the value.',
+                        'Use the "Searchable dropdowns" toggle in the panel header to enable or disable this feature. The setting persists across sessions.'
+                    ]);
+                }
+            },
+            {
+                icon: '🔗',
+                title: 'Tenant Detection',
+                buildContent: (body) => {
+                    addParagraph(body, 'The script reads the "Requesting Member Firm" field on the ticket form and maps it to the corresponding Netskope tenant region:');
+
+                    const tenants = [
+                        ['EMA Tenant',  'Africa, Chile, Israel, Mexico, Spain, S-LATAM, DKU'],
+                        ['EU Tenant',   'Austria, Belgium, Cyprus, Denmark, Finland, Iceland, Ireland, Luxembourg, Middle East, Netherlands, Nordics, Norway, Sweden, Switzerland, United Kingdom'],
+                        ['CE Tenant',   'France, Germany, Portugal, Turkey'],
+                        ['APAC Tenant', 'Australia, Japan, Korea, Mauritius, New Zealand, South Asia, Southeast Asia, Taiwan'],
+                        ['AME Tenant',  'Brazil, Canada, Caribbean, United States']
+                    ];
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, {
+                        display: 'grid', gridTemplateColumns: 'auto 1fr',
+                        gap: '5px 14px', marginBottom: '10px'
+                    });
+                    for (const [tenant, regions] of tenants) {
+                        const a = document.createElement('span');
+                        a.textContent = tenant;
+                        Object.assign(a.style, {
+                            fontSize: '12px', color: '#667eea', fontWeight: 'bold',
+                            padding: '2px 0', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif'
+                        });
+                        const b = document.createElement('span');
+                        b.textContent = regions;
+                        Object.assign(b.style, {
+                            fontSize: '12px', color: '#555', padding: '2px 0',
+                            lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+                        });
+                        grid.appendChild(a);
+                        grid.appendChild(b);
+                    }
+                    body.appendChild(grid);
+                    addParagraph(body, 'The detected tenant appears in the "MF NS Tenant" row as a clickable link. The Netskope icon button uses the same detection to open the tenant portal directly.');
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Settings and Configuration',
+                buildContent: (body) => {
+                    const items = [
+                        ['⚙ Tenant URLs',
+                         'In the panel header. Opens a dialog to enter or update the Netskope tenant URL for each region (EMA, EU, CE, APA, AME). Find the correct URLs in the General Scripts User Guide Word document under "Required information & variables".'],
+                        ['Switch Team',
+                         'In the panel header. Changes your active team between EMEA, AME, and APAC. Each team has a different list of Member Firms. Switching teams reloads the page.'],
+                        ['Searchable dropdowns toggle',
+                         'Checkbox in the panel header. Enables or disables live text filtering for all dropdowns. The change takes effect after a page reload.'],
+                        ['Auto-calculate complexity',
+                         'Checkbox inside the panel, below the Complexity dropdown. Enables or disables automatic complexity calculation from the activity stream. The change takes effect immediately.']
+                    ];
+                    for (const [name, desc] of items) {
+                        const row = document.createElement('div');
+                        row.style.marginBottom = '10px';
+                        const nameEl = document.createElement('div');
+                        nameEl.textContent = name;
+                        Object.assign(nameEl.style, {
+                            fontWeight: 'bold', fontSize: '12px', color: '#333',
+                            marginBottom: '2px', fontFamily: 'Arial, sans-serif'
+                        });
+                        const descEl = document.createElement('div');
+                        descEl.textContent = desc;
+                        Object.assign(descEl.style, {
+                            fontSize: '12px', color: '#555', lineHeight: '1.5',
+                            fontFamily: 'Arial, sans-serif'
+                        });
+                        row.appendChild(nameEl);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'helpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'helpModal';
+
+        // Modal header row
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, {
+            fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif'
+        });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Short Description Helper • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, {
+            fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif'
+        });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border: '1px solid #e8e8f0', borderRadius: '6px',
+                marginBottom: '8px', overflow: 'hidden'
+            });
+
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, {
+                fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif'
+            });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block'
+            });
+
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontWeight: 'bold', width: '100%',
+            fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
     }
 
     /* ==========================================================
@@ -1770,6 +2210,30 @@ Version 3.0.8.1:
             showTenantURLSetup(() => {});
         };
         versionRow.appendChild(configureTenantLink);
+
+        // Help / Feature Guide button
+        const helpLink = document.createElement('span');
+        Object.assign(helpLink.style, {
+            color: '#667eea',
+            cursor: 'pointer',
+            fontSize: '11px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '3px',
+            padding: '1px 6px',
+            borderRadius: '3px',
+            border: '1px solid #c0c8f0',
+            fontWeight: 'bold',
+            userSelect: 'none',
+            backgroundColor: 'transparent',
+            transition: 'background-color 0.2s ease'
+        });
+        helpLink.textContent = '? Help';
+        helpLink.title = 'View feature guide and documentation';
+        helpLink.onmouseover = () => { helpLink.style.backgroundColor = '#eef0ff'; };
+        helpLink.onmouseout  = () => { helpLink.style.backgroundColor = 'transparent'; };
+        helpLink.onclick = () => showHelpModal();
+        versionRow.appendChild(helpLink);
 
         // Searchable dropdowns toggle
         const searchableWrapper = document.createElement('span');
