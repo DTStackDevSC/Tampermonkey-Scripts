@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.3.0
+// @version      3.3.1
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.3.0';
-    const CHANGELOG = `Version 3.3.0:
+    const SCRIPT_VERSION = '3.3.1';
+    const CHANGELOG = `Version 3.3.1:
+- Tenant URL configuration moved into the Settings modal. A new "Tenant URLs" section with a "Configure Tenant URLs" button replaces the old link in the panel header.
+- The "What's New" notification now appears directly to the right of the version number in the panel header.
+
+Version 3.3.0:
 - Added a dedicated Settings modal. The "Switch Team" control and the searchable dropdowns toggle have moved there, accessed via a new "Settings" button in the panel header.
 - The panel header is reorganized: "Settings" and "Help" buttons now sit together at the top right, next to the team name. The version and tenant URL link remain on the row below.
 
@@ -1616,7 +1620,9 @@ Version 3.0.8.1:
 
         // ── Searchable dropdowns section ──
         const dropdownSection = document.createElement('div');
-        dropdownSection.style.marginBottom = '8px';
+        Object.assign(dropdownSection.style, {
+            marginBottom: '18px', paddingBottom: '18px', borderBottom: '1px solid #eee'
+        });
 
         const dropdownSectionTitle = document.createElement('div');
         dropdownSectionTitle.textContent = '🔍 Dropdowns';
@@ -1670,6 +1676,44 @@ Version 3.0.8.1:
         toggleRow.appendChild(toggleTextWrap);
         dropdownSection.appendChild(toggleRow);
         modal.appendChild(dropdownSection);
+
+        // ── Tenant URLs section ──
+        const tenantSection = document.createElement('div');
+        tenantSection.style.marginBottom = '8px';
+
+        const tenantSectionTitle = document.createElement('div');
+        tenantSectionTitle.textContent = '🔗 Tenant URLs';
+        Object.assign(tenantSectionTitle.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#333',
+            marginBottom: '10px', fontFamily: 'Arial, sans-serif'
+        });
+        tenantSection.appendChild(tenantSectionTitle);
+
+        const tenantSectionDesc = document.createElement('div');
+        tenantSectionDesc.textContent = 'Used for tenant detection and the Open Tenant button. Find the correct URLs in the General Scripts User Guide under "Required information & variables".';
+        Object.assign(tenantSectionDesc.style, {
+            fontSize: '12px', color: '#777', lineHeight: '1.4',
+            marginBottom: '10px', fontFamily: 'Arial, sans-serif'
+        });
+        tenantSection.appendChild(tenantSectionDesc);
+
+        const configureTenantBtn = document.createElement('button');
+        configureTenantBtn.textContent = 'Configure Tenant URLs';
+        Object.assign(configureTenantBtn.style, {
+            padding: '6px 14px', background: '#f0f0f0', color: '#333',
+            border: '1px solid #ccc', borderRadius: '5px', cursor: 'pointer',
+            fontSize: '12px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif',
+            transition: 'background 0.2s ease'
+        });
+        configureTenantBtn.onmouseover = () => { configureTenantBtn.style.background = '#e0e0e0'; };
+        configureTenantBtn.onmouseout  = () => { configureTenantBtn.style.background = '#f0f0f0'; };
+        configureTenantBtn.onclick = () => {
+            overlay.remove();
+            modal.remove();
+            showTenantURLSetup(() => {});
+        };
+        tenantSection.appendChild(configureTenantBtn);
+        modal.appendChild(tenantSection);
 
         // Close button
         const closeBtn = document.createElement('button');
@@ -1947,7 +1991,7 @@ Version 3.0.8.1:
                         ['Searchable dropdowns toggle',
                          'In the Settings modal. Enables or disables live text filtering for all dropdowns. The change takes effect after a page reload.'],
                         ['⚙ Tenant URLs',
-                         'Link in the version row at the bottom of the panel header. Opens a dialog to enter or update the Netskope tenant URL for each region (EMA, EU, CE, APA, AME). Find the correct URLs in the General Scripts User Guide Word document under "Required information & variables".'],
+                         'In the Settings modal. Click "Configure Tenant URLs" to enter or update the Netskope tenant URL for each region (EMA, EU, CE, APA, AME). Find the correct URLs in the General Scripts User Guide Word document under "Required information & variables".'],
                         ['Auto-calculate complexity',
                          'Checkbox inside the panel, below the Complexity dropdown. Enables or disables automatic complexity calculation from the activity stream. The change takes effect immediately.']
                     ];
@@ -2438,23 +2482,7 @@ Version 3.0.8.1:
         versionIndicator.textContent = `Version • v${SCRIPT_VERSION}`;
         versionRow.appendChild(versionIndicator);
 
-        // "Configure Tenant URLs" link
-        const configureTenantLink = document.createElement('span');
-        Object.assign(configureTenantLink.style, {
-            color: '#0066cc',
-            cursor: 'pointer',
-            textDecoration: 'underline',
-            fontSize: '11px'
-        });
-        configureTenantLink.textContent = '⚙ Tenant URLs';
-        configureTenantLink.title = 'Edit stored Netskope tenant URLs';
-        configureTenantLink.onclick = () => {
-            closeMainPanel();
-            showTenantURLSetup(() => {});
-        };
-        versionRow.appendChild(configureTenantLink);
-
-        // Changelog notification
+        // "What's New" notification sits directly after the version number
         const showChangelog = isNewVersion() && !hasSeenChangelog();
         if (showChangelog) {
             const changelogNotification = document.createElement('span');
