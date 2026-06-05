@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.16.4
+// @version      2.16.5
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.4';
-    const CHANGELOG = `Version 2.16.4:
+    const SCRIPT_VERSION = '2.16.5';
+    const CHANGELOG = `Version 2.16.5:
+- The "What's New" notification now appears directly to the right of the version number in the dropdown header.
+
+Version 2.16.4:
 - Switch Team moved into the Settings modal. A new "Team" section shows the current team and a "Switch Team" button. The inline link in the dropdown header has been removed.
 
 Version 2.16.3:
@@ -2928,8 +2931,36 @@ Regards.`,
         Object.assign(header.style, { padding: '12px 15px', borderBottom: '1px solid #e0e0e0', backgroundColor: '#f8f9fa', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' });
 
         const teamInfo = document.createElement('div');
-        Object.assign(teamInfo.style, { fontSize: '11px', color: '#666', marginBottom: '6px' });
-        teamInfo.textContent = `Team: ${team.name} • v${SCRIPT_VERSION}`;
+        Object.assign(teamInfo.style, {
+            fontSize: '11px', color: '#666', marginBottom: '6px',
+            display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'
+        });
+        const teamInfoText = document.createElement('span');
+        teamInfoText.textContent = `Team: ${team.name} • v${SCRIPT_VERSION}`;
+        teamInfo.appendChild(teamInfoText);
+
+        // "What's New" notification sits directly after the version number
+        if (isNewVersion() && !hasSeenChangelog()) {
+            const changelogNotification = document.createElement('span');
+            changelogNotification.id = 'changelogNotification';
+            Object.assign(changelogNotification.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', padding: '0', background: 'none', border: 'none' });
+
+            const notificationDot = document.createElement('span');
+            notificationDot.className = 'notification-dot';
+            Object.assign(notificationDot.style, { width: '7px', height: '7px', borderRadius: '50%', display: 'inline-block' });
+
+            const notificationText = document.createElement('span');
+            notificationText.className = 'notification-text';
+            notificationText.textContent = "What's New";
+            Object.assign(notificationText.style, { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' });
+
+            changelogNotification.appendChild(notificationDot);
+            changelogNotification.appendChild(notificationText);
+            changelogNotification.onmouseover = () => notificationText.style.color = '#0052a3';
+            changelogNotification.onmouseout  = () => notificationText.style.color = '#0066cc';
+            changelogNotification.onclick = () => showChangelogModal();
+            teamInfo.appendChild(changelogNotification);
+        }
 
         const actionButtons = document.createElement('div');
         Object.assign(actionButtons.style, { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' });
@@ -2958,29 +2989,6 @@ Regards.`,
             showCustomResponsesModal(() => rebuildDropdownContent(dropdown, team, teamKey, inlineButton));
         };
         manageCustomRow.appendChild(manageCustomBtn);
-
-        // Changelog notification
-        if (isNewVersion() && !hasSeenChangelog()) {
-            const changelogNotification = document.createElement('span');
-            changelogNotification.id = 'changelogNotification';
-            Object.assign(changelogNotification.style, { display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', padding: '0', background: 'none', border: 'none' });
-
-            const notificationDot = document.createElement('span');
-            notificationDot.className = 'notification-dot';
-            Object.assign(notificationDot.style, { width: '7px', height: '7px', borderRadius: '50%', display: 'inline-block' });
-
-            const notificationText = document.createElement('span');
-            notificationText.className = 'notification-text';
-            notificationText.textContent = "What's New";
-            Object.assign(notificationText.style, { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' });
-
-            changelogNotification.appendChild(notificationDot);
-            changelogNotification.appendChild(notificationText);
-            changelogNotification.onmouseover = () => notificationText.style.color = '#0052a3';
-            changelogNotification.onmouseout  = () => notificationText.style.color = '#0066cc';
-            changelogNotification.onclick = () => showChangelogModal();
-            actionButtons.appendChild(changelogNotification);
-        }
 
         header.appendChild(teamInfo);
         header.appendChild(actionButtons);
