@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.5
+// @version      1.2.6
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.5';
-    const CHANGELOG = `Version 1.2.5:
+    const SCRIPT_VERSION = '1.2.6';
+    const CHANGELOG = `Version 1.2.6:
+- Fixed the "What's New" notification appearing as plain black text on the Netskope page. Styles are now applied directly on the element to override Netskope's CSS cascade layers, which were preventing the stylesheet rules from taking effect.
+
+Version 1.2.5:
 - The "What's New" notification now uses the same blue color and blue-to-orange pulsing dot as the other scripts, making it consistent and easier to spot.
 
 Version 1.2.4:
@@ -370,24 +373,9 @@ Version 1.2.0:
 
     const style = document.createElement('style');
     style.textContent = `
-        #netskopeChangelogNotification {
-            display: inline-flex !important; align-items: center !important; gap: 6px !important;
-            cursor: pointer !important; margin-left: 10px !important; padding: 3px 8px !important;
-            border-radius: 4px !important; transition: background-color 0.2s ease !important;
-            background-color: transparent !important;
-        }
-        #netskopeChangelogNotification:hover { background-color: #f0f0f0 !important; }
-        #netskopeChangelogNotification .netskope-notification-dot {
-            width: 8px !important; height: 8px !important; border-radius: 50% !important;
-            animation: netskopeColorPulse 1s ease-in-out infinite !important;
-        }
         @keyframes netskopeColorPulse {
             0%, 100% { background-color: #007bff; }
-            50% { background-color: #ff8c00; }
-        }
-        #netskopeChangelogNotification .netskope-notification-text {
-            font-size: 11px !important; color: #0066cc !important; text-decoration: underline !important;
-            font-family: Arial, sans-serif !important;
+            50%       { background-color: #ff8c00; }
         }
         #netskopeChangelogModal {
             position: fixed !important; top: 50% !important; left: 50% !important;
@@ -1266,11 +1254,36 @@ Version 1.2.0:
         if (showChangelog) {
             const clNotif = document.createElement('span');
             clNotif.id = 'netskopeChangelogNotification';
+            // setProperty with 'important' guarantees these win over Netskope's cascade-layered styles
+            clNotif.style.setProperty('display',           'inline-flex',         'important');
+            clNotif.style.setProperty('align-items',       'center',              'important');
+            clNotif.style.setProperty('gap',               '6px',                 'important');
+            clNotif.style.setProperty('cursor',            'pointer',             'important');
+            clNotif.style.setProperty('margin-left',       '10px',                'important');
+            clNotif.style.setProperty('padding',           '3px 8px',             'important');
+            clNotif.style.setProperty('border-radius',     '4px',                 'important');
+            clNotif.style.setProperty('background-color',  'transparent',         'important');
+            clNotif.style.setProperty('transition',        'background-color 0.2s ease', 'important');
+            clNotif.onmouseover = () => clNotif.style.setProperty('background-color', '#f0f0f0',    'important');
+            clNotif.onmouseout  = () => clNotif.style.setProperty('background-color', 'transparent','important');
+
             const dot = document.createElement('span');
-            dot.className = 'netskope-notification-dot';
+            dot.style.setProperty('display',       'inline-block',                              'important');
+            dot.style.setProperty('width',         '8px',                                       'important');
+            dot.style.setProperty('height',        '8px',                                       'important');
+            dot.style.setProperty('border-radius', '50%',                                       'important');
+            dot.style.setProperty('flex-shrink',   '0',                                         'important');
+            dot.style.setProperty('animation',     'netskopeColorPulse 1s ease-in-out infinite','important');
+
             const txt = document.createElement('span');
-            txt.className = 'netskope-notification-text';
             txt.textContent = "What's New";
+            txt.style.setProperty('font-size',       '11px',                   'important');
+            txt.style.setProperty('color',           '#0066cc',                'important');
+            txt.style.setProperty('text-decoration', 'underline',              'important');
+            txt.style.setProperty('font-family',     'Arial, sans-serif',      'important');
+            txt.style.setProperty('font-weight',     'normal',                 'important');
+            txt.style.setProperty('line-height',     'normal',                 'important');
+
             clNotif.appendChild(dot);
             clNotif.appendChild(txt);
             clNotif.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showChangelogModal(); });
