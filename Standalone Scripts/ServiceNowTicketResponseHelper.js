@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.17.0
+// @version      2.17.1
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.0';
-    const CHANGELOG = `Version 2.17.0:
+    const SCRIPT_VERSION = '2.17.1';
+    const CHANGELOG = `Version 2.17.1:
+- The Feature Guide now includes visual examples: a button badge showing how the inline button looks, colored field-type badges (Comments and Work Notes) with descriptions, a before-and-after name substitution example, a mock search box, and a grid of editor fields for custom responses. Settings are shown as badge rows matching the Short Description Helper's style.
+
+Version 2.17.0:
 - Added a "? Help" button in the dropdown header that opens a Feature Guide modal documenting all script features.
 - The "Settings" and "Help" buttons now use a pill style matching the Short Description Helper.
 
@@ -2739,12 +2742,35 @@ Regards.`,
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent: (body) => {
-                    addParagraph(body, 'The Ticket Response Helper adds an inline button next to the Short Description field on any ServiceNow ticket. It gives you instant access to a library of predefined response templates for your team.');
+                    addParagraph(body, 'The Ticket Response Helper adds an inline button next to the Short Description field on every ServiceNow ticket. Click it to open a dropdown of predefined response templates for your team.');
+
+                    const btnRow = document.createElement('div');
+                    Object.assign(btnRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const btnBadge = document.createElement('span');
+                    btnBadge.textContent = '🗣 Quick Response';
+                    Object.assign(btnBadge.style, {
+                        background: '#669bea', color: '#fff', borderRadius: '4px',
+                        padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const btnDesc = document.createElement('span');
+                    btnDesc.textContent = 'This button appears next to the Short Description field on every ticket. Click it to open the response dropdown.';
+                    Object.assign(btnDesc.style, {
+                        fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                    });
+                    btnRow.appendChild(btnBadge);
+                    btnRow.appendChild(btnDesc);
+                    body.appendChild(btnRow);
+
                     addBulletList(body, [
-                        'Open a ticket (RITM or Incident) in ServiceNow.',
-                        'Click the inline button injected next to the Short Description field to open the response dropdown.',
-                        'Browse or search for a template, then click it to insert the response into the correct ticket field.',
-                        'Responses targeting "Comments" go to the customer-facing field. Responses targeting "Work Notes" go to the internal field.'
+                        'Open any RITM or Incident ticket in ServiceNow.',
+                        'Click the blue "🗣 Quick Response" button next to the Short Description field.',
+                        'Browse sections or use the search box to find a template.',
+                        'Click a template to insert it into the correct field on the ticket immediately.'
                     ]);
                 }
             },
@@ -2752,24 +2778,75 @@ Regards.`,
                 icon: '📋',
                 title: 'Response Templates',
                 buildContent: (body) => {
-                    addParagraph(body, 'Templates are organised into collapsible sections. Click a section header to expand or collapse it.');
-                    addBulletList(body, [
-                        'Each template targets either Comments (customer-facing) or Work Notes (internal). The destination is set by the template definition.',
-                        'Some templates have sub-options: hover over the item to reveal a flyout menu with variants to choose from.',
-                        'Clicking any template item immediately inserts the formatted text into the correct field on the ticket.',
-                        'The template text may include the requester\'s name via automatic name detection (see "Name Detection" section).'
-                    ]);
+                    addParagraph(body, 'Templates are grouped into collapsible sections: First contact, Responses, Reminders, Closures, Work Notes Comments, Other, and Custom. Click a section header to expand or collapse it.');
+
+                    addParagraph(body, 'Each template targets a specific ticket field:');
+
+                    const fieldTypes = [
+                        {
+                            bg: '#0066cc', label: 'Comments',
+                            desc: 'Customer-facing. The requester can see these. Use for replies, updates, and requests directed at the person who opened the ticket.'
+                        },
+                        {
+                            bg: '#5a6672', label: 'Work Notes',
+                            desc: 'Internal only. Visible to your team but not the requester. Use for handover notes, investigation logs, and internal status updates.'
+                        }
+                    ];
+                    for (const ft of fieldTypes) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = ft.label;
+                        Object.assign(badge.style, {
+                            background: ft.bg, color: '#fff', borderRadius: '4px',
+                            padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
+                            alignSelf: 'flex-start', minWidth: '80px', textAlign: 'center'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = ft.desc;
+                        Object.assign(descEl.style, {
+                            fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                        });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+
+                    addParagraph(body, 'Some templates have sub-options: hover over the item to reveal a flyout menu with variants. Click any variant to insert it.');
                 }
             },
             {
                 icon: '🔍',
                 title: 'Search',
                 buildContent: (body) => {
-                    addParagraph(body, 'A search box at the top of the dropdown filters all response templates in real time:');
+                    addParagraph(body, 'A search box at the top of the dropdown filters all templates across all sections in real time:');
+
+                    const searchBox = document.createElement('div');
+                    Object.assign(searchBox.style, {
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        padding: '6px 10px', border: '1px solid #ccc', borderRadius: '4px',
+                        background: '#fff', marginBottom: '12px', maxWidth: '260px'
+                    });
+                    const searchIcon = document.createElement('span');
+                    searchIcon.textContent = '🔍';
+                    searchIcon.style.fontSize = '12px';
+                    const searchPlaceholder = document.createElement('span');
+                    searchPlaceholder.textContent = 'Search responses...';
+                    Object.assign(searchPlaceholder.style, {
+                        fontSize: '12px', color: '#bbb', fontFamily: 'Arial, sans-serif', fontStyle: 'italic'
+                    });
+                    searchBox.appendChild(searchIcon);
+                    searchBox.appendChild(searchPlaceholder);
+                    body.appendChild(searchBox);
+
                     addBulletList(body, [
                         'Type any word from a template label to narrow the list instantly.',
-                        'The search works across all sections and sub-options.',
-                        'Clear the search box to return to the full list.'
+                        'The search works across all sections and flyout sub-options.',
+                        'Clear the search box to return to the full grouped list.'
                     ]);
                 }
             },
@@ -2777,11 +2854,43 @@ Regards.`,
                 icon: '👤',
                 title: 'Name Detection',
                 buildContent: (body) => {
-                    addParagraph(body, 'When a response is inserted, the script reads the "Opened by" field on the ticket and substitutes the requester\'s display name into the template automatically.');
+                    addParagraph(body, 'Templates can include the requester\'s first name. When you insert a template the script reads the "Opened by" field and substitutes the name automatically:');
+
+                    const exampleWrap = document.createElement('div');
+                    Object.assign(exampleWrap.style, {
+                        marginBottom: '12px', borderRadius: '6px',
+                        border: '1px solid #d0d0f0', overflow: 'hidden'
+                    });
+                    const exRows = [
+                        { label: 'Template', bg: '#f8f8ff', color: '#888', text: 'Hello [Name], thank you for contacting us.' },
+                        { label: 'Inserted',  bg: '#f2fff7', color: '#2a7d4f', text: 'Hello Jane, thank you for contacting us.' }
+                    ];
+                    for (const exRow of exRows) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', alignItems: 'baseline', gap: '10px',
+                            padding: '7px 12px', background: exRow.bg,
+                            borderBottom: exRow.label === 'Template' ? '1px solid #e8e8f0' : 'none'
+                        });
+                        const labelEl = document.createElement('span');
+                        labelEl.textContent = exRow.label;
+                        Object.assign(labelEl.style, {
+                            fontSize: '10px', fontWeight: 'bold', color: exRow.color,
+                            textTransform: 'uppercase', whiteSpace: 'nowrap',
+                            width: '55px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                        });
+                        const textEl = document.createElement('span');
+                        textEl.textContent = exRow.text;
+                        Object.assign(textEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#333' });
+                        row.appendChild(labelEl);
+                        row.appendChild(textEl);
+                        exampleWrap.appendChild(row);
+                    }
+                    body.appendChild(exampleWrap);
+
                     addBulletList(body, [
-                        'This works in both the classic (new tab) and Polaris (dashboard) ticket views.',
-                        'The name is extracted from the ticket form using the ServiceNow g_form API when available, with a DOM fallback for older views.',
-                        'If the name cannot be detected, the placeholder is left in place so you can fill it in manually before saving.'
+                        'Name detection works in both the classic (new tab) and Polaris (dashboard) ticket views.',
+                        'If the name cannot be read from the ticket, the placeholder "[Name]" stays in the inserted text so you can fill it in before saving.'
                     ]);
                 }
             },
@@ -2789,12 +2898,57 @@ Regards.`,
                 icon: '✦',
                 title: 'Custom Responses',
                 buildContent: (body) => {
-                    addParagraph(body, 'You can create your own personal response templates in addition to the team-provided ones:');
+                    const headerRow = document.createElement('div');
+                    Object.assign(headerRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const headerBadge = document.createElement('span');
+                    headerBadge.textContent = '✦ Manage Custom Responses';
+                    Object.assign(headerBadge.style, {
+                        background: '#f0f2ff', color: '#667eea', border: '1px solid #667eea',
+                        borderRadius: '4px', padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const headerDesc = document.createElement('span');
+                    headerDesc.textContent = 'Located in the dropdown header. Opens the editor where you can create, edit, and delete your personal templates.';
+                    Object.assign(headerDesc.style, {
+                        fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                    });
+                    headerRow.appendChild(headerBadge);
+                    headerRow.appendChild(headerDesc);
+                    body.appendChild(headerRow);
+
+                    const fieldDescs = [
+                        ['Label',      'The name shown in the dropdown list for your template.'],
+                        ['Body',       'The full text that gets inserted into the ticket field when clicked.'],
+                        ['Field Type', 'Choose "Comments" (customer-facing) or "Work Notes" (internal).']
+                    ];
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, {
+                        display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px'
+                    });
+                    for (const [field, desc] of fieldDescs) {
+                        const nameEl = document.createElement('span');
+                        nameEl.textContent = field;
+                        Object.assign(nameEl.style, {
+                            fontFamily: 'monospace', fontSize: '11px',
+                            color: '#667eea', fontWeight: 'bold', padding: '2px 0'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = desc;
+                        Object.assign(descEl.style, {
+                            fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif'
+                        });
+                        grid.appendChild(nameEl);
+                        grid.appendChild(descEl);
+                    }
+                    body.appendChild(grid);
+
                     addBulletList(body, [
-                        'Click "Manage Custom Responses" in the dropdown header to open the editor.',
-                        'Add a label and body text, choose Comments or Work Notes as the target field, then save.',
                         'Custom responses appear in a dedicated "Custom" section at the bottom of the dropdown.',
-                        'Custom responses are stored locally in your browser and do not affect other users on your team.'
+                        'They are stored locally in your browser and do not affect other users on your team.'
                     ]);
                 }
             },
@@ -2802,35 +2956,71 @@ Regards.`,
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent: (body) => {
-                    const items = [
-                        ['Auto-update date on insert',
-                         'When enabled, the date at the start of the short description is updated to today (DD-MM-YYYY) every time you insert a response. Toggle this in the Settings modal.'],
-                        ['Switch Team',
-                         'In the Settings modal. Changes your active team between EMEA, AME, and APAC. Each team has its own set of response templates and section layout. Switching teams reloads the page.'],
-                        ['⚙ Settings button',
-                         'Located in the dropdown header. Opens the Settings modal where you can toggle auto-date update and switch your active team.'],
-                        ['✦ Manage Custom Responses',
-                         'Button in the dropdown header. Opens the custom response editor where you can create, edit, and delete your personal templates.']
+                    const headerButtons = [
+                        {
+                            bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Settings',
+                            desc: 'Opens the Settings modal where you can toggle auto-date update and switch your active team.'
+                        },
+                        {
+                            bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help',
+                            desc: 'Opens this Feature Guide.'
+                        },
+                        {
+                            bg: '#f0f2ff', color: '#667eea', border: '1px solid #667eea', label: '✦ Manage Custom Responses',
+                            desc: 'Opens the custom response editor. Create, edit, and delete your personal templates.'
+                        }
                     ];
-                    for (const [name, desc] of items) {
+                    for (const item of headerButtons) {
                         const row = document.createElement('div');
-                        row.style.marginBottom = '10px';
-                        const nameEl = document.createElement('div');
-                        nameEl.textContent = name;
-                        Object.assign(nameEl.style, {
-                            fontWeight: 'bold', fontSize: '12px', color: '#333',
-                            marginBottom: '2px', fontFamily: 'Arial, sans-serif'
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
                         });
-                        const descEl = document.createElement('div');
-                        descEl.textContent = desc;
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, border: item.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
+                            alignSelf: 'flex-start'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
                         Object.assign(descEl.style, {
-                            fontSize: '12px', color: '#555', lineHeight: '1.5',
-                            fontFamily: 'Arial, sans-serif'
+                            fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
                         });
-                        row.appendChild(nameEl);
+                        row.appendChild(badge);
                         row.appendChild(descEl);
                         body.appendChild(row);
                     }
+
+                    addParagraph(body, 'Inside the Settings modal:');
+
+                    const settingsItems = [
+                        ['Auto-update date on insert', 'Updates the date at the start of the short description to today (DD-MM-YYYY) every time you insert a response.'],
+                        ['Switch Team',                'Changes your active team between EMEA, AME, and APAC. Each team has its own set of templates and section layout. Switching teams reloads the page.']
+                    ];
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, {
+                        display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px'
+                    });
+                    for (const [name, desc] of settingsItems) {
+                        const nameEl = document.createElement('span');
+                        nameEl.textContent = name;
+                        Object.assign(nameEl.style, {
+                            fontFamily: 'monospace', fontSize: '11px', color: '#667eea',
+                            fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = desc;
+                        Object.assign(descEl.style, {
+                            fontSize: '12px', color: '#555', padding: '2px 0',
+                            fontFamily: 'Arial, sans-serif', lineHeight: '1.4'
+                        });
+                        grid.appendChild(nameEl);
+                        grid.appendChild(descEl);
+                    }
+                    body.appendChild(grid);
                 }
             }
         ];
