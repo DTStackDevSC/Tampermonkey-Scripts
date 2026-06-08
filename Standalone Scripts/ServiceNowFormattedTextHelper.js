@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.1.2
+// @version      1.1.3
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.2';
-    const CHANGELOG = `Version 1.1.2:
+    const SCRIPT_VERSION = '1.1.3';
+    const CHANGELOG = `Version 1.1.3:
+- When the Quick Response helper is not installed, the editor button now appears in the same place that button would, next to the ticket form actions, instead of above the activity stream.
+
+Version 1.1.2:
 - Fixed the editor button not appearing in standalone mode when the ticket showed only work notes or only comments. The button now reliably appears above whichever journal field is visible.
 
 Version 1.1.1:
@@ -2431,6 +2434,22 @@ Version 1.0.3:
         return !!(el && (el.offsetParent !== null || el.getClientRects().length));
     }
 
+    // Same form actions container the Quick Response button appends itself to
+    const QR_TARGET_SELECTOR = '.col-xs-10.col-md-9.col-lg-8.form-field .pull-left';
+
+    function findStandaloneAnchor() {
+        // 1. Preferred: the exact spot the Quick Response button uses, so the
+        //    Formatted Text button lands in the same place when that helper is absent
+        const formActions = document.querySelector(QR_TARGET_SELECTOR);
+        if (isVisible(formActions)) return { el: formActions, mode: 'append' };
+
+        // 2. Fallback: above whichever journal field is visible
+        const journal = findJournalAnchor();
+        if (journal) return { el: journal, mode: 'before' };
+
+        return null;
+    }
+
     function findJournalAnchor() {
         // Ordered candidates: the wrapper that holds both fields first (so the
         // button sits above them in dual mode), then each individual journal
@@ -2460,11 +2479,11 @@ Version 1.0.3:
             return;
         }
 
-        // Standalone fallback: anchor near the activity stream so we work
-        // even when the Response Helper is not installed
-        const journalAnchor = quickResponseBtn ? null : findJournalAnchor();
+        // Standalone fallback: place it where the Quick Response button would go,
+        // so we work even when the Response Helper is not installed
+        const standaloneAnchor = quickResponseBtn ? null : findStandaloneAnchor();
 
-        if (!quickResponseBtn && !journalAnchor) {
+        if (!quickResponseBtn && !standaloneAnchor) {
             if (buttonAttempts < MAX_FALLBACK_ATTEMPTS) {
                 buttonAttempts++;
                 setTimeout(addFormattedTextButton, 500);
@@ -2499,10 +2518,13 @@ Version 1.0.3:
         if (quickResponseBtn) {
             // Insert after Quick Response button
             quickResponseBtn.parentNode.insertBefore(formattedTextBtn, quickResponseBtn.nextSibling);
+        } else if (standaloneAnchor.mode === 'append') {
+            // Same form actions row the Quick Response button uses (keep its 10px left margin)
+            standaloneAnchor.el.appendChild(formattedTextBtn);
         } else {
-            // Place just above the journal area (above both fields in dual mode)
+            // Last resort: above whichever journal field is visible
             Object.assign(formattedTextBtn.style, { marginLeft: '0', marginBottom: '8px' });
-            journalAnchor.parentNode.insertBefore(formattedTextBtn, journalAnchor);
+            standaloneAnchor.el.parentNode.insertBefore(formattedTextBtn, standaloneAnchor.el);
         }
 
         // Create modal
