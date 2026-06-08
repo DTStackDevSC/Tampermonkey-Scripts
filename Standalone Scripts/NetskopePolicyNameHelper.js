@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.2
+// @version      1.5.3
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.2';
-    const CHANGELOG = `Version 1.5.2:
+    const SCRIPT_VERSION = '1.5.3';
+    const CHANGELOG = `Version 1.5.3:
+- The Geo dropdown is now searchable in both the main form and the Quick Setup Wizard. Type to filter the list and use arrow keys to navigate. The search field is focused automatically when the dropdown opens.
+
+Version 1.5.2:
 - Geo list: "Deloitte" removed from all entry names, sorted alphabetically. The N/A option is now labelled "Not region-specific" in all dropdowns.
 - Wizard: the Geo step is now always a plain dropdown. "Not region-specific" appears as the first selectable option instead of a separate checkbox toggle.
 
@@ -567,7 +570,7 @@ Version 1.2.0:
                     const fieldDescs = [
                         ['Test Policy',  'Adds "Test" as the first segment. Use for non-production policies.'],
                         ['Global Policy','Adds "GLB". Use for policies that apply globally with no specific geo.'],
-                        ['Geo',          'The geography or member firm (e.g. ES, UK, FR, NSE, Africa). Nordic geos (DK, FI, IS, NO, SE) automatically prepend "Nordics" in the name.'],
+                        ['Geo',          'Searchable dropdown: click to open, then type to filter. Nordic geos (DK, FI, IS, NO, SE) automatically prepend "Nordics" in the name. Use arrow keys to navigate, Enter to select.'],
                         ['Policy Type',  'The policy action: CASB Allow, CASB Deny, Web Allow, Web Deny, Threat Allow, or Threat Deny.'],
                         ['Description',  'Free-text label. Describe the specific purpose or target of the policy.']
                     ];
@@ -756,8 +759,8 @@ Version 1.2.0:
                     const steps = [
                         { step: '1', label: 'Policy type',   desc: 'Choose CASB/Web or DLP.' },
                         { step: '2', label: 'Test policy?',  desc: 'Mark as live or test. Test policies get a [Test] prefix.' },
-                        { step: '3', label: 'Scope',         desc: 'Global or a specific geo. Choosing Global skips step 4.' },
-                        { step: '4', label: 'Geo',           desc: 'The target geo or member firm. Skipped when scope is Global. Nordic geos automatically prepend "Nordics" in the name.' },
+                        { step: '3', label: 'Scope',         desc: 'Whether the name should include the GLB flag. A Global policy can still target a specific region.' },
+                        { step: '4', label: 'Geo',           desc: 'Searchable dropdown: type to filter the full list of geos and member firms. Select "Not region-specific" to leave geo out of the name.' },
                         { step: '5', label: 'Policy action', desc: 'The policy type dropdown (e.g. CASB Allow, DLP Block).' },
                         { step: '6', label: 'Description',   desc: 'Free-text description. Press Enter to advance.' },
                         { step: '7', label: 'Applies To',    desc: 'DLP only: Firm Wide or User Group.' },
@@ -1179,6 +1182,263 @@ Version 1.2.0:
             const kebab = prop.replace(/([A-Z])/g, c => '-' + c.toLowerCase());
             forceStyle(el, kebab, value);
         }
+    }
+
+    /* Creates a searchable dropdown control that behaves like a <select>.
+     * Uses a portal appended to document.body so the dropdown list is never
+     * clipped by overflow:auto ancestors or constrained by CSS transform contexts. */
+    function createSearchableSelect(id, labelText, optionsArray, onChange, widthParam) {
+        widthParam = widthParam || '280px';
+        const normalized = optionsArray.map(o =>
+            typeof o === 'object' ? { code: o.code, label: o.label } : { code: o, label: o }
+        );
+
+        let selectedCode  = normalized[0] ? normalized[0].code  : '';
+        let selectedLabel = normalized[0] ? normalized[0].label : '';
+        let isOpen = false;
+
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+        if (labelText) {
+            const lbl = document.createElement('label');
+            lbl.htmlFor = id + '-trigger';
+            lbl.textContent = labelText;
+            lbl.style.cssText = 'font-size:14px;font-weight:500;color:#374151;';
+            wrapper.appendChild(lbl);
+        }
+
+        const container = document.createElement('div');
+        container.id = id;
+        forceStyles(container, { display: 'block', width: widthParam, boxSizing: 'border-box', position: 'relative' });
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.id = id + '-trigger';
+        forceStyles(trigger, {
+            width: '100%', padding: '8px 12px', border: '1px solid #d1d5db',
+            borderRadius: '4px', fontSize: '14px', color: '#1f2937',
+            backgroundColor: '#ffffff', cursor: 'pointer', display: 'flex',
+            alignItems: 'center', justifyContent: 'space-between',
+            fontFamily: 'Arial, sans-serif', boxSizing: 'border-box', textAlign: 'left'
+        });
+
+        const triggerText = document.createElement('span');
+        triggerText.textContent = selectedLabel;
+        forceStyles(triggerText, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1' });
+
+        const arrow = document.createElement('span');
+        arrow.textContent = '▼';
+        forceStyles(arrow, {
+            fontSize: '10px', color: '#6b7280', marginLeft: '6px',
+            flexShrink: '0', pointerEvents: 'none', transition: 'transform 0.15s', display: 'inline-block'
+        });
+
+        trigger.appendChild(triggerText);
+        trigger.appendChild(arrow);
+        container.appendChild(trigger);
+
+        // Portal: appended to body to escape overflow/transform stacking contexts
+        const portal = document.createElement('div');
+        forceStyles(portal, {
+            display: 'none', position: 'fixed', zIndex: '99999',
+            backgroundColor: '#ffffff', border: '1px solid #d1d5db',
+            borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+            overflow: 'hidden', boxSizing: 'border-box'
+        });
+        document.body.appendChild(portal);
+
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Type to filter...';
+        forceStyles(searchInput, {
+            width: '100%', padding: '7px 10px', border: 'none',
+            borderBottom: '1px solid #e5e7eb', fontSize: '13px',
+            color: '#1f2937', backgroundColor: '#ffffff',
+            boxSizing: 'border-box', outline: 'none', fontFamily: 'Arial, sans-serif'
+        });
+
+        const list = document.createElement('ul');
+        forceStyles(list, { listStyle: 'none', margin: '0', padding: '4px 0', maxHeight: '200px', overflowY: 'auto' });
+
+        portal.appendChild(searchInput);
+        portal.appendChild(list);
+
+        function applyItemStyle(li, code, isHighlighted) {
+            const isSel = (code === selectedCode);
+            forceStyles(li, {
+                padding: '7px 12px', fontSize: '13px',
+                cursor: isSel ? 'default' : 'pointer',
+                fontFamily: 'Arial, sans-serif', whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                backgroundColor: isSel ? '#667eea' : (isHighlighted ? '#f0f0ff' : '#ffffff'),
+                color: isSel ? '#ffffff' : (isHighlighted ? '#4c46b6' : '#1f2937'),
+                fontWeight: isSel ? '600' : 'normal'
+            });
+        }
+
+        function renderList(filter) {
+            list.innerHTML = '';
+            const q = (filter || '').toLowerCase();
+            const filtered = normalized.filter(o =>
+                o.label.toLowerCase().includes(q) || o.code.toLowerCase().includes(q)
+            );
+            if (filtered.length === 0) {
+                const li = document.createElement('li');
+                li.className = 'npg-cs-no-results';
+                li.textContent = 'No results';
+                forceStyles(li, { padding: '7px 12px', fontSize: '13px', color: '#9ca3af', fontStyle: 'italic', cursor: 'default' });
+                list.appendChild(li);
+                return;
+            }
+            for (const opt of filtered) {
+                const li = document.createElement('li');
+                li.dataset.code = opt.code;
+                li.textContent = opt.label;
+                if (opt.code === selectedCode) li.className = 'npg-cs-sel';
+                applyItemStyle(li, opt.code, false);
+                li.addEventListener('mouseenter', () => {
+                    if (opt.code !== selectedCode) applyItemStyle(li, opt.code, true);
+                    list.querySelectorAll('li.npg-cs-hl').forEach(el => {
+                        el.classList.remove('npg-cs-hl');
+                        if (el.dataset.code !== selectedCode) applyItemStyle(el, el.dataset.code, false);
+                    });
+                    li.classList.add('npg-cs-hl');
+                });
+                li.addEventListener('mouseleave', () => {
+                    if (opt.code !== selectedCode) applyItemStyle(li, opt.code, false);
+                    li.classList.remove('npg-cs-hl');
+                });
+                li.addEventListener('mousedown', e => {
+                    e.preventDefault();
+                    pickOption(opt.code, opt.label);
+                    closeDropdown();
+                    trigger.focus();
+                });
+                list.appendChild(li);
+            }
+        }
+
+        function pickOption(code, label) {
+            selectedCode  = code;
+            selectedLabel = label;
+            triggerText.textContent = label;
+            if (onChange) onChange();
+        }
+
+        function openDropdown() {
+            document.querySelectorAll('[data-npg-cs-open]').forEach(p => {
+                p.removeAttribute('data-npg-cs-open');
+                forceStyle(p, 'display', 'none');
+            });
+            const rect = trigger.getBoundingClientRect();
+            forceStyles(portal, {
+                left: rect.left + 'px',
+                top: (rect.bottom + 2) + 'px',
+                width: Math.max(rect.width, 200) + 'px',
+                display: 'block'
+            });
+            portal.setAttribute('data-npg-cs-open', '1');
+            isOpen = true;
+            forceStyle(arrow, 'transform', 'rotate(180deg)');
+            searchInput.value = '';
+            renderList('');
+            setTimeout(() => {
+                searchInput.focus();
+                const sel = list.querySelector('.npg-cs-sel');
+                if (sel) sel.scrollIntoView({ block: 'nearest' });
+            }, 0);
+        }
+
+        function closeDropdown() {
+            forceStyle(portal, 'display', 'none');
+            portal.removeAttribute('data-npg-cs-open');
+            isOpen = false;
+            forceStyle(arrow, 'transform', 'rotate(0deg)');
+        }
+
+        trigger.addEventListener('click', e => {
+            e.stopPropagation();
+            isOpen ? closeDropdown() : openDropdown();
+        });
+        trigger.addEventListener('mouseenter', () => {
+            if (!isOpen) {
+                forceStyle(trigger, 'border-color', '#9ca3af');
+                forceStyle(trigger, 'background-color', '#f9fafb');
+            }
+        });
+        trigger.addEventListener('mouseleave', () => {
+            if (!isOpen) {
+                forceStyle(trigger, 'border-color', '#d1d5db');
+                forceStyle(trigger, 'background-color', '#ffffff');
+            }
+        });
+
+        searchInput.addEventListener('input', () => renderList(searchInput.value));
+
+        searchInput.addEventListener('keydown', e => {
+            const items = [...list.querySelectorAll('li:not(.npg-cs-no-results)')];
+            if (items.length === 0) return;
+            const hl  = list.querySelector('.npg-cs-hl');
+            const idx = hl ? items.indexOf(hl) : -1;
+
+            if (e.key === 'Escape') {
+                e.preventDefault(); closeDropdown(); trigger.focus();
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const next = items[Math.min(idx + 1, items.length - 1)];
+                if (next) {
+                    items.forEach(i => { i.classList.remove('npg-cs-hl'); applyItemStyle(i, i.dataset.code, false); });
+                    next.classList.add('npg-cs-hl');
+                    applyItemStyle(next, next.dataset.code, true);
+                    next.scrollIntoView({ block: 'nearest' });
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prev = items[Math.max(idx - 1, 0)];
+                if (prev) {
+                    items.forEach(i => { i.classList.remove('npg-cs-hl'); applyItemStyle(i, i.dataset.code, false); });
+                    prev.classList.add('npg-cs-hl');
+                    applyItemStyle(prev, prev.dataset.code, true);
+                    prev.scrollIntoView({ block: 'nearest' });
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const target = hl || items[0];
+                if (target && target.dataset.code !== undefined) {
+                    const opt = normalized.find(o => o.code === target.dataset.code);
+                    if (opt) { pickOption(opt.code, opt.label); closeDropdown(); trigger.focus(); }
+                }
+            }
+        });
+
+        Object.defineProperty(container, 'value', {
+            get() { return selectedCode; },
+            set(v) {
+                const opt = normalized.find(o => o.code === v);
+                if (opt) pickOption(opt.code, opt.label);
+            },
+            configurable: true
+        });
+
+        document.addEventListener('click', e => {
+            if (isOpen && !container.contains(e.target) && !portal.contains(e.target)) {
+                closeDropdown();
+            }
+        });
+
+        // Remove portal when container leaves the DOM (e.g. wizard re-render via innerHTML = '')
+        const cleanupObs = new MutationObserver(() => {
+            if (!container.isConnected) {
+                portal.remove();
+                cleanupObs.disconnect();
+            }
+        });
+        cleanupObs.observe(document.body, { childList: true, subtree: true });
+
+        wrapper.appendChild(container);
+        wrapper._selectContainer = container;
+        return wrapper;
     }
 
     function openManagePresetsPanel() {
@@ -1764,6 +2024,7 @@ Version 1.2.0:
                 id: 'geo',
                 question: 'Which Geo does this policy target?',
                 type: 'dropdown',
+                searchable: true,
                 options: () => GEOS
             },
             {
@@ -1938,21 +2199,29 @@ Version 1.2.0:
 
             } else if (step.type === 'dropdown') {
                 const opts = step.options();
-                const sel = document.createElement('select');
-                Object.assign(sel.style, {
-                    width: '100%', padding: '10px 12px', border: '1px solid #d1d5db',
-                    borderRadius: '6px', fontSize: '14px', color: '#1f2937',
-                    backgroundColor: '#ffffff', cursor: 'pointer', boxSizing: 'border-box'
-                });
-                opts.forEach(opt => {
-                    const o = document.createElement('option');
-                    o.value = opt.code;
-                    o.textContent = opt.label;
-                    if (opt.code === wizardState[step.id]) o.selected = true;
-                    sel.appendChild(o);
-                });
-                answerArea.appendChild(sel);
-                getAnswer = () => sel.value;
+                if (step.searchable) {
+                    const geoWrap = createSearchableSelect('npg-wizard-geo', null, opts, null, '100%');
+                    const geoContainer = geoWrap._selectContainer;
+                    geoContainer.value = wizardState[step.id];
+                    answerArea.appendChild(geoWrap);
+                    getAnswer = () => geoContainer.value;
+                } else {
+                    const sel = document.createElement('select');
+                    Object.assign(sel.style, {
+                        width: '100%', padding: '10px 12px', border: '1px solid #d1d5db',
+                        borderRadius: '6px', fontSize: '14px', color: '#1f2937',
+                        backgroundColor: '#ffffff', cursor: 'pointer', boxSizing: 'border-box'
+                    });
+                    opts.forEach(opt => {
+                        const o = document.createElement('option');
+                        o.value = opt.code;
+                        o.textContent = opt.label;
+                        if (opt.code === wizardState[step.id]) o.selected = true;
+                        sel.appendChild(o);
+                    });
+                    answerArea.appendChild(sel);
+                    getAnswer = () => sel.value;
+                }
 
             } else if (step.type === 'text') {
                 const inp = document.createElement('input');
@@ -2537,13 +2806,13 @@ Version 1.2.0:
 
         casbForm.appendChild(createCheckbox('npg-test-checkbox', 'Test Policy'));
         casbForm.appendChild(createCheckbox('npg-global-checkbox', 'Global Policy'));
-        casbForm.appendChild(createDropdown('npg-geo-select', 'Geo', GEOS));
+        casbForm.appendChild(createSearchableSelect('npg-geo-select', 'Geo', GEOS, updatePreview, '280px'));
         casbForm.appendChild(createDropdown('npg-policy-type-select', 'Policy Type', POLICY_TYPES));
         casbForm.appendChild(createTextInput('npg-description-input', 'Description', 'Enter description...'));
 
         dlpForm.appendChild(createCheckbox('npg-dlp-test-checkbox', 'Test Policy'));
         dlpForm.appendChild(createCheckbox('npg-dlp-global-checkbox', 'Global Policy'));
-        dlpForm.appendChild(createDropdown('npg-dlp-geo-select', 'Geo', GEOS));
+        dlpForm.appendChild(createSearchableSelect('npg-dlp-geo-select', 'Geo', GEOS, updatePreview, '280px'));
         dlpForm.appendChild(createDropdown('npg-dlp-policy-type-select', 'Policy Type', DLP_POLICY_TYPES));
         dlpForm.appendChild(createTextInput('npg-dlp-description-input', 'Description', 'Enter description...'));
         dlpForm.appendChild(createDropdown('npg-dlp-applies-to-select', 'Applies To', APPLIES_TO));
