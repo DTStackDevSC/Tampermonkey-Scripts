@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.0.7
+// @version      1.1.0
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,18 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.7';
-    const CHANGELOG = `Version 1.0.7:
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- The Insert button now lets you choose where the text goes: as a Comment, as a Work Note, or as both at once.
+- Added a Feature Guide. Click "? Help" in the editor header to see what every toolbar button does.
+- The HTML preview now opens in a proper window showing both a live rendered preview and the source, with a one click Copy button, replacing the old popup.
+- Inserting a link now opens a dedicated dialog with separate fields for the link text and the address, replacing the old browser prompt.
+- Added a "Remove Formatting" option that clears formatting from just the selected text, leaving the rest of your document untouched.
+- Pasted content is now cleaned automatically so text copied from Word, Outlook, or web pages no longer brings hidden styling into the editor.
+- The editor button now appears even when the Quick Response helper is not installed, and it no longer keeps retrying forever if the page layout is different.
+- Fixed dark mode: the What's New window and all new dialogs now keep readable light backgrounds.
+
+Version 1.0.7:
 - Fixed dark mode compatibility: the formatting modal and image modal now force light
   backgrounds and dark text via CSS with !important so ServiceNow dark mode cannot
   override their inputs and selects.
@@ -637,6 +647,746 @@ Version 1.0.3:
         setTimeout(() => urlInput.focus(), 60);
     }
 
+    /* ----------------------------------------------------------
+     *  LINK INSERTION MODAL
+     * ----------------------------------------------------------*/
+
+    function showLinkModal() {
+        // Capture the editor selection before the modal steals focus
+        saveSelection();
+        const preText = savedRange ? savedRange.toString() : '';
+
+        const overlay = document.createElement('div');
+        overlay.id = 'link-modal-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.55)', zIndex: '10004',
+            display: 'flex', justifyContent: 'center', alignItems: 'center'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'link-modal';
+        Object.assign(modal.style, {
+            backgroundColor: '#fff', borderRadius: '10px',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.35)', width: '440px',
+            maxWidth: 'calc(100vw - 40px)', fontFamily: 'Arial, sans-serif', overflow: 'hidden'
+        });
+
+        const header = document.createElement('div');
+        Object.assign(header.style, {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '14px 18px', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0'
+        });
+        const hTitle = document.createElement('h3');
+        hTitle.textContent = '🔗 Insert Link';
+        Object.assign(hTitle.style, { margin: '0', fontSize: '16px', color: '#333' });
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕'; closeX.type = 'button';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
+            color: '#666', padding: '0', width: '26px', height: '26px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px'
+        });
+        closeX.onmouseover = () => { closeX.style.backgroundColor = '#f0f0f0'; closeX.style.color = '#000'; };
+        closeX.onmouseout  = () => { closeX.style.backgroundColor = 'transparent'; closeX.style.color = '#666'; };
+        closeX.onclick = cleanup;
+        header.appendChild(hTitle);
+        header.appendChild(closeX);
+
+        const body = document.createElement('div');
+        Object.assign(body.style, { padding: '18px' });
+
+        function makeLabel(text, topMargin) {
+            const l = document.createElement('label');
+            l.textContent = text;
+            Object.assign(l.style, {
+                display: 'block', fontSize: '13px', fontWeight: 'bold',
+                color: '#444', marginBottom: '6px', marginTop: topMargin || '0'
+            });
+            return l;
+        }
+        function makeInput(placeholder, value) {
+            const i = document.createElement('input');
+            i.type = 'text';
+            i.placeholder = placeholder;
+            if (value) i.value = value;
+            Object.assign(i.style, {
+                width: '100%', padding: '8px 10px', border: '1px solid #ccc',
+                borderRadius: '5px', fontSize: '13px', boxSizing: 'border-box',
+                outline: 'none', fontFamily: 'Arial, sans-serif'
+            });
+            i.onfocus = () => { i.style.borderColor = '#669bea'; i.style.boxShadow = '0 0 0 0.2rem rgba(102,155,234,0.25)'; };
+            i.onblur  = () => { i.style.borderColor = '#ccc'; i.style.boxShadow = 'none'; };
+            return i;
+        }
+
+        const textInput = makeInput('Text to display', preText);
+        const urlInput  = makeInput('https://example.com', '');
+
+        body.appendChild(makeLabel('Link Text'));
+        body.appendChild(textInput);
+        body.appendChild(makeLabel('URL', '14px'));
+        body.appendChild(urlInput);
+
+        const footer = document.createElement('div');
+        Object.assign(footer.style, {
+            display: 'flex', justifyContent: 'flex-end', gap: '10px',
+            padding: '14px 18px', borderTop: '1px solid #e0e0e0', backgroundColor: '#f8f9fa'
+        });
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel'; cancelBtn.type = 'button';
+        Object.assign(cancelBtn.style, {
+            padding: '7px 18px', border: '1px solid #ccc', borderRadius: '5px',
+            backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
+        });
+        cancelBtn.onmouseover = () => cancelBtn.style.backgroundColor = '#f0f0f0';
+        cancelBtn.onmouseout  = () => cancelBtn.style.backgroundColor = '#fff';
+        cancelBtn.onclick = cleanup;
+
+        const insertBtn = document.createElement('button');
+        insertBtn.textContent = 'Insert Link'; insertBtn.type = 'button';
+        Object.assign(insertBtn.style, {
+            padding: '7px 18px', border: '1px solid #28a745', borderRadius: '5px',
+            backgroundColor: '#28a745', color: '#fff', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold'
+        });
+        insertBtn.onmouseover = () => insertBtn.style.backgroundColor = '#218838';
+        insertBtn.onmouseout  = () => insertBtn.style.backgroundColor = '#28a745';
+        insertBtn.onclick = () => {
+            const url = urlInput.value.trim();
+            if (!url || /^\s*javascript:/i.test(url)) {
+                urlInput.style.borderColor = '#dc3545';
+                urlInput.style.boxShadow  = '0 0 0 0.2rem rgba(220,53,69,0.25)';
+                urlInput.focus();
+                return;
+            }
+            const text = textInput.value.trim() || url;
+
+            restoreSelection();
+            const a = document.createElement('a');
+            a.href = url;
+            a.textContent = text;
+
+            const sel = window.getSelection();
+            if (sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(a);
+                range.setStartAfter(a);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+
+            const editor = document.getElementById('formatted-text-editor');
+            if (editor) editor.focus();
+            cleanup();
+            console.log('✓ Link inserted — ' + url);
+        };
+
+        footer.appendChild(cancelBtn);
+        footer.appendChild(insertBtn);
+
+        modal.appendChild(header);
+        modal.appendChild(body);
+        modal.appendChild(footer);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+        setTimeout(() => urlInput.focus(), 60);
+
+        function cleanup() {
+            overlay.remove();
+            savedRange = null;
+        }
+    }
+
+    /* ----------------------------------------------------------
+     *  HTML PREVIEW MODAL
+     * ----------------------------------------------------------*/
+
+    function showPreviewModal() {
+        const editor = document.getElementById('formatted-text-editor');
+        if (!editor) return;
+        const html = cleanHTML(editor.innerHTML);
+        const wrapped = `[code]${html}[/code]`;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'preview-modal-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.55)', zIndex: '10004',
+            display: 'flex', justifyContent: 'center', alignItems: 'center'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'preview-modal';
+        Object.assign(modal.style, {
+            backgroundColor: '#fff', borderRadius: '10px',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.35)', width: '660px',
+            maxWidth: 'calc(100vw - 40px)', maxHeight: 'calc(100vh - 80px)',
+            display: 'flex', flexDirection: 'column',
+            fontFamily: 'Arial, sans-serif', overflow: 'hidden'
+        });
+
+        const header = document.createElement('div');
+        Object.assign(header.style, {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '14px 18px', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0',
+            flexShrink: '0'
+        });
+        const hTitle = document.createElement('h3');
+        hTitle.textContent = '👁 HTML Preview';
+        Object.assign(hTitle.style, { margin: '0', fontSize: '16px', color: '#333' });
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕'; closeX.type = 'button';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
+            color: '#666', padding: '0', width: '26px', height: '26px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px'
+        });
+        closeX.onmouseover = () => { closeX.style.backgroundColor = '#f0f0f0'; closeX.style.color = '#000'; };
+        closeX.onmouseout  = () => { closeX.style.backgroundColor = 'transparent'; closeX.style.color = '#666'; };
+        closeX.onclick = cleanup;
+        header.appendChild(hTitle);
+        header.appendChild(closeX);
+
+        const bodyWrap = document.createElement('div');
+        Object.assign(bodyWrap.style, { padding: '18px', overflowY: 'auto', flex: '1 1 auto', minHeight: '0' });
+
+        const renderLabel = document.createElement('div');
+        renderLabel.textContent = 'Rendered preview';
+        Object.assign(renderLabel.style, { fontSize: '13px', fontWeight: 'bold', color: '#444', marginBottom: '6px' });
+
+        const renderBox = document.createElement('div');
+        renderBox.innerHTML = html || '<span style="color:#999;font-style:italic;">(empty)</span>';
+        Object.assign(renderBox.style, {
+            border: '1px solid #e0e0e0', borderRadius: '6px', padding: '12px 14px',
+            backgroundColor: '#fff', color: '#333', maxHeight: '260px', overflowY: 'auto',
+            fontSize: '14px', lineHeight: '1.6', marginBottom: '16px'
+        });
+
+        const sourceLabel = document.createElement('div');
+        sourceLabel.textContent = 'Source (this is what gets inserted)';
+        Object.assign(sourceLabel.style, { fontSize: '13px', fontWeight: 'bold', color: '#444', marginBottom: '6px' });
+
+        const sourceTA = document.createElement('textarea');
+        sourceTA.readOnly = true;
+        sourceTA.value = wrapped;
+        Object.assign(sourceTA.style, {
+            width: '100%', minHeight: '120px', maxHeight: '220px', boxSizing: 'border-box',
+            padding: '10px 12px', border: '1px solid #ccc', borderRadius: '6px',
+            fontFamily: 'monospace', fontSize: '12px', color: '#333',
+            backgroundColor: '#f8f9fa', resize: 'vertical', outline: 'none'
+        });
+
+        bodyWrap.appendChild(renderLabel);
+        bodyWrap.appendChild(renderBox);
+        bodyWrap.appendChild(sourceLabel);
+        bodyWrap.appendChild(sourceTA);
+
+        const footer = document.createElement('div');
+        Object.assign(footer.style, {
+            display: 'flex', justifyContent: 'flex-end', gap: '10px',
+            padding: '14px 18px', borderTop: '1px solid #e0e0e0', backgroundColor: '#f8f9fa',
+            flexShrink: '0'
+        });
+
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = '📋 Copy Source'; copyBtn.type = 'button';
+        Object.assign(copyBtn.style, {
+            padding: '7px 18px', border: '1px solid #6c757d', borderRadius: '5px',
+            backgroundColor: '#6c757d', color: '#fff', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold'
+        });
+        copyBtn.onmouseover = () => copyBtn.style.backgroundColor = '#5a6268';
+        copyBtn.onmouseout  = () => copyBtn.style.backgroundColor = '#6c757d';
+        copyBtn.onclick = () => {
+            const done = () => {
+                copyBtn.textContent = '✓ Copied';
+                setTimeout(() => { copyBtn.textContent = '📋 Copy Source'; }, 1500);
+            };
+            const fallback = () => {
+                sourceTA.removeAttribute('readonly');
+                sourceTA.select();
+                try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+                sourceTA.setAttribute('readonly', 'true');
+                done();
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(wrapped).then(done).catch(fallback);
+            } else {
+                fallback();
+            }
+        };
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close'; closeBtn.type = 'button';
+        Object.assign(closeBtn.style, {
+            padding: '7px 18px', border: '1px solid #28a745', borderRadius: '5px',
+            backgroundColor: '#28a745', color: '#fff', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold'
+        });
+        closeBtn.onmouseover = () => closeBtn.style.backgroundColor = '#218838';
+        closeBtn.onmouseout  = () => closeBtn.style.backgroundColor = '#28a745';
+        closeBtn.onclick = cleanup;
+
+        footer.appendChild(copyBtn);
+        footer.appendChild(closeBtn);
+
+        modal.appendChild(header);
+        modal.appendChild(bodyWrap);
+        modal.appendChild(footer);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+        function cleanup() { overlay.remove(); }
+    }
+
+    /* ----------------------------------------------------------
+     *  INSERT TARGET CHOOSER MODAL
+     * ----------------------------------------------------------*/
+
+    function showInsertTargetModal(onChoose) {
+        const overlay = document.createElement('div');
+        overlay.id = 'insert-target-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.55)', zIndex: '10006',
+            display: 'flex', justifyContent: 'center', alignItems: 'center'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'insert-target-modal';
+        Object.assign(modal.style, {
+            backgroundColor: '#fff', borderRadius: '10px',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.35)', width: '400px',
+            maxWidth: 'calc(100vw - 40px)', fontFamily: 'Arial, sans-serif', overflow: 'hidden'
+        });
+
+        const header = document.createElement('div');
+        Object.assign(header.style, {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '14px 18px', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0'
+        });
+        const hTitle = document.createElement('h3');
+        hTitle.textContent = 'Insert where?';
+        Object.assign(hTitle.style, { margin: '0', fontSize: '16px', color: '#333' });
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕'; closeX.type = 'button';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
+            color: '#666', padding: '0', width: '26px', height: '26px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px'
+        });
+        closeX.onmouseover = () => { closeX.style.backgroundColor = '#f0f0f0'; closeX.style.color = '#000'; };
+        closeX.onmouseout  = () => { closeX.style.backgroundColor = 'transparent'; closeX.style.color = '#666'; };
+        closeX.onclick = cleanup;
+        header.appendChild(hTitle);
+        header.appendChild(closeX);
+
+        const body = document.createElement('div');
+        Object.assign(body.style, { padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px' });
+
+        const intro = document.createElement('div');
+        intro.textContent = 'Choose which field to add the formatted text to.';
+        Object.assign(intro.style, { fontSize: '13px', color: '#555', marginBottom: '4px' });
+        body.appendChild(intro);
+
+        const options = [
+            { target: 'comments',   bg: '#0066cc', label: 'Insert as Comment',   desc: 'Customer facing. The requester can see this.' },
+            { target: 'work_notes', bg: '#5a6672', label: 'Insert as Work Note', desc: 'Internal only. Visible to your team but not the requester.' },
+            { target: 'both',       bg: '#667eea', label: 'Insert as Both',       desc: 'Adds the text to the comment and the work note.' }
+        ];
+        options.forEach(opt => {
+            const optBtn = document.createElement('button');
+            optBtn.type = 'button';
+            Object.assign(optBtn.style, {
+                display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px',
+                textAlign: 'left', padding: '10px 14px', border: '1px solid #e0e0e0',
+                borderLeft: `4px solid ${opt.bg}`, borderRadius: '6px', backgroundColor: '#fff',
+                cursor: 'pointer', transition: 'background 0.15s', width: '100%', boxSizing: 'border-box'
+            });
+            const lbl = document.createElement('span');
+            lbl.textContent = opt.label;
+            Object.assign(lbl.style, { fontWeight: 'bold', fontSize: '13px', color: opt.bg });
+            const desc = document.createElement('span');
+            desc.textContent = opt.desc;
+            Object.assign(desc.style, { fontSize: '12px', color: '#666' });
+            optBtn.appendChild(lbl);
+            optBtn.appendChild(desc);
+            optBtn.onmouseover = () => optBtn.style.backgroundColor = '#f5f7ff';
+            optBtn.onmouseout  = () => optBtn.style.backgroundColor = '#fff';
+            optBtn.onclick = () => { cleanup(); onChoose(opt.target); };
+            body.appendChild(optBtn);
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel'; cancelBtn.type = 'button';
+        Object.assign(cancelBtn.style, {
+            marginTop: '4px', padding: '8px', border: '1px solid #ccc', borderRadius: '5px',
+            backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
+        });
+        cancelBtn.onmouseover = () => cancelBtn.style.backgroundColor = '#f0f0f0';
+        cancelBtn.onmouseout  = () => cancelBtn.style.backgroundColor = '#fff';
+        cancelBtn.onclick = cleanup;
+        body.appendChild(cancelBtn);
+
+        modal.appendChild(header);
+        modal.appendChild(body);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+
+        function cleanup() { overlay.remove(); }
+    }
+
+    /* ----------------------------------------------------------
+     *  FEATURE GUIDE (HELP) MODAL
+     * ----------------------------------------------------------*/
+
+    function showHelpModal() {
+        if (document.getElementById('formattedTextHelpModal')) return;
+
+        function addParagraph(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        function addBulletList(body, items) {
+            const ul = document.createElement('div');
+            ul.style.marginBottom = '8px';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5',
+                    fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(text);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        function addKeyValueGrid(body, pairs) {
+            const grid = document.createElement('div');
+            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
+            for (const [key, val] of pairs) {
+                const keyEl = document.createElement('span');
+                keyEl.textContent = key;
+                Object.assign(keyEl.style, {
+                    fontFamily: 'monospace', fontSize: '11px',
+                    color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap'
+                });
+                const valEl = document.createElement('span');
+                valEl.textContent = val;
+                Object.assign(valEl.style, { fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
+                grid.appendChild(keyEl);
+                grid.appendChild(valEl);
+            }
+            body.appendChild(grid);
+        }
+
+        function addButtonBadge(body, label, bg, color, border, desc) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                marginBottom: '10px', padding: '10px 14px',
+                background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+            });
+            const badge = document.createElement('span');
+            badge.textContent = label;
+            Object.assign(badge.style, {
+                background: bg, color: color, border: border || 'none', borderRadius: '4px',
+                padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
+                whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+            });
+            const descEl = document.createElement('span');
+            descEl.textContent = desc;
+            Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+            row.appendChild(badge);
+            row.appendChild(descEl);
+            body.appendChild(row);
+        }
+
+        function addCategoryBadges(body, items) {
+            for (const opt of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '10px', alignItems: 'flex-start',
+                    marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+                });
+                const badge = document.createElement('span');
+                badge.textContent = opt.label;
+                Object.assign(badge.style, {
+                    background: opt.bg, color: '#fff', borderRadius: '4px',
+                    padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                    whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
+                    alignSelf: 'flex-start', minWidth: '90px', textAlign: 'center'
+                });
+                const descEl = document.createElement('span');
+                descEl.textContent = opt.desc;
+                Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                row.appendChild(badge);
+                row.appendChild(descEl);
+                body.appendChild(row);
+            }
+        }
+
+        const sections = [
+            {
+                icon: '🚀', title: 'Getting Started',
+                buildContent: (body) => {
+                    addParagraph(body, 'The helper adds a button to the ticket action row. Click it to open the rich text editor, build your content, then insert it into the ticket.');
+                    addButtonBadge(body, '📝 Formatted Text', '#28a745', '#fff', null, 'Opens the Formatted Text Editor. It appears next to the Quick Response button, or near the activity stream when that helper is not installed.');
+                    addBulletList(body, [
+                        'Type your message in the editor and use the toolbar to format it.',
+                        'Click Insert to choose where the text goes, then it is added to the ticket wrapped in [code] tags so ServiceNow renders the HTML.',
+                        'Your selection of formatting is converted to clean HTML automatically on insert.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋', title: 'Formatting Toolbar',
+                buildContent: (body) => {
+                    addParagraph(body, 'Select text first, then click a button to apply that format. These controls live in the top row of the editor.');
+                    addKeyValueGrid(body, [
+                        ['B',          'Bold the selected text. Shortcut Ctrl+B.'],
+                        ['I',          'Italic the selected text. Shortcut Ctrl+I.'],
+                        ['U',          'Underline the selected text. Shortcut Ctrl+U.'],
+                        ['S',          'Strikethrough the selected text.'],
+                        ['Size',       'Set a specific font size on the selected text, from 8 up to 36.'],
+                        ['Highlight',  'Mark the selected text with a yellow highlight.'],
+                        ['Small',      'Render the selected text in a smaller size.'],
+                        ['Del',        'Show the text as deleted, with a line through it.'],
+                        ['Ins',        'Show the text as inserted, underlined on a green tint.'],
+                        ['Subscript',  'Lower the text below the baseline, like in H2O.'],
+                        ['Superscript','Raise the text above the baseline, like in x squared.'],
+                        ['Code',       'Format the selection as inline code with a mono font.'],
+                        ['Blockquote', 'Turn the selection into an indented quote block.'],
+                        ['Link',       'Open the link dialog to add a clickable address.'],
+                        ['Image',      'Open the image dialog to insert a picture by URL.'],
+                        ['Bullet List','Turn lines into an unordered bullet list.'],
+                        ['Numbered',   'Turn lines into an ordered numbered list.'],
+                        ['H1 / H2',    'Apply a large or medium heading to the current line.'],
+                        ['P',          'Reset the current line back to a normal paragraph.']
+                    ]);
+                }
+            },
+            {
+                icon: '🔗', title: 'Links',
+                buildContent: (body) => {
+                    addParagraph(body, 'The link button opens a dialog with two fields so you control both the visible text and the destination.');
+                    addBulletList(body, [
+                        'Select text before clicking the link button to prefill the Link Text field.',
+                        'Enter the address in the URL field. Addresses starting with javascript are rejected for safety.',
+                        'Leave the text blank to show the URL itself as the link label.'
+                    ]);
+                }
+            },
+            {
+                icon: '🖼️', title: 'Images',
+                buildContent: (body) => {
+                    addParagraph(body, 'The image button opens a dialog where you paste an image URL and pick a display size.');
+                    addBulletList(body, [
+                        'A live preview shows the image before you insert it.',
+                        'Choose a display width of 25, 50, 75, or 100 percent.',
+                        'The image is inserted at your cursor position in the editor.'
+                    ]);
+                }
+            },
+            {
+                icon: '👁', title: 'Preview',
+                buildContent: (body) => {
+                    addParagraph(body, 'The Preview HTML button in the footer opens a window with two views of your content.');
+                    addBulletList(body, [
+                        'The rendered preview shows roughly how the content will look once posted.',
+                        'The source view shows the exact text, including the [code] wrapper, that will be inserted.',
+                        'Use the Copy Source button to copy that text to your clipboard.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚡', title: 'Where It Gets Inserted',
+                buildContent: (body) => {
+                    addParagraph(body, 'When you click Insert, you choose the destination field. The text is appended below anything already there.');
+                    addCategoryBadges(body, [
+                        { bg: '#0066cc', label: 'Comment',   desc: 'Customer facing. The requester can read this.' },
+                        { bg: '#5a6672', label: 'Work Note', desc: 'Internal only. Visible to your team but not the requester.' },
+                        { bg: '#667eea', label: 'Both',      desc: 'Adds the same text to the comment and the work note at once.' }
+                    ]);
+                }
+            },
+            {
+                icon: '🧹', title: 'Cleanup Tools',
+                buildContent: (body) => {
+                    addParagraph(body, 'These utility buttons sit on the right of the second toolbar row.');
+                    addKeyValueGrid(body, [
+                        ['✕ Selection',  'Removes inline formatting from just the highlighted text and leaves the rest alone.'],
+                        ['✕ All Format', 'Strips formatting from the entire document and keeps only the plain text and line breaks.'],
+                        ['🗑 Clear',      'Deletes all text in the editor so you can start over.']
+                    ]);
+                }
+            },
+            {
+                icon: '🧽', title: 'Pasting Content',
+                buildContent: (body) => {
+                    addParagraph(body, 'When you paste from Word, Outlook, or a web page, the content is cleaned automatically.');
+                    addBulletList(body, [
+                        'Hidden styling, classes, and unsupported tags are stripped on paste.',
+                        'Basic formatting such as bold, italic, lists, and links is preserved.',
+                        'This keeps the inserted HTML small and predictable for ServiceNow.'
+                    ]);
+                }
+            },
+            {
+                icon: '⌨️', title: 'Keyboard Shortcuts',
+                buildContent: (body) => {
+                    addParagraph(body, 'These shortcuts work while the editor is focused.');
+                    addKeyValueGrid(body, [
+                        ['Ctrl+B', 'Bold the selected text.'],
+                        ['Ctrl+I', 'Italic the selected text.'],
+                        ['Ctrl+U', 'Underline the selected text.']
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️', title: 'Header and Footer Controls',
+                buildContent: (body) => {
+                    addParagraph(body, 'These controls frame the editor window.');
+                    addButtonBadge(body, '? Help',           '#fff',     '#667eea', '1px solid #c0c8f0', 'Opens this Feature Guide.');
+                    addButtonBadge(body, '📋 What\'s New',    '#ff8c00',  '#fff',    null, 'Appears after an update. Shows the changelog of recent changes.');
+                    addButtonBadge(body, '👁 Preview HTML',   '#6c757d',  '#fff',    null, 'Opens the preview window described above.');
+                    addButtonBadge(body, 'Insert',            '#28a745',  '#fff',    null, 'Asks where to place the text, then inserts it into the ticket.');
+                    addButtonBadge(body, 'Cancel',            '#fff',     '#333',    '1px solid #ccc', 'Closes the editor without inserting anything.');
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'formattedTextHelpModalOverlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)', zIndex: '10008'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'formattedTextHelpModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '10009', background: '#fff', border: '2px solid #333', padding: '20px',
+            borderRadius: '10px', width: '640px', maxWidth: '92vw', maxHeight: '82vh',
+            overflowY: 'auto', color: '#333333', fontFamily: 'Arial, sans-serif', boxSizing: 'border-box'
+        });
+
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Formatted Text Helper • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕'; closeX.type = 'button';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close'; closeBtn.type = 'button';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
     /* ----------------------------------------------------------*/
 
     function createEditorModal() {
@@ -722,6 +1472,29 @@ Version 1.0.3:
             fontWeight: 'normal'
         });
         title.appendChild(versionBadge);
+
+        // Help button (always available)
+        const helpBtn = document.createElement('button');
+        helpBtn.textContent = '? Help';
+        helpBtn.type = 'button';
+        helpBtn.title = 'View feature guide and documentation';
+        Object.assign(helpBtn.style, {
+            fontSize: '11px',
+            padding: '4px 10px',
+            backgroundColor: '#fff',
+            color: '#667eea',
+            border: '1px solid #c0c8f0',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
+        });
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = '#fff'; };
+        helpBtn.onclick = (e) => {
+            e.stopPropagation();
+            showHelpModal();
+        };
+        title.appendChild(helpBtn);
 
         // Check if there's a new version and user hasn't seen the changelog
         const showChangelog = isNewVersion() && !hasSeenChangelog();
@@ -865,15 +1638,6 @@ Version 1.0.3:
                 case 'blockquote':
                     wrapper = document.createElement('blockquote');
                     break;
-                case 'link':
-                    const url = prompt('Enter URL:', 'https://');
-                    if (url && url.trim()) {
-                        wrapper = document.createElement('a');
-                        wrapper.href = url.trim();
-                    } else {
-                        return;
-                    }
-                    break;
                 default:
                     return;
             }
@@ -1010,7 +1774,7 @@ Version 1.0.3:
             { type: 'custom', command: 'sup', icon: 'X<sup>2</sup>', title: 'Superscript' },
             { type: 'custom', command: 'code', icon: '&lt;/&gt;', title: 'Inline Code' },
             { type: 'custom', command: 'blockquote', icon: '"', title: 'Blockquote' },
-            { type: 'custom', command: 'link', icon: '🔗', title: 'Insert Link' },
+            { type: 'link', command: 'link', icon: '🔗', title: 'Insert Link' },
             { type: 'image', command: 'image', icon: '🖼️', title: 'Insert Image' },   // ← NEW
             { command: 'insertUnorderedList', icon: '• List', title: 'Bullet List' },
             { command: 'insertOrderedList', icon: '1. List', title: 'Numbered List' },
@@ -1018,6 +1782,7 @@ Version 1.0.3:
             { command: 'formatBlock', value: 'h4', icon: 'H2', title: 'Heading 2 (H4)' },
             { command: 'formatBlock', value: 'p', icon: 'P', title: 'Paragraph' },
             // Second row - utility buttons (will be positioned on right)
+            { type: 'utility', command: 'removeFormatSelection', icon: '✕ Selection', title: 'Remove Formatting from Selection' },
             { type: 'utility', command: 'removeFormat', icon: '✕ All Format', title: 'Remove All Formatting' },
             { type: 'utility', command: 'clear', icon: '🗑 Clear', title: 'Clear All Text' }
         ];
@@ -1239,9 +2004,27 @@ Version 1.0.3:
                     return false;
                 }
 
+                if (btn.command === 'removeFormatSelection') {
+                    const sel = window.getSelection();
+                    if (!sel.rangeCount || sel.getRangeAt(0).collapsed) {
+                        alert('Please select some text first.');
+                        return false;
+                    }
+                    document.execCommand('removeFormat');
+                    document.execCommand('unlink');
+                    editor.focus();
+                    return false;
+                }
+
                 // Open the dedicated image modal
                 if (btn.type === 'image') {
                     showImageModal();
+                    return false;
+                }
+
+                // Open the dedicated link modal
+                if (btn.type === 'link') {
+                    showLinkModal();
                     return false;
                 }
 
@@ -1315,6 +2098,20 @@ Version 1.0.3:
             }
         };
 
+        // Sanitize pasted content so Word/Outlook/web markup does not leak in
+        editor.addEventListener('paste', (e) => {
+            const cd = e.clipboardData || window.clipboardData;
+            if (!cd) return;
+            e.preventDefault();
+            const pastedHTML = cd.getData('text/html');
+            const pastedText = cd.getData('text/plain');
+            if (pastedHTML && pastedHTML.trim()) {
+                document.execCommand('insertHTML', false, sanitizePastedHTML(pastedHTML));
+            } else if (pastedText) {
+                document.execCommand('insertText', false, pastedText);
+            }
+        });
+
         editorContainer.appendChild(editor);
 
         // Footer with buttons
@@ -1348,9 +2145,7 @@ Version 1.0.3:
         previewToggle.onmouseover = () => previewToggle.style.backgroundColor = '#5a6268';
         previewToggle.onmouseout = () => previewToggle.style.backgroundColor = '#6c757d';
         previewToggle.onclick = () => {
-            const html = cleanHTML(editor.innerHTML);
-            const wrappedHTML = `[code]${html}[/code]`;
-            alert('HTML Preview:\n\n' + wrappedHTML);
+            showPreviewModal();
         };
 
         // Button container
@@ -1381,7 +2176,7 @@ Version 1.0.3:
 
         // Insert button
         const insertBtn = document.createElement('button');
-        insertBtn.textContent = 'Insert to Comment';
+        insertBtn.textContent = 'Insert';
         insertBtn.type = 'button';
         Object.assign(insertBtn.style, {
             padding: '8px 16px',
@@ -1396,10 +2191,14 @@ Version 1.0.3:
         insertBtn.onmouseover = () => insertBtn.style.backgroundColor = '#218838';
         insertBtn.onmouseout = () => insertBtn.style.backgroundColor = '#28a745';
         insertBtn.onclick = () => {
-            insertFormattedText(editor);
-            overlay.style.display = 'none';
-            // Clear editor for next use
-            editor.innerHTML = '<p>Start typing here...</p>';
+            showInsertTargetModal((target) => {
+                const inserted = insertFormattedText(editor, target);
+                if (inserted) {
+                    overlay.style.display = 'none';
+                    // Clear editor for next use
+                    editor.innerHTML = '<p>Start typing here...</p>';
+                }
+            });
         };
 
         buttonContainer.appendChild(cancelBtn);
@@ -1490,70 +2289,167 @@ Version 1.0.3:
     }
 
     /* ==========================================================
+     *  PASTE SANITIZATION
+     * ==========================================================*/
+
+    // Tags we allow to survive a paste; everything else is unwrapped to its text.
+    const PASTE_ALLOWED_TAGS = new Set([
+        'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'INS', 'MARK', 'SMALL',
+        'SUB', 'SUP', 'CODE', 'PRE', 'BLOCKQUOTE', 'A', 'IMG',
+        'UL', 'OL', 'LI', 'H3', 'H4', 'P', 'BR', 'SPAN', 'DIV'
+    ]);
+
+    // Only these inline style properties are kept when pasting.
+    const PASTE_ALLOWED_STYLE = ['font-size', 'width', 'max-width'];
+
+    function filterStyle(styleValue) {
+        const keep = [];
+        styleValue.split(';').forEach(part => {
+            const idx = part.indexOf(':');
+            if (idx === -1) return;
+            const prop = part.slice(0, idx).trim().toLowerCase();
+            const val  = part.slice(idx + 1).trim();
+            if (prop && val && PASTE_ALLOWED_STYLE.includes(prop)) {
+                keep.push(`${prop}: ${val}`);
+            }
+        });
+        return keep.join('; ');
+    }
+
+    function sanitizePastedHTML(html) {
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+
+        // Drop dangerous or noise containers entirely
+        temp.querySelectorAll('script, style, meta, link, title, head, noscript, iframe, object, embed')
+            .forEach(el => el.remove());
+
+        // Walk every element (document order, parents before children)
+        Array.from(temp.querySelectorAll('*')).forEach(el => {
+            const tag = el.tagName;
+            if (!PASTE_ALLOWED_TAGS.has(tag)) {
+                // Unwrap: lift children into the parent, then drop the element
+                const parent = el.parentNode;
+                if (parent) {
+                    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+                    parent.removeChild(el);
+                }
+                return;
+            }
+
+            const keepStyle = (tag === 'SPAN' || tag === 'IMG');
+            Array.from(el.attributes).forEach(attr => {
+                const name = attr.name.toLowerCase();
+                if (name === 'href' && tag === 'A') {
+                    if (/^\s*javascript:/i.test(attr.value)) el.removeAttribute('href');
+                } else if (name === 'src' && tag === 'IMG') {
+                    if (/^\s*javascript:/i.test(attr.value)) el.removeAttribute('src');
+                } else if (name === 'style' && keepStyle) {
+                    const filtered = filterStyle(attr.value);
+                    if (filtered) el.setAttribute('style', filtered);
+                    else el.removeAttribute('style');
+                } else {
+                    el.removeAttribute(attr.name);
+                }
+            });
+        });
+
+        return temp.innerHTML;
+    }
+
+    /* ==========================================================
      *  INSERT FORMATTED TEXT INTO TEXTAREA
      * ==========================================================*/
 
-    function insertFormattedText(editor) {
-        const dualContainer = document.getElementById('multiple-input-journal-entry');
-        const isDual = dualContainer &&
-                       dualContainer.getAttribute('aria-hidden') === 'false' &&
-                       !!document.getElementById('activity-stream-work_notes-textarea') &&
-                       !!document.getElementById('activity-stream-comments-textarea');
+    // Append wrapped content to a journal textarea and notify ServiceNow.
+    function writeToTextarea(textarea, wrappedHTML) {
+        const existingContent = textarea.value.trim();
+        textarea.value = existingContent
+            ? existingContent + '\n\n' + wrappedHTML
+            : wrappedHTML;
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        textarea.focus();
+    }
 
-        const textarea = isDual
-            ? document.getElementById('activity-stream-comments-textarea')
-            : document.querySelector('#activity-stream-textarea') ||
-              document.querySelector('[data-stream-text-input]');
+    // target is 'comments', 'work_notes', or 'both'. Returns true if inserted.
+    function insertFormattedText(editor, target) {
+        // Comments (customer facing): split ID first, single mode fallback
+        const commentsTA = document.getElementById('activity-stream-comments-textarea') ||
+                           document.getElementById('activity-stream-textarea') ||
+                           document.querySelector('[data-stream-text-input]');
 
-        if (!textarea) {
-            console.error('❌ Textarea not found!');
-            alert('Could not find the comment textarea. Please make sure you are on a ticket page.');
-            return;
+        // Work notes (internal): split ID first, single mode fallback
+        const workNotesTA = document.getElementById('activity-stream-work_notes-textarea') ||
+                            document.getElementById('activity-stream-textarea') ||
+                            document.querySelector('[data-stream-text-input]');
+
+        const wanted = [];
+        if (target === 'comments'   || target === 'both') wanted.push(commentsTA);
+        if (target === 'work_notes' || target === 'both') wanted.push(workNotesTA);
+
+        // Dedupe: in single combined mode both IDs resolve to the same element
+        const targets = [...new Set(wanted.filter(Boolean))];
+
+        if (targets.length === 0) {
+            console.error('❌ Journal textarea not found!');
+            alert('Could not find the target field. Please make sure you are on a ticket page.');
+            return false;
         }
 
         // Get and clean HTML
         const html = cleanHTML(editor.innerHTML);
-
         if (!html || html.trim() === '') {
             alert('Please enter some text before inserting.');
-            return;
+            return false;
         }
 
-        // Wrap in [code] tags
         const wrappedHTML = `[code]${html}[/code]`;
+        targets.forEach(ta => writeToTextarea(ta, wrappedHTML));
 
-        // Insert into textarea
-        const existingContent = textarea.value.trim();
-        if (existingContent) {
-            textarea.value = existingContent + '\n\n' + wrappedHTML;
-        } else {
-            textarea.value = wrappedHTML;
-        }
-
-        // Trigger events to ensure ServiceNow detects the change
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-
-        // Focus textarea
-        textarea.focus();
-
-        console.log('✓ Formatted text inserted successfully');
+        console.log('✓ Formatted text inserted successfully (' + target + ')');
+        return true;
     }
 
     /* ==========================================================
      *  POSITION BUTTON NEXT TO QUICK RESPONSE
      * ==========================================================*/
 
+    let buttonAttempts = 0;
+    const MAX_BUTTON_ATTEMPTS = 20;     // ~10s waiting for the preferred anchor
+    const MAX_FALLBACK_ATTEMPTS = 40;   // ~20s total before giving up entirely
+
+    function findJournalAnchor() {
+        return document.getElementById('activity-stream-comments-textarea') ||
+               document.getElementById('activity-stream-textarea') ||
+               document.querySelector('[data-stream-text-input]');
+    }
+
     function addFormattedTextButton() {
         if (document.getElementById('formatted-text-button')) return;
 
-        // Wait for Quick Response button to exist
+        // Preferred anchor: the Quick Response inline button (from the Response Helper)
         const quickResponseBtn = document.getElementById('ticket-response-inline-button');
 
-        if (!quickResponseBtn) {
-            console.log('Quick Response button not found yet, retrying...');
+        // Wait a while for the preferred anchor before falling back
+        if (!quickResponseBtn && buttonAttempts < MAX_BUTTON_ATTEMPTS) {
+            buttonAttempts++;
             setTimeout(addFormattedTextButton, 500);
+            return;
+        }
+
+        // Standalone fallback: anchor near the activity stream so we work
+        // even when the Response Helper is not installed
+        const journalAnchor = quickResponseBtn ? null : findJournalAnchor();
+
+        if (!quickResponseBtn && !journalAnchor) {
+            if (buttonAttempts < MAX_FALLBACK_ATTEMPTS) {
+                buttonAttempts++;
+                setTimeout(addFormattedTextButton, 500);
+            } else {
+                console.log('Formatted Text Helper: no anchor element found, button not added.');
+            }
             return;
         }
 
@@ -1579,8 +2475,14 @@ Version 1.0.3:
         formattedTextBtn.onmouseover = () => formattedTextBtn.style.background = '#218838';
         formattedTextBtn.onmouseout = () => formattedTextBtn.style.background = '#28a745';
 
-        // Insert after Quick Response button
-        quickResponseBtn.parentNode.insertBefore(formattedTextBtn, quickResponseBtn.nextSibling);
+        if (quickResponseBtn) {
+            // Insert after Quick Response button
+            quickResponseBtn.parentNode.insertBefore(formattedTextBtn, quickResponseBtn.nextSibling);
+        } else {
+            // Place just above the journal textarea
+            Object.assign(formattedTextBtn.style, { marginLeft: '0', marginBottom: '8px' });
+            journalAnchor.parentNode.insertBefore(formattedTextBtn, journalAnchor);
+        }
 
         // Create modal
         const modal = createEditorModal();
@@ -1600,7 +2502,7 @@ Version 1.0.3:
             }, 100);
         };
 
-        console.log('✓ Formatted Text button added successfully');
+        console.log('✓ Formatted Text button added successfully' + (quickResponseBtn ? '' : ' (standalone fallback)'));
     }
 
     /* ==========================================================
@@ -1826,10 +2728,18 @@ Version 1.0.3:
         }
 
         /* Dark mode isolation */
-        #formatted-text-modal, #image-modal { color: #333333 !important; }
-        #formatted-text-modal input, #formatted-text-modal select,
-        #formatted-text-modal textarea,
-        #image-modal input, #image-modal select, #image-modal textarea {
+        #formatted-text-modal, #image-modal, #changelog-modal,
+        #link-modal, #preview-modal, #insert-target-modal,
+        #formattedTextHelpModal { color: #333333 !important; }
+        #changelog-modal, #link-modal, #preview-modal,
+        #insert-target-modal, #formattedTextHelpModal {
+            background-color: #ffffff !important;
+        }
+        #formatted-text-modal input, #formatted-text-modal select, #formatted-text-modal textarea,
+        #image-modal input, #image-modal select, #image-modal textarea,
+        #link-modal input, #link-modal select, #link-modal textarea,
+        #preview-modal input, #preview-modal select, #preview-modal textarea,
+        #formattedTextHelpModal input, #formattedTextHelpModal select, #formattedTextHelpModal textarea {
             background-color: #ffffff !important;
             color: #333333 !important;
         }
