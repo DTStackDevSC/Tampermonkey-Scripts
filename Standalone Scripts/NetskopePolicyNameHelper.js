@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.1
+// @version      1.5.0
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.1';
-    const CHANGELOG = `Version 1.4.1:
+    const SCRIPT_VERSION = '1.5.0';
+    const CHANGELOG = `Version 1.5.0:
+- Consolidated Member Firm, Geo Group, and Geo into a single "Geo" dropdown containing all geos and member firms. The form now has one field instead of three.
+- Nordic geos (DK, FI, IS, NO, SE) automatically prepend "Nordics" in the generated name (e.g. "Nordics - DK - Web Deny - Freelance"). No manual action required.
+- The Quick Setup Wizard now has 9 steps instead of 11, reflecting the consolidated Geo field.
+- The Feature Guide and example outputs have been updated to match the new format.
+
+Version 1.4.1:
 - The Feature Guide now includes a "Quick Setup Wizard" section explaining all 11 wizard steps, which steps are skipped based on your answers, and how the Apply button works.
 
 Version 1.4.0:
@@ -127,9 +133,10 @@ Version 1.2.0:
         parts.push(tab === 'dlp' ? 'DLP' : 'CASB/Web');
         if (state.isTest) parts.push('TEST');
         if (state.isGlobal) parts.push('GLB');
-        if (state.memberFirm && state.memberFirm !== 'N/A') parts.push(state.memberFirm);
-        if (state.geoGroup && state.geoGroup !== 'N/A') parts.push(state.geoGroup);
-        if (state.geo && state.geo !== 'N/A') parts.push(state.geo);
+        if (state.geo && state.geo !== 'N/A') {
+            if (NORDIC_CODES.has(state.geo)) parts.push('Nordics');
+            parts.push(state.geo);
+        }
         if (tab === 'dlp') {
             if (state.policyType && state.policyType !== 'N/A') parts.push(state.policyType);
             if (state.appliesTo && state.appliesTo !== 'N/A') parts.push(state.appliesTo);
@@ -147,8 +154,6 @@ Version 1.2.0:
             return {
                 isTest: document.getElementById('npg-test-checkbox').checked,
                 isGlobal: document.getElementById('npg-global-checkbox').checked,
-                memberFirm: document.getElementById('npg-member-firm-select').value,
-                geoGroup: document.getElementById('npg-geo-group-select').value,
                 geo: document.getElementById('npg-geo-select').value,
                 policyType: document.getElementById('npg-policy-type-select').value,
                 description: document.getElementById('npg-description-input').value.trim()
@@ -162,8 +167,6 @@ Version 1.2.0:
             return {
                 isTest: document.getElementById('npg-dlp-test-checkbox').checked,
                 isGlobal: document.getElementById('npg-dlp-global-checkbox').checked,
-                memberFirm: document.getElementById('npg-dlp-member-firm-select').value,
-                geoGroup: document.getElementById('npg-dlp-geo-group-select').value,
                 geo: document.getElementById('npg-dlp-geo-select').value,
                 policyType: document.getElementById('npg-dlp-policy-type-select').value,
                 description: document.getElementById('npg-dlp-description-input').value.trim(),
@@ -182,16 +185,12 @@ Version 1.2.0:
         if (tab === 'casb') {
             setCheckbox('npg-test-checkbox', state.isTest);
             setCheckbox('npg-global-checkbox', state.isGlobal);
-            document.getElementById('npg-member-firm-select').value = state.memberFirm || 'N/A';
-            document.getElementById('npg-geo-group-select').value = state.geoGroup || 'N/A';
             document.getElementById('npg-geo-select').value = state.geo || 'N/A';
             document.getElementById('npg-policy-type-select').value = state.policyType || 'N/A';
             document.getElementById('npg-description-input').value = state.description || '';
         } else {
             setCheckbox('npg-dlp-test-checkbox', state.isTest);
             setCheckbox('npg-dlp-global-checkbox', state.isGlobal);
-            document.getElementById('npg-dlp-member-firm-select').value = state.memberFirm || 'N/A';
-            document.getElementById('npg-dlp-geo-group-select').value = state.geoGroup || 'N/A';
             document.getElementById('npg-dlp-geo-select').value = state.geo || 'N/A';
             document.getElementById('npg-dlp-policy-type-select').value = state.policyType || 'N/A';
             document.getElementById('npg-dlp-description-input').value = state.description || '';
@@ -489,10 +488,10 @@ Version 1.2.0:
                         fontFamily: 'monospace', fontSize: '11px', color: '#333',
                         marginBottom: '12px', overflowX: 'auto', whiteSpace: 'nowrap'
                     });
-                    formatBox.textContent = '[Test] - [GLB] - [MemberFirm] - [GeoGroup] - [Geo] - [PolicyType] - [Description]';
+                    formatBox.textContent = '[Test] - [GLB] - [Nordics -] [Geo] - [PolicyType] - [Description]';
                     body.appendChild(formatBox);
 
-                    addParagraph(body, 'DLP policies also append: Applies To, Channel Type, and Criteria codes joined by underscores. Example outputs:');
+                    addParagraph(body, 'Nordic geos (DK, FI, IS, NO, SE) automatically insert "Nordics" before the country code. DLP policies also append Applies To, Channel Type, and Criteria codes joined by underscores. Example outputs:');
 
                     const exampleWrap = document.createElement('div');
                     Object.assign(exampleWrap.style, {
@@ -500,15 +499,16 @@ Version 1.2.0:
                         border: '1px solid #d0d0f0', overflow: 'hidden'
                     });
                     const examples = [
-                        { label: 'CASB', bg: '#eef4ff', labelColor: '#1d4ed8', text: 'ES - CASB Allow - Allow Office365 External Sharing' },
-                        { label: 'DLP',  bg: '#f5f3ff', labelColor: '#6d28d9', text: 'GLB - DLP Block - Sensitive Data - FW - E - CDI_FT' }
+                        { label: 'CASB',   bg: '#eef4ff', labelColor: '#1d4ed8', text: 'ES - Web Deny - Freelance' },
+                        { label: 'Nordic', bg: '#f0fff4', labelColor: '#166534', text: 'Nordics - DK - Web Deny - Freelance' },
+                        { label: 'DLP',    bg: '#f5f3ff', labelColor: '#6d28d9', text: 'GLB - DLP Block - Sensitive Data - FW - E - CDI_FT' }
                     ];
                     for (const ex of examples) {
                         const row = document.createElement('div');
                         Object.assign(row.style, {
                             display: 'flex', alignItems: 'baseline', gap: '10px',
                             padding: '7px 12px', background: ex.bg,
-                            borderBottom: ex.label === 'CASB' ? '1px solid #e8e8f0' : 'none'
+                            borderBottom: ex.label !== 'DLP' ? '1px solid #e8e8f0' : 'none'
                         });
                         const labelEl = document.createElement('span');
                         labelEl.textContent = ex.label;
@@ -558,10 +558,8 @@ Version 1.2.0:
 
                     const fieldDescs = [
                         ['Test Policy',  'Adds "Test" as the first segment. Use for non-production policies.'],
-                        ['Global Policy','Adds "GLB". Use for policies with global scope (no specific MF or Geo).'],
-                        ['Member Firm',  'The Deloitte Member Firm code (e.g. ES, DCE, NSE, Africa).'],
-                        ['Geo Group',    'The geographic group code (e.g. DCM, Nordics). Use when a group applies rather than a single Geo.'],
-                        ['Geo',          'The individual geography code (e.g. UK, FR, ZA, DE). Use when the policy targets one specific country.'],
+                        ['Global Policy','Adds "GLB". Use for policies that apply globally with no specific geo.'],
+                        ['Geo',          'The geography or member firm (e.g. ES, UK, FR, NSE, Africa). Nordic geos (DK, FI, IS, NO, SE) automatically prepend "Nordics" in the name.'],
                         ['Policy Type',  'The policy action: CASB Allow, CASB Deny, Web Allow, Web Deny, Threat Allow, or Threat Deny.'],
                         ['Description',  'Free-text label. Describe the specific purpose or target of the policy.']
                     ];
@@ -745,20 +743,18 @@ Version 1.2.0:
                     btnRow.appendChild(btnDesc);
                     body.appendChild(btnRow);
 
-                    addParagraph(body, 'The wizard walks through up to 11 steps depending on the policy type selected. Steps that do not apply are skipped automatically.');
+                    addParagraph(body, 'The wizard walks through up to 9 steps depending on the policy type selected. Steps that do not apply are skipped automatically.');
 
                     const steps = [
-                        { step: '1', label: 'Policy type',      desc: 'Choose CASB/Web or DLP.' },
-                        { step: '2', label: 'Test policy?',      desc: 'Mark as live or test. Test policies get a [Test] prefix.' },
-                        { step: '3', label: 'Scope',             desc: 'Global or a specific region. Choosing Global skips steps 4, 5, and 6.' },
-                        { step: '4', label: 'Member Firm',       desc: 'CASB and DLP. Skipped when scope is Global.' },
-                        { step: '5', label: 'Geo Group',         desc: 'CASB and DLP. Skipped when scope is Global.' },
-                        { step: '6', label: 'Geo',               desc: 'CASB and DLP. Skipped when scope is Global.' },
-                        { step: '7', label: 'Policy action',     desc: 'The policy type dropdown (e.g. CASB Allow, DLP Block).' },
-                        { step: '8', label: 'Description',       desc: 'Free-text description. Press Enter to advance.' },
-                        { step: '9', label: 'Applies To',        desc: 'DLP only: Firm Wide or User Group.' },
-                        { step: '10', label: 'Channel type',     desc: 'DLP only: Web, Email, or Endpoint.' },
-                        { step: '11', label: 'DLP Criteria',     desc: 'DLP only: multi-select checkboxes for all applicable criteria.' }
+                        { step: '1', label: 'Policy type',   desc: 'Choose CASB/Web or DLP.' },
+                        { step: '2', label: 'Test policy?',  desc: 'Mark as live or test. Test policies get a [Test] prefix.' },
+                        { step: '3', label: 'Scope',         desc: 'Global or a specific geo. Choosing Global skips step 4.' },
+                        { step: '4', label: 'Geo',           desc: 'The target geo or member firm. Skipped when scope is Global. Nordic geos automatically prepend "Nordics" in the name.' },
+                        { step: '5', label: 'Policy action', desc: 'The policy type dropdown (e.g. CASB Allow, DLP Block).' },
+                        { step: '6', label: 'Description',   desc: 'Free-text description. Press Enter to advance.' },
+                        { step: '7', label: 'Applies To',    desc: 'DLP only: Firm Wide or User Group.' },
+                        { step: '8', label: 'Channel type',  desc: 'DLP only: Web, Email, or Endpoint.' },
+                        { step: '9', label: 'DLP Criteria',  desc: 'DLP only: multi-select checkboxes for all applicable criteria.' }
                     ];
 
                     const grid = document.createElement('div');
@@ -786,7 +782,7 @@ Version 1.2.0:
                     body.appendChild(grid);
 
                     addBulletList(body, [
-                        'Clicking "Apply →" on the last step fills all form fields at once and switches to the correct tab (CASB or DLP).',
+                        'Clicking "Apply →" on the last step fills all form fields at once and switches to the correct tab (CASB or DLP). Nordic geos are handled automatically: no extra action is needed.',
                         'You can go back to any previous step with the "← Back" button to change an answer.',
                         'Closing the wizard or clicking the overlay discards all answers without touching the form.'
                     ]);
@@ -1086,46 +1082,39 @@ Version 1.2.0:
      *  CONFIGURATION DATA (Needs to be edited for AME & APAC MF's)
      * ==========================================================*/
 
-    const MEMBER_FIRMS = [
-        { code: 'N/A', label: 'N/A' },
-        { code: 'ES', label: 'Deloitte Spain (ES)' },
-        { code: 'Africa', label: 'Deloitte Africa (Africa)' },
-        { code: 'DKU', label: 'Deloitte DKU (DKU)' },
-        { code: 'DCE', label: 'Deloitte Central Europe (DCE)' },
-        { code: 'NSE', label: 'Deloitte North and South Europe (NSE)' }
-    ];
-    const GEO_GROUPS = [
-        { code: 'N/A', label: 'N/A' },
-        { code: 'DCM', label: 'Deloitte Central Mediterranean (DCM)' },
-        { code: 'Nordics', label: 'Nordics (Nordics)' }
-    ];
     const GEOS = [
-        { code: 'N/A', label: 'N/A' },
-        { code: 'ZA', label: 'Southern Africa (ZA)' },
-        { code: 'EA', label: 'East Africa (EA)' },
-        { code: 'WA', label: 'West Africa (WA)' },
-        { code: 'CE', label: 'Central Europe (CE)' },
-        { code: 'FR', label: 'France (FR)' },
-        { code: 'DE', label: 'Germany (DE)' },
-        { code: 'AT', label: 'Austria (AT)' },
-        { code: 'LU', label: 'Luxembourg (LU)' },
-        { code: 'PT', label: 'Portugal (PT)' },
-        { code: 'TR', label: 'Turkey (TR)' },
-        { code: 'UK', label: 'United Kingdom (UK)' },
-        { code: 'CH', label: 'Switzerland (CH)' },
-        { code: 'IE', label: 'Ireland (IE)' },
-        { code: 'BE', label: 'Belgium (BE)' },
-        { code: 'NL', label: 'Netherlands (NL)' },
-        { code: 'DME', label: 'Deloitte Middle East (DME)' },
-        { code: 'IT', label: 'Italy (IT)' },
-        { code: 'GR', label: 'Greece (GR)' },
-        { code: 'MT', label: 'Malta (MT)' },
-        { code: 'NO', label: 'Norway (NO)' },
-        { code: 'DK', label: 'Denmark (DK)' },
-        { code: 'SE', label: 'Sweden (SE)' },
-        { code: 'FI', label: 'Finland (FI)' },
-        { code: 'IS', label: 'Iceland (IS)' }
+        { code: 'N/A',    label: 'N/A' },
+        { code: 'ZA',     label: 'Southern Africa (ZA)' },
+        { code: 'EA',     label: 'East Africa (EA)' },
+        { code: 'WA',     label: 'West Africa (WA)' },
+        { code: 'CE',     label: 'Central Europe (CE)' },
+        { code: 'FR',     label: 'France (FR)' },
+        { code: 'DE',     label: 'Germany (DE)' },
+        { code: 'AT',     label: 'Austria (AT)' },
+        { code: 'LU',     label: 'Luxembourg (LU)' },
+        { code: 'PT',     label: 'Portugal (PT)' },
+        { code: 'TR',     label: 'Turkey (TR)' },
+        { code: 'UK',     label: 'United Kingdom (UK)' },
+        { code: 'CH',     label: 'Switzerland (CH)' },
+        { code: 'IE',     label: 'Ireland (IE)' },
+        { code: 'BE',     label: 'Belgium (BE)' },
+        { code: 'NL',     label: 'Netherlands (NL)' },
+        { code: 'DME',    label: 'Deloitte Middle East (DME)' },
+        { code: 'IT',     label: 'Italy (IT)' },
+        { code: 'GR',     label: 'Greece (GR)' },
+        { code: 'MT',     label: 'Malta (MT)' },
+        { code: 'NO',     label: 'Norway (NO) — Nordics' },
+        { code: 'DK',     label: 'Denmark (DK) — Nordics' },
+        { code: 'SE',     label: 'Sweden (SE) — Nordics' },
+        { code: 'FI',     label: 'Finland (FI) — Nordics' },
+        { code: 'IS',     label: 'Iceland (IS) — Nordics' },
+        { code: 'ES',     label: 'Deloitte Spain (ES)' },
+        { code: 'Africa', label: 'Deloitte Africa (Africa)' },
+        { code: 'DKU',    label: 'Deloitte DKU (DKU)' },
+        { code: 'DCE',    label: 'Deloitte Central Europe (DCE)' },
+        { code: 'NSE',    label: 'Deloitte North and South Europe (NSE)' }
     ];
+    const NORDIC_CODES = new Set(['DK', 'FI', 'IS', 'NO', 'SE']);
     const POLICY_TYPES = ['N/A', 'CASB Allow', 'CASB Deny', 'Threat Allow', 'Threat Deny', 'Web Allow', 'Web Deny'];
     const DLP_POLICY_TYPES = ['N/A', 'DLP Block', 'DLP Monitor', 'DLP Notify', 'DLP Deny'];
     const APPLIES_TO = [
@@ -1614,7 +1603,7 @@ Version 1.2.0:
         const parts = name.split(' - ').map(p => p.trim());
         const isDLP = parts.some(part => DLP_POLICY_TYPES.includes(part));
         const parsed = {
-            isDLP, isTest: false, isGlobal: false, memberFirm: 'N/A', geoGroup: 'N/A',
+            isDLP, isTest: false, isGlobal: false,
             geo: 'N/A', policyType: 'N/A', dlpPolicyType: 'N/A', description: '',
             appliesTo: 'N/A', channelType: 'N/A', criteria: []
         };
@@ -1624,8 +1613,7 @@ Version 1.2.0:
         for (const part of parts) {
             if (part === 'Test') parsed.isTest = true;
             else if (part === 'GLB') parsed.isGlobal = true;
-            else if (findCode(MEMBER_FIRMS, part)) parsed.memberFirm = part;
-            else if (findCode(GEO_GROUPS, part)) parsed.geoGroup = part;
+            else if (part === 'Nordics') { /* implied by the geo code, skip */ }
             else if (findCode(GEOS, part)) parsed.geo = part;
             else if (DLP_POLICY_TYPES.includes(part)) parsed.dlpPolicyType = part;
             else if (POLICY_TYPES.includes(part)) parsed.policyType = part;
@@ -1649,12 +1637,8 @@ Version 1.2.0:
         if (currentTab === 'casb') {
             if (document.getElementById('npg-test-checkbox').checked) parts.push('Test');
             if (document.getElementById('npg-global-checkbox').checked) parts.push('GLB');
-            const mf = document.getElementById('npg-member-firm-select').value;
-            if (mf !== 'N/A') parts.push(mf);
-            const gg = document.getElementById('npg-geo-group-select').value;
-            if (gg !== 'N/A') parts.push(gg);
             const g = document.getElementById('npg-geo-select').value;
-            if (g !== 'N/A') parts.push(g);
+            if (g !== 'N/A') { if (NORDIC_CODES.has(g)) parts.push('Nordics'); parts.push(g); }
             const pt = document.getElementById('npg-policy-type-select').value;
             if (pt !== 'N/A') parts.push(pt);
             const d = document.getElementById('npg-description-input').value.trim();
@@ -1662,12 +1646,8 @@ Version 1.2.0:
         } else {
             if (document.getElementById('npg-dlp-test-checkbox').checked) parts.push('Test');
             if (document.getElementById('npg-dlp-global-checkbox').checked) parts.push('GLB');
-            const mf = document.getElementById('npg-dlp-member-firm-select').value;
-            if (mf !== 'N/A') parts.push(mf);
-            const gg = document.getElementById('npg-dlp-geo-group-select').value;
-            if (gg !== 'N/A') parts.push(gg);
             const g = document.getElementById('npg-dlp-geo-select').value;
-            if (g !== 'N/A') parts.push(g);
+            if (g !== 'N/A') { if (NORDIC_CODES.has(g)) parts.push('Nordics'); parts.push(g); }
             const pt = document.getElementById('npg-dlp-policy-type-select').value;
             if (pt !== 'N/A') parts.push(pt);
             const d = document.getElementById('npg-dlp-description-input').value.trim();
@@ -1697,16 +1677,12 @@ Version 1.2.0:
         if (currentTab === 'casb') {
             setCheckbox('npg-test-checkbox', false);
             setCheckbox('npg-global-checkbox', false);
-            document.getElementById('npg-member-firm-select').value = 'N/A';
-            document.getElementById('npg-geo-group-select').value = 'N/A';
             document.getElementById('npg-geo-select').value = 'N/A';
             document.getElementById('npg-policy-type-select').value = 'N/A';
             document.getElementById('npg-description-input').value = '';
         } else {
             setCheckbox('npg-dlp-test-checkbox', false);
             setCheckbox('npg-dlp-global-checkbox', false);
-            document.getElementById('npg-dlp-member-firm-select').value = 'N/A';
-            document.getElementById('npg-dlp-geo-group-select').value = 'N/A';
             document.getElementById('npg-dlp-geo-select').value = 'N/A';
             document.getElementById('npg-dlp-policy-type-select').value = 'N/A';
             document.getElementById('npg-dlp-description-input').value = '';
@@ -1740,8 +1716,6 @@ Version 1.2.0:
             tab:         'casb',
             isTest:      false,
             isGlobal:    false,
-            memberFirm:  'N/A',
-            geoGroup:    'N/A',
             geo:         'N/A',
             policyType:  'N/A',
             description: '',
@@ -1779,22 +1753,8 @@ Version 1.2.0:
                 ]
             },
             {
-                id: 'memberFirm',
-                question: 'Which Member Firm does this policy apply to?',
-                type: 'dropdown',
-                options: () => MEMBER_FIRMS,
-                shouldSkip: s => s.isGlobal
-            },
-            {
-                id: 'geoGroup',
-                question: 'Which Geo Group does this policy target?',
-                type: 'dropdown',
-                options: () => GEO_GROUPS,
-                shouldSkip: s => s.isGlobal
-            },
-            {
                 id: 'geo',
-                question: 'Which specific Geo does this policy target?',
+                question: 'Which Geo does this policy target?',
                 type: 'dropdown',
                 options: () => GEOS,
                 shouldSkip: s => s.isGlobal
@@ -2075,8 +2035,6 @@ Version 1.2.0:
                     applyFormState(wizardState.tab, {
                         isTest:      wizardState.isTest,
                         isGlobal:    wizardState.isGlobal,
-                        memberFirm:  wizardState.memberFirm,
-                        geoGroup:    wizardState.geoGroup,
                         geo:         wizardState.geo,
                         policyType:  wizardState.policyType,
                         description: wizardState.description,
@@ -2145,16 +2103,12 @@ Version 1.2.0:
                 if (parsed) {
                     setCheckbox('npg-test-checkbox', parsed.isTest);
                     setCheckbox('npg-global-checkbox', parsed.isGlobal);
-                    document.getElementById('npg-member-firm-select').value = parsed.memberFirm;
-                    document.getElementById('npg-geo-group-select').value = parsed.geoGroup;
                     document.getElementById('npg-geo-select').value = parsed.geo;
                     document.getElementById('npg-policy-type-select').value = parsed.policyType;
                     document.getElementById('npg-description-input').value = parsed.description;
 
                     setCheckbox('npg-dlp-test-checkbox', parsed.isTest);
                     setCheckbox('npg-dlp-global-checkbox', parsed.isGlobal);
-                    document.getElementById('npg-dlp-member-firm-select').value = parsed.memberFirm;
-                    document.getElementById('npg-dlp-geo-group-select').value = parsed.geoGroup;
                     document.getElementById('npg-dlp-geo-select').value = parsed.geo;
                     document.getElementById('npg-dlp-policy-type-select').value = parsed.dlpPolicyType;
                     document.getElementById('npg-dlp-description-input').value = parsed.description;
@@ -2560,16 +2514,12 @@ Version 1.2.0:
 
         casbForm.appendChild(createCheckbox('npg-test-checkbox', 'Test Policy'));
         casbForm.appendChild(createCheckbox('npg-global-checkbox', 'Global Policy'));
-        casbForm.appendChild(createDropdown('npg-member-firm-select', 'Member Firm', MEMBER_FIRMS));
-        casbForm.appendChild(createDropdown('npg-geo-group-select', 'Geo Group', GEO_GROUPS));
         casbForm.appendChild(createDropdown('npg-geo-select', 'Geo', GEOS));
         casbForm.appendChild(createDropdown('npg-policy-type-select', 'Policy Type', POLICY_TYPES));
         casbForm.appendChild(createTextInput('npg-description-input', 'Description', 'Enter description...'));
 
         dlpForm.appendChild(createCheckbox('npg-dlp-test-checkbox', 'Test Policy'));
         dlpForm.appendChild(createCheckbox('npg-dlp-global-checkbox', 'Global Policy'));
-        dlpForm.appendChild(createDropdown('npg-dlp-member-firm-select', 'Member Firm', MEMBER_FIRMS));
-        dlpForm.appendChild(createDropdown('npg-dlp-geo-group-select', 'Geo Group', GEO_GROUPS));
         dlpForm.appendChild(createDropdown('npg-dlp-geo-select', 'Geo', GEOS));
         dlpForm.appendChild(createDropdown('npg-dlp-policy-type-select', 'Policy Type', DLP_POLICY_TYPES));
         dlpForm.appendChild(createTextInput('npg-dlp-description-input', 'Description', 'Enter description...'));
