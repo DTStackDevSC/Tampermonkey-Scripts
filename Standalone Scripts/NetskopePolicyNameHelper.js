@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.2
+// @version      1.4.0
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.2';
-    const CHANGELOG = `Version 1.3.2:
+    const SCRIPT_VERSION = '1.4.0';
+    const CHANGELOG = `Version 1.4.0:
+- Added a "Quick Setup" wizard button above the preset bar. Clicking it opens a step-by-step guided form that asks about policy type, scope, region, action, and description, then fills all form fields automatically when you click Apply.
+
+Version 1.3.2:
 - Added a close button (✕) at the top right of the "What's New" modal.
 
 Version 1.3.1:
@@ -963,6 +966,23 @@ Version 1.2.0:
             font-size: 14px; border: 1px dashed #e5e7eb; border-radius: 6px;
         }
         .npg-empty-presets .npg-empty-icon { font-size: 32px; margin-bottom: 8px; }
+        /* Wizard modal */
+        #npg-wizard-overlay {
+            position: fixed !important; top: 0 !important; left: 0 !important;
+            width: 100% !important; height: 100% !important; background: rgba(0,0,0,0.5) !important;
+            z-index: 20004 !important;
+        }
+        #npg-wizard-modal {
+            position: fixed !important; top: 50% !important; left: 50% !important;
+            transform: translate(-50%,-50%) !important; z-index: 20005 !important;
+            background: #fff !important; border: 2px solid #333 !important;
+            border-radius: 10px !important; width: 520px !important; max-width: 94vw !important;
+            padding: 24px !important; font-family: Arial, sans-serif !important;
+            box-sizing: border-box !important; color: #333333 !important;
+        }
+        #npg-wizard-modal input, #npg-wizard-modal select {
+            background-color: #ffffff !important; color: #1f2937 !important;
+        }
         /* Help modal */
         #npg-help-modal-overlay {
             position: fixed !important; top: 0 !important; left: 0 !important;
@@ -1633,6 +1653,377 @@ Version 1.2.0:
     }
 
     /* ==========================================================
+     *  POLICY WIZARD
+     * ==========================================================*/
+
+    function showPolicyWizard() {
+        if (document.getElementById('npg-wizard-modal')) return;
+
+        const wizardState = {
+            tab:         'casb',
+            isTest:      false,
+            isGlobal:    false,
+            memberFirm:  'N/A',
+            geoGroup:    'N/A',
+            geo:         'N/A',
+            policyType:  'N/A',
+            description: '',
+            appliesTo:   'N/A',
+            channelType: 'N/A',
+            criteria:    []
+        };
+
+        const WIZARD_STEPS = [
+            {
+                id: 'tab',
+                question: 'What type of policy are you creating?',
+                type: 'choice',
+                choices: [
+                    { value: 'casb', icon: '🌐', label: 'CASB / Web Policy',  desc: 'Cloud app access controls and web filtering' },
+                    { value: 'dlp',  icon: '🛡️', label: 'DLP Policy',         desc: 'Data loss prevention and content inspection' }
+                ]
+            },
+            {
+                id: 'isTest',
+                question: 'Is this a test policy?',
+                type: 'choice',
+                choices: [
+                    { value: false, icon: '✅', label: 'No, this is a live policy',  desc: 'Applied to real traffic immediately' },
+                    { value: true,  icon: '🧪', label: 'Yes, this is a test policy', desc: 'Name will be prefixed with [Test]' }
+                ]
+            },
+            {
+                id: 'isGlobal',
+                question: 'What is the scope of this policy?',
+                type: 'choice',
+                choices: [
+                    { value: false, icon: '📍', label: 'Specific region or member firm', desc: 'Targets a particular member firm, geo group, or geography' },
+                    { value: true,  icon: '🌍', label: 'Global',                          desc: 'Applies globally; region fields will be N/A' }
+                ]
+            },
+            {
+                id: 'memberFirm',
+                question: 'Which Member Firm does this policy apply to?',
+                type: 'dropdown',
+                options: () => MEMBER_FIRMS,
+                shouldSkip: s => s.isGlobal
+            },
+            {
+                id: 'geoGroup',
+                question: 'Which Geo Group does this policy target?',
+                type: 'dropdown',
+                options: () => GEO_GROUPS,
+                shouldSkip: s => s.isGlobal
+            },
+            {
+                id: 'geo',
+                question: 'Which specific Geo does this policy target?',
+                type: 'dropdown',
+                options: () => GEOS,
+                shouldSkip: s => s.isGlobal
+            },
+            {
+                id: 'policyType',
+                question: 'What is the policy action?',
+                type: 'dropdown',
+                options: () => (wizardState.tab === 'dlp' ? DLP_POLICY_TYPES : POLICY_TYPES).map(t => ({ code: t, label: t }))
+            },
+            {
+                id: 'description',
+                question: 'Enter a short description for this policy.',
+                type: 'text',
+                placeholder: 'e.g. Block SharePoint uploads for ES users'
+            },
+            {
+                id: 'appliesTo',
+                question: 'Who does this DLP policy apply to?',
+                type: 'dropdown',
+                options: () => APPLIES_TO,
+                shouldSkip: s => s.tab !== 'dlp'
+            },
+            {
+                id: 'channelType',
+                question: 'What channel type does this DLP policy cover?',
+                type: 'dropdown',
+                options: () => POLICY_CHANNEL_TYPES,
+                shouldSkip: s => s.tab !== 'dlp'
+            },
+            {
+                id: 'criteria',
+                question: 'Which DLP criteria apply? Select all that match.',
+                type: 'multicheck',
+                options: DLP_CRITERIA,
+                shouldSkip: s => s.tab !== 'dlp'
+            }
+        ];
+
+        let stepIndex = 0;
+
+        function getVisible() {
+            return WIZARD_STEPS.filter(s => !s.shouldSkip || !s.shouldSkip(wizardState));
+        }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'npg-wizard-overlay';
+        overlay.style.setProperty('position',   'fixed',           'important');
+        overlay.style.setProperty('top',        '0',               'important');
+        overlay.style.setProperty('left',       '0',               'important');
+        overlay.style.setProperty('width',      '100%',            'important');
+        overlay.style.setProperty('height',     '100%',            'important');
+        overlay.style.setProperty('background', 'rgba(0,0,0,0.5)', 'important');
+        overlay.style.setProperty('z-index',    '20004',           'important');
+        overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); modal.remove(); } };
+
+        const modal = document.createElement('div');
+        modal.id = 'npg-wizard-modal';
+        modal.style.setProperty('position',         'fixed',                'important');
+        modal.style.setProperty('top',              '50%',                  'important');
+        modal.style.setProperty('left',             '50%',                  'important');
+        modal.style.setProperty('transform',        'translate(-50%,-50%)', 'important');
+        modal.style.setProperty('z-index',          '20005',                'important');
+        modal.style.setProperty('background-color', '#ffffff',              'important');
+        modal.style.setProperty('border',           '2px solid #333',       'important');
+        modal.style.setProperty('border-radius',    '10px',                 'important');
+        modal.style.setProperty('width',            '520px',                'important');
+        modal.style.setProperty('max-width',        '94vw',                 'important');
+        modal.style.setProperty('padding',          '24px',                 'important');
+        modal.style.setProperty('font-family',      'Arial, sans-serif',    'important');
+        modal.style.setProperty('box-sizing',       'border-box',           'important');
+        modal.style.setProperty('color',            '#333333',              'important');
+
+        function render() {
+            modal.innerHTML = '';
+
+            const visible = getVisible();
+            const total   = visible.length;
+            const step    = visible[stepIndex];
+            if (!step) return;
+
+            // Header
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                marginBottom: '16px', paddingBottom: '14px', borderBottom: '2px solid #667eea'
+            });
+            const hLeft  = document.createElement('div');
+            const hTitle = document.createElement('div');
+            hTitle.textContent = '✨ Policy Setup Wizard';
+            Object.assign(hTitle.style, { fontWeight: 'bold', fontSize: '15px', color: '#333', fontFamily: 'Arial, sans-serif' });
+            const hStep = document.createElement('div');
+            hStep.textContent = `Step ${stepIndex + 1} of ${total}`;
+            Object.assign(hStep.style, { fontSize: '11px', color: '#888', marginTop: '3px', fontFamily: 'Arial, sans-serif' });
+            hLeft.appendChild(hTitle);
+            hLeft.appendChild(hStep);
+            const hClose = document.createElement('button');
+            hClose.textContent = '✕';
+            Object.assign(hClose.style, {
+                background: 'none', border: 'none', fontSize: '18px', color: '#999',
+                cursor: 'pointer', padding: '2px 6px', borderRadius: '4px', lineHeight: '1'
+            });
+            hClose.onmouseover = () => { hClose.style.background = '#f0f0f0'; };
+            hClose.onmouseout  = () => { hClose.style.background = 'none'; };
+            hClose.onclick     = () => { overlay.remove(); modal.remove(); };
+            header.appendChild(hLeft);
+            header.appendChild(hClose);
+            modal.appendChild(header);
+
+            // Progress bar
+            const progBg = document.createElement('div');
+            Object.assign(progBg.style, { height: '4px', background: '#e5e7eb', borderRadius: '2px', marginBottom: '20px' });
+            const progFill = document.createElement('div');
+            Object.assign(progFill.style, {
+                height: '100%', borderRadius: '2px', background: '#667eea',
+                width: `${((stepIndex + 1) / total) * 100}%`
+            });
+            progBg.appendChild(progFill);
+            modal.appendChild(progBg);
+
+            // Question
+            const questionEl = document.createElement('div');
+            questionEl.textContent = step.question;
+            Object.assign(questionEl.style, {
+                fontSize: '14px', fontWeight: '600', color: '#1f2937',
+                marginBottom: '14px', fontFamily: 'Arial, sans-serif', lineHeight: '1.4'
+            });
+            modal.appendChild(questionEl);
+
+            // Answer area
+            const answerArea = document.createElement('div');
+            answerArea.style.marginBottom = '20px';
+            let getAnswer;
+            let nextBtnRef = null; // captured by text keydown handler before nextBtn is created
+
+            if (step.type === 'choice') {
+                step.choices.forEach(choice => {
+                    const isSel = wizardState[step.id] === choice.value;
+                    const card = document.createElement('div');
+                    Object.assign(card.style, {
+                        display: 'flex', alignItems: 'center', gap: '14px',
+                        padding: '11px 14px', marginBottom: '8px', cursor: 'pointer',
+                        border: `2px solid ${isSel ? '#667eea' : '#e5e7eb'}`,
+                        borderRadius: '8px', background: isSel ? '#f0f0ff' : '#ffffff',
+                        transition: 'all 0.15s'
+                    });
+                    const iconEl = document.createElement('span');
+                    iconEl.textContent = choice.icon;
+                    iconEl.style.fontSize = '22px';
+                    const textWrap = document.createElement('div');
+                    const lbl = document.createElement('div');
+                    lbl.textContent = choice.label;
+                    Object.assign(lbl.style, {
+                        fontWeight: '600', fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                        color: isSel ? '#667eea' : '#1f2937'
+                    });
+                    const desc = document.createElement('div');
+                    desc.textContent = choice.desc;
+                    Object.assign(desc.style, { fontSize: '12px', color: '#6b7280', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+                    textWrap.appendChild(lbl);
+                    textWrap.appendChild(desc);
+                    card.appendChild(iconEl);
+                    card.appendChild(textWrap);
+                    card.onclick = () => { wizardState[step.id] = choice.value; render(); };
+                    card.addEventListener('mouseenter', () => {
+                        if (wizardState[step.id] !== choice.value) { card.style.borderColor = '#c0c8f0'; card.style.background = '#f8f8ff'; }
+                    });
+                    card.addEventListener('mouseleave', () => {
+                        if (wizardState[step.id] !== choice.value) { card.style.borderColor = '#e5e7eb'; card.style.background = '#ffffff'; }
+                    });
+                    answerArea.appendChild(card);
+                });
+                getAnswer = () => wizardState[step.id];
+
+            } else if (step.type === 'dropdown') {
+                const opts = step.options();
+                const sel = document.createElement('select');
+                Object.assign(sel.style, {
+                    width: '100%', padding: '10px 12px', border: '1px solid #d1d5db',
+                    borderRadius: '6px', fontSize: '14px', color: '#1f2937',
+                    backgroundColor: '#ffffff', cursor: 'pointer', boxSizing: 'border-box'
+                });
+                opts.forEach(opt => {
+                    const o = document.createElement('option');
+                    o.value = opt.code;
+                    o.textContent = opt.label;
+                    if (opt.code === wizardState[step.id]) o.selected = true;
+                    sel.appendChild(o);
+                });
+                answerArea.appendChild(sel);
+                getAnswer = () => sel.value;
+
+            } else if (step.type === 'text') {
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.placeholder = step.placeholder || '';
+                inp.value = wizardState[step.id] || '';
+                Object.assign(inp.style, {
+                    width: '100%', padding: '10px 12px', border: '1px solid #d1d5db',
+                    borderRadius: '6px', fontSize: '14px', color: '#1f2937',
+                    backgroundColor: '#ffffff', boxSizing: 'border-box', outline: 'none'
+                });
+                inp.addEventListener('focus', () => { inp.style.borderColor = '#667eea'; });
+                inp.addEventListener('blur',  () => { inp.style.borderColor = '#d1d5db'; });
+                inp.addEventListener('keydown', e => { if (e.key === 'Enter' && nextBtnRef) nextBtnRef.click(); });
+                answerArea.appendChild(inp);
+                getAnswer = () => inp.value.trim();
+                setTimeout(() => inp.focus(), 40);
+
+            } else if (step.type === 'multicheck') {
+                const grid = document.createElement('div');
+                Object.assign(grid.style, { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' });
+                step.options.forEach(opt => {
+                    const lbl = document.createElement('label');
+                    Object.assign(lbl.style, {
+                        display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                        padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: '6px',
+                        fontSize: '12px', color: '#374151', fontFamily: 'Arial, sans-serif',
+                        transition: 'all 0.15s'
+                    });
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.value = opt.code;
+                    cb.checked = wizardState.criteria.includes(opt.code);
+                    cb.style.accentColor = '#667eea';
+                    const txt = document.createElement('span');
+                    txt.textContent = `${opt.label} (${opt.code})`;
+                    lbl.appendChild(cb);
+                    lbl.appendChild(txt);
+                    lbl.addEventListener('mouseenter', () => { lbl.style.borderColor = '#c0c8f0'; lbl.style.background = '#f8f8ff'; });
+                    lbl.addEventListener('mouseleave', () => { lbl.style.borderColor = '#e5e7eb'; lbl.style.background = ''; });
+                    grid.appendChild(lbl);
+                });
+                answerArea.appendChild(grid);
+                getAnswer = () => {
+                    const checked = [];
+                    grid.querySelectorAll('input[type="checkbox"]').forEach(cb => { if (cb.checked) checked.push(cb.value); });
+                    return checked;
+                };
+            }
+
+            modal.appendChild(answerArea);
+
+            // Navigation
+            const navRow = document.createElement('div');
+            Object.assign(navRow.style, { display: 'flex', gap: '10px', justifyContent: 'flex-end' });
+            const isLast = stepIndex === total - 1;
+
+            if (stepIndex > 0) {
+                const backBtn = document.createElement('button');
+                backBtn.textContent = '← Back';
+                Object.assign(backBtn.style, {
+                    padding: '9px 18px', border: '1px solid #d1d5db', borderRadius: '6px',
+                    fontSize: '13px', fontWeight: '500', cursor: 'pointer',
+                    backgroundColor: '#ffffff', color: '#374151'
+                });
+                backBtn.addEventListener('mouseenter', () => { backBtn.style.backgroundColor = '#f3f4f6'; });
+                backBtn.addEventListener('mouseleave', () => { backBtn.style.backgroundColor = '#ffffff'; });
+                backBtn.onclick = () => { stepIndex--; render(); };
+                navRow.appendChild(backBtn);
+            }
+
+            const nextBtn = document.createElement('button');
+            nextBtnRef = nextBtn;
+            nextBtn.textContent = isLast ? 'Apply →' : 'Next →';
+            Object.assign(nextBtn.style, {
+                padding: '9px 18px', border: 'none', borderRadius: '6px',
+                fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+                backgroundColor: '#667eea', color: '#ffffff'
+            });
+            nextBtn.addEventListener('mouseenter', () => { nextBtn.style.backgroundColor = '#5568d3'; });
+            nextBtn.addEventListener('mouseleave', () => { nextBtn.style.backgroundColor = '#667eea'; });
+            nextBtn.onclick = () => {
+                if (getAnswer) wizardState[step.id] = getAnswer();
+                if (isLast) {
+                    overlay.remove();
+                    modal.remove();
+                    applyFormState(wizardState.tab, {
+                        isTest:      wizardState.isTest,
+                        isGlobal:    wizardState.isGlobal,
+                        memberFirm:  wizardState.memberFirm,
+                        geoGroup:    wizardState.geoGroup,
+                        geo:         wizardState.geo,
+                        policyType:  wizardState.policyType,
+                        description: wizardState.description,
+                        appliesTo:   wizardState.appliesTo,
+                        channelType: wizardState.channelType,
+                        criteria:    wizardState.criteria
+                    });
+                } else {
+                    stepIndex++;
+                    render();
+                }
+            };
+            navRow.appendChild(nextBtn);
+            modal.appendChild(navRow);
+        }
+
+        render();
+
+        const wizParent = mainPanel ? mainPanel.parentElement : document.body;
+        wizParent.appendChild(overlay);
+        wizParent.appendChild(modal);
+    }
+
+    /* ==========================================================
      *  FLOATING BUTTON
      * ==========================================================*/
 
@@ -2147,10 +2538,35 @@ Version 1.2.0:
         buttonsContainer.appendChild(createActionButton('Clear Form', clearForm));
         buttonsContainer.appendChild(createActionButton('Apply Policy Name', applyPolicyName, true));
 
+        // Wizard bar
+        const wizardBar = document.createElement('div');
+        wizardBar.style.marginBottom = '10px';
+        const wizardBtn = document.createElement('button');
+        Object.assign(wizardBtn.style, {
+            width: '100%', padding: '10px 16px', border: '1px dashed #9b8ee8',
+            borderRadius: '6px', backgroundColor: '#f5f3ff', color: '#5b4fcf',
+            cursor: 'pointer', fontFamily: 'Arial, sans-serif', transition: 'all 0.15s',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            boxSizing: 'border-box'
+        });
+        const wizLeft = document.createElement('span');
+        wizLeft.textContent = '✨  Quick Setup';
+        Object.assign(wizLeft.style, { fontWeight: '600', fontSize: '13px' });
+        const wizRight = document.createElement('span');
+        wizRight.textContent = 'Fill the form by answering a few questions  →';
+        Object.assign(wizRight.style, { fontWeight: 'normal', fontSize: '12px', opacity: '0.8' });
+        wizardBtn.appendChild(wizLeft);
+        wizardBtn.appendChild(wizRight);
+        wizardBtn.addEventListener('mouseenter', () => { wizardBtn.style.backgroundColor = '#ede9ff'; wizardBtn.style.borderColor = '#7c6af7'; });
+        wizardBtn.addEventListener('mouseleave', () => { wizardBtn.style.backgroundColor = '#f5f3ff'; wizardBtn.style.borderColor = '#9b8ee8'; });
+        wizardBtn.onclick = () => showPolicyWizard();
+        wizardBar.appendChild(wizardBtn);
+
         // Assemble
         mainPanel.appendChild(closeButton);
         mainPanel.appendChild(titleContainer);
-        mainPanel.appendChild(presetBar);         // ← preset bar sits here
+        mainPanel.appendChild(wizardBar);
+        mainPanel.appendChild(presetBar);
         mainPanel.appendChild(tabContainer);
         mainPanel.appendChild(casbForm);
         mainPanel.appendChild(dlpForm);
