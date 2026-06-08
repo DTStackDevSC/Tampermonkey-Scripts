@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.0
+// @version      1.3.1
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Fixed the Feature Guide modal rendering as plain text on the page instead of opening as a floating modal. Styles are now applied directly on the modal elements to override Netskope's CSS cascade layers.
+
+Version 1.3.0:
 - Added a "? Help" button to the panel header that opens a Feature Guide modal covering all script features: policy name format, CASB/Web fields, DLP fields, criteria codes, the preset system, and panel controls.
 
 Version 1.2.7:
@@ -734,9 +737,33 @@ Version 1.2.0:
 
         const overlay = document.createElement('div');
         overlay.id = 'npg-help-modal-overlay';
+        overlay.style.setProperty('position',         'fixed',                  'important');
+        overlay.style.setProperty('top',              '0',                      'important');
+        overlay.style.setProperty('left',             '0',                      'important');
+        overlay.style.setProperty('width',            '100%',                   'important');
+        overlay.style.setProperty('height',           '100%',                   'important');
+        overlay.style.setProperty('background',       'rgba(0,0,0,0.5)',        'important');
+        overlay.style.setProperty('z-index',          '20002',                  'important');
 
         const modal = document.createElement('div');
         modal.id = 'npg-help-modal';
+        modal.style.setProperty('position',         'fixed',                    'important');
+        modal.style.setProperty('top',              '50%',                      'important');
+        modal.style.setProperty('left',             '50%',                      'important');
+        modal.style.setProperty('transform',        'translate(-50%,-50%)',     'important');
+        modal.style.setProperty('z-index',          '20003',                    'important');
+        modal.style.setProperty('background',       '#ffffff',                  'important');
+        modal.style.setProperty('background-color', '#ffffff',                  'important');
+        modal.style.setProperty('border',           '2px solid #333',           'important');
+        modal.style.setProperty('padding',          '20px',                     'important');
+        modal.style.setProperty('border-radius',    '10px',                     'important');
+        modal.style.setProperty('width',            '640px',                    'important');
+        modal.style.setProperty('max-width',        '92vw',                     'important');
+        modal.style.setProperty('max-height',       '82vh',                     'important');
+        modal.style.setProperty('overflow-y',       'auto',                     'important');
+        modal.style.setProperty('color',            '#333333',                  'important');
+        modal.style.setProperty('font-family',      'Arial, sans-serif',        'important');
+        modal.style.setProperty('box-sizing',       'border-box',               'important');
 
         // Header
         const modalHeader = document.createElement('div');
@@ -833,8 +860,9 @@ Version 1.2.0:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.documentElement.appendChild(overlay);
-        document.documentElement.appendChild(modal);
+        const helpParent = mainPanel ? mainPanel.parentElement : document.body;
+        helpParent.appendChild(overlay);
+        helpParent.appendChild(modal);
     }
 
     /* ==========================================================
