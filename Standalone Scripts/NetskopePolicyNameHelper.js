@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.7
+// @version      1.3.0
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.7';
-    const CHANGELOG = `Version 1.2.7:
+    const SCRIPT_VERSION = '1.3.0';
+    const CHANGELOG = `Version 1.3.0:
+- Added a "? Help" button to the panel header that opens a Feature Guide modal covering all script features: policy name format, CASB/Web fields, DLP fields, criteria codes, the preset system, and panel controls.
+
+Version 1.2.7:
 - Fixed the pulsing dot on the "What's New" notification not appearing. CSS animations cannot override Netskope's page styles, so the dot color is now toggled via JavaScript, which always takes effect.
 
 Version 1.2.6:
@@ -371,6 +374,470 @@ Version 1.2.0:
     }
 
     /* ==========================================================
+     *  HELP MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('npg-help-modal')) return;
+
+        function addParagraph(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        function addBulletList(body, items) {
+            const ul = document.createElement('div');
+            ul.style.marginBottom = '8px';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5',
+                    fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(text);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent: (body) => {
+                    addParagraph(body, 'The Policy Naming Helper adds a button next to the Policy Name field on any Netskope policy form. Click it to open the generator panel and build a standardised name from dropdown selections.');
+
+                    const btnRow = document.createElement('div');
+                    Object.assign(btnRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const btnBadge = document.createElement('span');
+                    btnBadge.textContent = '📝';
+                    Object.assign(btnBadge.style, {
+                        background: '#667eea', color: '#fff', borderRadius: '4px',
+                        padding: '6px 8px', fontSize: '14px',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const btnDesc = document.createElement('span');
+                    btnDesc.textContent = 'Appears next to the Policy Name input field. Click it to open the generator panel.';
+                    Object.assign(btnDesc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    btnRow.appendChild(btnBadge);
+                    btnRow.appendChild(btnDesc);
+                    body.appendChild(btnRow);
+
+                    addBulletList(body, [
+                        'Open any policy creation or edit form in Netskope.',
+                        'Click the purple 📝 button next to the Policy Name field.',
+                        'Select the CASB/Web Policies or DLP Policies tab to match the type of policy you are naming.',
+                        'Fill in the relevant fields. The preview at the bottom updates in real time.',
+                        'Click "Apply Policy Name" to write the generated name into the field on the page.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'Policy Name Format',
+                buildContent: (body) => {
+                    addParagraph(body, 'All generated names follow a dash-separated format. Only fields that are set to something other than "N/A" are included. Fields appear in this order:');
+
+                    const formatBox = document.createElement('div');
+                    Object.assign(formatBox.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                        marginBottom: '12px', overflowX: 'auto', whiteSpace: 'nowrap'
+                    });
+                    formatBox.textContent = '[Test] - [GLB] - [MemberFirm] - [GeoGroup] - [Geo] - [PolicyType] - [Description]';
+                    body.appendChild(formatBox);
+
+                    addParagraph(body, 'DLP policies also append: Applies To, Channel Type, and Criteria codes joined by underscores. Example outputs:');
+
+                    const exampleWrap = document.createElement('div');
+                    Object.assign(exampleWrap.style, {
+                        marginBottom: '12px', borderRadius: '6px',
+                        border: '1px solid #d0d0f0', overflow: 'hidden'
+                    });
+                    const examples = [
+                        { label: 'CASB', bg: '#eef4ff', labelColor: '#1d4ed8', text: 'ES - CASB Allow - Allow Office365 External Sharing' },
+                        { label: 'DLP',  bg: '#f5f3ff', labelColor: '#6d28d9', text: 'GLB - DLP Block - Sensitive Data - FW - E - CDI_FT' }
+                    ];
+                    for (const ex of examples) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', alignItems: 'baseline', gap: '10px',
+                            padding: '7px 12px', background: ex.bg,
+                            borderBottom: ex.label === 'CASB' ? '1px solid #e8e8f0' : 'none'
+                        });
+                        const labelEl = document.createElement('span');
+                        labelEl.textContent = ex.label;
+                        Object.assign(labelEl.style, {
+                            fontSize: '10px', fontWeight: 'bold', color: ex.labelColor,
+                            textTransform: 'uppercase', whiteSpace: 'nowrap',
+                            width: '42px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                        });
+                        const textEl = document.createElement('span');
+                        textEl.textContent = ex.text;
+                        Object.assign(textEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#333' });
+                        row.appendChild(labelEl);
+                        row.appendChild(textEl);
+                        exampleWrap.appendChild(row);
+                    }
+                    body.appendChild(exampleWrap);
+
+                    addBulletList(body, [
+                        'If the Policy Name field already has a value when you open the panel, it is parsed automatically and the form fields are pre-filled.',
+                        'The live preview at the bottom shows exactly what will be written to the field before you apply it.'
+                    ]);
+                }
+            },
+            {
+                icon: '🏷️',
+                title: 'CASB/Web Policies',
+                buildContent: (body) => {
+                    const tabRow = document.createElement('div');
+                    Object.assign(tabRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const tabBadge = document.createElement('span');
+                    tabBadge.textContent = 'CASB/Web Policies';
+                    Object.assign(tabBadge.style, {
+                        background: '#dbeafe', color: '#1d4ed8', borderRadius: '99px',
+                        padding: '3px 10px', fontSize: '11px', fontWeight: '600',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const tabDesc = document.createElement('span');
+                    tabDesc.textContent = 'Use this tab for CASB Allow/Deny, Web Allow/Deny, and Threat Allow/Deny policies.';
+                    Object.assign(tabDesc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    tabRow.appendChild(tabBadge);
+                    tabRow.appendChild(tabDesc);
+                    body.appendChild(tabRow);
+
+                    const fieldDescs = [
+                        ['Test Policy',  'Adds "Test" as the first segment. Use for non-production policies.'],
+                        ['Global Policy','Adds "GLB". Use for policies with global scope (no specific MF or Geo).'],
+                        ['Member Firm',  'The Deloitte Member Firm code (e.g. ES, DCE, NSE, Africa).'],
+                        ['Geo Group',    'The geographic group code (e.g. DCM, Nordics). Use when a group applies rather than a single Geo.'],
+                        ['Geo',          'The individual geography code (e.g. UK, FR, ZA, DE). Use when the policy targets one specific country.'],
+                        ['Policy Type',  'The policy action: CASB Allow, CASB Deny, Web Allow, Web Deny, Threat Allow, or Threat Deny.'],
+                        ['Description',  'Free-text label. Describe the specific purpose or target of the policy.']
+                    ];
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px' });
+                    for (const [field, desc] of fieldDescs) {
+                        const nameEl = document.createElement('span');
+                        nameEl.textContent = field;
+                        Object.assign(nameEl.style, {
+                            fontFamily: 'monospace', fontSize: '11px',
+                            color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
+                        grid.appendChild(nameEl);
+                        grid.appendChild(descEl);
+                    }
+                    body.appendChild(grid);
+                }
+            },
+            {
+                icon: '🛡️',
+                title: 'DLP Policies',
+                buildContent: (body) => {
+                    const tabRow = document.createElement('div');
+                    Object.assign(tabRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const tabBadge = document.createElement('span');
+                    tabBadge.textContent = 'DLP Policies';
+                    Object.assign(tabBadge.style, {
+                        background: '#ede9fe', color: '#6d28d9', borderRadius: '99px',
+                        padding: '3px 10px', fontSize: '11px', fontWeight: '600',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const tabDesc = document.createElement('span');
+                    tabDesc.textContent = 'Use this tab for DLP Block, Monitor, Notify, and Deny policies. Has all CASB fields plus three more.';
+                    Object.assign(tabDesc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    tabRow.appendChild(tabBadge);
+                    tabRow.appendChild(tabDesc);
+                    body.appendChild(tabRow);
+
+                    addParagraph(body, 'DLP policies include all CASB/Web fields, plus:');
+
+                    const extraFields = [
+                        ['Applies To',          'Scope: "FW" (Firm Wide) or "UG" (User Group).'],
+                        ['Policy Channel Type',  'Channel: "W" (Web), "E" (Email), or "D" (Endpoint/Device).'],
+                        ['Criteria',             'One or more criteria codes. Multiple selections are joined by underscores (e.g. CAP_FT_CDI). Select all that apply to this policy.']
+                    ];
+                    const extraGrid = document.createElement('div');
+                    Object.assign(extraGrid.style, {
+                        display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '12px'
+                    });
+                    for (const [field, desc] of extraFields) {
+                        const nameEl = document.createElement('span');
+                        nameEl.textContent = field;
+                        Object.assign(nameEl.style, {
+                            fontFamily: 'monospace', fontSize: '11px',
+                            color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
+                        extraGrid.appendChild(nameEl);
+                        extraGrid.appendChild(descEl);
+                    }
+                    body.appendChild(extraGrid);
+
+                    addParagraph(body, 'Available criteria codes:');
+
+                    const criteriaGrid = document.createElement('div');
+                    Object.assign(criteriaGrid.style, {
+                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 20px',
+                        background: '#f8f8ff', borderRadius: '6px',
+                        padding: '10px 14px', border: '1px solid #e8e8f8'
+                    });
+                    const criteriaList = [
+                        ['CAP', 'Cloud App'],       ['CAT',  'Category'],
+                        ['CB',  'Clipboard'],        ['CDI',  'Content Data Identifier'],
+                        ['CKW', 'Content Keyword'],  ['CMIP', 'Content MIP Classification'],
+                        ['CRX', 'Content Regular Expression'], ['EF', 'Encrypted File'],
+                        ['FN',  'File Name'],        ['FS',   'File Size'],
+                        ['FT',  'File Type'],        ['NS',   'Network Storage'],
+                        ['O',   'Other'],             ['P',    'Print'],
+                        ['RM',  'Removable Media'],  ['RP',   'Recipient Pattern']
+                    ];
+                    for (const [code, label] of criteriaList) {
+                        const item = document.createElement('div');
+                        Object.assign(item.style, { display: 'flex', gap: '6px', alignItems: 'baseline' });
+                        const codeEl = document.createElement('span');
+                        codeEl.textContent = code;
+                        Object.assign(codeEl.style, {
+                            fontFamily: 'monospace', fontSize: '11px',
+                            color: '#667eea', fontWeight: 'bold', whiteSpace: 'nowrap', flexShrink: '0'
+                        });
+                        const labelEl = document.createElement('span');
+                        labelEl.textContent = label;
+                        Object.assign(labelEl.style, { fontSize: '11px', color: '#555', fontFamily: 'Arial, sans-serif' });
+                        item.appendChild(codeEl);
+                        item.appendChild(labelEl);
+                        criteriaGrid.appendChild(item);
+                    }
+                    body.appendChild(criteriaGrid);
+                }
+            },
+            {
+                icon: '⭐',
+                title: 'Saved Presets',
+                buildContent: (body) => {
+                    addParagraph(body, 'The preset bar at the top of the panel lets you save the current form state and restore it in one click. Presets persist across sessions.');
+
+                    const presetBtns = [
+                        {
+                            bg: '#667eea', color: '#fff', border: 'none', label: '💾 Save',
+                            desc: 'Saves the current form state under a name you enter. The preset is immediately available in the dropdown.'
+                        },
+                        {
+                            bg: '#fff', color: '#374151', border: '1px solid #d1d5db', label: 'Load',
+                            desc: 'Select a preset from the dropdown, then click Load to restore all its field values into the form.'
+                        },
+                        {
+                            bg: '#fff', color: '#6b7280', border: '1px solid #d1d5db', label: '⚙',
+                            desc: 'Opens the Manage Presets panel where you can view summaries, load, or delete any saved preset.'
+                        }
+                    ];
+                    for (const item of presetBtns) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, border: item.border,
+                            borderRadius: '4px', padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+
+                    addBulletList(body, [
+                        'A preset stores the active tab (CASB or DLP), all field values, and all checked criteria.',
+                        'The Manage Presets panel shows each preset\'s name, a readable summary of its configuration, and when it was saved.',
+                        'Presets are stored locally in your browser and do not affect other users.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Panel Controls',
+                buildContent: (body) => {
+                    const controls = [
+                        {
+                            bg: '#4b5563', color: '#fff', border: 'none', label: 'Apply Policy Name',
+                            desc: 'Writes the generated name from the live preview into the Policy Name field on the page. The panel closes automatically.'
+                        },
+                        {
+                            bg: '#fff', color: '#374151', border: '1px solid #d1d5db', label: 'Clear Form',
+                            desc: 'Resets all fields in the current tab to their defaults (N/A) and clears the description.'
+                        },
+                        {
+                            bg: '#667eea', color: '#fff', border: 'none', label: '📝',
+                            desc: 'The floating button next to the Policy Name field. If the field already has a value, the form is pre-filled by parsing the existing name when you open the panel.'
+                        }
+                    ];
+                    for (const item of controls) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, border: item.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'npg-help-modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'npg-help-modal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Policy Naming Helper • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards — all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border: '1px solid #e8e8f0', borderRadius: '6px',
+                marginBottom: '8px', overflow: 'hidden'
+            });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block'
+            });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.documentElement.appendChild(overlay);
+        document.documentElement.appendChild(modal);
+    }
+
+    /* ==========================================================
      *  CSS STYLES
      * ==========================================================*/
 
@@ -449,6 +916,25 @@ Version 1.2.0:
             font-size: 14px; border: 1px dashed #e5e7eb; border-radius: 6px;
         }
         .npg-empty-presets .npg-empty-icon { font-size: 32px; margin-bottom: 8px; }
+        /* Help modal */
+        #npg-help-modal-overlay {
+            position: fixed !important; top: 0 !important; left: 0 !important;
+            width: 100% !important; height: 100% !important; background: rgba(0,0,0,0.5) !important;
+            z-index: 20002 !important;
+        }
+        #npg-help-modal {
+            position: fixed !important; top: 50% !important; left: 50% !important;
+            transform: translate(-50%,-50%) !important; z-index: 20003 !important;
+            background: #fff !important; border: 2px solid #333 !important;
+            padding: 20px !important; border-radius: 10px !important;
+            width: 640px !important; max-width: 92vw !important;
+            max-height: 82vh !important; overflow-y: auto !important;
+            color: #333333 !important; font-family: Arial, sans-serif !important;
+            box-sizing: border-box !important;
+        }
+        #npg-help-modal input, #npg-help-modal select, #npg-help-modal textarea {
+            background-color: #ffffff !important; color: #333333 !important;
+        }
     `;
     document.head.appendChild(style);
 
@@ -1294,6 +1780,28 @@ Version 1.2.0:
             clNotif.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showChangelogModal(); });
             titleContainer.appendChild(clNotif);
         }
+
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.style.setProperty('color',            '#667eea',                    'important');
+        helpBtn.style.setProperty('cursor',           'pointer',                    'important');
+        helpBtn.style.setProperty('font-size',        '11px',                       'important');
+        helpBtn.style.setProperty('display',          'inline-flex',                'important');
+        helpBtn.style.setProperty('align-items',      'center',                     'important');
+        helpBtn.style.setProperty('padding',          '1px 6px',                    'important');
+        helpBtn.style.setProperty('border-radius',    '3px',                        'important');
+        helpBtn.style.setProperty('border',           '1px solid #c0c8f0',          'important');
+        helpBtn.style.setProperty('font-weight',      'bold',                       'important');
+        helpBtn.style.setProperty('user-select',      'none',                       'important');
+        helpBtn.style.setProperty('background-color', 'transparent',                'important');
+        helpBtn.style.setProperty('transition',       'background-color 0.2s ease', 'important');
+        helpBtn.style.setProperty('font-family',      'Arial, sans-serif',          'important');
+        helpBtn.style.setProperty('margin-left',      '4px',                        'important');
+        helpBtn.onmouseover = () => helpBtn.style.setProperty('background-color', '#eef0ff',    'important');
+        helpBtn.onmouseout  = () => helpBtn.style.setProperty('background-color', 'transparent','important');
+        helpBtn.onclick = () => showHelpModal();
+        titleContainer.appendChild(helpBtn);
 
         // Preset bar
         const presetBar = createPresetBar();
