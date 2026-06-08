@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.0
+// @version      1.5.1
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.0';
-    const CHANGELOG = `Version 1.5.0:
+    const SCRIPT_VERSION = '1.5.1';
+    const CHANGELOG = `Version 1.5.1:
+- Wizard: DLP criteria cards now highlight in purple when selected so it is clear which ones are checked.
+- Wizard: The Geo step now always appears, even when the Global (GLB) flag is selected. A "Not region-specific" checkbox lets you skip the geo quickly without scrolling. The GLB question has been reworded to clarify it only controls whether GLB appears in the name.
+
+Version 1.5.0:
 - Consolidated Member Firm, Geo Group, and Geo into a single "Geo" dropdown containing all geos and member firms. The form now has one field instead of three.
 - Nordic geos (DK, FI, IS, NO, SE) automatically prepend "Nordics" in the generated name (e.g. "Nordics - DK - Web Deny - Freelance"). No manual action required.
 - The Quick Setup Wizard now has 9 steps instead of 11, reflecting the consolidated Geo field.
@@ -1745,11 +1749,11 @@ Version 1.2.0:
             },
             {
                 id: 'isGlobal',
-                question: 'What is the scope of this policy?',
+                question: 'Should this policy carry the Global (GLB) flag?',
                 type: 'choice',
                 choices: [
-                    { value: false, icon: '📍', label: 'Specific region or member firm', desc: 'Targets a particular member firm, geo group, or geography' },
-                    { value: true,  icon: '🌍', label: 'Global',                          desc: 'Applies globally; region fields will be N/A' }
+                    { value: false, icon: '🏷️', label: 'No GLB flag',  desc: 'Standard policy; no GLB segment in the name' },
+                    { value: true,  icon: '🌍', label: 'Add GLB flag',  desc: 'Adds "GLB" to the name; can still target a specific geo' }
                 ]
             },
             {
@@ -1757,7 +1761,7 @@ Version 1.2.0:
                 question: 'Which Geo does this policy target?',
                 type: 'dropdown',
                 options: () => GEOS,
-                shouldSkip: s => s.isGlobal
+                skipOption: 'Not region-specific (leave as N/A)'
             },
             {
                 id: 'policyType',
@@ -1931,6 +1935,25 @@ Version 1.2.0:
 
             } else if (step.type === 'dropdown') {
                 const opts = step.options();
+
+                let skipCb = null;
+                if (step.skipOption) {
+                    const skipRow = document.createElement('label');
+                    Object.assign(skipRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px',
+                        cursor: 'pointer', fontSize: '13px', color: '#555', fontFamily: 'Arial, sans-serif'
+                    });
+                    skipCb = document.createElement('input');
+                    skipCb.type = 'checkbox';
+                    skipCb.checked = wizardState[step.id] === 'N/A';
+                    skipCb.style.accentColor = '#667eea';
+                    const skipLbl = document.createElement('span');
+                    skipLbl.textContent = step.skipOption;
+                    skipRow.appendChild(skipCb);
+                    skipRow.appendChild(skipLbl);
+                    answerArea.appendChild(skipRow);
+                }
+
                 const sel = document.createElement('select');
                 Object.assign(sel.style, {
                     width: '100%', padding: '10px 12px', border: '1px solid #d1d5db',
@@ -1944,8 +1967,16 @@ Version 1.2.0:
                     if (opt.code === wizardState[step.id]) o.selected = true;
                     sel.appendChild(o);
                 });
+
+                if (skipCb) {
+                    sel.style.display = skipCb.checked ? 'none' : 'block';
+                    skipCb.addEventListener('change', () => {
+                        sel.style.display = skipCb.checked ? 'none' : 'block';
+                    });
+                }
+
                 answerArea.appendChild(sel);
-                getAnswer = () => sel.value;
+                getAnswer = () => (skipCb && skipCb.checked) ? 'N/A' : sel.value;
 
             } else if (step.type === 'text') {
                 const inp = document.createElement('input');
@@ -1971,8 +2002,8 @@ Version 1.2.0:
                     const lbl = document.createElement('label');
                     Object.assign(lbl.style, {
                         display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
-                        padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: '6px',
-                        fontSize: '12px', color: '#374151', fontFamily: 'Arial, sans-serif',
+                        padding: '7px 10px', borderRadius: '6px',
+                        fontSize: '12px', fontFamily: 'Arial, sans-serif',
                         transition: 'all 0.15s'
                     });
                     const cb = document.createElement('input');
@@ -1984,8 +2015,24 @@ Version 1.2.0:
                     txt.textContent = `${opt.label} (${opt.code})`;
                     lbl.appendChild(cb);
                     lbl.appendChild(txt);
-                    lbl.addEventListener('mouseenter', () => { lbl.style.borderColor = '#c0c8f0'; lbl.style.background = '#f8f8ff'; });
-                    lbl.addEventListener('mouseleave', () => { lbl.style.borderColor = '#e5e7eb'; lbl.style.background = ''; });
+
+                    function syncLblStyle() {
+                        if (cb.checked) {
+                            lbl.style.border = '2px solid #667eea';
+                            lbl.style.background = '#f0f0ff';
+                            lbl.style.color = '#4c46b6';
+                            lbl.style.fontWeight = '600';
+                        } else {
+                            lbl.style.border = '1px solid #e5e7eb';
+                            lbl.style.background = '';
+                            lbl.style.color = '#374151';
+                            lbl.style.fontWeight = 'normal';
+                        }
+                    }
+                    syncLblStyle();
+                    cb.addEventListener('change', syncLblStyle);
+                    lbl.addEventListener('mouseenter', () => { if (!cb.checked) { lbl.style.borderColor = '#c0c8f0'; lbl.style.background = '#f8f8ff'; } });
+                    lbl.addEventListener('mouseleave', () => { if (!cb.checked) { lbl.style.borderColor = '#e5e7eb'; lbl.style.background = ''; } });
                     grid.appendChild(lbl);
                 });
                 answerArea.appendChild(grid);
