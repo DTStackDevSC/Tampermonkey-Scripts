@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.1.0
+// @version      1.1.2
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
+    const SCRIPT_VERSION = '1.1.2';
+    const CHANGELOG = `Version 1.1.2:
+- Fixed the editor button not appearing in standalone mode when the ticket showed only work notes or only comments. The button now reliably appears above whichever journal field is visible.
+
+Version 1.1.1:
+- The editor button now appears a bit faster while the page is still loading.
+- When the Quick Response helper is not installed and the ticket shows work notes and comments at the same time, the button now appears above both fields instead of between them.
+
+Version 1.1.0:
 - The Insert button now lets you choose where the text goes: as a Comment, as a Work Note, or as both at once.
 - Added a Feature Guide. Click "? Help" in the editor header to see what every toolbar button does.
 - The HTML preview now opens in a proper window showing both a live rendered preview and the source, with a one click Copy button, replacing the old popup.
@@ -2417,13 +2424,27 @@ Version 1.0.3:
      * ==========================================================*/
 
     let buttonAttempts = 0;
-    const MAX_BUTTON_ATTEMPTS = 20;     // ~10s waiting for the preferred anchor
-    const MAX_FALLBACK_ATTEMPTS = 40;   // ~20s total before giving up entirely
+    const MAX_BUTTON_ATTEMPTS = 10;     // ~5s waiting for the preferred anchor
+    const MAX_FALLBACK_ATTEMPTS = 20;   // ~10s total before giving up entirely
+
+    function isVisible(el) {
+        return !!(el && (el.offsetParent !== null || el.getClientRects().length));
+    }
 
     function findJournalAnchor() {
-        return document.getElementById('activity-stream-comments-textarea') ||
-               document.getElementById('activity-stream-textarea') ||
-               document.querySelector('[data-stream-text-input]');
+        // Ordered candidates: the wrapper that holds both fields first (so the
+        // button sits above them in dual mode), then each individual journal
+        // textarea. We pick the first VISIBLE one so the button is never placed
+        // inside a hidden tab, whether the ticket shows comments, work notes, or both.
+        const candidates = [
+            document.getElementById('multiple-input-journal-entry'),
+            document.getElementById('activity-stream-comments-textarea'),
+            document.getElementById('activity-stream-work_notes-textarea'),
+            document.getElementById('activity-stream-textarea'),
+            document.querySelector('[data-stream-text-input]')
+        ].filter(Boolean);
+
+        return candidates.find(isVisible) || candidates[0] || null;
     }
 
     function addFormattedTextButton() {
@@ -2479,7 +2500,7 @@ Version 1.0.3:
             // Insert after Quick Response button
             quickResponseBtn.parentNode.insertBefore(formattedTextBtn, quickResponseBtn.nextSibling);
         } else {
-            // Place just above the journal textarea
+            // Place just above the journal area (above both fields in dual mode)
             Object.assign(formattedTextBtn.style, { marginLeft: '0', marginBottom: '8px' });
             journalAnchor.parentNode.insertBefore(formattedTextBtn, journalAnchor);
         }
