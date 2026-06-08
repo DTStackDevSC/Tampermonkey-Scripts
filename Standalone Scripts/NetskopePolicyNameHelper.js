@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.1
+// @version      1.5.2
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.1';
-    const CHANGELOG = `Version 1.5.1:
+    const SCRIPT_VERSION = '1.5.2';
+    const CHANGELOG = `Version 1.5.2:
+- Geo list: "Deloitte" removed from all entry names, sorted alphabetically. The N/A option is now labelled "Not region-specific" in all dropdowns.
+- Wizard: the Geo step is now always a plain dropdown. "Not region-specific" appears as the first selectable option instead of a separate checkbox toggle.
+
+Version 1.5.1:
 - Wizard: DLP criteria cards now highlight in purple when selected so it is clear which ones are checked.
 - Wizard: The Geo step now always appears, even when the Global (GLB) flag is selected. A "Not region-specific" checkbox lets you skip the geo quickly without scrolling. The GLB question has been reworded to clarify it only controls whether GLB appears in the name.
 
@@ -1087,36 +1091,36 @@ Version 1.2.0:
      * ==========================================================*/
 
     const GEOS = [
-        { code: 'N/A',    label: 'N/A' },
-        { code: 'ZA',     label: 'Southern Africa (ZA)' },
-        { code: 'EA',     label: 'East Africa (EA)' },
-        { code: 'WA',     label: 'West Africa (WA)' },
+        { code: 'N/A',    label: 'Not region-specific' },
+        { code: 'Africa', label: 'Africa' },
+        { code: 'AT',     label: 'Austria (AT)' },
+        { code: 'BE',     label: 'Belgium (BE)' },
         { code: 'CE',     label: 'Central Europe (CE)' },
+        { code: 'DCE',    label: 'Central Europe (DCE)' },
+        { code: 'DK',     label: 'Denmark (DK) — Nordics' },
+        { code: 'DKU',    label: 'DKU' },
+        { code: 'EA',     label: 'East Africa (EA)' },
+        { code: 'FI',     label: 'Finland (FI) — Nordics' },
         { code: 'FR',     label: 'France (FR)' },
         { code: 'DE',     label: 'Germany (DE)' },
-        { code: 'AT',     label: 'Austria (AT)' },
+        { code: 'GR',     label: 'Greece (GR)' },
+        { code: 'IS',     label: 'Iceland (IS) — Nordics' },
+        { code: 'IE',     label: 'Ireland (IE)' },
+        { code: 'IT',     label: 'Italy (IT)' },
         { code: 'LU',     label: 'Luxembourg (LU)' },
+        { code: 'MT',     label: 'Malta (MT)' },
+        { code: 'DME',    label: 'Middle East (DME)' },
+        { code: 'NL',     label: 'Netherlands (NL)' },
+        { code: 'NSE',    label: 'North and South Europe (NSE)' },
+        { code: 'NO',     label: 'Norway (NO) — Nordics' },
         { code: 'PT',     label: 'Portugal (PT)' },
+        { code: 'ZA',     label: 'Southern Africa (ZA)' },
+        { code: 'ES',     label: 'Spain (ES)' },
+        { code: 'SE',     label: 'Sweden (SE) — Nordics' },
+        { code: 'CH',     label: 'Switzerland (CH)' },
         { code: 'TR',     label: 'Turkey (TR)' },
         { code: 'UK',     label: 'United Kingdom (UK)' },
-        { code: 'CH',     label: 'Switzerland (CH)' },
-        { code: 'IE',     label: 'Ireland (IE)' },
-        { code: 'BE',     label: 'Belgium (BE)' },
-        { code: 'NL',     label: 'Netherlands (NL)' },
-        { code: 'DME',    label: 'Deloitte Middle East (DME)' },
-        { code: 'IT',     label: 'Italy (IT)' },
-        { code: 'GR',     label: 'Greece (GR)' },
-        { code: 'MT',     label: 'Malta (MT)' },
-        { code: 'NO',     label: 'Norway (NO) — Nordics' },
-        { code: 'DK',     label: 'Denmark (DK) — Nordics' },
-        { code: 'SE',     label: 'Sweden (SE) — Nordics' },
-        { code: 'FI',     label: 'Finland (FI) — Nordics' },
-        { code: 'IS',     label: 'Iceland (IS) — Nordics' },
-        { code: 'ES',     label: 'Deloitte Spain (ES)' },
-        { code: 'Africa', label: 'Deloitte Africa (Africa)' },
-        { code: 'DKU',    label: 'Deloitte DKU (DKU)' },
-        { code: 'DCE',    label: 'Deloitte Central Europe (DCE)' },
-        { code: 'NSE',    label: 'Deloitte North and South Europe (NSE)' }
+        { code: 'WA',     label: 'West Africa (WA)' }
     ];
     const NORDIC_CODES = new Set(['DK', 'FI', 'IS', 'NO', 'SE']);
     const POLICY_TYPES = ['N/A', 'CASB Allow', 'CASB Deny', 'Threat Allow', 'Threat Deny', 'Web Allow', 'Web Deny'];
@@ -1760,8 +1764,7 @@ Version 1.2.0:
                 id: 'geo',
                 question: 'Which Geo does this policy target?',
                 type: 'dropdown',
-                options: () => GEOS,
-                skipOption: 'Not region-specific (leave as N/A)'
+                options: () => GEOS
             },
             {
                 id: 'policyType',
@@ -1935,25 +1938,6 @@ Version 1.2.0:
 
             } else if (step.type === 'dropdown') {
                 const opts = step.options();
-
-                let skipCb = null;
-                if (step.skipOption) {
-                    const skipRow = document.createElement('label');
-                    Object.assign(skipRow.style, {
-                        display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px',
-                        cursor: 'pointer', fontSize: '13px', color: '#555', fontFamily: 'Arial, sans-serif'
-                    });
-                    skipCb = document.createElement('input');
-                    skipCb.type = 'checkbox';
-                    skipCb.checked = wizardState[step.id] === 'N/A';
-                    skipCb.style.accentColor = '#667eea';
-                    const skipLbl = document.createElement('span');
-                    skipLbl.textContent = step.skipOption;
-                    skipRow.appendChild(skipCb);
-                    skipRow.appendChild(skipLbl);
-                    answerArea.appendChild(skipRow);
-                }
-
                 const sel = document.createElement('select');
                 Object.assign(sel.style, {
                     width: '100%', padding: '10px 12px', border: '1px solid #d1d5db',
@@ -1967,16 +1951,8 @@ Version 1.2.0:
                     if (opt.code === wizardState[step.id]) o.selected = true;
                     sel.appendChild(o);
                 });
-
-                if (skipCb) {
-                    sel.style.display = skipCb.checked ? 'none' : 'block';
-                    skipCb.addEventListener('change', () => {
-                        sel.style.display = skipCb.checked ? 'none' : 'block';
-                    });
-                }
-
                 answerArea.appendChild(sel);
-                getAnswer = () => (skipCb && skipCb.checked) ? 'N/A' : sel.value;
+                getAnswer = () => sel.value;
 
             } else if (step.type === 'text') {
                 const inp = document.createElement('input');
