@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.1
+// @version      1.3.2
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
+    const SCRIPT_VERSION = '1.3.2';
+    const CHANGELOG = `Version 1.3.2:
+- Added a close button (✕) at the top right of the "What's New" modal.
+
+Version 1.3.1:
 - Fixed the Feature Guide modal rendering as plain text on the page instead of opening as a floating modal. Styles are now applied directly on the modal elements to override Netskope's CSS cascade layers.
 
 Version 1.3.0:
@@ -253,12 +256,27 @@ Version 1.2.0:
             overflowY: 'auto', color: '#333'
         });
 
+        const titleRow = document.createElement('div');
+        Object.assign(titleRow.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '15px', borderBottom: '2px solid #667eea', paddingBottom: '10px'
+        });
         const title = document.createElement('h2');
         title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
         Object.assign(title.style, {
-            marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea',
-            paddingBottom: '10px', fontSize: '1.5em', fontWeight: 'bold'
+            margin: '0', color: '#333', fontSize: '1.5em', fontWeight: 'bold'
         });
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px', color: '#999',
+            cursor: 'pointer', padding: '2px 6px', borderRadius: '4px',
+            lineHeight: '1', fontFamily: 'Arial, sans-serif', flexShrink: '0'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        titleRow.appendChild(title);
+        titleRow.appendChild(closeX);
 
         const versionInfo = document.createElement('div');
         versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
@@ -364,8 +382,9 @@ Version 1.2.0:
             const n = document.getElementById('netskopeChangelogNotification');
             if (n) n.remove();
         };
+        closeX.onclick = () => closeButton.click();
 
-        modal.appendChild(title);
+        modal.appendChild(titleRow);
         modal.appendChild(versionInfo);
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
