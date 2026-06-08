@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.0
+// @version      1.4.1
 // @description  Generate standardized policy names for Netskope
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
+    const SCRIPT_VERSION = '1.4.1';
+    const CHANGELOG = `Version 1.4.1:
+- The Feature Guide now includes a "Quick Setup Wizard" section explaining all 11 wizard steps, which steps are skipped based on your answers, and how the Apply button works.
+
+Version 1.4.0:
 - Added a "Quick Setup" wizard button above the preset bar. Clicking it opens a step-by-step guided form that asks about policy type, scope, region, action, and description, then fills all form fields automatically when you click Apply.
 
 Version 1.3.2:
@@ -712,6 +715,80 @@ Version 1.2.0:
                         'A preset stores the active tab (CASB or DLP), all field values, and all checked criteria.',
                         'The Manage Presets panel shows each preset\'s name, a readable summary of its configuration, and when it was saved.',
                         'Presets are stored locally in your browser and do not affect other users.'
+                    ]);
+                }
+            },
+            {
+                icon: '✨',
+                title: 'Quick Setup Wizard',
+                buildContent: (body) => {
+                    addParagraph(body, 'The Quick Setup Wizard guides you through a short series of questions and automatically fills every form field when you are done. It is the fastest way to set up a policy name from scratch.');
+
+                    const btnRow = document.createElement('div');
+                    Object.assign(btnRow.style, {
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f5f3ff', borderRadius: '6px', border: '1px dashed #9b8ee8'
+                    });
+                    const btnBadge = document.createElement('span');
+                    btnBadge.textContent = '✨  Quick Setup';
+                    Object.assign(btnBadge.style, {
+                        color: '#5b4fcf', fontSize: '13px', fontWeight: '600',
+                        fontFamily: 'Arial, sans-serif', flexShrink: '0'
+                    });
+                    const btnDesc = document.createElement('span');
+                    btnDesc.textContent = 'Fill the form by answering a few questions  →';
+                    Object.assign(btnDesc.style, {
+                        fontSize: '12px', color: '#7c6af7', fontFamily: 'Arial, sans-serif'
+                    });
+                    btnRow.appendChild(btnBadge);
+                    btnRow.appendChild(btnDesc);
+                    body.appendChild(btnRow);
+
+                    addParagraph(body, 'The wizard walks through up to 11 steps depending on the policy type selected. Steps that do not apply are skipped automatically.');
+
+                    const steps = [
+                        { step: '1', label: 'Policy type',      desc: 'Choose CASB/Web or DLP.' },
+                        { step: '2', label: 'Test policy?',      desc: 'Mark as live or test. Test policies get a [Test] prefix.' },
+                        { step: '3', label: 'Scope',             desc: 'Global or a specific region. Choosing Global skips steps 4, 5, and 6.' },
+                        { step: '4', label: 'Member Firm',       desc: 'CASB and DLP. Skipped when scope is Global.' },
+                        { step: '5', label: 'Geo Group',         desc: 'CASB and DLP. Skipped when scope is Global.' },
+                        { step: '6', label: 'Geo',               desc: 'CASB and DLP. Skipped when scope is Global.' },
+                        { step: '7', label: 'Policy action',     desc: 'The policy type dropdown (e.g. CASB Allow, DLP Block).' },
+                        { step: '8', label: 'Description',       desc: 'Free-text description. Press Enter to advance.' },
+                        { step: '9', label: 'Applies To',        desc: 'DLP only: Firm Wide or User Group.' },
+                        { step: '10', label: 'Channel type',     desc: 'DLP only: Web, Email, or Endpoint.' },
+                        { step: '11', label: 'DLP Criteria',     desc: 'DLP only: multi-select checkboxes for all applicable criteria.' }
+                    ];
+
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto auto 1fr', gap: '4px 12px', marginBottom: '10px', alignItems: 'baseline' });
+                    for (const s of steps) {
+                        const numEl = document.createElement('span');
+                        numEl.textContent = s.step;
+                        Object.assign(numEl.style, {
+                            fontFamily: 'monospace', fontSize: '11px', color: '#667eea',
+                            fontWeight: 'bold', textAlign: 'right', padding: '2px 0'
+                        });
+                        const labelEl = document.createElement('span');
+                        labelEl.textContent = s.label;
+                        Object.assign(labelEl.style, {
+                            fontSize: '12px', fontWeight: '600', color: '#333',
+                            fontFamily: 'Arial, sans-serif', padding: '2px 0', whiteSpace: 'nowrap'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = s.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', fontFamily: 'Arial, sans-serif', padding: '2px 0' });
+                        grid.appendChild(numEl);
+                        grid.appendChild(labelEl);
+                        grid.appendChild(descEl);
+                    }
+                    body.appendChild(grid);
+
+                    addBulletList(body, [
+                        'Clicking "Apply →" on the last step fills all form fields at once and switches to the correct tab (CASB or DLP).',
+                        'You can go back to any previous step with the "← Back" button to change an answer.',
+                        'Closing the wizard or clicking the overlay discards all answers without touching the form.'
                     ]);
                 }
             },
