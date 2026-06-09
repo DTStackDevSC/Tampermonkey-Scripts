@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.1.3
+// @version      1.2.0
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.3';
-    const CHANGELOG = `Version 1.1.3:
+    const SCRIPT_VERSION = '1.2.0';
+    const CHANGELOG = `Version 1.2.0:
+- Added a Table button to the toolbar. Pick the number of rows and columns from a quick grid, choose whether the first row is a header, and the table is dropped in at your cursor ready to fill in.
+- Added Text Color and Highlight Color buttons to the toolbar. Select your text, click the button, and pick a swatch to color the text or highlight it in any color, not just yellow.
+- Improved dark mode: the editor area and the main editor window now always keep a light background and readable text, so nothing looks washed out or invisible on dark themed instances.
+
+Version 1.1.3:
 - When the Quick Response helper is not installed, the editor button now appears in the same place that button would, next to the ticket form actions, instead of above the activity stream.
 
 Version 1.1.2:
@@ -335,6 +340,23 @@ Version 1.0.3:
             closeButton.click();
         };
     }
+
+    /* ==========================================================
+     *  COLOR PALETTES
+     * ==========================================================*/
+
+    // Word style swatches. Foreground colors for text, brighter set for highlights.
+    const TEXT_COLORS = [
+        '#000000', '#444444', '#666666', '#999999', '#cccccc', '#ffffff',
+        '#cc0000', '#e06666', '#ff9900', '#f1c232', '#6aa84f', '#38761d',
+        '#1155cc', '#3d85c6', '#9fc5e8', '#674ea7', '#a64d79', '#85200c'
+    ];
+
+    const HIGHLIGHT_COLORS = [
+        '#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ff9900', '#ff6666',
+        '#ffd966', '#fff2cc', '#b6d7a8', '#a2c4c9', '#a4c2f4', '#d5a6bd',
+        '#f4cccc', '#d9d2e9', '#ead1dc', '#cccccc', '#999999', '#ffffff'
+    ];
 
     /* ==========================================================
      *  RICH TEXT EDITOR MODAL
@@ -813,6 +835,267 @@ Version 1.0.3:
     }
 
     /* ----------------------------------------------------------
+     *  TABLE INSERTION MODAL
+     * ----------------------------------------------------------*/
+
+    // Build a table element with inline styles ServiceNow renders inside [code].
+    function buildTableElement(rows, cols, hasHeader) {
+        const cellStyle = 'border: 1px solid #cccccc; padding: 6px 10px;';
+        const table = document.createElement('table');
+        table.setAttribute('style', 'border-collapse: collapse; width: 100%;');
+
+        let bodyStart = 0;
+        if (hasHeader) {
+            const thead = document.createElement('thead');
+            const tr = document.createElement('tr');
+            tr.setAttribute('style', 'background-color: #f0f0f0;');
+            for (let c = 0; c < cols; c++) {
+                const th = document.createElement('th');
+                th.setAttribute('style', cellStyle);
+                th.appendChild(document.createElement('br'));
+                tr.appendChild(th);
+            }
+            thead.appendChild(tr);
+            table.appendChild(thead);
+            bodyStart = 1;
+        }
+
+        const tbody = document.createElement('tbody');
+        for (let r = bodyStart; r < rows; r++) {
+            const tr = document.createElement('tr');
+            for (let c = 0; c < cols; c++) {
+                const td = document.createElement('td');
+                td.setAttribute('style', cellStyle);
+                td.appendChild(document.createElement('br'));
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        return table;
+    }
+
+    function showTableModal() {
+        // Save the editor cursor before the modal steals focus
+        saveSelection();
+
+        const MAX_GRID = 10;          // hover grid spans up to 10 x 10
+        let selRows = 1, selCols = 1;
+        let headerRow = true;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'table-modal-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            backgroundColor: 'rgba(0,0,0,0.55)', zIndex: '10004',
+            display: 'flex', justifyContent: 'center', alignItems: 'center'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'table-modal';
+        Object.assign(modal.style, {
+            backgroundColor: '#fff', borderRadius: '10px',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.35)', width: '380px',
+            maxWidth: 'calc(100vw - 40px)', fontFamily: 'Arial, sans-serif', overflow: 'hidden'
+        });
+
+        const header = document.createElement('div');
+        Object.assign(header.style, {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '14px 18px', backgroundColor: '#f8f9fa', borderBottom: '1px solid #e0e0e0'
+        });
+        const hTitle = document.createElement('h3');
+        hTitle.textContent = '▦ Insert Table';
+        Object.assign(hTitle.style, { margin: '0', fontSize: '16px', color: '#333' });
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕'; closeX.type = 'button';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer',
+            color: '#666', padding: '0', width: '26px', height: '26px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '4px'
+        });
+        closeX.onmouseover = () => { closeX.style.backgroundColor = '#f0f0f0'; closeX.style.color = '#000'; };
+        closeX.onmouseout  = () => { closeX.style.backgroundColor = 'transparent'; closeX.style.color = '#666'; };
+        closeX.onclick = cleanup;
+        header.appendChild(hTitle);
+        header.appendChild(closeX);
+
+        const body = document.createElement('div');
+        Object.assign(body.style, { padding: '18px' });
+
+        // Live dimension label
+        const dimLabel = document.createElement('div');
+        dimLabel.textContent = '1 × 1 Table';
+        Object.assign(dimLabel.style, {
+            fontSize: '13px', fontWeight: 'bold', color: '#444', marginBottom: '8px', textAlign: 'center'
+        });
+
+        // Hover grid picker
+        const grid = document.createElement('div');
+        Object.assign(grid.style, {
+            display: 'grid', gridTemplateColumns: `repeat(${MAX_GRID}, 18px)`,
+            gap: '3px', justifyContent: 'center', marginBottom: '14px'
+        });
+
+        const cells = [];
+        function paintGrid(r, c) {
+            cells.forEach(cell => {
+                const on = cell.dataset.r <= r && cell.dataset.c <= c;
+                cell.style.backgroundColor = on ? '#669bea' : '#fff';
+                cell.style.borderColor = on ? '#3d6fd0' : '#ccc';
+            });
+        }
+        for (let r = 1; r <= MAX_GRID; r++) {
+            for (let c = 1; c <= MAX_GRID; c++) {
+                const cell = document.createElement('div');
+                cell.dataset.r = r;
+                cell.dataset.c = c;
+                Object.assign(cell.style, {
+                    width: '18px', height: '18px', border: '1px solid #ccc',
+                    borderRadius: '2px', backgroundColor: '#fff', cursor: 'pointer'
+                });
+                cell.addEventListener('mouseover', () => {
+                    selRows = r; selCols = c;
+                    dimLabel.textContent = `${r} × ${c} Table`;
+                    rowsInput.value = r;
+                    colsInput.value = c;
+                    paintGrid(r, c);
+                });
+                cell.addEventListener('click', () => { selRows = r; selCols = c; doInsert(); });
+                cells.push(cell);
+                grid.appendChild(cell);
+            }
+        }
+
+        // Explicit number inputs for sizes beyond the grid
+        const inputsRow = document.createElement('div');
+        Object.assign(inputsRow.style, {
+            display: 'flex', gap: '10px', alignItems: 'center',
+            justifyContent: 'center', marginBottom: '12px'
+        });
+        function makeNumInput(val) {
+            const i = document.createElement('input');
+            i.type = 'number'; i.min = '1'; i.max = '50'; i.value = String(val);
+            Object.assign(i.style, {
+                width: '60px', padding: '6px 8px', border: '1px solid #ccc',
+                borderRadius: '5px', fontSize: '13px', boxSizing: 'border-box',
+                outline: 'none', fontFamily: 'Arial, sans-serif', textAlign: 'center'
+            });
+            return i;
+        }
+        const rowsInput = makeNumInput(1);
+        const colsInput = makeNumInput(1);
+        function syncFromInputs() {
+            selRows = Math.max(1, Math.min(50, parseInt(rowsInput.value, 10) || 1));
+            selCols = Math.max(1, Math.min(50, parseInt(colsInput.value, 10) || 1));
+            dimLabel.textContent = `${selRows} × ${selCols} Table`;
+            if (selRows <= MAX_GRID && selCols <= MAX_GRID) paintGrid(selRows, selCols);
+        }
+        rowsInput.oninput = syncFromInputs;
+        colsInput.oninput = syncFromInputs;
+        const rowsLbl = document.createElement('span');
+        rowsLbl.textContent = 'Rows'; rowsLbl.style.fontSize = '13px'; rowsLbl.style.color = '#444';
+        const colsLbl = document.createElement('span');
+        colsLbl.textContent = 'Columns'; colsLbl.style.fontSize = '13px'; colsLbl.style.color = '#444';
+        inputsRow.appendChild(rowsLbl);
+        inputsRow.appendChild(rowsInput);
+        inputsRow.appendChild(colsLbl);
+        inputsRow.appendChild(colsInput);
+
+        // Header row toggle
+        const headerToggle = document.createElement('label');
+        Object.assign(headerToggle.style, {
+            display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center',
+            fontSize: '13px', color: '#444', cursor: 'pointer', marginBottom: '4px'
+        });
+        const headerCheck = document.createElement('input');
+        headerCheck.type = 'checkbox';
+        headerCheck.checked = true;
+        headerCheck.style.cursor = 'pointer';
+        headerCheck.onchange = () => { headerRow = headerCheck.checked; };
+        const headerText = document.createElement('span');
+        headerText.textContent = 'Make the first row a header';
+        headerToggle.appendChild(headerCheck);
+        headerToggle.appendChild(headerText);
+
+        body.appendChild(dimLabel);
+        body.appendChild(grid);
+        body.appendChild(inputsRow);
+        body.appendChild(headerToggle);
+
+        const footer = document.createElement('div');
+        Object.assign(footer.style, {
+            display: 'flex', justifyContent: 'flex-end', gap: '10px',
+            padding: '14px 18px', borderTop: '1px solid #e0e0e0', backgroundColor: '#f8f9fa'
+        });
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel'; cancelBtn.type = 'button';
+        Object.assign(cancelBtn.style, {
+            padding: '7px 18px', border: '1px solid #ccc', borderRadius: '5px',
+            backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
+        });
+        cancelBtn.onmouseover = () => cancelBtn.style.backgroundColor = '#f0f0f0';
+        cancelBtn.onmouseout  = () => cancelBtn.style.backgroundColor = '#fff';
+        cancelBtn.onclick = cleanup;
+
+        const insertBtn = document.createElement('button');
+        insertBtn.textContent = 'Insert Table'; insertBtn.type = 'button';
+        Object.assign(insertBtn.style, {
+            padding: '7px 18px', border: '1px solid #28a745', borderRadius: '5px',
+            backgroundColor: '#28a745', color: '#fff', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold'
+        });
+        insertBtn.onmouseover = () => insertBtn.style.backgroundColor = '#218838';
+        insertBtn.onmouseout  = () => insertBtn.style.backgroundColor = '#28a745';
+        insertBtn.onclick = doInsert;
+
+        footer.appendChild(cancelBtn);
+        footer.appendChild(insertBtn);
+
+        modal.appendChild(header);
+        modal.appendChild(body);
+        modal.appendChild(footer);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
+        paintGrid(1, 1);
+
+        function doInsert() {
+            syncFromInputs();
+            headerRow = headerCheck.checked;
+
+            restoreSelection();
+            const table = buildTableElement(selRows, selCols, headerRow);
+
+            const sel = window.getSelection();
+            if (sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(table);
+                // Drop a paragraph after the table so the cursor has somewhere to go
+                const after = document.createElement('p');
+                after.appendChild(document.createElement('br'));
+                table.parentNode.insertBefore(after, table.nextSibling);
+                range.setStart(after, 0);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+
+            const editor = document.getElementById('formatted-text-editor');
+            if (editor) editor.focus();
+            cleanup();
+            console.log('✓ Table inserted — ' + selRows + ' x ' + selCols);
+        }
+
+        function cleanup() {
+            overlay.remove();
+            savedRange = null;
+        }
+    }
+
+    /* ----------------------------------------------------------
      *  HTML PREVIEW MODAL
      * ----------------------------------------------------------*/
 
@@ -1182,6 +1465,8 @@ Version 1.0.3:
                         ['U',          'Underline the selected text. Shortcut Ctrl+U.'],
                         ['S',          'Strikethrough the selected text.'],
                         ['Size',       'Set a specific font size on the selected text, from 8 up to 36.'],
+                        ['Text Color', 'Open a swatch palette and color the selected text. Includes a Remove option to clear the color.'],
+                        ['Highlight Color', 'Open a swatch palette and highlight the selected text in any color. Includes a Remove option.'],
                         ['Highlight',  'Mark the selected text with a yellow highlight.'],
                         ['Small',      'Render the selected text in a smaller size.'],
                         ['Del',        'Show the text as deleted, with a line through it.'],
@@ -1192,6 +1477,7 @@ Version 1.0.3:
                         ['Blockquote', 'Turn the selection into an indented quote block.'],
                         ['Link',       'Open the link dialog to add a clickable address.'],
                         ['Image',      'Open the image dialog to insert a picture by URL.'],
+                        ['Table',      'Open the table dialog to insert a grid of rows and columns.'],
                         ['Bullet List','Turn lines into an unordered bullet list.'],
                         ['Numbered',   'Turn lines into an ordered numbered list.'],
                         ['H1 / H2',    'Apply a large or medium heading to the current line.'],
@@ -1218,6 +1504,28 @@ Version 1.0.3:
                         'A live preview shows the image before you insert it.',
                         'Choose a display width of 25, 50, 75, or 100 percent.',
                         'The image is inserted at your cursor position in the editor.'
+                    ]);
+                }
+            },
+            {
+                icon: '▦', title: 'Tables',
+                buildContent: (body) => {
+                    addParagraph(body, 'The table button opens a dialog where you pick the size of the table to insert.');
+                    addBulletList(body, [
+                        'Hover the quick grid and click to choose the number of rows and columns, or type larger sizes into the Rows and Columns boxes.',
+                        'Leave Make the first row a header ticked to get a shaded header row, or untick it for a plain grid.',
+                        'The empty table is inserted at your cursor. Click any cell to type into it.'
+                    ]);
+                }
+            },
+            {
+                icon: '🎨', title: 'Text and Highlight Color',
+                buildContent: (body) => {
+                    addParagraph(body, 'Two color buttons sit next to the font size selector. Select text first, then pick a color.');
+                    addBulletList(body, [
+                        'Text Color changes the color of the selected letters.',
+                        'Highlight Color shades the background behind the selected text, in any color you choose, not just yellow.',
+                        'Each palette has a Remove option that clears the color back to normal.'
                     ]);
                 }
             },
@@ -1608,6 +1916,107 @@ Version 1.0.3:
             editor.focus();
         }
 
+        // Wrap the current selection in a span carrying a color or background color.
+        // styleProp is 'color' (text) or 'background-color' (highlight). We set the
+        // value as !important inline so ServiceNow dark mode cannot recolor it in the
+        // editor preview, and so it survives in the inserted [code] block.
+        function applyColor(styleProp, color, editor) {
+            const selection = window.getSelection();
+            if (!selection.rangeCount) return;
+
+            const range = selection.getRangeAt(0);
+            if (range.collapsed) {
+                alert('Please select some text first.');
+                return;
+            }
+
+            const fragment = range.extractContents();
+
+            const processNode = (node) => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const span = document.createElement('span');
+                    span.style.setProperty(styleProp, color, 'important');
+                    span.textContent = node.textContent;
+                    return span;
+                } else if (node.nodeType === Node.ELEMENT_NODE) {
+                    const clone = node.cloneNode(false);
+                    Array.from(node.childNodes).forEach(child => {
+                        clone.appendChild(processNode(child));
+                    });
+                    return clone;
+                }
+                return node.cloneNode(true);
+            };
+
+            const container = document.createDocumentFragment();
+            Array.from(fragment.childNodes).forEach(node => {
+                container.appendChild(processNode(node));
+            });
+
+            range.insertNode(container);
+            editor.focus();
+        }
+
+        // Build the swatch popup anchored under a color toolbar button. It is fixed
+        // positioned and appended to the body so the scrollable toolbar cannot clip it.
+        function buildColorPopup(palette, styleProp, anchorEl, onPicked) {
+            const pop = document.createElement('div');
+            pop.id = 'color-popup';
+            Object.assign(pop.style, {
+                position: 'fixed', background: '#fff', border: '1px solid #ccc',
+                borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.25)', padding: '8px',
+                zIndex: '10010', display: 'grid',
+                gridTemplateColumns: 'repeat(6, 20px)', gap: '5px'
+            });
+            const rect = anchorEl.getBoundingClientRect();
+            let left = rect.left;
+            const popWidth = 6 * 20 + 5 * 5 + 16; // 6 swatches, gaps, padding
+            if (left + popWidth > window.innerWidth - 10) left = window.innerWidth - popWidth - 10;
+            if (left < 10) left = 10;
+            pop.style.left = left + 'px';
+            pop.style.top  = (rect.bottom + 4) + 'px';
+            palette.forEach(color => {
+                const sw = document.createElement('button');
+                sw.type = 'button';
+                sw.title = color;
+                Object.assign(sw.style, {
+                    width: '20px', height: '20px', border: '1px solid #ddd',
+                    borderRadius: '3px', cursor: 'pointer', padding: '0',
+                    backgroundColor: color
+                });
+                sw.addEventListener('mousedown', (e) => e.preventDefault());
+                sw.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    restoreSelection();
+                    applyColor(styleProp, color, editor);
+                    onPicked();
+                };
+                pop.appendChild(sw);
+            });
+
+            // Full width row to clear the chosen color/highlight off the selection
+            const clearBtn = document.createElement('button');
+            clearBtn.type = 'button';
+            clearBtn.textContent = '✕ Remove';
+            Object.assign(clearBtn.style, {
+                gridColumn: '1 / -1', marginTop: '4px', padding: '4px',
+                border: '1px solid #ccc', borderRadius: '4px', background: '#f8f9fa',
+                cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', color: '#444'
+            });
+            clearBtn.addEventListener('mousedown', (e) => e.preventDefault());
+            clearBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                restoreSelection();
+                applyColor(styleProp, styleProp === 'color' ? 'inherit' : 'transparent', editor);
+                onPicked();
+            };
+            pop.appendChild(clearBtn);
+
+            return pop;
+        }
+
         // Custom command handler for non-standard tags
         function handleCustomCommand(command, editor) {
             const selection = window.getSelection();
@@ -1776,6 +2185,8 @@ Version 1.0.3:
             { command: 'underline', icon: '<u>U</u>', title: 'Underline (Ctrl+U)' },
             { command: 'strikeThrough', icon: '<del>S</del>', title: 'Strikethrough' },
             { type: 'fontSize', command: 'fontSize', title: 'Font Size' }, // Font size selector
+            { type: 'color', command: 'foreColor', icon: '<span style="border-bottom:3px solid #cc0000;">A</span>', title: 'Text Color' },
+            { type: 'color', command: 'backColor', icon: '<span style="background:#ffff00;padding:0 3px;border-radius:2px;">A</span>', title: 'Highlight Color' },
             { type: 'custom', command: 'mark', icon: '<mark>H</mark>', title: 'Highlight' },
             { type: 'custom', command: 'small', icon: '<small>Aa</small>', title: 'Small Text' },
             { type: 'custom', command: 'del', icon: '<del>Del</del>', title: 'Deleted Text' },
@@ -1786,6 +2197,7 @@ Version 1.0.3:
             { type: 'custom', command: 'blockquote', icon: '"', title: 'Blockquote' },
             { type: 'link', command: 'link', icon: '🔗', title: 'Insert Link' },
             { type: 'image', command: 'image', icon: '🖼️', title: 'Insert Image' },   // ← NEW
+            { type: 'table', command: 'table', icon: '▦ Table', title: 'Insert Table' },
             { command: 'insertUnorderedList', icon: '• List', title: 'Bullet List' },
             { command: 'insertOrderedList', icon: '1. List', title: 'Numbered List' },
             { command: 'formatBlock', value: 'h3', icon: 'H1', title: 'Heading 1 (H3)' },
@@ -1866,6 +2278,54 @@ Version 1.0.3:
                 return;
             }
 
+            // Handle the color pickers (text color + highlight) separately
+            if (btn.type === 'color') {
+                const colorContainer = document.createElement('div');
+                Object.assign(colorContainer.style, { position: 'relative', display: 'inline-block' });
+
+                const colorBtn = document.createElement('button');
+                colorBtn.type = 'button';
+                colorBtn.title = btn.title;
+                colorBtn.innerHTML = btn.icon + ' <span style="font-size:9px;">▾</span>';
+                Object.assign(colorBtn.style, {
+                    padding: '6px 10px', border: '1px solid #ccc', borderRadius: '4px',
+                    backgroundColor: '#fff', cursor: 'pointer', fontSize: '13px',
+                    fontWeight: 'bold', flexShrink: '0', whiteSpace: 'nowrap'
+                });
+                colorBtn.onmouseover = () => { colorBtn.style.backgroundColor = '#e9ecef'; };
+                colorBtn.onmouseout  = () => { colorBtn.style.backgroundColor = '#fff'; };
+
+                const palette   = btn.command === 'foreColor' ? TEXT_COLORS : HIGHLIGHT_COLORS;
+                const styleProp = btn.command === 'foreColor' ? 'color' : 'background-color';
+                let popup = null;
+
+                function closePopup() {
+                    if (popup) { popup.remove(); popup = null; }
+                    document.removeEventListener('mousedown', onOutside, true);
+                }
+                function onOutside(e) {
+                    if (popup && !popup.contains(e.target) && !colorContainer.contains(e.target)) closePopup();
+                }
+
+                // Keep the editor selection alive while the button takes focus
+                colorBtn.addEventListener('mousedown', (e) => { e.preventDefault(); saveSelection(); });
+                colorBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (popup) { closePopup(); return; }
+                    popup = buildColorPopup(palette, styleProp, colorBtn, () => {
+                        closePopup();
+                        editor.focus();
+                    });
+                    document.body.appendChild(popup);
+                    document.addEventListener('mousedown', onOutside, true);
+                };
+
+                colorContainer.appendChild(colorBtn);
+                firstRow.appendChild(colorContainer);
+                return;
+            }
+
             const button = document.createElement('button');
             button.innerHTML = btn.icon;
             button.type = 'button';
@@ -1887,6 +2347,13 @@ Version 1.0.3:
                 button.style.backgroundColor = '#17a2b8';
                 button.style.color = '#fff';
                 button.style.borderColor = '#17a2b8';
+            }
+
+            // Style the table button with a distinct purple accent
+            if (btn.type === 'table') {
+                button.style.backgroundColor = '#6f42c1';
+                button.style.color = '#fff';
+                button.style.borderColor = '#6f42c1';
             }
 
             // Style utility buttons differently
@@ -1938,6 +2405,8 @@ Version 1.0.3:
             button.onmouseover = () => {
                 if (btn.type === 'image') {
                     button.style.backgroundColor = '#138496';
+                } else if (btn.type === 'table') {
+                    button.style.backgroundColor = '#5a32a3';
                 } else if (btn.type === 'utility') {
                     if (btn.command === 'clear') {
                         button.style.backgroundColor = '#c82333';
@@ -1984,6 +2453,8 @@ Version 1.0.3:
             button.onmouseout = () => {
                 if (btn.type === 'image') {
                     button.style.backgroundColor = '#17a2b8';
+                } else if (btn.type === 'table') {
+                    button.style.backgroundColor = '#6f42c1';
                 } else if (btn.type === 'utility') {
                     if (btn.command === 'clear') {
                         button.style.backgroundColor = '#dc3545';
@@ -2029,6 +2500,12 @@ Version 1.0.3:
                 // Open the dedicated image modal
                 if (btn.type === 'image') {
                     showImageModal();
+                    return false;
+                }
+
+                // Open the dedicated table modal
+                if (btn.type === 'table') {
+                    showTableModal();
                     return false;
                 }
 
@@ -2238,45 +2715,33 @@ Version 1.0.3:
         const temp = document.createElement('div');
         temp.innerHTML = html;
 
-        // Remove contenteditable attributes and other unwanted attributes
+        // Tags allowed to carry an inline style through to ServiceNow:
+        // spans (font size and colors), images (width), and every table part (borders).
+        const STYLE_TAGS = ['span', 'img', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td'];
+
+        // Remove contenteditable and any attribute we do not explicitly keep
         const allElements = temp.querySelectorAll('*');
         allElements.forEach(el => {
-            // Remove contenteditable
-            el.removeAttribute('contenteditable');
+            const tag = el.tagName.toLowerCase();
 
-            // For span elements, keep only style attribute (for font-size)
-            if (el.tagName.toLowerCase() === 'span') {
-                const style = el.getAttribute('style');
-                // Remove all attributes
-                const attrs = Array.from(el.attributes);
-                attrs.forEach(attr => {
-                    el.removeAttribute(attr.name);
-                });
-                // Restore style if it exists
-                if (style) {
-                    el.setAttribute('style', style);
-                }
-            } else if (el.tagName.toLowerCase() === 'img') {
-                // For img elements, keep src and style (width)
-                const src   = el.getAttribute('src');
-                const style = el.getAttribute('style');
-                const attrs = Array.from(el.attributes);
-                attrs.forEach(attr => el.removeAttribute(attr.name));
-                if (src)   el.setAttribute('src',   src);
-                if (style) el.setAttribute('style', style);
-            } else {
-                // For other elements, remove style attributes
-                el.removeAttribute('style');
-            }
+            // Capture the few attributes worth keeping before wiping the rest
+            const href    = el.getAttribute('href');
+            const src     = el.getAttribute('src');
+            const alt     = el.getAttribute('alt');
+            const title   = el.getAttribute('title');
+            const style   = el.getAttribute('style');
+            const colspan = el.getAttribute('colspan');
+            const rowspan = el.getAttribute('rowspan');
 
-            // Keep only essential attributes
-            const allowedAttrs = ['href', 'src', 'alt', 'title', 'style'];
-            const attrs = Array.from(el.attributes);
-            attrs.forEach(attr => {
-                if (!allowedAttrs.includes(attr.name)) {
-                    el.removeAttribute(attr.name);
-                }
-            });
+            Array.from(el.attributes).forEach(attr => el.removeAttribute(attr.name));
+
+            if (href && tag === 'a')   el.setAttribute('href', href);
+            if (src  && tag === 'img') el.setAttribute('src', src);
+            if (alt  && tag === 'img') el.setAttribute('alt', alt);
+            if (title)                 el.setAttribute('title', title);
+            if (style && STYLE_TAGS.includes(tag)) el.setAttribute('style', style);
+            if (colspan && (tag === 'th' || tag === 'td')) el.setAttribute('colspan', colspan);
+            if (rowspan && (tag === 'th' || tag === 'td')) el.setAttribute('rowspan', rowspan);
         });
 
         // Get cleaned HTML
@@ -2306,11 +2771,20 @@ Version 1.0.3:
     const PASTE_ALLOWED_TAGS = new Set([
         'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'INS', 'MARK', 'SMALL',
         'SUB', 'SUP', 'CODE', 'PRE', 'BLOCKQUOTE', 'A', 'IMG',
-        'UL', 'OL', 'LI', 'H3', 'H4', 'P', 'BR', 'SPAN', 'DIV'
+        'UL', 'OL', 'LI', 'H3', 'H4', 'P', 'BR', 'SPAN', 'DIV',
+        'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD'
     ]);
 
     // Only these inline style properties are kept when pasting.
-    const PASTE_ALLOWED_STYLE = ['font-size', 'width', 'max-width'];
+    const PASTE_ALLOWED_STYLE = [
+        'font-size', 'width', 'max-width', 'color', 'background-color',
+        'border', 'border-collapse', 'padding', 'text-align', 'vertical-align'
+    ];
+
+    // Tags allowed to carry filtered inline styles through a paste.
+    const PASTE_STYLE_TAGS = new Set([
+        'SPAN', 'IMG', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TH', 'TD'
+    ]);
 
     function filterStyle(styleValue) {
         const keep = [];
@@ -2347,7 +2821,8 @@ Version 1.0.3:
                 return;
             }
 
-            const keepStyle = (tag === 'SPAN' || tag === 'IMG');
+            const keepStyle = PASTE_STYLE_TAGS.has(tag);
+            const isCell = (tag === 'TH' || tag === 'TD');
             Array.from(el.attributes).forEach(attr => {
                 const name = attr.name.toLowerCase();
                 if (name === 'href' && tag === 'A') {
@@ -2358,6 +2833,8 @@ Version 1.0.3:
                     const filtered = filterStyle(attr.value);
                     if (filtered) el.setAttribute('style', filtered);
                     else el.removeAttribute('style');
+                } else if ((name === 'colspan' || name === 'rowspan') && isCell) {
+                    // keep span attributes on table cells
                 } else {
                     el.removeAttribute(attr.name);
                 }
@@ -2728,6 +3205,23 @@ Version 1.0.3:
             margin: 0.5em 0;
         }
 
+        #formatted-text-editor table {
+            border-collapse: collapse;
+            margin: 0.5em 0;
+        }
+
+        #formatted-text-editor th,
+        #formatted-text-editor td {
+            border: 1px solid #ccc;
+            padding: 6px 10px;
+            min-width: 24px;
+        }
+
+        #formatted-text-editor th {
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }
+
         #formatted-text-modal .toolbar::-webkit-scrollbar {
             height: 6px;
         }
@@ -2773,15 +3267,25 @@ Version 1.0.3:
         /* Dark mode isolation */
         #formatted-text-modal, #image-modal, #changelog-modal,
         #link-modal, #preview-modal, #insert-target-modal,
-        #formattedTextHelpModal { color: #333333 !important; }
-        #changelog-modal, #link-modal, #preview-modal,
-        #insert-target-modal, #formattedTextHelpModal {
+        #table-modal, #color-popup, #formattedTextHelpModal { color: #333333 !important; }
+        #formatted-text-modal, #changelog-modal, #link-modal, #preview-modal,
+        #insert-target-modal, #table-modal, #color-popup, #formattedTextHelpModal {
             background-color: #ffffff !important;
+        }
+        /* Keep the editor surface and its chrome readable on dark themed instances */
+        #formatted-text-editor {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+        #formatted-text-modal h3, #formatted-text-modal h4,
+        #formatted-text-modal label, #formatted-text-modal p {
+            color: #333333 !important;
         }
         #formatted-text-modal input, #formatted-text-modal select, #formatted-text-modal textarea,
         #image-modal input, #image-modal select, #image-modal textarea,
         #link-modal input, #link-modal select, #link-modal textarea,
         #preview-modal input, #preview-modal select, #preview-modal textarea,
+        #table-modal input, #table-modal select, #table-modal textarea,
         #formattedTextHelpModal input, #formattedTextHelpModal select, #formattedTextHelpModal textarea {
             background-color: #ffffff !important;
             color: #333333 !important;
