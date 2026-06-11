@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.3.1
+// @version      3.3.2
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.3.1';
-    const CHANGELOG = `Version 3.3.1:
+    const SCRIPT_VERSION = '3.3.2';
+    const CHANGELOG = `Version 3.3.2:
+- Added a "Detected Territory:" line below the Requesting MF indicator. It reads the Territory field on the ticket form and shows the detected country or region.
+
+Version 3.3.1:
 - Tenant URL configuration moved into the Settings modal. A new "Tenant URLs" section with a "Configure Tenant URLs" button replaces the old link in the panel header.
 - The "What's New" notification now appears directly to the right of the version number in the panel header.
 
@@ -593,6 +596,34 @@ Version 3.0.8.1:
 
         const requestingMF = detectRequestingMF();
         displayElement.textContent = `Detected Req. MF: ${requestingMF}`;
+    }
+
+    /* ==========================================================
+     *  TERRITORY DETECTION
+     * ==========================================================*/
+
+    function detectTerritory() {
+        const byId = document.getElementById('sys_display.ni.VEb5c3fb1b2b114358712bf8c2c891bf78');
+        if (byId && byId.value.trim()) {
+            return byId.value.trim();
+        }
+
+        const inputs = document.querySelectorAll('input.questionsetreference');
+        for (const input of inputs) {
+            const onfocus = input.getAttribute('onfocus') || '';
+            if (onfocus.includes('core_country') && input.value.trim()) {
+                return input.value.trim();
+            }
+        }
+
+        return 'Not Detected';
+    }
+
+    function updateTerritoryDisplay() {
+        const displayElement = document.getElementById('territoryDisplay');
+        if (!displayElement) return;
+        const territory = detectTerritory();
+        displayElement.textContent = `Detected Territory: ${territory}`;
     }
 
     /* ==========================================================
@@ -2619,10 +2650,18 @@ Version 3.0.8.1:
         const requestingMFDisplay = document.createElement('div');
         requestingMFDisplay.id = 'requestingMFDisplay';
         requestingMFDisplay.style.fontSize = '12px';
-        requestingMFDisplay.style.margin = '0 0 10px 140px';
+        requestingMFDisplay.style.margin = '0 0 4px 140px';
         requestingMFDisplay.style.color = '#555';
         requestingMFDisplay.textContent = 'Detecting Requesting MF...';
         fieldsContainer.appendChild(requestingMFDisplay);
+
+        const territoryDisplay = document.createElement('div');
+        territoryDisplay.id = 'territoryDisplay';
+        territoryDisplay.style.fontSize = '12px';
+        territoryDisplay.style.margin = '0 0 10px 140px';
+        territoryDisplay.style.color = '#555';
+        territoryDisplay.textContent = 'Detecting Territory...';
+        fieldsContainer.appendChild(territoryDisplay);
 
         fieldsContainer.appendChild(createDropdown('Product', currentTeam.productOptions, 'product'));
         fieldsContainer.appendChild(createDropdown('Current Status', currentTeam.statusOptions, 'status'));
@@ -2809,6 +2848,7 @@ Version 3.0.8.1:
                 }
 
                 updateRequestingMFDisplay();
+                updateTerritoryDisplay();
 
                 // Pre-fill fields from existing short description
                 // New format: DATE | MF | Product | Status | Vendor | Type | Complexity | PER | MF Tenant
