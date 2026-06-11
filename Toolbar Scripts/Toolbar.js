@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.5
+// @version      1.4.0
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,8 +26,11 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.5';
-    const CHANGELOG = `Version 1.3.5:
+    const SCRIPT_VERSION = '1.4.0';
+    const CHANGELOG = `Version 1.4.0:
+- Added a "? Help" button in the Toolbar Settings window that opens a full Feature Guide. The guide explains the floating button, the tools menu, pinned tools, tool labels, positioning and dragging, appearance options, and settings.
+
+Version 1.3.5:
 - Renamed the version notification badge label from "Changelog" to "What's New".
 
 Version 1.3.3:
@@ -232,6 +235,314 @@ Version 1.3.1:
         overlay.onclick = () => {
             closeButton.click();
         };
+    }
+
+    /* ==========================================================
+     *  HELP / FEATURE GUIDE MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('toolbarHelpModal')) return;
+
+        function addParagraph(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        function addBulletList(body, items) {
+            const ul = document.createElement('div');
+            ul.style.marginBottom = '8px';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5',
+                    fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(text);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        function addKeyValueGrid(body, pairs) {
+            const grid = document.createElement('div');
+            Object.assign(grid.style, {
+                display: 'grid', gridTemplateColumns: 'auto 1fr',
+                gap: '4px 14px', marginBottom: '10px'
+            });
+            for (const [key, val] of pairs) {
+                const keyEl = document.createElement('span');
+                keyEl.textContent = key;
+                Object.assign(keyEl.style, {
+                    fontSize: '12px', color: '#667eea', fontWeight: 'bold',
+                    padding: '2px 0', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif'
+                });
+                const valEl = document.createElement('span');
+                valEl.textContent = val;
+                Object.assign(valEl.style, {
+                    fontSize: '12px', color: '#555', padding: '2px 0',
+                    lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+                });
+                grid.appendChild(keyEl);
+                grid.appendChild(valEl);
+            }
+            body.appendChild(grid);
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent: (body) => {
+                    addParagraph(body, 'The Tools Toolbar is a floating button that expands into a menu of tools. It appears on Netskope and ServiceNow pages and acts as the home for every other helper tool you have installed.');
+
+                    const row = document.createElement('div');
+                    Object.assign(row.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const badge = document.createElement('span');
+                    badge.textContent = '🔧 Toggle';
+                    Object.assign(badge.style, {
+                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff',
+                        borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const desc = document.createElement('span');
+                    desc.textContent = 'The floating button. Click it to open or close the tools menu.';
+                    Object.assign(desc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    row.appendChild(badge);
+                    row.appendChild(desc);
+                    body.appendChild(row);
+
+                    addBulletList(body, [
+                        'Click the floating button to expand the menu of tool icons.',
+                        'Click any tool icon to run that tool.',
+                        'Click the gear icon to open this Settings window.',
+                        'Click outside the menu to close it, unless you have pinned it open.'
+                    ]);
+                }
+            },
+            {
+                icon: '🧰',
+                title: 'Tools Menu',
+                buildContent: (body) => {
+                    addParagraph(body, 'Each helper tool you install adds its own icon to the menu. The Tools Toolbar itself only provides the container and the gear icon. The other tools register themselves when the page loads.');
+                    addBulletList(body, [
+                        'Tools appear in the menu automatically once their script is installed and the page is refreshed.',
+                        'Hover over an icon to see its name as a tooltip.',
+                        'A pulsing dot on a tool icon means that tool has a new version with unread release notes.',
+                        'If the menu is empty, no tools are installed yet beyond the toolbar itself.'
+                    ]);
+                }
+            },
+            {
+                icon: '📌',
+                title: 'Pinned Tools',
+                buildContent: (body) => {
+                    addParagraph(body, 'Pinning keeps your most used tools at a fixed side of the menu so they are always in the same place.');
+                    addBulletList(body, [
+                        'Open the "Pinned Tools" section in Settings and tick a tool to pin it.',
+                        'Choose Left or Right to decide which side of the menu the tool sits on.',
+                        'Use the up and down arrows to reorder tools within the pinned group.',
+                        'Pinned tools are separated from the rest of the menu by a divider line.'
+                    ]);
+                }
+            },
+            {
+                icon: '🏷️',
+                title: 'Tool Labels',
+                buildContent: (body) => {
+                    addParagraph(body, 'Labels show each tool name directly on its icon so you do not need to hover to read the tooltip.');
+                    addBulletList(body, [
+                        'Turn on "Show permanent labels on tool icons" in the Tool Labels section of Settings.',
+                        'Choose whether the label sits above or below each icon.',
+                        'Labels show the full tool name without truncation.'
+                    ]);
+                }
+            },
+            {
+                icon: '🎯',
+                title: 'Position and Dragging',
+                buildContent: (body) => {
+                    addParagraph(body, 'You can place the toolbar in any of six preset positions, or drag it anywhere on the screen.');
+                    addKeyValueGrid(body, [
+                        ['Presets',     'Pick from Top or Bottom combined with Left, Center, or Right in the Position section.'],
+                        ['Dragging',    'Enable "Enable toolbar dragging" in Behavior, then drag the floating button to any spot.'],
+                        ['Reset Drag',  'Use "Reset Drag Position" to clear a dragged spot and return to the chosen preset.']
+                    ]);
+                    addParagraph(body, 'Saving a preset position clears any custom drag position.');
+                }
+            },
+            {
+                icon: '🎨',
+                title: 'Appearance',
+                buildContent: (body) => {
+                    addParagraph(body, 'The Appearance and Animation sections control how the toolbar looks and moves.');
+                    addKeyValueGrid(body, [
+                        ['Theme',          'Five color schemes for the floating button: Purple, Blue, Green, Orange, Dark.'],
+                        ['Opacity',        'Sets how transparent the toolbar appears.'],
+                        ['Button Size',    'Size of the main floating button.'],
+                        ['Tool Icon Size', 'Size of the tool icons inside the menu.'],
+                        ['Menu Gap',       'Spacing between tool icons.'],
+                        ['Compact Mode',   'Shrinks the whole toolbar to a smaller overall size.'],
+                        ['Animation Speed','How fast the menu opens and closes.']
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Settings and Data',
+                buildContent: (body) => {
+                    addParagraph(body, 'The gear icon in the menu opens this Settings window. The Behavior and Data sections cover the rest of the options.');
+                    addKeyValueGrid(body, [
+                        ['Auto close',      'Closes the menu automatically after you click a tool.'],
+                        ['Show tooltips',   'Shows the tool name on hover.'],
+                        ['Keep menu pinned','Keeps the menu open at all times so it cannot be closed by clicking outside.'],
+                        ['Export Settings', 'Saves all your toolbar settings to a file.'],
+                        ['Import Settings', 'Loads toolbar settings from a previously exported file.'],
+                        ['Reset to Default','Restores every setting to its original value.'],
+                        ["What's New", 'Appears next to the version number when an update is available. Click it to read the release notes.']
+                    ]);
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'toolbarHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'toolbarHelpModal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, {
+            fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif'
+        });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Tools Toolbar • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, {
+            fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif'
+        });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border: '1px solid #e8e8f0', borderRadius: '6px',
+                marginBottom: '8px', overflow: 'hidden'
+            });
+
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, {
+                fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif'
+            });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block'
+            });
+
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontWeight: 'bold', width: '100%',
+            fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
     }
 
     /* ==========================================================
@@ -733,6 +1044,70 @@ Version 1.3.1:
             height: 100% !important;
             background: rgba(0, 0, 0, 0.5) !important;
             z-index: 100000011 !important;
+        }
+
+        /* Help / Feature Guide Modal Styles */
+        #toolbarHelpModalOverlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: rgba(0, 0, 0, 0.5) !important;
+            z-index: 100000021 !important;
+        }
+
+        #toolbarHelpModal {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            z-index: 100000022 !important;
+            background: #ffffff !important;
+            border: 2px solid #333333 !important;
+            padding: 20px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+            font-family: Arial, sans-serif !important;
+            border-radius: 10px !important;
+            width: 640px !important;
+            max-width: 92vw !important;
+            max-height: 82vh !important;
+            overflow-y: auto !important;
+            color: #333333 !important;
+        }
+
+        #toolbarHelpModal input,
+        #toolbarHelpModal select,
+        #toolbarHelpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+
+        /* Help pill button in the settings header */
+        .settings-header-right {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+        }
+
+        #toolbar-help-btn {
+            color: #667eea !important;
+            cursor: pointer !important;
+            font-size: 12px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            padding: 4px 10px !important;
+            border-radius: 4px !important;
+            border: 1px solid #c0c8f0 !important;
+            font-weight: bold !important;
+            user-select: none !important;
+            background-color: transparent !important;
+            transition: background-color 0.2s ease !important;
+            font-family: Arial, sans-serif !important;
+        }
+
+        #toolbar-help-btn:hover {
+            background-color: #eef0ff !important;
         }
 
         /* Settings Modal Styles */
@@ -1311,7 +1686,10 @@ Version 1.3.1:
                 <div class="settings-content">
                     <div class="settings-header">
                         <h2>⚙️ Toolbar Settings</h2>
-                        <button class="settings-close">&times;</button>
+                        <div class="settings-header-right">
+                            <span id="toolbar-help-btn" title="View feature guide and documentation">? Help</span>
+                            <button class="settings-close">&times;</button>
+                        </div>
                     </div>
 
                     <div class="settings-body">
@@ -1573,6 +1951,11 @@ Version 1.3.1:
                 alert('✅ Drag position cleared! The page will reload.');
                 location.reload();
             });
+        }
+
+        const helpBtn = document.getElementById('toolbar-help-btn');
+        if (helpBtn) {
+            helpBtn.addEventListener('click', showHelpModal);
         }
     }
 
