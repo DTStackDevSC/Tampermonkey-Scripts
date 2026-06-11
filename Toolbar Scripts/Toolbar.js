@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.0
+// @version      1.4.1
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,8 +26,11 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
+    const SCRIPT_VERSION = '1.4.1';
+    const CHANGELOG = `Version 1.4.1:
+- The Feature Guide now shows each setting with small visual examples instead of long text. It includes a mock toolbar and menu, a notification dot legend, pinned tool grouping, label placement, a position map, theme swatches, size samples, and toggle previews.
+
+Version 1.4.0:
 - Added a "? Help" button in the Toolbar Settings window that opens a full Feature Guide. The guide explains the floating button, the tools menu, pinned tools, tool labels, positioning and dragging, appearance options, and settings.
 
 Version 1.3.5:
@@ -244,179 +247,262 @@ Version 1.3.1:
     function showHelpModal() {
         if (document.getElementById('toolbarHelpModal')) return;
 
-        function addParagraph(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
             });
-            body.appendChild(p);
+            body.appendChild(c);
         }
 
-        function addBulletList(body, items) {
-            const ul = document.createElement('div');
-            ul.style.marginBottom = '8px';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5',
-                    fontFamily: 'Arial, sans-serif'
-                });
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: '4px', padding: '3px 8px',
+                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block'
+            });
+            return c;
+        }
+
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6',
+                border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
                 const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(text);
-                ul.appendChild(row);
+                Object.assign(dot.style, {
+                    position: 'absolute', top: '-3px', right: '-3px',
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: '#ff8c00', border: '1px solid #fff'
+                });
+                sq.appendChild(dot);
             }
-            body.appendChild(ul);
+            return sq;
         }
 
-        function addKeyValueGrid(body, pairs) {
-            const grid = document.createElement('div');
-            Object.assign(grid.style, {
-                display: 'grid', gridTemplateColumns: 'auto 1fr',
-                gap: '4px 14px', marginBottom: '10px'
-            });
-            for (const [key, val] of pairs) {
-                const keyEl = document.createElement('span');
-                keyEl.textContent = key;
-                Object.assign(keyEl.style, {
-                    fontSize: '12px', color: '#667eea', fontWeight: 'bold',
-                    padding: '2px 0', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif'
-                });
-                const valEl = document.createElement('span');
-                valEl.textContent = val;
-                Object.assign(valEl.style, {
-                    fontSize: '12px', color: '#555', padding: '2px 0',
-                    lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-                });
-                grid.appendChild(keyEl);
-                grid.appendChild(valEl);
-            }
-            body.appendChild(grid);
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
         }
+
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+
+        const PURPLE_GRAD = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
 
         const sections = [
             {
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent: (body) => {
-                    addParagraph(body, 'The Tools Toolbar is a floating button that expands into a menu of tools. It appears on Netskope and ServiceNow pages and acts as the home for every other helper tool you have installed.');
-
-                    const row = document.createElement('div');
-                    Object.assign(row.style, {
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        marginBottom: '12px', padding: '10px 14px',
-                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
-                    });
-                    const badge = document.createElement('span');
-                    badge.textContent = '🔧 Toggle';
-                    Object.assign(badge.style, {
-                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff',
-                        borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: 'bold',
-                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
-                    });
-                    const desc = document.createElement('span');
-                    desc.textContent = 'The floating button. Click it to open or close the tools menu.';
-                    Object.assign(desc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                    row.appendChild(badge);
-                    row.appendChild(desc);
-                    body.appendChild(row);
-
-                    addBulletList(body, [
-                        'Click the floating button to expand the menu of tool icons.',
-                        'Click any tool icon to run that tool.',
-                        'Click the gear icon to open this Settings window.',
-                        'Click outside the menu to close it, unless you have pinned it open.'
-                    ]);
+                    body.appendChild(hrow([
+                        toolSquare('🔧', { bg: PURPLE_GRAD }),
+                        span('▶', { color: '#bbb', fontSize: '14px' }),
+                        menuMock([ toolSquare('📊'), toolSquare('📝'), toolSquare('🔗'), menuSep(), toolSquare('⚙️') ])
+                    ]));
+                    caption(body, 'Click the floating button to open the menu. Click a tool to run it, or the gear for Settings.');
                 }
             },
             {
                 icon: '🧰',
                 title: 'Tools Menu',
                 buildContent: (body) => {
-                    addParagraph(body, 'Each helper tool you install adds its own icon to the menu. The Tools Toolbar itself only provides the container and the gear icon. The other tools register themselves when the page loads.');
-                    addBulletList(body, [
-                        'Tools appear in the menu automatically once their script is installed and the page is refreshed.',
-                        'Hover over an icon to see its name as a tooltip.',
-                        'A pulsing dot on a tool icon means that tool has a new version with unread release notes.',
-                        'If the menu is empty, no tools are installed yet beyond the toolbar itself.'
-                    ]);
+                    body.appendChild(hrow([
+                        menuMock([ toolSquare('📊'), toolSquare('📝', { dot: true }), toolSquare('🔗'), menuSep(), toolSquare('⚙️') ])
+                    ]));
+                    body.appendChild(hrow([
+                        toolSquare('📝', { dot: true }),
+                        span('Orange dot: this tool has a new version with unread release notes.', { fontSize: '12px', color: '#555' })
+                    ], { margin: '8px 0 0 0' }));
+                    caption(body, 'Each installed tool adds its own icon. Hover an icon to see its name.');
                 }
             },
             {
                 icon: '📌',
                 title: 'Pinned Tools',
                 buildContent: (body) => {
-                    addParagraph(body, 'Pinning keeps your most used tools at a fixed side of the menu so they are always in the same place.');
-                    addBulletList(body, [
-                        'Open the "Pinned Tools" section in Settings and tick a tool to pin it.',
-                        'Choose Left or Right to decide which side of the menu the tool sits on.',
-                        'Use the up and down arrows to reorder tools within the pinned group.',
-                        'Pinned tools are separated from the rest of the menu by a divider line.'
-                    ]);
+                    const pin = { bg: '#e8f0fe', border: '2px solid #667eea' };
+                    body.appendChild(hrow([
+                        menuMock([
+                            toolSquare('📊', pin), menuSep(),
+                            toolSquare('📝'), toolSquare('🔗'), menuSep(),
+                            toolSquare('🛡️', pin), menuSep(),
+                            toolSquare('⚙️')
+                        ])
+                    ]));
+                    body.appendChild(hrow([
+                        chip('Pinned left', '#667eea'),
+                        chip('Unpinned', '#9ca3af'),
+                        chip('Pinned right', '#667eea')
+                    ], { margin: '8px 0 0 0' }));
+                    caption(body, 'Pin a tool in Settings, choose Left or Right, and reorder it with the arrows.');
                 }
             },
             {
                 icon: '🏷️',
                 title: 'Tool Labels',
                 buildContent: (body) => {
-                    addParagraph(body, 'Labels show each tool name directly on its icon so you do not need to hover to read the tooltip.');
-                    addBulletList(body, [
-                        'Turn on "Show permanent labels on tool icons" in the Tool Labels section of Settings.',
-                        'Choose whether the label sits above or below each icon.',
-                        'Labels show the full tool name without truncation.'
-                    ]);
+                    function labelDemo(pos, title) {
+                        const col = document.createElement('div');
+                        Object.assign(col.style, {
+                            display: 'inline-flex', flexDirection: 'column', alignItems: 'center',
+                            gap: '8px', padding: '12px 18px', border: '1px solid #e8e8f0',
+                            borderRadius: '6px', background: '#f8f8ff'
+                        });
+                        const item = document.createElement('div');
+                        Object.assign(item.style, { display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '4px' });
+                        const well = toolSquare('📝');
+                        const lbl = span('Helper', { fontSize: '10px', color: '#667eea', fontWeight: 'bold' });
+                        if (pos === 'top') { item.appendChild(lbl); item.appendChild(well); }
+                        else { item.appendChild(well); item.appendChild(lbl); }
+                        col.appendChild(item);
+                        col.appendChild(span(title, { fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px' }));
+                        return col;
+                    }
+                    body.appendChild(hrow([ labelDemo('top', 'Label top'), labelDemo('bottom', 'Label bottom') ]));
+                    caption(body, 'Turn on labels in Settings to show each tool name without hovering.');
                 }
             },
             {
                 icon: '🎯',
                 title: 'Position and Dragging',
                 buildContent: (body) => {
-                    addParagraph(body, 'You can place the toolbar in any of six preset positions, or drag it anywhere on the screen.');
-                    addKeyValueGrid(body, [
-                        ['Presets',     'Pick from Top or Bottom combined with Left, Center, or Right in the Position section.'],
-                        ['Dragging',    'Enable "Enable toolbar dragging" in Behavior, then drag the floating button to any spot.'],
-                        ['Reset Drag',  'Use "Reset Drag Position" to clear a dragged spot and return to the chosen preset.']
-                    ]);
-                    addParagraph(body, 'Saving a preset position clears any custom drag position.');
+                    const screen = document.createElement('div');
+                    Object.assign(screen.style, {
+                        position: 'relative', width: '230px', height: '130px',
+                        border: '2px solid #d0d0f0', borderRadius: '8px',
+                        background: '#f8f8ff', margin: '0 0 2px 0', flexShrink: '0'
+                    });
+                    const spots = [
+                        { t: '8px',  l: '8px' }, { t: '8px',  c: true }, { t: '8px',  r: '8px' },
+                        { b: '8px',  l: '8px' }, { b: '8px',  c: true }, { b: '8px',  r: '8px' }
+                    ];
+                    spots.forEach((p, i) => {
+                        const isDefault = i === 5; // bottom-right default
+                        const dot = document.createElement('div');
+                        Object.assign(dot.style, {
+                            position: 'absolute', borderRadius: '4px',
+                            width: isDefault ? '16px' : '12px', height: isDefault ? '16px' : '12px',
+                            background: isDefault ? PURPLE_GRAD : '#c0c8f0'
+                        });
+                        if (p.t) dot.style.top = p.t;
+                        if (p.b) dot.style.bottom = p.b;
+                        if (p.l) dot.style.left = p.l;
+                        if (p.r) dot.style.right = p.r;
+                        if (p.c) { dot.style.left = '50%'; dot.style.transform = 'translateX(-50%)'; }
+                        screen.appendChild(dot);
+                    });
+                    body.appendChild(screen);
+                    caption(body, 'Six preset spots: top or bottom, paired with left, center, or right. The highlighted one is the default. Enable dragging to place it anywhere.');
                 }
             },
             {
                 icon: '🎨',
                 title: 'Appearance',
                 buildContent: (body) => {
-                    addParagraph(body, 'The Appearance and Animation sections control how the toolbar looks and moves.');
-                    addKeyValueGrid(body, [
-                        ['Theme',          'Five color schemes for the floating button: Purple, Blue, Green, Orange, Dark.'],
-                        ['Opacity',        'Sets how transparent the toolbar appears.'],
-                        ['Button Size',    'Size of the main floating button.'],
-                        ['Tool Icon Size', 'Size of the tool icons inside the menu.'],
-                        ['Menu Gap',       'Spacing between tool icons.'],
-                        ['Compact Mode',   'Shrinks the whole toolbar to a smaller overall size.'],
-                        ['Animation Speed','How fast the menu opens and closes.']
-                    ]);
+                    body.appendChild(span('Themes', { fontSize: '11px', color: '#667eea', fontWeight: 'bold', display: 'block', margin: '0 0 6px 0' }));
+                    const themes = [
+                        ['Purple', PURPLE_GRAD],
+                        ['Blue',   'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)'],
+                        ['Green',  'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)'],
+                        ['Orange', 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)'],
+                        ['Dark',   'linear-gradient(135deg, #2c3e50 0%, #34495e 100%)']
+                    ];
+                    const swatches = themes.map(([name, grad]) => {
+                        const col = document.createElement('div');
+                        Object.assign(col.style, { display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '4px' });
+                        const sw = document.createElement('div');
+                        Object.assign(sw.style, { width: '34px', height: '34px', borderRadius: '8px', background: grad });
+                        col.appendChild(sw);
+                        col.appendChild(span(name, { fontSize: '10px', color: '#666' }));
+                        return col;
+                    });
+                    body.appendChild(hrow(swatches, { margin: '0 0 12px 0' }));
+
+                    body.appendChild(span('Size', { fontSize: '11px', color: '#667eea', fontWeight: 'bold', display: 'block', margin: '0 0 6px 0' }));
+                    function sized(px) {
+                        const sq = document.createElement('div');
+                        Object.assign(sq.style, { width: px + 'px', height: px + 'px', borderRadius: '8px', background: PURPLE_GRAD, flexShrink: '0' });
+                        return sq;
+                    }
+                    body.appendChild(hrow([
+                        sized(22), sized(30), sized(40),
+                        span('Sliders set button size, icon size, gap, and opacity.', { fontSize: '12px', color: '#555' })
+                    ]));
+                    caption(body, 'Compact mode shrinks everything. Animation speed controls how fast the menu opens.');
                 }
             },
             {
                 icon: '⚙️',
                 title: 'Settings and Data',
                 buildContent: (body) => {
-                    addParagraph(body, 'The gear icon in the menu opens this Settings window. The Behavior and Data sections cover the rest of the options.');
-                    addKeyValueGrid(body, [
-                        ['Auto close',      'Closes the menu automatically after you click a tool.'],
-                        ['Show tooltips',   'Shows the tool name on hover.'],
-                        ['Keep menu pinned','Keeps the menu open at all times so it cannot be closed by clicking outside.'],
-                        ['Export Settings', 'Saves all your toolbar settings to a file.'],
-                        ['Import Settings', 'Loads toolbar settings from a previously exported file.'],
-                        ['Reset to Default','Restores every setting to its original value.'],
-                        ["What's New", 'Appears next to the version number when an update is available. Click it to read the release notes.']
-                    ]);
+                    function toggle(label, on) {
+                        const box = document.createElement('span');
+                        Object.assign(box.style, {
+                            width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
+                            border: on ? 'none' : '1px solid #b0b0b0',
+                            background: on ? '#667eea' : '#fff', color: '#fff',
+                            fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+                        });
+                        box.textContent = on ? '✓' : '';
+                        return hrow([ box, span(label, { fontSize: '12px', color: '#555' }) ], { margin: '0 0 6px 0' });
+                    }
+                    body.appendChild(toggle('Auto close menu after clicking a tool', true));
+                    body.appendChild(toggle('Show tooltips on hover', true));
+                    body.appendChild(toggle('Keep menu pinned open', false));
+
+                    body.appendChild(hrow([
+                        chip('Export Settings', '#f3f4f6', { color: '#374151' }),
+                        chip('Import Settings', '#f3f4f6', { color: '#374151' }),
+                        chip('Reset to Default', '#ef4444')
+                    ], { margin: '10px 0 0 0' }));
+
+                    const dot = document.createElement('span');
+                    Object.assign(dot.style, { width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', display: 'inline-block' });
+                    body.appendChild(hrow([
+                        dot, span("What's New", { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' })
+                    ], { margin: '12px 0 0 0' }));
+                    caption(body, 'The "What\'s New" link appears next to the version number when an update is available.');
                 }
             }
         ];
