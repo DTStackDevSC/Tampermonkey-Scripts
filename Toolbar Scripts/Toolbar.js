@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.1
+// @version      1.4.2
 // @description  Floating toolbar with expandable horizontal menu
 // @author       J.R.
 // @match        https://*.netskope.com/*
@@ -26,8 +26,11 @@
      *  VERSION CONTROL!
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.1';
-    const CHANGELOG = `Version 1.4.1:
+    const SCRIPT_VERSION = '1.4.2';
+    const CHANGELOG = `Version 1.4.2:
+- Each Feature Guide section now pairs its visual example with a short explanation: a lead sentence at the top and brief notes for every setting.
+
+Version 1.4.1:
 - The Feature Guide now shows each setting with small visual examples instead of long text. It includes a mock toolbar and menu, a notification dot legend, pinned tool grouping, label placement, a position map, theme swatches, size samples, and toggle previews.
 
 Version 1.4.0:
@@ -257,6 +260,37 @@ Version 1.3.1:
             body.appendChild(c);
         }
 
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
         function span(text, extra) {
             const s = document.createElement('span');
             s.textContent = text;
@@ -335,18 +369,24 @@ Version 1.3.1:
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent: (body) => {
+                    lead(body, 'The Tools Toolbar floats on the page and expands into a menu. It is the home for every helper tool you install.');
                     body.appendChild(hrow([
                         toolSquare('🔧', { bg: PURPLE_GRAD }),
                         span('▶', { color: '#bbb', fontSize: '14px' }),
                         menuMock([ toolSquare('📊'), toolSquare('📝'), toolSquare('🔗'), menuSep(), toolSquare('⚙️') ])
                     ]));
-                    caption(body, 'Click the floating button to open the menu. Click a tool to run it, or the gear for Settings.');
+                    bullets(body, [
+                        'Click the floating button to open or close the menu.',
+                        'Click any tool icon to run that tool.',
+                        'Click the gear to open this Settings window.'
+                    ]);
                 }
             },
             {
                 icon: '🧰',
                 title: 'Tools Menu',
                 buildContent: (body) => {
+                    lead(body, 'Every helper tool adds its own icon to the menu. The toolbar itself only provides the container and the gear.');
                     body.appendChild(hrow([
                         menuMock([ toolSquare('📊'), toolSquare('📝', { dot: true }), toolSquare('🔗'), menuSep(), toolSquare('⚙️') ])
                     ]));
@@ -354,13 +394,18 @@ Version 1.3.1:
                         toolSquare('📝', { dot: true }),
                         span('Orange dot: this tool has a new version with unread release notes.', { fontSize: '12px', color: '#555' })
                     ], { margin: '8px 0 0 0' }));
-                    caption(body, 'Each installed tool adds its own icon. Hover an icon to see its name.');
+                    bullets(body, [
+                        'Hover an icon to see the tool name.',
+                        'New tools appear automatically after the page reloads.',
+                        'If the menu only shows the gear, no other tools are installed yet.'
+                    ]);
                 }
             },
             {
                 icon: '📌',
                 title: 'Pinned Tools',
                 buildContent: (body) => {
+                    lead(body, 'Pinning locks a tool to one side of the menu so it stays in the same place, separated from the rest by a divider.');
                     const pin = { bg: '#e8f0fe', border: '2px solid #667eea' };
                     body.appendChild(hrow([
                         menuMock([
@@ -375,13 +420,18 @@ Version 1.3.1:
                         chip('Unpinned', '#9ca3af'),
                         chip('Pinned right', '#667eea')
                     ], { margin: '8px 0 0 0' }));
-                    caption(body, 'Pin a tool in Settings, choose Left or Right, and reorder it with the arrows.');
+                    bullets(body, [
+                        'Tick a tool in the Pinned Tools settings to pin it.',
+                        'Choose Left or Right for the side it sits on.',
+                        'Use the up and down arrows to reorder the pinned group.'
+                    ]);
                 }
             },
             {
                 icon: '🏷️',
                 title: 'Tool Labels',
                 buildContent: (body) => {
+                    lead(body, 'Labels print each tool name directly on its icon, so you can read it without hovering.');
                     function labelDemo(pos, title) {
                         const col = document.createElement('div');
                         Object.assign(col.style, {
@@ -400,13 +450,18 @@ Version 1.3.1:
                         return col;
                     }
                     body.appendChild(hrow([ labelDemo('top', 'Label top'), labelDemo('bottom', 'Label bottom') ]));
-                    caption(body, 'Turn on labels in Settings to show each tool name without hovering.');
+                    bullets(body, [
+                        'Turn labels on in the Tool Labels settings.',
+                        'Choose whether the label sits above or below each icon.',
+                        'The full tool name is shown without truncation.'
+                    ]);
                 }
             },
             {
                 icon: '🎯',
                 title: 'Position and Dragging',
                 buildContent: (body) => {
+                    lead(body, 'Place the toolbar in one of six preset spots, or drag it anywhere on the screen.');
                     const screen = document.createElement('div');
                     Object.assign(screen.style, {
                         position: 'relative', width: '230px', height: '130px',
@@ -433,13 +488,18 @@ Version 1.3.1:
                         screen.appendChild(dot);
                     });
                     body.appendChild(screen);
-                    caption(body, 'Six preset spots: top or bottom, paired with left, center, or right. The highlighted one is the default. Enable dragging to place it anywhere.');
+                    bullets(body, [
+                        'Pick a corner or edge in the Position settings. The highlighted dot is the default.',
+                        'Enable dragging in Behavior, then drag the floating button to any spot.',
+                        'Saving a preset position clears any custom drag position.'
+                    ]);
                 }
             },
             {
                 icon: '🎨',
                 title: 'Appearance',
                 buildContent: (body) => {
+                    lead(body, 'Control how the toolbar looks with a theme color and a set of size sliders.');
                     body.appendChild(span('Themes', { fontSize: '11px', color: '#667eea', fontWeight: 'bold', display: 'block', margin: '0 0 6px 0' }));
                     const themes = [
                         ['Purple', PURPLE_GRAD],
@@ -457,9 +517,10 @@ Version 1.3.1:
                         col.appendChild(span(name, { fontSize: '10px', color: '#666' }));
                         return col;
                     });
-                    body.appendChild(hrow(swatches, { margin: '0 0 12px 0' }));
+                    body.appendChild(hrow(swatches, { margin: '0 0 4px 0' }));
+                    caption(body, 'The theme sets the gradient color of the floating button.');
 
-                    body.appendChild(span('Size', { fontSize: '11px', color: '#667eea', fontWeight: 'bold', display: 'block', margin: '0 0 6px 0' }));
+                    body.appendChild(span('Size', { fontSize: '11px', color: '#667eea', fontWeight: 'bold', display: 'block', margin: '12px 0 6px 0' }));
                     function sized(px) {
                         const sq = document.createElement('div');
                         Object.assign(sq.style, { width: px + 'px', height: px + 'px', borderRadius: '8px', background: PURPLE_GRAD, flexShrink: '0' });
@@ -469,14 +530,20 @@ Version 1.3.1:
                         sized(22), sized(30), sized(40),
                         span('Sliders set button size, icon size, gap, and opacity.', { fontSize: '12px', color: '#555' })
                     ]));
-                    caption(body, 'Compact mode shrinks everything. Animation speed controls how fast the menu opens.');
+                    bullets(body, [
+                        'Compact mode shrinks the whole toolbar at once.',
+                        'Animation speed controls how fast the menu opens and closes.'
+                    ]);
                 }
             },
             {
                 icon: '⚙️',
                 title: 'Settings and Data',
                 buildContent: (body) => {
-                    function toggle(label, on) {
+                    lead(body, 'The gear opens this window. These controls live in the Behavior and Data sections.');
+                    function toggle(label, on, desc) {
+                        const wrap = document.createElement('div');
+                        wrap.style.margin = '0 0 8px 0';
                         const box = document.createElement('span');
                         Object.assign(box.style, {
                             width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
@@ -485,24 +552,27 @@ Version 1.3.1:
                             fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
                         });
                         box.textContent = on ? '✓' : '';
-                        return hrow([ box, span(label, { fontSize: '12px', color: '#555' }) ], { margin: '0 0 6px 0' });
+                        wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0' }));
+                        wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+                        return wrap;
                     }
-                    body.appendChild(toggle('Auto close menu after clicking a tool', true));
-                    body.appendChild(toggle('Show tooltips on hover', true));
-                    body.appendChild(toggle('Keep menu pinned open', false));
+                    body.appendChild(toggle('Auto close menu after clicking a tool', true, 'Hides the menu as soon as you run a tool.'));
+                    body.appendChild(toggle('Show tooltips on hover', true, 'Shows each tool name when you point at its icon.'));
+                    body.appendChild(toggle('Keep menu pinned open', false, 'Leaves the menu open so outside clicks do not close it.'));
 
                     body.appendChild(hrow([
                         chip('Export Settings', '#f3f4f6', { color: '#374151' }),
                         chip('Import Settings', '#f3f4f6', { color: '#374151' }),
                         chip('Reset to Default', '#ef4444')
                     ], { margin: '10px 0 0 0' }));
+                    caption(body, 'Export and Import move your settings between browsers. Reset restores the defaults.');
 
                     const dot = document.createElement('span');
                     Object.assign(dot.style, { width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', display: 'inline-block' });
                     body.appendChild(hrow([
                         dot, span("What's New", { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' })
                     ], { margin: '12px 0 0 0' }));
-                    caption(body, 'The "What\'s New" link appears next to the version number when an update is available.');
+                    caption(body, 'The "What\'s New" link appears next to the version number when an update is available. Click it to read the release notes.');
                 }
             }
         ];
