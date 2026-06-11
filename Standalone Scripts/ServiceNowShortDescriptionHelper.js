@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.3.2
+// @version      3.3.3
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.3.2';
-    const CHANGELOG = `Version 3.3.2:
+    const SCRIPT_VERSION = '3.3.3';
+    const CHANGELOG = `Version 3.3.3:
+- The "Detected Territory:" line is now hidden when no territory is found on the ticket form. It only appears when a territory is detected.
+
+Version 3.3.2:
 - Added a "Detected Territory:" line below the Requesting MF indicator. It reads the Territory field on the ticket form and shows the detected country or region.
 
 Version 3.3.1:
@@ -623,7 +626,12 @@ Version 3.0.8.1:
         const displayElement = document.getElementById('territoryDisplay');
         if (!displayElement) return;
         const territory = detectTerritory();
-        displayElement.textContent = `Detected Territory: ${territory}`;
+        if (territory === 'Not Detected') {
+            displayElement.style.display = 'none';
+        } else {
+            displayElement.style.display = '';
+            displayElement.textContent = `Detected Territory: ${territory}`;
+        }
     }
 
     /* ==========================================================
@@ -2660,7 +2668,7 @@ Version 3.0.8.1:
         territoryDisplay.style.fontSize = '12px';
         territoryDisplay.style.margin = '0 0 10px 140px';
         territoryDisplay.style.color = '#555';
-        territoryDisplay.textContent = 'Detecting Territory...';
+        territoryDisplay.style.display = 'none';
         fieldsContainer.appendChild(territoryDisplay);
 
         fieldsContainer.appendChild(createDropdown('Product', currentTeam.productOptions, 'product'));
