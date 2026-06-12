@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.7
+// @version      1.1.0
 // @description  Quick overview panel for ServiceNow tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.7';
-    const CHANGELOG = `Version 1.0.7:
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Added a ? Help button next to the panel title. Clicking it opens an illustrated Feature Guide covering the summary fields, the SPM Copy modal, and all sidebar controls.
+
+Version 1.0.7:
 - Business Justification is now shown in the SPM copy modal only when the actual
   Business Justification field is populated on the ticket form. It no longer falls
   back to the short description, so the label always reflects the true field value.
@@ -383,6 +386,42 @@ Version 1.0.2:
             background: rgba(0, 0, 0, 0.5) !important;
             z-index: 20000 !important;
         }
+
+        /* Help Modal */
+        #miniSummarySidebarHelpModalOverlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: rgba(0, 0, 0, 0.5) !important;
+            z-index: 21000 !important;
+        }
+
+        #miniSummarySidebarHelpModal {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            z-index: 21001 !important;
+            background: #ffffff !important;
+            border: 2px solid #333333 !important;
+            padding: 20px !important;
+            border-radius: 10px !important;
+            width: 640px !important;
+            max-width: 92vw !important;
+            max-height: 82vh !important;
+            overflow-y: auto !important;
+            color: #333333 !important;
+            font-family: Arial, sans-serif !important;
+        }
+
+        #miniSummarySidebarHelpModal input,
+        #miniSummarySidebarHelpModal select,
+        #miniSummarySidebarHelpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
     `;
     document.head.appendChild(versionControlStyles);
 
@@ -652,6 +691,369 @@ Version 1.0.2:
     }
 
     /* ==========================================================
+     *  FEATURE GUIDE MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('miniSummarySidebarHelpModal')) return;
+
+        // lead: one orienting sentence at the top of a section
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(p);
+        }
+
+        // bullets: compact list of usage notes with a purple dot each
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: small italic note placed under a visual
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(c);
+        }
+
+        // span: inline text node with optional extra styles, returned not appended
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: horizontal wrapping flex row for placing visual mocks side by side
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: thin vertical divider between groups in a mock menu
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Click the chart icon in the floating toolbar to open the summary panel.');
+                    const menu = document.createElement('div');
+                    Object.assign(menu.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                        padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', marginBottom: '12px'
+                    });
+                    const pinStyle = { bg: '#e8f0fe', border: '2px solid #667eea' };
+                    [toolSquare('📊', pinStyle), menuSep(), toolSquare('📝'), toolSquare('🔗'), menuSep(), toolSquare('⚙️')].forEach(el => menu.appendChild(el));
+                    body.appendChild(hrow([menu], { margin: '0 0 12px 0' }));
+                    caption(body, 'The 📊 icon is the Mini Summary Sidebar tool in the toolbar.');
+                    bullets(body, [
+                        'The sidebar slides in from the right edge of the ticket page.',
+                        'Fields are read automatically when the panel opens.',
+                        'Click the toolbar icon again or the × button inside the panel to close it.'
+                    ]);
+                }
+            },
+            {
+                icon: '📊',
+                title: 'Summary Fields',
+                buildContent(body) {
+                    lead(body, 'The sidebar reads ticket data and groups it into labeled sections.');
+                    const fieldSections = [
+                        { icon: '📋', label: 'Basic Info', fields: ['Number', 'Catalog Item'] },
+                        { icon: '👥', label: 'People', fields: ['Requested For', 'Opened By', 'Assigned To', 'Assignment Group'] },
+                        { icon: '🔧', label: 'Technical Details', fields: ['Member Firm', 'Config Item', 'Platform', 'Request Type', 'Application / URL'] },
+                        { icon: '📅', label: 'Dates', fields: ['Opened', 'Due Date'] },
+                        { icon: '📝', label: 'Description', fields: ['Business Justification or short description'] }
+                    ];
+                    for (const sec of fieldSections) {
+                        const secHeader = document.createElement('div');
+                        secHeader.textContent = `${sec.icon} ${sec.label}`;
+                        Object.assign(secHeader.style, {
+                            fontSize: '12px', fontWeight: 'bold', color: '#667eea',
+                            borderBottom: '1px solid #c0c8f0', paddingBottom: '3px',
+                            marginBottom: '5px', marginTop: '10px', fontFamily: 'Arial, sans-serif'
+                        });
+                        body.appendChild(secHeader);
+                        const fieldRow = document.createElement('div');
+                        Object.assign(fieldRow.style, { display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '4px' });
+                        for (const f of sec.fields) {
+                            const pill = document.createElement('span');
+                            pill.textContent = f;
+                            Object.assign(pill.style, {
+                                background: '#f5f5f5', border: '1px solid #e0e0e0',
+                                borderRadius: '4px', padding: '2px 7px', fontSize: '11px',
+                                color: '#555', fontFamily: 'Arial, sans-serif'
+                            });
+                            fieldRow.appendChild(pill);
+                        }
+                        body.appendChild(fieldRow);
+                    }
+                    bullets(body, [
+                        'Fields showing "N/A" were not found or are not yet populated on the form.',
+                        'Use the Refresh button to re-read all fields after editing the ticket.',
+                        'Standard fields prefer the ServiceNow form API; catalog variables fall back to DOM lookup.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'SPM Copy Modal',
+                buildContent(body) {
+                    lead(body, 'The green SPM button opens a modal with individual clipboard copy buttons for fields commonly needed in SPM requests.');
+                    const btnRow = document.createElement('div');
+                    Object.assign(btnRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const badge = document.createElement('span');
+                    badge.textContent = '📋 Copy relevant information for SPM Request';
+                    Object.assign(badge.style, {
+                        background: '#28a745', color: '#fff', borderRadius: '4px',
+                        padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const desc = document.createElement('span');
+                    desc.textContent = 'Opens the SPM Copy modal above the ticket.';
+                    Object.assign(desc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    btnRow.appendChild(badge);
+                    btnRow.appendChild(desc);
+                    body.appendChild(btnRow);
+                    const mockField = document.createElement('div');
+                    Object.assign(mockField.style, {
+                        background: '#fff', border: '1px solid #ddd', borderRadius: '6px',
+                        padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px'
+                    });
+                    const mockLabel = document.createElement('div');
+                    mockLabel.textContent = '🔓 Opened By';
+                    Object.assign(mockLabel.style, { fontWeight: 'bold', color: '#555', fontSize: '11px', fontFamily: 'Arial, sans-serif' });
+                    const mockValueRow = document.createElement('div');
+                    Object.assign(mockValueRow.style, { display: 'flex', gap: '8px', alignItems: 'center' });
+                    const mockValue = document.createElement('div');
+                    mockValue.textContent = 'Jane Smith';
+                    Object.assign(mockValue.style, {
+                        flex: '1', color: '#333', fontSize: '12px',
+                        fontFamily: 'Courier New, monospace', background: '#f5f5f5',
+                        padding: '6px 8px', borderRadius: '4px'
+                    });
+                    const mockCopyBtn = document.createElement('span');
+                    mockCopyBtn.textContent = 'Copy';
+                    Object.assign(mockCopyBtn.style, {
+                        background: '#28a745', color: '#fff', borderRadius: '4px',
+                        padding: '5px 14px', fontSize: '12px', fontWeight: 'bold',
+                        fontFamily: 'Arial, sans-serif', whiteSpace: 'nowrap'
+                    });
+                    mockValueRow.appendChild(mockValue);
+                    mockValueRow.appendChild(mockCopyBtn);
+                    mockField.appendChild(mockLabel);
+                    mockField.appendChild(mockValueRow);
+                    body.appendChild(mockField);
+                    caption(body, 'Each field gets its own Copy button. It briefly flashes blue with a checkmark after copying.');
+                    bullets(body, [
+                        'Fields included: Opened By, Requesting Member Firm, Business Justification, Number.',
+                        'Only populated fields appear. Fields without a value are omitted from the modal.',
+                        'Close the modal with the red X button in its top-right corner.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Sidebar Controls',
+                buildContent(body) {
+                    lead(body, 'Every control in the sidebar and what it does.');
+                    const controls = [
+                        { bg: '#e53e3e', color: '#fff', border: 'none',                   label: '×',                                              desc: 'Closes and hides the sidebar. Click the toolbar icon to reopen it.' },
+                        { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', border: 'none', label: '🔄 Refresh',               desc: 'Re-reads all fields from the current ticket state. Use this after editing a field to see the updated value.' },
+                        { bg: '#28a745',     color: '#fff', border: 'none',               label: '📋 Copy relevant information for SPM Request',   desc: 'Opens the SPM Copy modal.' },
+                        { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help',                                       desc: 'Opens this Feature Guide.' }
+                    ];
+                    for (const ctrl of controls) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badgeEl = document.createElement('span');
+                        badgeEl.textContent = ctrl.label;
+                        Object.assign(badgeEl.style, {
+                            background: ctrl.bg, color: ctrl.color, border: ctrl.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = ctrl.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badgeEl);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                    const notifNote = document.createElement('div');
+                    Object.assign(notifNote.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '8px 12px', fontSize: '12px', color: '#555',
+                        fontFamily: 'Arial, sans-serif', lineHeight: '1.5', marginTop: '4px'
+                    });
+                    const notifDot = document.createElement('span');
+                    notifDot.textContent = '● ';
+                    Object.assign(notifDot.style, { color: '#007bff', fontWeight: 'bold' });
+                    const notifLink = document.createElement('span');
+                    notifLink.textContent = "What's New";
+                    Object.assign(notifLink.style, { color: '#0066cc', textDecoration: 'underline', fontWeight: 'bold', fontFamily: 'Arial, sans-serif' });
+                    const notifText = document.createTextNode(' appears next to the version number when a script update has not been viewed yet. Click it to open the changelog.');
+                    notifNote.appendChild(notifDot);
+                    notifNote.appendChild(notifLink);
+                    notifNote.appendChild(notifText);
+                    body.appendChild(notifNote);
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'miniSummarySidebarHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'miniSummarySidebarHelpModal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Mini Summary Sidebar • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards, all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
+    /* ==========================================================
      *  SIDEBAR INITIALIZATION
      * ==========================================================*/
 
@@ -699,17 +1101,38 @@ Version 1.0.2:
         closeButton.onclick = hideSidebar;
         sidebar.appendChild(closeButton);
 
-        // Title
+        // Title row with ? Help pill
+        const titleRow = document.createElement('div');
+        Object.assign(titleRow.style, {
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '10px',
+            paddingRight: '35px'
+        });
         const title = document.createElement('div');
         title.textContent = '📊 Ticket Summary';
         Object.assign(title.style, {
             fontSize: '16px',
             fontWeight: 'bold',
-            color: '#333',
-            marginBottom: '10px',
-            paddingRight: '30px'
+            color: '#333'
         });
-        sidebar.appendChild(title);
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif', flexShrink: '0'
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+        titleRow.appendChild(title);
+        titleRow.appendChild(helpBtn);
+        sidebar.appendChild(titleRow);
 
         // Version row with changelog notification
         const versionRow = document.createElement('div');
