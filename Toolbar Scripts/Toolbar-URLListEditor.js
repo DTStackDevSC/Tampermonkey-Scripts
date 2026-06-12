@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.6.0
+// @version      1.6.1
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,17 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.6.0 loading...');
+    console.log('🔧 Netskope URL List Manager v1.6.1 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.0';
-    const CHANGELOG = `Version 1.6.0:
+    const SCRIPT_VERSION = '1.6.1';
+    const CHANGELOG = `Version 1.6.1:
+- Reordered the modal version row so the items now read: version number, What's New, Tenant Hosts, then Help.
+
+Version 1.6.0:
 - Added a Feature Guide help button (? Help) to the modal version row. Clicking it opens an interactive guide covering all tool features: API configuration, URL list management, domain lookup, the URL log toolbar, category and list lookups, and settings.
 
 Version 1.5.5:
@@ -1797,6 +1800,12 @@ Version 1.4.1:
         const versionRow = UI.createElement('div', { display: 'flex', alignItems: 'center', gap: '15px', fontSize: '11px', color: '#666', width: '100%', justifyContent: 'center' });
         versionRow.innerHTML = `<span>Version ${SCRIPT_VERSION}</span>`;
 
+        if (VersionManager.shouldShowChangelog()) {
+            const changelogNotif = UI.createElement('span', {}, { id: 'netskopeChangelogNotification', onclick: showChangelogModal });
+            changelogNotif.innerHTML = `<span class="netskope-notification-dot"></span><span class="netskope-notification-text">What's New</span>`;
+            versionRow.appendChild(changelogNotif);
+        }
+
         // ⚙ Configure Tenant Hosts link
         const configureHostsLink = UI.createElement('span', { color: '#0066cc', cursor: 'pointer', textDecoration: 'underline', fontSize: '11px' });
         configureHostsLink.textContent = '⚙ Tenant Hosts';
@@ -1825,11 +1834,6 @@ Version 1.4.1:
         helpBtn.onclick = () => showHelpModal();
         versionRow.appendChild(helpBtn);
 
-        if (VersionManager.shouldShowChangelog()) {
-            const changelogNotif = UI.createElement('span', {}, { id: 'netskopeChangelogNotification', onclick: showChangelogModal });
-            changelogNotif.innerHTML = `<span class="netskope-notification-dot"></span><span class="netskope-notification-text">What's New</span>`;
-            versionRow.appendChild(changelogNotif);
-        }
         modal.appendChild(versionRow);
 
         // API Configuration Section
