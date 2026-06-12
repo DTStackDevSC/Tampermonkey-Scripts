@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.3.5
+// @version      2.4.0
 // @description  Highlights rows on any ServiceNow ticket list when Updated By column is present; applies SLA heat-map when Due Date column is present
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.5';
-    const CHANGELOG = `Version 2.3.5:
+    const SCRIPT_VERSION = '2.4.0';
+    const CHANGELOG = `Version 2.4.0:
+- Added a "? Help" button in the top right of the settings panel that opens a visual
+  Feature Guide. The guide covers getting started, how row highlighting works, the SLA
+  due date heat-map, the Light and Dark themes, and every control in the settings panel.
+
+Version 2.3.5:
 - Fixed dark mode compatibility: the config modal now forces light background and dark
   text on all inputs via CSS with !important so ServiceNow dark mode cannot override them.
 
@@ -573,6 +578,33 @@ Version 2.3.1:
         closeButton.onclick = () => modal.style.display = 'none';
         modal.appendChild(closeButton);
 
+        // Help pill (top right, left of the close button)
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            position: 'absolute',
+            top: '7px',
+            right: '38px',
+            color: '#667eea',
+            cursor: 'pointer',
+            fontSize: '11px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '2px 7px',
+            borderRadius: '3px',
+            border: '1px solid #c0c8f0',
+            fontWeight: 'bold',
+            userSelect: 'none',
+            backgroundColor: 'transparent',
+            transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, Helvetica, sans-serif'
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+        modal.appendChild(helpBtn);
+
         // Title
         const titleContainer = document.createElement('div');
         Object.assign(titleContainer.style, {
@@ -978,6 +1010,412 @@ Version 2.3.1:
     }
 
     /* ==========================================================
+     *  FEATURE GUIDE MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('rowHighlighterHelpModal')) return;
+
+        // lead: the single orienting sentence at the very top of a section. One line only.
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: a small italic note placed directly under a visual to explain it.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(c);
+        }
+
+        // span: an inline text node with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: a small colored rounded label. Use for categories and button previews.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: '4px', padding: '3px 8px',
+                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block'
+            });
+            return c;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button.
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, {
+                    position: 'absolute', top: '-3px', right: '-3px',
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: '#ff8c00', border: '1px solid #fff'
+                });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: the thin vertical divider used between groups in a menu mock.
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        // menuMock: a white toolbar card that holds icon tiles side by side.
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+
+        // mockField: a rounded box that looks like a dropdown or text input on screen.
+        function mockField(text, opts) {
+            opts = opts || {};
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: '6px', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '6px',
+                background: '#fff', margin: '0 0 10px 0', maxWidth: '220px'
+            });
+            const t = document.createElement('span');
+            t.textContent = text;
+            Object.assign(t.style, { fontSize: '12px', color: '#444', fontFamily: 'monospace' });
+            box.appendChild(t);
+            if (opts.caret) {
+                const car = document.createElement('span');
+                car.textContent = '▾';
+                Object.assign(car.style, { fontSize: '11px', color: '#999' });
+                box.appendChild(car);
+            }
+            return box;
+        }
+
+        // fakeRow: a mock ticket row with a colored background and left border.
+        function fakeRow(bgColor, borderColor, label) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                background: bgColor, borderLeft: '4px solid ' + borderColor,
+                padding: '7px 10px', fontSize: '12px', color: '#333',
+                fontFamily: 'Arial, sans-serif'
+            });
+            r.textContent = label;
+            return r;
+        }
+
+        // legendRow: a colored square next to a short label, for color keys.
+        function legendRow(color, label) {
+            const sq = document.createElement('span');
+            Object.assign(sq.style, {
+                width: '14px', height: '14px', borderRadius: '3px',
+                background: color, display: 'inline-block', flexShrink: '0'
+            });
+            return hrow([ sq, span(label, { fontSize: '12px', color: '#555' }) ], { margin: '0 0 6px 0' });
+        }
+
+        // badgeRow: a colored button preview on the left with a description on the right.
+        function badgeRow(body, item) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+            });
+            const badge = document.createElement('span');
+            badge.textContent = item.label;
+            Object.assign(badge.style, {
+                background: item.bg, color: item.color, border: item.border || 'none',
+                borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+            });
+            const descEl = document.createElement('span');
+            descEl.textContent = item.desc;
+            Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+            row.appendChild(badge);
+            row.appendChild(descEl);
+            body.appendChild(row);
+        }
+
+        // kvGrid: a two column key on the left, description on the right grid.
+        function kvGrid(body, pairs) {
+            const grid = document.createElement('div');
+            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '4px 0 0 0' });
+            for (const [key, val] of pairs) {
+                const keyEl = document.createElement('span');
+                keyEl.textContent = key;
+                Object.assign(keyEl.style, { fontSize: '12px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
+                const valEl = document.createElement('span');
+                valEl.textContent = val;
+                Object.assign(valEl.style, { fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
+                grid.appendChild(keyEl);
+                grid.appendChild(valEl);
+            }
+            body.appendChild(grid);
+        }
+
+        const sections = [
+            {
+                icon: '🚀', title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Open the settings from the floating toolbar, then set your ServiceNow username.');
+                    const pin = { bg: '#e8f0fe', border: '2px solid #667eea' };
+                    body.appendChild(hrow([ menuMock([ toolSquare('🖌️', pin), menuSep(), toolSquare('📊'), toolSquare('📝') ]) ]));
+                    caption(body, 'The Row Highlighter icon lives in the toolbar. Click it to open settings.');
+                    bullets(body, [
+                        'Click the Row Highlighter icon to open the settings panel.',
+                        'On first use, a prompt asks for your ServiceNow username.',
+                        'Open any ticket list and the colors apply automatically.'
+                    ]);
+                }
+            },
+            {
+                icon: '🎨', title: 'Row Highlighting',
+                buildContent(body) {
+                    lead(body, 'Rows you last updated turn green, everyone else turns red, so your work stands out.');
+                    const listMock = document.createElement('div');
+                    Object.assign(listMock.style, {
+                        border: '1px solid #e0e0e0', borderRadius: '6px',
+                        overflow: 'hidden', maxWidth: '360px', marginBottom: '4px'
+                    });
+                    listMock.appendChild(fakeRow('#d4edda', '#28a745', 'INC0012345  updated by you'));
+                    listMock.appendChild(fakeRow('#f8d7da', '#dc3545', 'INC0012346  updated by A. Patel'));
+                    listMock.appendChild(fakeRow('#f8d7da', '#dc3545', 'INC0012347  updated by M. Lopez'));
+                    body.appendChild(listMock);
+                    caption(body, 'Works on any ticket list that shows the Updated By column.');
+                    bullets(body, [
+                        'Set your username in settings to turn this on.',
+                        'Green marks rows whose Updated By matches you.',
+                        'Red marks rows updated by anyone else.'
+                    ]);
+                }
+            },
+            {
+                icon: '📅', title: 'SLA Heat-map',
+                buildContent(body) {
+                    lead(body, 'When a list shows a Due Date column, each row gets a colored left border by urgency.');
+                    body.appendChild(legendRow('#ff4444', 'Expired or due within 1 day'));
+                    body.appendChild(legendRow('#ff8c00', 'Due in 2 days'));
+                    body.appendChild(legendRow('#9370db', 'Due in 3 days'));
+                    const fmtLabel = span('Date format', { fontSize: '11px', color: '#777', display: 'block', margin: '10px 0 4px 0' });
+                    body.appendChild(fmtLabel);
+                    body.appendChild(mockField('yyyy-MM-dd', { caret: true }));
+                    caption(body, 'Pick the date format your ServiceNow instance uses, otherwise the due dates will not be read correctly.');
+                    bullets(body, [
+                        'Turn it on with the SLA Due Date Heat-map toggle in settings.',
+                        'Only rows due within three days are colored.'
+                    ]);
+                }
+            },
+            {
+                icon: '🌗', title: 'Themes',
+                buildContent(body) {
+                    lead(body, 'Choose Light or Dark so the highlight colors match your ServiceNow theme.');
+                    function themeCol(name, greenBg, redBg) {
+                        const col = document.createElement('div');
+                        Object.assign(col.style, { display: 'inline-flex', flexDirection: 'column', gap: '6px', alignItems: 'center' });
+                        col.appendChild(span(name, { fontSize: '11px', color: '#666', fontWeight: 'bold' }));
+                        const sw = document.createElement('div');
+                        sw.style.cssText = 'display:flex; gap:6px;';
+                        [greenBg, redBg].forEach(c => {
+                            const s = document.createElement('div');
+                            Object.assign(s.style, { width: '34px', height: '24px', borderRadius: '5px', background: c, border: '1px solid rgba(0,0,0,0.15)' });
+                            sw.appendChild(s);
+                        });
+                        col.appendChild(sw);
+                        return col;
+                    }
+                    body.appendChild(hrow([
+                        themeCol('☀️ Light', '#d4edda', '#f8d7da'),
+                        themeCol('🌙 Dark', '#1a4d2e', '#4d1a1a')
+                    ], { gap: '24px' }));
+                    caption(body, 'Each theme has its own green and red. Switch any time with the theme button in settings.');
+                }
+            },
+            {
+                icon: '⚙️', title: 'Settings',
+                buildContent(body) {
+                    lead(body, 'Everything is controlled from the panel that opens when you click the toolbar icon.');
+                    badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide. Sits in the top right of the panel.' });
+                    badgeRow(body, { bg: 'transparent', color: '#0066cc', label: "🔵 What's New", desc: 'Appears with a pulsing dot when a new version is available, and opens the changelog.' });
+                    badgeRow(body, { bg: '#6c757d', color: '#fff', label: 'Switch to Dark', desc: 'Flips between the Light and Dark highlight color sets.' });
+                    badgeRow(body, { bg: '#28a745', color: '#fff', label: '✓ Enabled', desc: 'Turns the SLA due date heat-map on or off.' });
+                    badgeRow(body, { bg: '#28a745', color: '#fff', label: '💾 Save Settings', desc: 'Saves your username and reloads the page to apply the changes.' });
+                    kvGrid(body, [
+                        ['Username', 'The ServiceNow username whose rows turn green.'],
+                        ['Date format', 'The format your instance uses for due dates, read by the heat-map.']
+                    ]);
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'rowHighlighterHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'rowHighlighterHelpModal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleTextWrap = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Row Highlighter • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleTextWrap.appendChild(titleMain);
+        titleTextWrap.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleTextWrap);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards, all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
+    /* ==========================================================
      *  CSS AND HIGHLIGHTING
      * ==========================================================*/
 
@@ -1195,6 +1633,36 @@ Version 2.3.1:
             #highlighter-config-modal { color: #333333 !important; }
             #highlighter-config-modal input, #highlighter-config-modal select,
             #highlighter-config-modal textarea {
+                background-color: #ffffff !important;
+                color: #333333 !important;
+            }
+
+            /* Feature Guide Modal */
+            #rowHighlighterHelpModalOverlay {
+                position: fixed !important;
+                top: 0 !important; left: 0 !important;
+                width: 100% !important; height: 100% !important;
+                background: rgba(0, 0, 0, 0.5) !important;
+                z-index: 1000004 !important;
+            }
+            #rowHighlighterHelpModal {
+                position: fixed !important;
+                top: 50% !important; left: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                z-index: 1000005 !important;
+                background: #ffffff !important;
+                border: 2px solid #333333 !important;
+                padding: 20px !important;
+                border-radius: 10px !important;
+                width: 640px !important;
+                max-width: 92vw !important;
+                max-height: 82vh !important;
+                overflow-y: auto !important;
+                color: #333333 !important;
+                font-family: Arial, sans-serif !important;
+            }
+            #rowHighlighterHelpModal input, #rowHighlighterHelpModal select,
+            #rowHighlighterHelpModal textarea {
                 background-color: #ffffff !important;
                 color: #333333 !important;
             }
