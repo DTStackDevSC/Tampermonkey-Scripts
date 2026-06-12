@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.3
+// @version      1.2.0
 // @description  Extract domains from text and check their security reputation. Replaces Domain Extractor and Domain Security Check.
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.3';
-    const CHANGELOG = `Version 1.1.3:
+    const SCRIPT_VERSION = '1.2.0';
+    const CHANGELOG = `Version 1.2.0:
+- Added a ? Help button to the modal header. It opens an illustrated Feature Guide covering the
+  Extract tab, the Security Check tab, the SPM Request URL setup, and the header controls.
+
+Version 1.1.3:
 - The SPM Request URL setup now appears automatically the first time you load the tool, and
   on later loads until a URL is saved. Previously you had to open it manually before the
   Open SPM Request Form option would work.
@@ -235,6 +239,23 @@ Version 1.0:
         #dt-modal input, #dt-modal select, #dt-modal textarea {
             background-color: #ffffff !important;
             color: #333333 !important;
+        }
+        #domainToolsHelpModalOverlay {
+            position: fixed !important; top: 0 !important; left: 0 !important;
+            width: 100% !important; height: 100% !important;
+            background: rgba(0,0,0,0.5) !important; z-index: 1000020 !important;
+        }
+        #domainToolsHelpModal {
+            position: fixed !important; top: 50% !important; left: 50% !important;
+            transform: translate(-50%,-50%) !important; z-index: 1000021 !important;
+            background: #fff !important; border: 2px solid #333 !important;
+            padding: 20px !important; border-radius: 10px !important;
+            width: 640px !important; max-width: 92vw !important; max-height: 82vh !important;
+            overflow-y: auto !important; color: #333333 !important;
+            font-family: Arial, sans-serif !important;
+        }
+        #domainToolsHelpModal input, #domainToolsHelpModal select, #domainToolsHelpModal textarea {
+            background-color: #ffffff !important; color: #333333 !important;
         }
     `;
     document.head.appendChild(darkModeStyle);
@@ -455,6 +476,20 @@ Version 1.0:
             headerLeft.append(whatsNew, dot);
         }
 
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif',
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'X';
         Object.assign(closeBtn.style, {
@@ -463,7 +498,11 @@ Version 1.0:
         });
         closeBtn.onclick = () => { modal.style.display = 'none'; };
 
-        header.append(headerLeft, closeBtn);
+        const headerRight = document.createElement('div');
+        Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+        headerRight.append(helpBtn, closeBtn);
+
+        header.append(headerLeft, headerRight);
 
         /* ── Tab bar ── */
         const tabBar = document.createElement('div');
@@ -967,6 +1006,352 @@ Version 1.0:
             border: 'none', borderRadius: '4px', cursor: 'pointer',
             fontSize: '12px', fontWeight: 'bold',
         });
+    }
+
+    /* ==========================================================
+     *  FEATURE GUIDE MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('domainToolsHelpModal')) return;
+
+        // lead: one orienting sentence at the top of a section
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(p);
+        }
+
+        // bullets: compact list of usage notes with a purple dot each
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: small italic note placed under a visual
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(c);
+        }
+
+        // span: inline text node with optional extra styles, returned not appended
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: horizontal wrapping flex row for placing visual mocks side by side
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: small colored rounded label for button previews and categories
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: '4px', padding: '3px 8px',
+                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block'
+            });
+            return c;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            return sq;
+        }
+
+        // menuSep: thin vertical divider between groups in a mock menu
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        // pill: a rounded mode-toggle button mock (Single / Multiple style)
+        function pill(text, active) {
+            const p = document.createElement('span');
+            p.textContent = text;
+            Object.assign(p.style, {
+                padding: '4px 16px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold',
+                fontFamily: 'Arial, sans-serif',
+                background: active ? '#667eea' : '#f0f0f0',
+                color: active ? '#fff' : '#555',
+                border: active ? '1px solid #667eea' : '1px solid #ccc'
+            });
+            return p;
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Click the globe icon in the floating toolbar to open Domain Tools.');
+                    const menu = document.createElement('div');
+                    Object.assign(menu.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                        padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', marginBottom: '12px'
+                    });
+                    const pinStyle = { bg: '#e8f0fe', border: '2px solid #667eea' };
+                    [toolSquare('🌐', pinStyle), menuSep(), toolSquare('📊'), toolSquare('📝'), menuSep(), toolSquare('⚙️')].forEach(el => menu.appendChild(el));
+                    body.appendChild(hrow([menu], { margin: '0 0 12px 0' }));
+                    caption(body, 'The 🌐 icon is the Domain Tools button in the toolbar.');
+                    const tabBar = document.createElement('div');
+                    Object.assign(tabBar.style, { display: 'inline-flex', borderBottom: '2px solid #ddd', marginBottom: '8px' });
+                    const t1 = document.createElement('span');
+                    t1.textContent = 'Extract';
+                    Object.assign(t1.style, { padding: '8px 18px', fontSize: '12px', fontWeight: 'bold', color: '#667eea', borderBottom: '3px solid #667eea', marginBottom: '-2px', fontFamily: 'Arial, sans-serif' });
+                    const t2 = document.createElement('span');
+                    t2.textContent = 'Security Check';
+                    Object.assign(t2.style, { padding: '8px 18px', fontSize: '12px', fontWeight: 'bold', color: '#999', fontFamily: 'Arial, sans-serif' });
+                    tabBar.append(t1, t2);
+                    body.appendChild(tabBar);
+                    bullets(body, [
+                        'Two tabs: Extract pulls domains out of pasted text, Security Check looks up reputation.',
+                        'If you select a domain or URL on the page first, then open the tool, it jumps straight to Security Check with that value filled in.'
+                    ]);
+                }
+            },
+            {
+                icon: '🔗',
+                title: 'Extract Domains',
+                buildContent(body) {
+                    lead(body, 'Paste any text into the Extract tab and pull out every unique domain it contains.');
+                    const rowMock = document.createElement('div');
+                    Object.assign(rowMock.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5',
+                        borderRadius: '5px', marginBottom: '12px'
+                    });
+                    const cbMock = document.createElement('span');
+                    Object.assign(cbMock.style, { width: '14px', height: '14px', border: '1px solid #b0b0b0', borderRadius: '3px', flexShrink: '0', display: 'inline-block' });
+                    const domMock = document.createElement('span');
+                    domMock.textContent = 'example.com';
+                    Object.assign(domMock.style, { fontFamily: '"Courier New", monospace', fontSize: '13px', color: '#333', flex: '1' });
+                    rowMock.append(cbMock, domMock, chip('Check →', 'linear-gradient(135deg,#667eea 0%,#764ba2 100%)'));
+                    body.appendChild(rowMock);
+                    caption(body, 'Each extracted domain appears as a row. Click anywhere on the row to tick its checkbox.');
+                    body.appendChild(hrow([
+                        chip('Copy Line by Line', '#28a745'),
+                        chip('Copy Comma Separated', '#28a745'),
+                        chip('Check Selected (2)', 'linear-gradient(135deg,#667eea 0%,#764ba2 100%)')
+                    ], { margin: '10px 0 4px 0' }));
+                    bullets(body, [
+                        'Check arrow on a single row sends that one domain to the Security Check tab.',
+                        'Select all toggles every row, then Check Selected opens reputation tabs for all ticked domains.',
+                        'Copy buttons put the full domain list on your clipboard, one per line or comma separated.'
+                    ]);
+                }
+            },
+            {
+                icon: '🔍',
+                title: 'Security Check',
+                buildContent(body) {
+                    lead(body, 'Look up a domain reputation across several security platforms at once.');
+                    body.appendChild(hrow([pill('Single', true), pill('Multiple', false)], { margin: '0 0 10px 0' }));
+                    caption(body, 'Single checks one domain. Multiple takes one domain per line and checks them all with a short delay between each.');
+                    const sites = ['Netskope URL Lookup', 'IBM X-Force Exchange', 'VirusTotal', 'SPM Request Form (optional)'];
+                    const siteWrap = document.createElement('div');
+                    siteWrap.style.margin = '4px 0 8px 0';
+                    for (const s of sites) {
+                        const r = document.createElement('div');
+                        Object.assign(r.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', fontFamily: 'Arial, sans-serif' });
+                        const tick = document.createElement('span');
+                        tick.textContent = '✓';
+                        Object.assign(tick.style, { color: '#28a745', fontWeight: 'bold', flexShrink: '0' });
+                        const t = document.createElement('span');
+                        t.textContent = s;
+                        r.append(tick, t);
+                        siteWrap.appendChild(r);
+                    }
+                    body.appendChild(siteWrap);
+                    const spmMock = document.createElement('div');
+                    Object.assign(spmMock.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        padding: '10px', background: '#f0f0f0', borderRadius: '6px', marginTop: '4px'
+                    });
+                    const spmCb = document.createElement('span');
+                    Object.assign(spmCb.style, { width: '16px', height: '16px', border: '1px solid #b0b0b0', borderRadius: '3px', flexShrink: '0', background: '#fff', display: 'inline-block' });
+                    spmMock.append(spmCb, span('Open SPM Request Form', { fontSize: '13px', color: '#555', flex: '1' }), span('⚙️ Set URL', { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' }));
+                    body.appendChild(spmMock);
+                    bullets(body, [
+                        'Each domain opens its own background tabs so you can review them one by one.',
+                        'Tick Open SPM Request Form to also open your saved SPM form when you run a check.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'SPM URL & Settings',
+                buildContent(body) {
+                    lead(body, 'Header controls and the one stored setting Domain Tools keeps.');
+                    const controls = [
+                        { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' },
+                        { bg: 'transparent', color: '#667eea', border: 'none', label: "What's new", desc: 'Appears with a pulsing dot after an update. Opens the changelog.' },
+                        { bg: '#e74c3c', color: '#fff', border: 'none', label: 'X', desc: 'Closes the modal. Your text and results stay until you reopen.' }
+                    ];
+                    for (const ctrl of controls) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        row.appendChild(chip(ctrl.label, ctrl.bg, { color: ctrl.color, border: ctrl.border }));
+                        const descEl = document.createElement('span');
+                        descEl.textContent = ctrl.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                    const setupHeader = document.createElement('div');
+                    setupHeader.textContent = 'SPM Request URL';
+                    Object.assign(setupHeader.style, { fontSize: '12px', fontWeight: 'bold', color: '#667eea', marginTop: '6px', marginBottom: '6px', fontFamily: 'Arial, sans-serif' });
+                    body.appendChild(setupHeader);
+                    const infoMock = document.createElement('div');
+                    Object.assign(infoMock.style, {
+                        background: '#fff8e1', borderLeft: '4px solid #f39c12',
+                        padding: '8px 12px', borderRadius: '5px', fontSize: '12px',
+                        color: '#555', lineHeight: '1.5', marginBottom: '8px', fontFamily: 'Arial, sans-serif'
+                    });
+                    infoMock.textContent = 'The SPM Request Form URL is in the General Scripts User Guide, under Required information and variables.';
+                    body.appendChild(infoMock);
+                    bullets(body, [
+                        'On first load the setup prompt appears automatically until you save a URL.',
+                        'Use the Set URL or Change URL link in the Security Check tab to update it any time.',
+                        'Enter the URL exactly as shown in the guide. Do not add or remove characters or parameters.'
+                    ]);
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'domainToolsHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'domainToolsHelpModal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Domain Tools • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.append(titleMain, titleSub);
+        titleEl.append(titleIcon, titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.append(titleEl, closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards, all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.append(iconEl, titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.append(headerLeft, chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.append(cardHeader, cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.append(overlay, modal);
     }
 
     /* ==========================================================
