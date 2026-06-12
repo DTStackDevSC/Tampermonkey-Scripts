@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.2
+// @version      1.1.3
 // @description  Extract domains from text and check their security reputation. Replaces Domain Extractor and Domain Security Check.
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.2';
-    const CHANGELOG = `Version 1.1.2:
+    const SCRIPT_VERSION = '1.1.3';
+    const CHANGELOG = `Version 1.1.3:
+- The SPM Request URL setup now appears automatically the first time you load the tool, and
+  on later loads until a URL is saved. Previously you had to open it manually before the
+  Open SPM Request Form option would work.
+
+Version 1.1.2:
 - Fixed dark mode compatibility: the modal now forces light background and dark text via
   injected CSS with !important so ServiceNow dark mode cannot override its inputs and
   textareas.
@@ -613,6 +618,7 @@ Version 1.0:
         });
 
         const spmConfigLink = document.createElement('span');
+        spmConfigLink.id = 'dt-spm-config-link';
         spmConfigLink.textContent = getStoredSPMURL() ? '⚙️ Change URL' : '⚙️ Set URL';
         Object.assign(spmConfigLink.style, {
             fontSize: '11px', color: '#0066cc', textDecoration: 'underline',
@@ -1069,6 +1075,14 @@ Version 1.0:
 
         buildModal();
         setTimeout(attemptRegistration, 1000);
+
+        // First run: prompt for the SPM Request URL when none is stored yet
+        if (!getStoredSPMURL()) {
+            setTimeout(() => showSPMURLModal(false, () => {
+                const link = document.getElementById('dt-spm-config-link');
+                if (link) link.textContent = '⚙️ Change URL';
+            }), 1200);
+        }
     }
 
     if (document.readyState === 'loading') {
