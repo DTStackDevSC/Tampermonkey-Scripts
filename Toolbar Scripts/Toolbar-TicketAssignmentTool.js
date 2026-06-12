@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.5
+// @version      1.3.6
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.5';
-    const CHANGELOG = `Version 1.3.5:
+    const SCRIPT_VERSION = '1.3.6';
+    const CHANGELOG = `Version 1.3.6:
+- Forced all popups to stay readable when ServiceNow dark theme is on. The setup
+  wizard, the manage members window, the assign ticket form, and the What's New
+  window now keep their light backgrounds and dark text instead of turning into
+  dark on dark or invisible text.
+
+Version 1.3.5:
 - Rewrote the activity stream textarea detection and text insertion to fix the
   comments field not being populated in both classic new-tab mode and dashboard mode.
   Three root causes addressed: (1) In single-input journal mode the dedicated
@@ -814,6 +820,47 @@ Version 1.2.1:
 
         overlay.onclick = () => closeButton.click();
     }
+
+    /* ==========================================================
+     *  DARK MODE ISOLATION
+     * ==========================================================*/
+
+    const darkModeStyle = document.createElement('style');
+    darkModeStyle.textContent = `
+        #sn-setup-modal, #sn-manage-modal,
+        #ticketAssignmentChangelogModal, .sn-assign-modal {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+        .sn-assign-modal { background-color: #f9f9f9 !important; }
+
+        #sn-setup-modal input, #sn-setup-modal select, #sn-setup-modal textarea,
+        #sn-manage-modal input, #sn-manage-modal select, #sn-manage-modal textarea,
+        #ticketAssignmentChangelogModal input, #ticketAssignmentChangelogModal select, #ticketAssignmentChangelogModal textarea,
+        .sn-assign-modal input, .sn-assign-modal select, .sn-assign-modal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+
+        /* Setup and Manage modals are built at runtime without !important, so lock
+           their nested panels here to stop dark theme bleeding through. */
+        #sn-setup-modal h2, #sn-manage-modal h3 { color: #333333 !important; }
+        #sn-setup-member-list, #sn-manage-list { background-color: #fafafa !important; }
+        .sn-setup-member-item, .sn-manage-item { color: #333333 !important; }
+        #sn-setup-modal .sn-setup-warning, #sn-manage-modal .sn-manage-warning {
+            background-color: #fff0f0 !important; color: #8b0000 !important;
+        }
+        #sn-setup-modal .sn-setup-subtitle, #sn-setup-modal .sn-setup-empty-hint,
+        #sn-manage-modal .sn-manage-empty { color: #888888 !important; }
+    `;
+
+    (function injectDarkModeStyle() {
+        if (document.head) {
+            document.head.appendChild(darkModeStyle);
+        } else {
+            setTimeout(injectDarkModeStyle, 20);
+        }
+    })();
 
     /* ==========================================================
      *  CONSTANTS
