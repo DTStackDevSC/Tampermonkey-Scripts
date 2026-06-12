@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-URLListEditor.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.5
+// @version      1.6.0
 // @description  Create and update URL lists for Netskope tenants via API - Integrated with Toolbar v2
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,14 +20,17 @@
 (function() {
     'use strict';
 
-    console.log('🔧 Netskope URL List Manager v1.5.5 loading...');
+    console.log('🔧 Netskope URL List Manager v1.6.0 loading...');
 
     /* ==========================================================
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.5';
-    const CHANGELOG = `Version 1.5.5:
+    const SCRIPT_VERSION = '1.6.0';
+    const CHANGELOG = `Version 1.6.0:
+- Added a Feature Guide help button (? Help) to the modal version row. Clicking it opens an interactive guide covering all tool features: API configuration, URL list management, domain lookup, the URL log toolbar, category and list lookups, and settings.
+
+Version 1.5.5:
 - Renamed action buttons to "🔗 URL List by ID" and "🏷️ Category by ID" for clarity.
 - Fixed "[object PointerEvent]" appearing in the URL List by ID input on open — the
   button now correctly calls the lookup with no pre-fill instead of forwarding the click event.
@@ -809,6 +812,11 @@ Version 1.4.1:
             background-color: #ffffff !important;
             color: #333333 !important;
         }
+
+        /* Help modal */
+        #netskopeUrlListManagerHelpModalOverlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000006; }
+        #netskopeUrlListManagerHelpModal { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1000007; background:#fff; border:2px solid #333; padding:20px; border-radius:10px; width:640px; max-width:92vw; max-height:82vh; overflow-y:auto; color:#333333 !important; }
+        #netskopeUrlListManagerHelpModal input, #netskopeUrlListManagerHelpModal select, #netskopeUrlListManagerHelpModal textarea { background-color:#ffffff !important; color:#333333 !important; }
     `;
     document.head.appendChild(changelogStyle);
 
@@ -1177,6 +1185,574 @@ Version 1.4.1:
     }
 
     /* ==========================================================
+     *  FEATURE GUIDE MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('netskopeUrlListManagerHelpModal')) return;
+
+        // lead: one short orienting sentence at the top of a section
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(p);
+        }
+
+        // bullets: compact list of short usage notes with purple dots
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: small italic note placed directly under a visual
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(c);
+        }
+
+        // span: inline text node with optional extra styles, returned not appended
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: horizontal wrapping flex row that holds visual mocks side by side
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: small colored rounded label for categories and button previews
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff', borderRadius: '4px', padding: '3px 8px',
+                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif',
+                border: opts.border || 'none', display: 'inline-block'
+            });
+            return c;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: thin vertical divider between groups in a menu mock
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        // menuMock: white rounded card wrapping toolbar icon tiles
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Click the URL List Manager icon in the floating toolbar to open the tool.');
+                    const pin = { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: '2px solid #667eea' };
+                    body.appendChild(hrow([
+                        menuMock([ toolSquare('📊'), menuSep(), toolSquare('≡', pin), menuSep(), toolSquare('🔎'), toolSquare('🔗') ])
+                    ], { margin: '0 0 10px 0' }));
+                    caption(body, 'The ≡ URL List Manager button in the toolbar opens the main panel.');
+                    bullets(body, [
+                        'First run: a setup prompt asks you to enter the Netskope tenant hostnames for each region (EMA, EU, CE, APAC, AME). These are saved in script storage and only need to be entered once.',
+                        'If a saved API token exists for the detected tenant, you will be prompted for your passphrase to unlock the session before the panel opens.',
+                        'The toolbar button shows a pulsing dot when a new version has been installed and the changelog has not been viewed yet.',
+                    ]);
+                }
+            },
+            {
+                icon: '🔑',
+                title: 'API Configuration',
+                buildContent(body) {
+                    lead(body, 'Each Netskope tenant needs its own API token, encrypted with a passphrase you choose.');
+                    const tenantRow = document.createElement('div');
+                    Object.assign(tenantRow.style, { marginBottom: '10px' });
+                    const tenantLabel = document.createElement('div');
+                    tenantLabel.textContent = 'Detected Tenant:';
+                    Object.assign(tenantLabel.style, { fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '4px', fontFamily: 'Arial, sans-serif' });
+                    tenantRow.appendChild(tenantLabel);
+                    const tenantDisplay = document.createElement('div');
+                    tenantDisplay.textContent = 'my-tenant.goskope.com';
+                    Object.assign(tenantDisplay.style, {
+                        padding: '7px 10px', border: '1px solid #c3e6cb', borderRadius: '6px',
+                        background: '#d4edda', color: '#155724', fontWeight: 'bold',
+                        fontSize: '13px', fontFamily: 'monospace', display: 'inline-block'
+                    });
+                    tenantRow.appendChild(tenantDisplay);
+                    body.appendChild(tenantRow);
+                    const expiries = [
+                        { bg: '#d4edda', color: '#155724', border: '#c3e6cb', text: '✅ Expires in 28 days (01/01/2027)' },
+                        { bg: '#fff3cd', color: '#856404', border: '#ffeaa7', text: '⚠️ Expires in 3 days' },
+                        { bg: '#f8d7da', color: '#721c24', border: '#f5c6cb', text: '⚠️ API Token EXPIRED' },
+                    ];
+                    const expiryWrap = document.createElement('div');
+                    expiryWrap.style.marginBottom = '10px';
+                    for (const e of expiries) {
+                        const el = document.createElement('div');
+                        el.textContent = e.text;
+                        Object.assign(el.style, {
+                            padding: '5px 10px', border: `1px solid ${e.border}`, borderRadius: '5px',
+                            background: e.bg, color: e.color, fontSize: '12px', fontWeight: 'bold',
+                            marginBottom: '4px', fontFamily: 'Arial, sans-serif'
+                        });
+                        expiryWrap.appendChild(el);
+                    }
+                    body.appendChild(expiryWrap);
+                    bullets(body, [
+                        'Token saved: the API Configuration panel collapses automatically. Expand it to review expiry or remove the token.',
+                        'Passphrase: encrypts your token with AES-256. You enter it once per browser session and the session stays unlocked until you close the tab or click Lock.',
+                        'Forgot passphrase: the "Forgot Passphrase? Delete Token" option removes the encrypted token so you can save a new one with a fresh passphrase.',
+                        'Token expiry: tokens nearing expiry show a yellow warning banner; expired tokens show a red banner with a click-to-update link.',
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'URL Lists',
+                buildContent(body) {
+                    lead(body, 'Fetch all URL lists in the tenant, then filter by name or search by domain to find what you need.');
+                    const btnRow = document.createElement('div');
+                    Object.assign(btnRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' });
+                    for (const b of [
+                        { label: '🔍 Fetch URL Lists',  bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+                        { label: '✨ Create New List', bg: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' },
+                    ]) {
+                        const btn = document.createElement('span');
+                        btn.textContent = b.label;
+                        Object.assign(btn.style, {
+                            background: b.bg, color: '#fff', borderRadius: '5px',
+                            padding: '5px 12px', fontSize: '12px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif'
+                        });
+                        btnRow.appendChild(btn);
+                    }
+                    body.appendChild(btnRow);
+                    const filterWrap = document.createElement('div');
+                    Object.assign(filterWrap.style, { display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' });
+                    const mkFInput = (placeholder, borderColor) => {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            padding: '6px 10px', border: `1px solid ${borderColor || '#ccc'}`, borderRadius: '5px',
+                            background: '#fff', maxWidth: '300px', fontSize: '12px', color: '#bbb',
+                            fontFamily: 'Arial, sans-serif', fontStyle: 'italic'
+                        });
+                        row.textContent = placeholder;
+                        return row;
+                    };
+                    filterWrap.appendChild(mkFInput('🔍 Filter lists by name...'));
+                    filterWrap.appendChild(mkFInput('🔎 Search URL or domain across all lists…', '#f5576c'));
+                    body.appendChild(filterWrap);
+                    const listCard = document.createElement('div');
+                    Object.assign(listCard.style, {
+                        padding: '10px 12px', border: '1px solid #667eea', borderRadius: '6px',
+                        background: '#f0f0ff', maxWidth: '300px', marginBottom: '10px'
+                    });
+                    listCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">Marketing_Domains</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">ID: 42 • 157 URLs</div>';
+                    body.appendChild(listCard);
+                    caption(body, 'Click any list card to open the edit view for that list.');
+                    bullets(body, [
+                        'Name filter: type part of a list name to narrow the visible results in real time.',
+                        'Domain search: type a URL or domain and click 🔎 Search to find every list that contains a match. Clearing the field restores the normal list view.',
+                        'Create New List: opens a form to enter a list name and URLs. After saving, the Netskope URL Lists page opens in a new tab.',
+                    ]);
+                }
+            },
+            {
+                icon: '🔎',
+                title: 'Domain Lookup',
+                buildContent(body) {
+                    lead(body, 'Search for any domain or URL across every URL list in the tenant at once.');
+                    const searchRow = document.createElement('div');
+                    Object.assign(searchRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '360px' });
+                    const searchInput = document.createElement('div');
+                    Object.assign(searchInput.style, {
+                        flex: '1', padding: '8px 10px', border: '2px solid #667eea', borderRadius: '6px',
+                        background: '#fff', fontSize: '12px', color: '#aaa', fontFamily: 'monospace', fontStyle: 'italic'
+                    });
+                    searchInput.textContent = 'example.com';
+                    const searchBtn = document.createElement('span');
+                    searchBtn.textContent = '🔎 Search';
+                    Object.assign(searchBtn.style, {
+                        background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', color: '#fff',
+                        borderRadius: '5px', padding: '7px 12px', fontSize: '12px', fontWeight: 'bold',
+                        fontFamily: 'Arial, sans-serif', whiteSpace: 'nowrap'
+                    });
+                    searchRow.appendChild(searchInput);
+                    searchRow.appendChild(searchBtn);
+                    body.appendChild(searchRow);
+                    const resultCard = document.createElement('div');
+                    Object.assign(resultCard.style, {
+                        padding: '10px 12px', border: '1px solid #ccc', borderRadius: '8px',
+                        background: '#fff', maxWidth: '360px', marginBottom: '10px'
+                    });
+                    resultCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">Marketing_Domains</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;margin-bottom:6px;">ID: 42 • 157 total URLs • 3 matches</div><div style="font-size:12px;color:#667eea;font-weight:bold;cursor:pointer;font-family:Arial,sans-serif;">▶ Show matched entries (3)</div>';
+                    body.appendChild(resultCard);
+                    bullets(body, [
+                        'Protocol and port are stripped automatically — paste a full URL and only the domain is matched.',
+                        'Wildcard support: searching example.com also matches *.example.com entries in the lists, and searching *.example.com matches sub.example.com and similar entries.',
+                        'If URL lists have not been fetched yet, the tool fetches them automatically before searching.',
+                        'Click "✏️ Edit List" on any result card to open that list directly in the edit view.',
+                    ]);
+                }
+            },
+            {
+                icon: '📝',
+                title: 'URL Log Toolbar',
+                buildContent(body) {
+                    lead(body, 'Four buttons below the URL textarea help you track which ticket added or removed each domain.');
+                    const logBtns = [
+                        { label: '+ Log Entry',       bg: '#0073e6', color: '#fff', desc: 'Inserts a #RITM | Date | Name header line at the current cursor position. Pre-fills the ticket number from the open ServiceNow ticket and today\'s date.' },
+                        { label: '🗑 Delete Selected', bg: '#e53935', color: '#fff', desc: 'Select domain lines in the textarea first, then click to comment them out (prefix #) and prepend a deletion log header with RITM, date, and name.' },
+                        { label: '📜 View History',   bg: '#4caf50', color: '#fff', desc: 'Opens a history viewer showing all log groups parsed from the textarea. Filter by RITM number or date range, and use "Remove Older Than" to prune old entries.' },
+                        { label: '🎫 Insert RITM',    bg: '#764ba2', color: '#fff', desc: 'Inserts the current ServiceNow ticket number (prefixed with #) at the cursor position.' },
+                    ];
+                    const btnRow = document.createElement('div');
+                    Object.assign(btnRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' });
+                    for (const b of logBtns) {
+                        const btn = document.createElement('span');
+                        btn.textContent = b.label;
+                        Object.assign(btn.style, {
+                            background: b.bg, color: b.color, borderRadius: '4px',
+                            padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif'
+                        });
+                        btnRow.appendChild(btn);
+                    }
+                    body.appendChild(btnRow);
+                    for (const item of logBtns) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, borderRadius: '4px',
+                            padding: '3px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
+                            alignSelf: 'flex-start', minWidth: '100px', textAlign: 'center'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                }
+            },
+            {
+                icon: '🏷️',
+                title: 'Category by ID',
+                buildContent(body) {
+                    lead(body, 'Look up a Netskope custom category by its numeric ID to see its name, status, and URL list assignments.');
+                    const inputRow = document.createElement('div');
+                    Object.assign(inputRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '320px' });
+                    const idInput = document.createElement('div');
+                    Object.assign(idInput.style, {
+                        flex: '1', padding: '8px 10px', border: '2px solid #ffd200', borderRadius: '6px',
+                        background: '#fff', fontSize: '12px', color: '#aaa', fontFamily: 'monospace', fontStyle: 'italic'
+                    });
+                    idInput.textContent = 'e.g. 10042';
+                    const lookupBtn = document.createElement('span');
+                    lookupBtn.textContent = '🔍 Lookup';
+                    Object.assign(lookupBtn.style, {
+                        background: 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', color: '#333',
+                        borderRadius: '5px', padding: '7px 12px', fontSize: '12px', fontWeight: 'bold',
+                        fontFamily: 'Arial, sans-serif', whiteSpace: 'nowrap'
+                    });
+                    inputRow.appendChild(idInput);
+                    inputRow.appendChild(lookupBtn);
+                    body.appendChild(inputRow);
+                    const card = document.createElement('div');
+                    Object.assign(card.style, {
+                        padding: '12px 14px', border: '1px solid #ccc', borderRadius: '8px',
+                        background: '#fff', maxWidth: '360px', marginBottom: '10px'
+                    });
+                    const titleRow = document.createElement('div');
+                    Object.assign(titleRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' });
+                    const nameEl = document.createElement('span');
+                    nameEl.textContent = 'My Custom Category';
+                    Object.assign(nameEl.style, { fontWeight: 'bold', color: '#333', fontFamily: 'Arial, sans-serif', fontSize: '14px' });
+                    const statusBadge = document.createElement('span');
+                    statusBadge.textContent = 'applied';
+                    Object.assign(statusBadge.style, { padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold', background: '#d4edda', color: '#155724', border: '1px solid #c3e6cb', fontFamily: 'Arial, sans-serif' });
+                    titleRow.appendChild(nameEl);
+                    titleRow.appendChild(statusBadge);
+                    card.appendChild(titleRow);
+                    const idEl = document.createElement('div');
+                    idEl.textContent = 'ID: 10042';
+                    Object.assign(idEl.style, { fontSize: '11px', color: '#888', marginBottom: '10px', fontFamily: 'Arial, sans-serif' });
+                    card.appendChild(idEl);
+                    const pillLabel = document.createElement('div');
+                    pillLabel.textContent = 'Included URL Lists:';
+                    Object.assign(pillLabel.style, { fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '5px', fontFamily: 'Arial, sans-serif' });
+                    card.appendChild(pillLabel);
+                    const pillRow = document.createElement('div');
+                    Object.assign(pillRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap' });
+                    for (const id of ['42 ↗', '87 ↗', '103 ↗']) {
+                        const pill = document.createElement('span');
+                        pill.textContent = id;
+                        Object.assign(pill.style, {
+                            padding: '2px 8px', background: '#d1ecf1', border: '1px solid #7cc8dc',
+                            borderRadius: '10px', fontSize: '11px', color: '#0c5460', fontFamily: 'monospace'
+                        });
+                        pillRow.appendChild(pill);
+                    }
+                    card.appendChild(pillRow);
+                    body.appendChild(card);
+                    bullets(body, [
+                        'Included and Excluded URL List IDs appear as clickable pills (↗). Clicking one opens that list in the URL List by ID view.',
+                        'A "← Back to Category" button returns you to the category result without re-fetching.',
+                        'Status badge: green = applied, yellow = pending, red = error.',
+                        'Audit info (created by, modified by, timestamps) is shown at the bottom of the result card.',
+                    ]);
+                }
+            },
+            {
+                icon: '🔗',
+                title: 'URL List by ID',
+                buildContent(body) {
+                    lead(body, 'Fetch any URL list by its numeric ID to view its metadata and edit its URL entries in place.');
+                    const inputRow = document.createElement('div');
+                    Object.assign(inputRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '300px' });
+                    const idInput = document.createElement('div');
+                    Object.assign(idInput.style, {
+                        flex: '1', padding: '8px 10px', border: '2px solid #00b4db', borderRadius: '6px',
+                        background: '#fff', fontSize: '12px', color: '#aaa', fontFamily: 'monospace', fontStyle: 'italic'
+                    });
+                    idInput.textContent = 'e.g. 43';
+                    const lookupBtn = document.createElement('span');
+                    lookupBtn.textContent = '🔍 Lookup';
+                    Object.assign(lookupBtn.style, {
+                        background: 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', color: '#fff',
+                        borderRadius: '5px', padding: '7px 12px', fontSize: '12px', fontWeight: 'bold',
+                        fontFamily: 'Arial, sans-serif', whiteSpace: 'nowrap'
+                    });
+                    inputRow.appendChild(idInput);
+                    inputRow.appendChild(lookupBtn);
+                    body.appendChild(inputRow);
+                    const metaCard = document.createElement('div');
+                    Object.assign(metaCard.style, {
+                        padding: '10px 12px', border: '1px solid #ccc', borderRadius: '8px',
+                        background: '#f8f9fa', maxWidth: '360px', marginBottom: '10px'
+                    });
+                    metaCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;margin-bottom:5px;">Marketing_Domains</div><div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#666;font-family:Arial,sans-serif;margin-bottom:4px;"><span><strong>ID:</strong> 43</span><span><strong>Type:</strong> exact</span><span><strong>URLs:</strong> 157</span><span style="padding:1px 7px;border-radius:10px;background:#d4edda;color:#155724;border:1px solid #c3e6cb;font-size:11px;font-weight:bold;">none</span></div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">Modified by <strong>j.smith@example.com</strong> on 01/06/2026</div>';
+                    body.appendChild(metaCard);
+                    body.appendChild(hrow([
+                        chip('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'),
+                        chip('← Back', '#fff', { color: '#555', border: '1px solid #ccc' }),
+                    ], { margin: '0 0 10px 0' }));
+                    bullets(body, [
+                        'The URL textarea and log button toolbar appear below the metadata card. Edit entries and click "💾 Save Changes" to push the update to Netskope.',
+                        'Pending badge: shows how many changes are queued for deployment in the tenant (yellow = pending, green = none).',
+                        'When opened from a Category by ID result, "← Back to Category" restores the category view without re-fetching.',
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Settings',
+                buildContent(body) {
+                    lead(body, 'Tenant host URLs are configured once on first run and can be updated at any time via the Tenant Hosts link.');
+                    const headerButtons = [
+                        { bg: 'transparent', color: '#0066cc', border: '1px solid #aad4f5', label: '⚙ Tenant Hosts', desc: 'Opens the Tenant Host Setup form to view or edit the saved Netskope hostnames for each region (EMA, EU, CE, APAC, AME).' },
+                        { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help',          desc: 'Opens this Feature Guide.' },
+                    ];
+                    for (const item of headerButtons) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, border: item.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                    const overrideLabel = document.createElement('div');
+                    overrideLabel.textContent = '⚡ Override: tenant switch dropdown';
+                    Object.assign(overrideLabel.style, { fontSize: '12px', fontWeight: 'bold', color: '#555', marginBottom: '6px', fontFamily: 'Arial, sans-serif' });
+                    body.appendChild(overrideLabel);
+                    const overrideRow = document.createElement('div');
+                    Object.assign(overrideRow.style, {
+                        display: 'flex', gap: '8px', alignItems: 'center',
+                        padding: '8px 12px', background: '#fff3cd', border: '1px solid #ffeaa7',
+                        borderRadius: '6px', marginBottom: '10px', maxWidth: '380px'
+                    });
+                    const overrideText = document.createElement('span');
+                    overrideText.textContent = '⚡ EU: eu-tenant.goskope.com (temporary override)';
+                    Object.assign(overrideText.style, { fontSize: '12px', color: '#856404', fontFamily: 'Arial, sans-serif', fontWeight: 'bold' });
+                    overrideRow.appendChild(overrideText);
+                    body.appendChild(overrideRow);
+                    caption(body, 'Switching tenants resets the URL list view. The override clears when the modal is closed.');
+                    bullets(body, [
+                        'Tenant hosts: one hostname per region, entered without https:// or a trailing slash. Input borders turn green when a value is saved.',
+                        'Tenant override: the ⚡ Override dropdown in the API Configuration header lets you switch to any configured tenant for the current session without changing the auto-detection logic.',
+                        'If the override tenant has a saved token and the session is not yet unlocked, you will be prompted for the passphrase when switching.',
+                    ]);
+                }
+            },
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'netskopeUrlListManagerHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'netskopeUrlListManagerHelpModal';
+
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Netskope URL List Manager • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
+    /* ==========================================================
      *  MODAL INITIALIZATION
      * ==========================================================*/
 
@@ -1233,6 +1809,21 @@ Version 1.4.1:
             });
         };
         versionRow.appendChild(configureHostsLink);
+
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif'
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+        versionRow.appendChild(helpBtn);
 
         if (VersionManager.shouldShowChangelog()) {
             const changelogNotif = UI.createElement('span', {}, { id: 'netskopeChangelogNotification', onclick: showChangelogModal });
