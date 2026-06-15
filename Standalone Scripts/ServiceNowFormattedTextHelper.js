@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.2.1
+// @version      1.2.2
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.1';
-    const CHANGELOG = `Version 1.2.1:
+    const SCRIPT_VERSION = '1.2.2';
+    const CHANGELOG = `Version 1.2.2:
+- Fixed the single journal field case more reliably. Some tickets keep both the comment and work note fields in the page but only show one at a time. The helper now looks at which field is actually visible on screen, so it no longer asks where to insert when only one is shown, and the text reliably lands in the field you can see.
+
+Version 1.2.1:
 - Fixed an issue where clicking Insert did nothing when the ticket showed only one journal field (either comments or work notes, but not both). The script now detects which field is visible and inserts into it automatically, without asking. When both fields are present, the destination choice dialog still appears as before.
 
 Version 1.2.0:
@@ -2685,8 +2688,10 @@ Version 1.0.3:
         insertBtn.onmouseover = () => insertBtn.style.backgroundColor = '#218838';
         insertBtn.onmouseout = () => insertBtn.style.backgroundColor = '#28a745';
         insertBtn.onclick = () => {
-            const hasDual = !!(document.getElementById('activity-stream-comments-textarea') &&
-                               document.getElementById('activity-stream-work_notes-textarea'));
+            // Both split fields can exist in the page yet only one is shown at a time,
+            // so we decide by what is actually visible, not by what exists in the DOM.
+            const bothVisible = isVisible(document.getElementById('activity-stream-comments-textarea')) &&
+                                isVisible(document.getElementById('activity-stream-work_notes-textarea'));
             const doInsert = (target) => {
                 const inserted = insertFormattedText(editor, target);
                 if (inserted) {
@@ -2694,7 +2699,7 @@ Version 1.0.3:
                     editor.innerHTML = '<p>Start typing here...</p>';
                 }
             };
-            if (hasDual) {
+            if (bothVisible) {
                 showInsertTargetModal(doInsert);
             } else {
                 doInsert('auto');
@@ -2880,15 +2885,20 @@ Version 1.0.3:
         const singleEl    = document.getElementById('activity-stream-textarea') ||
                             document.querySelector('[data-stream-text-input]');
 
+        // Resolve to the first VISIBLE candidate. A hidden split textarea can exist in
+        // the DOM while a different field is on screen, and writing to the hidden one
+        // does nothing, so we always prefer what the user can actually see.
+        const pickVisible = (...els) => els.find(el => isVisible(el)) || els.find(Boolean) || null;
+
         let targets;
         if (target === 'auto') {
-            // Single mode: only one or combined field is visible; use whatever is there
-            const available = commentsEl || workNotesEl || singleEl;
+            // Single mode: whichever journal field is currently shown
+            const available = pickVisible(commentsEl, workNotesEl, singleEl);
             targets = available ? [available] : [];
         } else {
             // Dual mode: fall back to the combined textarea if a split field is absent
-            const commentsTA  = commentsEl  || singleEl;
-            const workNotesTA = workNotesEl || singleEl;
+            const commentsTA  = pickVisible(commentsEl, singleEl);
+            const workNotesTA = pickVisible(workNotesEl, singleEl);
             const wanted = [];
             if (target === 'comments'   || target === 'both') wanted.push(commentsTA);
             if (target === 'work_notes' || target === 'both') wanted.push(workNotesTA);
