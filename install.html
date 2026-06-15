@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Script Installer — Tampermonkey Suite</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5ff;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .page-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 32px 40px;
+      text-align: center;
+    }
+    .page-header h1 { font-size: 26px; font-weight: bold; margin-bottom: 6px; }
+    .page-header p  { font-size: 14px; opacity: 0.85; margin-bottom: 14px; }
+    .header-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.38);
+      border-radius: 20px;
+      padding: 5px 16px;
+      font-size: 12px;
+    }
+
+    /* ── Container ── */
+    .container { max-width: 920px; margin: 0 auto; padding: 32px 20px; }
+
+    /* ── Info box ── */
+    .info-box {
+      background: #e8f4fd;
+      border: 1px solid #b3d9f7;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 32px;
+      font-size: 13px;
+      color: #1a5c8a;
+      line-height: 1.65;
+    }
+    .info-box strong { color: #0d4a7a; }
+
+    /* ── Section header ── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #667eea;
+    }
+    .section-title { font-size: 18px; font-weight: bold; color: #333; }
+    .section-count {
+      font-size: 12px;
+      background: #667eea;
+      color: white;
+      border-radius: 12px;
+      padding: 2px 9px;
+      font-weight: bold;
+    }
+
+    /* ── Script grid ── */
+    .script-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+      gap: 14px;
+      margin-bottom: 36px;
+    }
+
+    /* ── Script card ── */
+    .script-card {
+      background: white;
+      border: 1px solid #e0e0f0;
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 2px 6px rgba(100,100,200,0.06);
+      transition: box-shadow 0.2s;
+    }
+    .script-card:hover { box-shadow: 0 4px 16px rgba(100,100,200,0.13); }
+    .script-card.core  { border: 2px solid #667eea; background: #fafaff; }
+    .script-card.deprecated { opacity: 0.72; border-style: dashed; }
+
+    /* Card top row */
+    .card-top { display: flex; align-items: flex-start; gap: 10px; }
+    .card-icon { font-size: 22px; flex-shrink: 0; line-height: 1; margin-top: 1px; }
+    .card-title-wrap { flex: 1; min-width: 0; }
+    .card-name { font-size: 14px; font-weight: bold; color: #333; line-height: 1.3; }
+    .card-version { margin-top: 3px; }
+    .version-tag {
+      display: inline-block;
+      background: #f0f0ff;
+      border: 1px solid #d0d0ff;
+      border-radius: 4px;
+      padding: 1px 7px;
+      font-size: 11px;
+      color: #667eea;
+      font-weight: bold;
+    }
+    .version-tag.loading {
+      color: #aaa;
+      border-color: #ddd;
+      background: #f8f8f8;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+    .core-badge {
+      flex-shrink: 0;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      align-self: center;
+    }
+    .deprecated-badge {
+      flex-shrink: 0;
+      background: #f0f0f0;
+      color: #888;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      align-self: center;
+    }
+
+    /* Description */
+    .card-desc { font-size: 12px; color: #555; line-height: 1.55; }
+
+    /* Tags */
+    .card-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 7px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .tag-servicenow { background: #e8f0ff; color: #2d5fc7; }
+    .tag-netskope   { background: #e8fff2; color: #1e7a45; }
+    .tag-allpages   { background: #fff4e8; color: #b05a00; }
+
+    /* Install button */
+    .btn-install {
+      display: block;
+      width: 100%;
+      padding: 9px 14px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      transition: background 0.18s;
+      font-family: Arial, sans-serif;
+      margin-top: auto;
+    }
+    .btn-install:hover { background: #5568d3; }
+    .btn-install.deprecated { background: #c8c8c8; color: #777; }
+    .btn-install.deprecated:hover { background: #b8b8b8; }
+
+    /* ── Toolbar notice ── */
+    .toolbar-notice {
+      background: #fffbea;
+      border: 1px solid #f0d060;
+      border-left: 4px solid #e8b800;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #6a5000;
+      line-height: 1.55;
+    }
+
+    /* ── Core card (full-width horizontal) ── */
+    .core-card-wrap { margin-bottom: 14px; }
+    .core-card-wrap .script-card {
+      flex-direction: row;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 20px;
+    }
+    .core-card-wrap .card-icon  { font-size: 34px; }
+    .core-card-wrap .card-body  { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .core-card-wrap .btn-install { width: auto; min-width: 120px; white-space: nowrap; margin-top: 0; }
+
+    /* ── Legacy section ── */
+    .legacy-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 12px;
+      user-select: none;
+      padding: 4px 0;
+      border: none;
+      background: none;
+      font-family: Arial, sans-serif;
+    }
+    .legacy-toggle:hover { color: #555; }
+    .legacy-chevron { font-size: 10px; transition: transform 0.2s; display: inline-block; }
+    .legacy-chevron.open { transform: rotate(90deg); }
+    .legacy-grid { display: none; margin-bottom: 20px; }
+    .legacy-grid.open { display: grid; }
+
+    /* ── Footer ── */
+    .page-footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 12px;
+      color: #999;
+      border-top: 1px solid #e0e0f0;
+      margin-top: 8px;
+    }
+    .page-footer a { color: #667eea; text-decoration: none; }
+    .page-footer a:hover { text-decoration: underline; }
+
+    /* ── Install dialog ── */
+    .dialog-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .dialog-overlay.open { display: flex; }
+    .dialog-box {
+      background: white;
+      border-radius: 10px;
+      padding: 24px 28px;
+      max-width: 460px;
+      width: 90%;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+    }
+    .dialog-box h3 { font-size: 16px; color: #333; margin-bottom: 8px; }
+    .dialog-box p  { font-size: 13px; color: #555; line-height: 1.6; margin-bottom: 16px; }
+    .dialog-steps {
+      background: #f8f8ff;
+      border: 1px solid #e0e0f0;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 18px;
+      font-size: 12px;
+      color: #444;
+      line-height: 1.8;
+    }
+    .dialog-actions { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn-primary {
+      padding: 8px 18px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      font-family: Arial, sans-serif;
+    }
+    .btn-primary:hover { background: #5568d3; }
+    .btn-secondary {
+      padding: 8px 16px;
+      background: white;
+      color: #555;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: Arial, sans-serif;
+    }
+    .btn-secondary:hover { background: #f5f5f5; }
+
+    @media (max-width: 580px) {
+      .script-grid { grid-template-columns: 1fr; }
+      .page-header { padding: 24px 18px; }
+      .core-card-wrap .script-card { flex-direction: column; }
+      .core-card-wrap .btn-install { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>🧩 Tampermonkey Script Installer</h1>
+  <p>ServiceNow and Netskope automation suite for Deloitte teams</p>
+  <span class="header-badge">Requires the Tampermonkey browser extension</span>
+</div>
+
+<div class="container">
+
+  <div class="info-box">
+    <strong>How to install a script:</strong> Click <strong>Install</strong> on any card below.
+    A new tab will open with the raw script file. Tampermonkey detects it automatically and shows
+    an installation dialog — review the permissions and click <strong>Install</strong> in that dialog.
+    Once installed, scripts <strong>update themselves automatically</strong> whenever a new version is published to this repo.
+    If the install dialog does not appear, open Tampermonkey and use <em>Utilities &gt; Install from URL</em>.
+  </div>
+
+  <!-- ════════════════════════════════════
+       STANDALONE SCRIPTS
+       ════════════════════════════════════ -->
+  <div class="section-header">
+    <span style="font-size:20px">📦</span>
+    <span class="section-title">Standalone Scripts</span>
+    <span class="section-count" id="standalone-count"></span>
+  </div>
+  <div class="script-grid" id="standalone-grid"></div>
+
+  <!-- ════════════════════════════════════
+       TOOLBAR SUITE
+       ════════════════════════════════════ -->
+  <div class="section-header">
+    <span style="font-size:20px">🔧</span>
+    <span class="section-title">Toolbar Suite</span>
+    <span class="section-count" id="toolbar-count"></span>
+  </div>
+
+  <div class="toolbar-notice">
+    ⚠️ <strong>Install the core Toolbar first.</strong>
+    All Toolbar tools attach to the floating toolbar container.
+    The tool buttons will not appear until the core script is installed and active.
+  </div>
+
+  <div class="core-card-wrap" id="toolbar-core-wrap"></div>
+  <div class="script-grid" id="toolbar-grid"></div>
+
+  <button class="legacy-toggle" id="legacy-toggle" type="button">
+    <span class="legacy-chevron" id="legacy-chevron">▶</span>
+    <span>Legacy / deprecated tools (superseded by newer scripts)</span>
+  </button>
+  <div class="legacy-grid script-grid" id="legacy-grid"></div>
+
+</div>
+
+<div class="page-footer">
+  Version numbers are fetched live from the repository each time this page loads. &nbsp;|&nbsp;
+  <a href="https://github.com/DTStackDevSC/Tampermonkey-Scripts" target="_blank" rel="noopener">View repository on GitHub</a>
+</div>
+
+<!-- Install dialog (shown when user clicks Install) -->
+<div class="dialog-overlay" id="install-dialog">
+  <div class="dialog-box">
+    <h3 id="dialog-script-name">Installing script</h3>
+    <p>A new tab is about to open with the raw script file. Tampermonkey will detect it and show an installation prompt.</p>
+    <div class="dialog-steps">
+      1. Click <strong>Open</strong> below to open the script in a new tab.<br>
+      2. Tampermonkey shows an <strong>installation dialog</strong> in that tab.<br>
+      3. Review the permissions, then click <strong>Install</strong> in that dialog.<br>
+      4. Close the tab and return here to install the next script.
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-secondary" id="dialog-cancel">Cancel</button>
+      <button class="btn-primary"    id="dialog-open">Open script tab</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const REPO   = 'DTStackDevSC/Tampermonkey-Scripts';
+  const BRANCH = 'main';
+
+  function rawUrl(file) {
+    return 'https://raw.githubusercontent.com/' + REPO + '/' + BRANCH + '/'
+      + file.split('/').map(encodeURIComponent).join('/');
+  }
+
+  /* ── Script catalogue ──────────────────────────────────────────── */
+
+  const STANDALONE = [
+    {
+      file: 'Standalone Scripts/ServiceNowTicketResponseHelper.user.js',
+      name: 'Ticket Response Helper',
+      desc: 'Insert predefined team-specific response templates into tickets, with automatic name detection and @mention support.',
+      tags: ['ServiceNow'],
+      icon: '💬'
+    },
+    {
+      file: 'Standalone Scripts/ServiceNowShortDescriptionHelper.user.js',
+      name: 'Short Description Helper',
+      desc: 'Form-based generator for standardised ticket short descriptions, with automatic tenant detection.',
+      tags: ['ServiceNow'],
+      icon: '📝'
+    },
+    {
+      file: 'Standalone Scripts/ServiceNowFormattedTextHelper.user.js',
+      name: 'Formatted Text Helper',
+      desc: 'Rich text editor with full HTML formatting options for adding formatted content to ServiceNow ticket fields.',
+      tags: ['ServiceNow'],
+      icon: '✏️'
+    },
+    {
+      file: 'Standalone Scripts/ServiceNowSLAAlertBanner.user.js',
+      name: 'SLA Alert Banner',
+      desc: 'Injects a color-coded banner at the top of tickets when the SLA deadline is within a configured number of days.',
+      tags: ['ServiceNow'],
+      icon: '⏰'
+    },
+    {
+      file: 'Standalone Scripts/NetskopePolicyNameHelper.user.js',
+      name: 'Policy Naming Helper',
+      desc: 'Generates standardised Real-time Protection policy names following team naming conventions, with preset saving.',
+      tags: ['Netskope'],
+      icon: '🛡️'
+    },
+    {
+      file: 'Standalone Scripts/NetskopeTicketSubjectHelper.user.js',
+      name: 'Ticket Subject Helper',
+      desc: 'Builds a correctly formatted subject line for Netskope support ticket submissions.',
+      tags: ['Netskope'],
+      icon: '📨'
+    }
+  ];
+
+  const TOOLBAR_CORE = {
+    file: 'Toolbar Scripts/Toolbar.user.js',
+    name: 'Tools Toolbar',
+    desc: 'The core floating toolbar container. All Toolbar tools register their buttons here. Install this before any tools.',
+    tags: ['ServiceNow', 'Netskope'],
+    icon: '🔧',
+    isCore: true
+  };
+
+  const TOOLBAR_TOOLS = [
+    {
+      file: 'Toolbar Scripts/Toolbar-ServiceNowToolkit.user.js',
+      name: 'ServiceNow Toolkit',
+      desc: 'Work note and comment draft autosave, with a toolbar management panel for configuring all active tools.',
+      tags: ['ServiceNow'],
+      icon: '🛠️'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-MiniSummarySidebar.user.js',
+      name: 'Mini Summary Sidebar',
+      desc: 'A collapsible side panel that shows the key fields of the current ServiceNow ticket at a glance.',
+      tags: ['ServiceNow'],
+      icon: '📋'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-TicketAssignmentTool.user.js',
+      name: 'Ticket Assignment Tool',
+      desc: 'Assign tickets with automated field population, with options for opening related SCTASKs.',
+      tags: ['ServiceNow'],
+      icon: '👤'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-ServiceNowRowHighlighter.user.js',
+      name: 'Row Highlighter',
+      desc: 'Highlights rows on ServiceNow list views based on the Updated By column, with SLA heat-mapping when Due Date is visible.',
+      tags: ['ServiceNow'],
+      icon: '🎨'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js',
+      name: 'Change Tracker',
+      desc: 'Per-ticket change audit log shared team-wide via a Cloudflare Worker backend, with auto-write to work notes.',
+      tags: ['ServiceNow'],
+      icon: '📜'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-EnhancementRequestLogger.user.js',
+      name: 'Enhancement Request Logger',
+      desc: 'Opens a pre-filled Office Forms submission for enhancement requests, with the RITM number auto-populated.',
+      tags: ['ServiceNow'],
+      icon: '📊'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-GeneralToolkit.user.js',
+      name: 'General Toolkit',
+      desc: 'Highlight any RITM, PER, or Netskope case number on any page to get a floating button that opens it in a new tab.',
+      tags: ['All Pages'],
+      icon: '🔍'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-DomainTools.user.js',
+      name: 'Domain Tools',
+      desc: 'Extract domains from ticket text and check their reputation against VirusTotal, IBM X-Force, and Netskope.',
+      tags: ['ServiceNow'],
+      icon: '🌐'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-NetskopePolicyToolkit.user.js',
+      name: 'Netskope Policies Toolkit',
+      desc: 'Copy buttons, DLP profile shortcuts, SMTP auto-fill, save reminder checklist, URL list history, and DLP character counter.',
+      tags: ['Netskope'],
+      icon: '🔒'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-NetskopePolicyDeletionScheduler.user.js',
+      name: 'Policy Deletion Reminder',
+      desc: 'Registers a policy deletion reminder by opening a pre-filled form containing the policy URL, name, and expiry date.',
+      tags: ['Netskope'],
+      icon: '🗓️'
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-URLListEditor.user.js',
+      name: 'Netskope URL List Manager',
+      desc: 'Create and update Netskope URL lists via API, directly from ServiceNow tickets.',
+      tags: ['ServiceNow', 'Netskope'],
+      icon: '🔗'
+    }
+  ];
+
+  const LEGACY_TOOLS = [
+    {
+      file: 'Toolbar Scripts/Toolbar-DomainExtractor.user.js',
+      name: 'Domain Extractor',
+      desc: 'Superseded by Domain Tools. Extracts domains from ticket text. Install Domain Tools instead.',
+      tags: ['ServiceNow'],
+      icon: '📤',
+      deprecated: true
+    },
+    {
+      file: 'Toolbar Scripts/Toolbar-DomainSecurityCheck.user.js',
+      name: 'Domain Security Check',
+      desc: 'Superseded by Domain Tools. Checks domain reputation via VirusTotal, IBM X-Force, and Netskope. Install Domain Tools instead.',
+      tags: ['ServiceNow'],
+      icon: '🔎',
+      deprecated: true
+    }
+  ];
+
+  /* ── Version fetching ──────────────────────────────────────────── */
+
+  async function fetchVersion(file, verTagEl) {
+    try {
+      const res = await fetch(rawUrl(file), { cache: 'no-store' });
+      if (!res.ok) throw new Error('not ok');
+      const text = await res.text();
+      const m = text.match(/@version\s+(\S+)/);
+      verTagEl.textContent = m ? 'v' + m[1] : 'version unavailable';
+      verTagEl.classList.remove('loading');
+    } catch {
+      verTagEl.textContent = 'version unavailable';
+      verTagEl.classList.remove('loading');
+    }
+  }
+
+  /* ── Install dialog ────────────────────────────────────────────── */
+
+  let pendingUrl = null;
+
+  const dialogOverlay = document.getElementById('install-dialog');
+  const dialogName    = document.getElementById('dialog-script-name');
+  const dialogOpen    = document.getElementById('dialog-open');
+  const dialogCancel  = document.getElementById('dialog-cancel');
+
+  function openInstallDialog(name, url) {
+    pendingUrl = url;
+    dialogName.textContent = 'Installing: ' + name;
+    dialogOverlay.classList.add('open');
+  }
+
+  dialogOpen.addEventListener('click', () => {
+    if (pendingUrl) window.open(pendingUrl, '_blank', 'noopener');
+    dialogOverlay.classList.remove('open');
+    pendingUrl = null;
+  });
+  dialogCancel.addEventListener('click', () => {
+    dialogOverlay.classList.remove('open');
+    pendingUrl = null;
+  });
+  dialogOverlay.addEventListener('click', (e) => {
+    if (e.target === dialogOverlay) {
+      dialogOverlay.classList.remove('open');
+      pendingUrl = null;
+    }
+  });
+
+  /* ── Card builder ──────────────────────────────────────────────── */
+
+  function tagEl(label) {
+    const el = document.createElement('span');
+    const cls = label.toLowerCase().replace(/\s+/g, '');
+    el.className = 'tag tag-' + cls;
+    el.textContent = label;
+    return el;
+  }
+
+  function makeCard(script, compact) {
+    const card = document.createElement('div');
+    card.className = 'script-card'
+      + (script.isCore      ? ' core'       : '')
+      + (script.deprecated  ? ' deprecated' : '');
+
+    const icon = document.createElement('span');
+    icon.className = 'card-icon';
+    icon.textContent = script.icon;
+
+    /* title + version */
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'card-title-wrap';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'card-name';
+    nameEl.textContent = script.name;
+
+    const verDiv = document.createElement('div');
+    verDiv.className = 'card-version';
+    const verTag = document.createElement('span');
+    verTag.className = 'version-tag loading';
+    verTag.textContent = 'Loading...';
+    verDiv.appendChild(verTag);
+    titleWrap.appendChild(nameEl);
+    titleWrap.appendChild(verDiv);
+
+    const top = document.createElement('div');
+    top.className = 'card-top';
+    top.appendChild(icon);
+    top.appendChild(titleWrap);
+    if (script.isCore) {
+      const b = document.createElement('span');
+      b.className = 'core-badge';
+      b.textContent = 'Core';
+      top.appendChild(b);
+    }
+    if (script.deprecated) {
+      const b = document.createElement('span');
+      b.className = 'deprecated-badge';
+      b.textContent = 'Legacy';
+      top.appendChild(b);
+    }
+
+    /* description */
+    const desc = document.createElement('div');
+    desc.className = 'card-desc';
+    desc.textContent = script.desc;
+
+    /* tags */
+    const tags = document.createElement('div');
+    tags.className = 'card-tags';
+    for (const t of script.tags) tags.appendChild(tagEl(t));
+
+    /* install button */
+    const btn = document.createElement('button');
+    btn.className = 'btn-install' + (script.deprecated ? ' deprecated' : '');
+    btn.type = 'button';
+    btn.textContent = script.deprecated ? '↓ Install (Legacy)' : '↓ Install';
+    btn.addEventListener('click', () => openInstallDialog(script.name, rawUrl(script.file)));
+
+    if (compact) {
+      /* horizontal core card layout */
+      const body = document.createElement('div');
+      body.className = 'card-body';
+      body.appendChild(titleWrap);
+      body.appendChild(desc);
+      body.appendChild(tags);
+      card.appendChild(icon);
+      card.appendChild(body);
+      card.appendChild(btn);
+    } else {
+      card.appendChild(top);
+      card.appendChild(desc);
+      card.appendChild(tags);
+      card.appendChild(btn);
+    }
+
+    /* kick off async version fetch */
+    fetchVersion(script.file, verTag);
+
+    return card;
+  }
+
+  /* ── Render ────────────────────────────────────────────────────── */
+
+  function render() {
+    const standaloneGrid = document.getElementById('standalone-grid');
+    const toolbarCoreWrap = document.getElementById('toolbar-core-wrap');
+    const toolbarGrid    = document.getElementById('toolbar-grid');
+    const legacyGrid     = document.getElementById('legacy-grid');
+
+    document.getElementById('standalone-count').textContent = STANDALONE.length;
+    document.getElementById('toolbar-count').textContent    = TOOLBAR_TOOLS.length;
+
+    for (const s of STANDALONE) standaloneGrid.appendChild(makeCard(s));
+
+    toolbarCoreWrap.appendChild(makeCard(TOOLBAR_CORE, true));
+
+    for (const s of TOOLBAR_TOOLS) toolbarGrid.appendChild(makeCard(s));
+    for (const s of LEGACY_TOOLS)  legacyGrid.appendChild(makeCard(s));
+  }
+
+  /* ── Legacy toggle ─────────────────────────────────────────────── */
+
+  document.getElementById('legacy-toggle').addEventListener('click', () => {
+    const grid    = document.getElementById('legacy-grid');
+    const chevron = document.getElementById('legacy-chevron');
+    const open    = grid.classList.toggle('open');
+    chevron.classList.toggle('open', open);
+  });
+
+  render();
+</script>
+</body>
+</html>

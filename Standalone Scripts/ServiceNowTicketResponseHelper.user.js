@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.17.2
+// @version      2.17.3
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.2';
-    const CHANGELOG = `Version 2.17.2:
+    const SCRIPT_VERSION = '2.17.3';
+    const CHANGELOG = `Version 2.17.3:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 2.17.2:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 2.17.1:

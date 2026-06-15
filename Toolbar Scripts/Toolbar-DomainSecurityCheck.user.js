@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainSecurityCheck.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.9
+// @version      1.2.10
 // @description  Toolbar button to check domain on VirusTotal, IBM X-Force Exchange & Netskope
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.9';
-    const CHANGELOG = `Version 1.2.9:
+    const SCRIPT_VERSION = '1.2.10';
+    const CHANGELOG = `Version 1.2.10:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 1.2.9:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 1.2.8:

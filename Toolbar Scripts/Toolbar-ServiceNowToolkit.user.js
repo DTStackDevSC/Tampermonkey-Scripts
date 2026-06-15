@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.7
+// @version      1.3.8
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.7';
-    const CHANGELOG = `Version 1.3.7:
+    const SCRIPT_VERSION = '1.3.8';
+    const CHANGELOG = `Version 1.3.8:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 1.3.7:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 1.3.6:

@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.2.3
+// @version      1.2.4
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.3';
-    const CHANGELOG = `Version 1.2.3:
+    const SCRIPT_VERSION = '1.2.4';
+    const CHANGELOG = `Version 1.2.4:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 1.2.3:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 1.2.2:

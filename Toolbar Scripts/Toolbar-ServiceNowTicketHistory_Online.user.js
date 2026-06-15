@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.10.2
+// @version      1.10.3
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.10.2';
-    const CHANGELOG = `Version 1.10.2:
+    const SCRIPT_VERSION = '1.10.3';
+    const CHANGELOG = `Version 1.10.3:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 1.10.2:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 1.10.1:

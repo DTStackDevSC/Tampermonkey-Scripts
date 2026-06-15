@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowRowHighlighter.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.4.1
+// @version      2.4.2
 // @description  Highlights rows on any ServiceNow ticket list when Updated By column is present; applies SLA heat-map when Due Date column is present
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.1';
-    const CHANGELOG = `Version 2.4.1:
+    const SCRIPT_VERSION = '2.4.2';
+    const CHANGELOG = `Version 2.4.2:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 2.4.1:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 2.4.0:

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-MiniSummarySidebar.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.1
+// @version      1.1.2
 // @description  Quick overview panel for ServiceNow tickets
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.1';
-    const CHANGELOG = `Version 1.1.1:
+    const SCRIPT_VERSION = '1.1.2';
+    const CHANGELOG = `Version 1.1.2:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 1.1.1:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 1.1.0:

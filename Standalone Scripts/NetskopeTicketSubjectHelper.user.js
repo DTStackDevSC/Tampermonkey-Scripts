@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.6
+// @version      1.0.7
 // @description  Adds a helper button to the Netskope support ticket form to quickly build a formatted Subject line
 // @author       J.R.
 // @match        https://support.netskope.com/*
@@ -19,8 +19,11 @@
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.0.6';
-    const CHANGELOG = `Version 1.0.6:
+    const SCRIPT_VERSION = '1.0.7';
+    const CHANGELOG = `Version 1.0.7:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 1.0.6:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 1.0.5:

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.3.4
+// @version      3.3.5
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.3.4';
-    const CHANGELOG = `Version 3.3.4:
+    const SCRIPT_VERSION = '3.3.5';
+    const CHANGELOG = `Version 3.3.5:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 3.3.4:
 - Moved the automatic update source to a new file so future updates keep installing correctly.
 
 Version 3.3.3:
