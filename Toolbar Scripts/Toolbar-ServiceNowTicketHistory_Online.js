@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.10.0
+// @version      1.10.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.10.0';
-    const CHANGELOG = `Version 1.10.0:
+    const SCRIPT_VERSION = '1.10.1';
+    const CHANGELOG = `Version 1.10.1:
+- Certified Pinned App entries now capture platform and binary information together. Each line in the Platforms and Binaries field represents one combination, for example "Windows - chrome.exe" or "MacOS - chrome". Multiple platforms for the same app are entered one per line.
+
+Version 1.10.0:
 - Added a new "Certified Pinned Apps" group with three entry types: Certified Pinned App Added, Certified Pinned App Edited, and Certified Pinned App Removed. Each entry captures the app name and platform. Added and Edited entries auto-write to the ticket worknote and comments fields. Removed entries auto-write a removal notice.
 
 Version 1.9.3:
@@ -229,8 +232,8 @@ Version 1.4.3:
             { key: 'description',      label: 'Description',             type: 'textarea' },
         ],
         certified_pinned_app_full: [
-            { key: 'appName',  label: 'App name',  type: 'text' },
-            { key: 'platform', label: 'Platform',  type: 'text' },
+            { key: 'appName',   label: 'App name',               type: 'text'     },
+            { key: 'platforms', label: 'Platforms and Binaries', type: 'textarea' },
         ],
         certified_pinned_app_removed: [
             { key: 'appName', label: 'App name', type: 'text' },
