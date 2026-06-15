@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.9.3
+// @version      1.10.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.9.3';
-    const CHANGELOG = `Version 1.9.3:
+    const SCRIPT_VERSION = '1.10.0';
+    const CHANGELOG = `Version 1.10.0:
+- Added a new "Certified Pinned Apps" group with three entry types: Certified Pinned App Added, Certified Pinned App Edited, and Certified Pinned App Removed. Each entry captures the app name and platform. Added and Edited entries auto-write to the ticket worknote and comments fields. Removed entries auto-write a removal notice.
+
+Version 1.9.3:
 - Fixed an intermittent Firefox issue where the script would silently abort on load, preventing the toolbar button from appearing. Style injection is now deferred until the page head is ready.
 
 Version 1.9.2:
@@ -225,6 +228,13 @@ Version 1.4.3:
             { key: 'operatingSystem',  label: 'Operating System',        type: 'text'     },
             { key: 'description',      label: 'Description',             type: 'textarea' },
         ],
+        certified_pinned_app_full: [
+            { key: 'appName',  label: 'App name',  type: 'text' },
+            { key: 'platform', label: 'Platform',  type: 'text' },
+        ],
+        certified_pinned_app_removed: [
+            { key: 'appName', label: 'App name', type: 'text' },
+        ],
     };
 
     /* ==========================================================
@@ -329,6 +339,14 @@ Version 1.4.3:
                 { label: 'Custom App Added',   value: 'Custom App Added',   color: '#007bff', schema: 'custom_app_full'    },
                 { label: 'Custom App Edited',  value: 'Custom App Edited',  color: '#6f42c1', schema: 'custom_app_full'    },
                 { label: 'Custom App Removed', value: 'Custom App Removed', color: '#c0392b', schema: 'custom_app_deleted' },
+            ],
+        },
+        {
+            group: 'Certified Pinned Apps',
+            items: [
+                { label: 'Certified Pinned App Added',   value: 'Certified Pinned App Added',   color: '#007bff', schema: 'certified_pinned_app_full'    },
+                { label: 'Certified Pinned App Edited',  value: 'Certified Pinned App Edited',  color: '#6f42c1', schema: 'certified_pinned_app_full'    },
+                { label: 'Certified Pinned App Removed', value: 'Certified Pinned App Removed', color: '#c0392b', schema: 'certified_pinned_app_removed' },
             ],
         },
         {
@@ -565,6 +583,7 @@ Version 1.4.3:
         { label: 'Steering / Client Configs',   types: ['Steering/Client Config Created', 'Steering/Client Config Modified', 'Steering/Client Config Deleted'] },
         { label: 'User Notifications',          types: ['User Notification Added', 'User Notification Modified', 'User Notification Removed'] },
         { label: 'Custom Apps',                 types: ['Custom App Added', 'Custom App Edited', 'Custom App Removed'] },
+        { label: 'Certified Pinned Apps',       types: ['Certified Pinned App Added', 'Certified Pinned App Edited', 'Certified Pinned App Removed'] },
         { label: 'Recategorization Requests',   types: ['Recategorization Request'] },
         { label: 'Other',                       types: ['Custom'] },
     ];
@@ -1628,6 +1647,22 @@ Version 1.4.3:
                 commentsHeader: "We've removed the following Netskope Custom App as requested:",
             },
 
+            // ── Certified Pinned Apps ──────────────────────────────
+            'Certified Pinned App Added': {
+                workNoteHeader: 'Netskope Certified Pinned App has been added:',
+                commentsHeader: "We've added the following Certified Pinned App to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'Certified Pinned App Edited': {
+                workNoteHeader: 'Netskope Certified Pinned App has been edited:',
+                commentsHeader: "We've edited the following Certified Pinned App to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'Certified Pinned App Removed': {
+                workNoteHeader: 'Netskope Certified Pinned App has been removed:',
+                commentsHeader: "We've removed the following Certified Pinned App as requested:",
+            },
+
             // ── Recategorization ───────────────────────────────────
             'Recategorization Request': {
                 workNoteHeader: '# Recategorization request submitted to Netskope:',
@@ -2204,6 +2239,12 @@ Version 1.4.3:
             createTypes: ['Custom App Added'],
             modifyTypes: ['Custom App Edited'],
             deleteTypes: ['Custom App Removed'],
+        },
+        'Certified Pinned Apps': {
+            nameKey:     'appName',
+            createTypes: ['Certified Pinned App Added'],
+            modifyTypes: ['Certified Pinned App Edited'],
+            deleteTypes: ['Certified Pinned App Removed'],
         },
     };
 
