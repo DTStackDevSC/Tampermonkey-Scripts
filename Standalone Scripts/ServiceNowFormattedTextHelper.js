@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.2.0
+// @version      1.2.1
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.0';
-    const CHANGELOG = `Version 1.2.0:
+    const SCRIPT_VERSION = '1.2.1';
+    const CHANGELOG = `Version 1.2.1:
+- Fixed an issue where clicking Insert did nothing when the ticket showed only one journal field (either comments or work notes, but not both). The script now detects which field is visible and inserts into it automatically, without asking. When both fields are present, the destination choice dialog still appears as before.
+
+Version 1.2.0:
 - Added a Table button to the toolbar. Pick the number of rows and columns from a quick grid, choose whether the first row is a header, and the table is dropped in at your cursor ready to fill in.
 - Added Text Color and Highlight Color buttons to the toolbar. Select your text, click the button, and pick a swatch to color the text or highlight it in any color, not just yellow.
 - Improved dark mode: the editor area and the main editor window now always keep a light background and readable text, so nothing looks washed out or invisible on dark themed instances.
@@ -1543,11 +1546,15 @@ Version 1.0.3:
             {
                 icon: '⚡', title: 'Where It Gets Inserted',
                 buildContent: (body) => {
-                    addParagraph(body, 'When you click Insert, you choose the destination field. The text is appended below anything already there.');
+                    addParagraph(body, 'When you click Insert, the script checks which journal fields are currently visible on the ticket. The text is appended below anything already there.');
                     addCategoryBadges(body, [
                         { bg: '#0066cc', label: 'Comment',   desc: 'Customer facing. The requester can read this.' },
                         { bg: '#5a6672', label: 'Work Note', desc: 'Internal only. Visible to your team but not the requester.' },
                         { bg: '#667eea', label: 'Both',      desc: 'Adds the same text to the comment and the work note at once.' }
+                    ]);
+                    addBulletList(body, [
+                        'When both Comments and Work Notes are visible, a dialog asks where to insert.',
+                        'When only one field is visible (single mode), the text is inserted into that field automatically without asking.'
                     ]);
                 }
             },
@@ -2678,14 +2685,20 @@ Version 1.0.3:
         insertBtn.onmouseover = () => insertBtn.style.backgroundColor = '#218838';
         insertBtn.onmouseout = () => insertBtn.style.backgroundColor = '#28a745';
         insertBtn.onclick = () => {
-            showInsertTargetModal((target) => {
+            const hasDual = !!(document.getElementById('activity-stream-comments-textarea') &&
+                               document.getElementById('activity-stream-work_notes-textarea'));
+            const doInsert = (target) => {
                 const inserted = insertFormattedText(editor, target);
                 if (inserted) {
                     overlay.style.display = 'none';
-                    // Clear editor for next use
                     editor.innerHTML = '<p>Start typing here...</p>';
                 }
-            });
+            };
+            if (hasDual) {
+                showInsertTargetModal(doInsert);
+            } else {
+                doInsert('auto');
+            }
         };
 
         buttonContainer.appendChild(cancelBtn);
@@ -2860,24 +2873,28 @@ Version 1.0.3:
         textarea.focus();
     }
 
-    // target is 'comments', 'work_notes', or 'both'. Returns true if inserted.
+    // target is 'comments', 'work_notes', 'both', or 'auto'. Returns true if inserted.
     function insertFormattedText(editor, target) {
-        // Comments (customer facing): split ID first, single mode fallback
-        const commentsTA = document.getElementById('activity-stream-comments-textarea') ||
-                           document.getElementById('activity-stream-textarea') ||
-                           document.querySelector('[data-stream-text-input]');
-
-        // Work notes (internal): split ID first, single mode fallback
-        const workNotesTA = document.getElementById('activity-stream-work_notes-textarea') ||
-                            document.getElementById('activity-stream-textarea') ||
+        const commentsEl  = document.getElementById('activity-stream-comments-textarea');
+        const workNotesEl = document.getElementById('activity-stream-work_notes-textarea');
+        const singleEl    = document.getElementById('activity-stream-textarea') ||
                             document.querySelector('[data-stream-text-input]');
 
-        const wanted = [];
-        if (target === 'comments'   || target === 'both') wanted.push(commentsTA);
-        if (target === 'work_notes' || target === 'both') wanted.push(workNotesTA);
-
-        // Dedupe: in single combined mode both IDs resolve to the same element
-        const targets = [...new Set(wanted.filter(Boolean))];
+        let targets;
+        if (target === 'auto') {
+            // Single mode: only one or combined field is visible; use whatever is there
+            const available = commentsEl || workNotesEl || singleEl;
+            targets = available ? [available] : [];
+        } else {
+            // Dual mode: fall back to the combined textarea if a split field is absent
+            const commentsTA  = commentsEl  || singleEl;
+            const workNotesTA = workNotesEl || singleEl;
+            const wanted = [];
+            if (target === 'comments'   || target === 'both') wanted.push(commentsTA);
+            if (target === 'work_notes' || target === 'both') wanted.push(workNotesTA);
+            // Dedupe: combined mode resolves both to the same element
+            targets = [...new Set(wanted.filter(Boolean))];
+        }
 
         if (targets.length === 0) {
             console.error('❌ Journal textarea not found!');
