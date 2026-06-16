@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.18.2
+// @version      1.19
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, and DLP entity character counter. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -40,8 +40,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.18.2';
-    const CHANGELOG = `Version 1.18.2:
+    const SCRIPT_VERSION = '1.19';
+    const CHANGELOG = `Version 1.19:
+- Added a ? Help button to the toolkit settings panel that opens a visual Feature Guide covering all eight toolkit features and the settings controls.
+
+Version 1.18.2:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.18.1:
@@ -390,7 +393,8 @@ Version 1.16:
         #ns-add-log-modal, #ns-view-log-modal,
         #ns-remove-older-confirm, #ns-ssl-removal-modal,
         #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal,
-        #ns-username-overlay, #nsToolkitChangelogModal {
+        #ns-username-overlay, #nsToolkitChangelogModal,
+        #nsToolkitHelpModal {
             color: #333333 !important;
         }
         #ns-toolkit-settings-modal input, #ns-toolkit-settings-modal select,
@@ -583,7 +587,27 @@ Version 1.16:
             flexShrink:   '0',
         });
         closeBtn.addEventListener('click', hideSettingsModal);
-        headerRow.appendChild(closeBtn);
+
+        const headerRight = document.createElement('div');
+        Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif',
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+
+        headerRight.appendChild(helpBtn);
+        headerRight.appendChild(closeBtn);
+        headerRow.appendChild(headerRight);
         modal.appendChild(headerRow);
 
         /* ── Scrollable body ── */
@@ -916,6 +940,677 @@ Version 1.16:
         row.style.borderColor = enabled ? '#1a73e8' : '#e0e0e0';
         row.style.background  = enabled ? '#f0f6ff' : '#fff';
         row.style.opacity     = enabled ? '1'       : '0.7';
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FEATURE GUIDE MODAL
+    // ─────────────────────────────────────────────────────────────
+
+    function showHelpModal() {
+        if (document.getElementById('nsToolkitHelpModal')) return;
+
+        // lead: single orienting sentence at the top of a section.
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif',
+            });
+            body.appendChild(p);
+        }
+
+        // bullets: compact list with purple dot markers.
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: small italic note placed under a visual.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif',
+            });
+            body.appendChild(c);
+        }
+
+        // span: inline element with optional styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: horizontal flex row for side-by-side mocks.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0',
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: small colored rounded label.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: '4px', padding: '3px 8px',
+                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block',
+            });
+            return c;
+        }
+
+        // toolSquare: rounded icon tile resembling a real toolbar button.
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative',
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, {
+                    position: 'absolute', top: '-3px', right: '-3px',
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: '#ff8c00', border: '1px solid #fff',
+                });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: thin vertical divider between toolbar groups.
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        // menuMock: white card wrapping toolbar icon tiles.
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+
+        // toggle: checkbox preview with an optional per-control description.
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = document.createElement('span');
+            Object.assign(box.style, {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
+                border: on ? 'none' : '1px solid #b0b0b0',
+                background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block',
+            });
+            box.textContent = on ? '✓' : '';
+            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+            return wrap;
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Click the shield icon in the floating toolbar to open the NS Policies Toolkit settings panel.');
+
+                    body.appendChild(hrow([
+                        menuMock([
+                            toolSquare('📊'), menuSep(),
+                            toolSquare('🛡', { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: '2px solid #667eea' }),
+                            menuSep(),
+                            toolSquare('📝'), toolSquare('🔗'),
+                        ]),
+                    ], { marginBottom: '10px' }));
+                    caption(body, 'The toolkit registers as a shield icon in the floating toolbar.');
+
+                    bullets(body, [
+                        'A pulsing dot on the shield icon means a new version is available. Open settings to see what is new.',
+                        'The first time you use the toolkit you will be prompted to enter your name. It is saved and auto-filled in all log entry modals.',
+                        'Toggle each feature on or off in the settings panel. Changes take effect after reloading the page.',
+                    ]);
+                },
+            },
+            {
+                icon: '📋',
+                title: 'Chirp Copy Buttons',
+                buildContent(body) {
+                    lead(body, 'A 📋 copy button appears inside every blue tag in Netskope policy pickers for one-click profile name copying.');
+
+                    const tagWrap = document.createElement('div');
+                    tagWrap.style.marginBottom = '10px';
+                    const tag = document.createElement('div');
+                    Object.assign(tag.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        background: '#1976d2', color: '#fff', borderRadius: '4px',
+                        padding: '4px 10px', fontSize: '12px',
+                        fontFamily: 'Arial, sans-serif', fontWeight: 'bold',
+                    });
+                    const tagLabel = document.createElement('span');
+                    tagLabel.textContent = 'DLP-Block-US-PII-v3';
+                    tagLabel.style.color = '#fff';
+                    tag.appendChild(tagLabel);
+                    const copyIcon = document.createElement('span');
+                    copyIcon.textContent = '📋';
+                    Object.assign(copyIcon.style, {
+                        padding: '1px 4px', border: '1px solid rgba(255,255,255,0.5)',
+                        borderRadius: '3px', background: 'rgba(255,255,255,0.15)', fontSize: '11px',
+                    });
+                    tag.appendChild(copyIcon);
+                    tagWrap.appendChild(tag);
+                    body.appendChild(tagWrap);
+                    caption(body, 'The 📋 button is injected into each blue picker tag.');
+
+                    bullets(body, [
+                        'The (custom) and (predefined) label suffix is stripped automatically before copying.',
+                        'The button turns green (✓) after a successful copy and red (✗) if the clipboard is unavailable.',
+                    ]);
+                },
+            },
+            {
+                icon: '↗',
+                title: 'DLP Profile Open Buttons',
+                buildContent(body) {
+                    lead(body, 'An ↗ open button appears on tags inside DLP Profile = criteria rows, letting you jump to that profile in a new tab.');
+
+                    const criteriaWrap = document.createElement('div');
+                    Object.assign(criteriaWrap.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '10px 14px', marginBottom: '10px', fontFamily: 'Arial, sans-serif',
+                    });
+                    const criteriaLabel = document.createElement('div');
+                    criteriaLabel.textContent = 'DLP Profile =';
+                    Object.assign(criteriaLabel.style, { fontSize: '11px', color: '#888', marginBottom: '6px', fontWeight: 'bold' });
+                    criteriaWrap.appendChild(criteriaLabel);
+
+                    const tag2 = document.createElement('div');
+                    Object.assign(tag2.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        background: '#1976d2', color: '#fff', borderRadius: '4px',
+                        padding: '4px 10px', fontSize: '12px',
+                        fontFamily: 'Arial, sans-serif', fontWeight: 'bold',
+                    });
+                    const tagLabel2 = document.createElement('span');
+                    tagLabel2.textContent = 'DLP-Block-US-PII-v3';
+                    tagLabel2.style.color = '#fff';
+                    tag2.appendChild(tagLabel2);
+                    const openIcon = document.createElement('span');
+                    openIcon.textContent = '↗';
+                    Object.assign(openIcon.style, {
+                        padding: '1px 5px', border: '1px solid rgba(255,255,255,0.5)',
+                        borderRadius: '3px', background: 'rgba(255,255,255,0.15)', fontSize: '12px',
+                    });
+                    tag2.appendChild(openIcon);
+                    criteriaWrap.appendChild(tag2);
+                    body.appendChild(criteriaWrap);
+
+                    bullets(body, [
+                        'Only appears on tags within DLP Profile = rows, not on all picker tags across the page.',
+                        'Clicking ↗ opens the Netskope DLP Profiles page filtered to that profile name in a new tab.',
+                    ]);
+                },
+            },
+            {
+                icon: '✉',
+                title: 'SMTP Header Auto-Fill',
+                buildContent(body) {
+                    lead(body, 'A "Fill with Block Headers" button appears next to the "Add SMTP Header" action trigger on email-type policy pages.');
+
+                    const btnShowRow = document.createElement('div');
+                    Object.assign(btnShowRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0',
+                    });
+                    const smtpBadge = document.createElement('span');
+                    smtpBadge.textContent = 'Fill with Block Headers';
+                    Object.assign(smtpBadge.style, {
+                        background: '#0073e6', color: '#fff', borderRadius: '4px',
+                        padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
+                    });
+                    const smtpDesc = document.createElement('span');
+                    smtpDesc.textContent = 'Appears next to the "Add SMTP Header" link in email policy action configurations.';
+                    Object.assign(smtpDesc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    btnShowRow.appendChild(smtpBadge);
+                    btnShowRow.appendChild(smtpDesc);
+                    body.appendChild(btnShowRow);
+
+                    const box = document.createElement('div');
+                    Object.assign(box.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333', marginBottom: '8px',
+                    });
+                    box.innerHTML = 'X-Netskope-Action: Block<br>X-Netskope-Policy: {{NS_DLP_PROFILE}}';
+                    body.appendChild(box);
+                    caption(body, 'The two headers inserted into the SMTP header textarea.');
+
+                    bullets(body, [
+                        'Replace {{NS_DLP_PROFILE}} manually with the actual DLP profile name after filling.',
+                    ]);
+                },
+            },
+            {
+                icon: '💾',
+                title: 'Save Reminder Checklist',
+                buildContent(body) {
+                    lead(body, 'Clicking Save on a policy page shows a checklist to confirm the description is complete before the save proceeds.');
+
+                    const checkWrap = document.createElement('div');
+                    Object.assign(checkWrap.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '12px 14px', marginBottom: '10px',
+                    });
+                    const checkTitle = document.createElement('div');
+                    checkTitle.textContent = '💾 Before you save…';
+                    Object.assign(checkTitle.style, {
+                        fontWeight: 'bold', fontSize: '13px', color: '#e65100',
+                        marginBottom: '8px', fontFamily: 'Arial, sans-serif',
+                    });
+                    checkWrap.appendChild(checkTitle);
+
+                    const checkItems = [
+                        { icon: '🎫', text: 'RITM number' },
+                        { icon: '👤', text: 'Creator name & creation date' },
+                        { icon: '✏️',  text: 'Editor name & modification date' },
+                    ];
+                    for (const item of checkItems) {
+                        const r = document.createElement('div');
+                        Object.assign(r.style, {
+                            display: 'flex', alignItems: 'center', gap: '8px',
+                            background: '#fff8f0', border: '1px solid #ffcc80',
+                            borderRadius: '5px', padding: '6px 10px',
+                            fontSize: '12px', marginBottom: '4px', fontFamily: 'Arial, sans-serif',
+                        });
+                        const ic = document.createElement('span');
+                        ic.textContent = item.icon;
+                        const tx = document.createElement('span');
+                        tx.textContent = item.text;
+                        r.appendChild(ic); r.appendChild(tx);
+                        checkWrap.appendChild(r);
+                    }
+
+                    const mockBtnRow = document.createElement('div');
+                    Object.assign(mockBtnRow.style, { display: 'flex', gap: '8px', marginTop: '10px' });
+                    mockBtnRow.appendChild(chip('← Go back', '#e0e0e0', { color: '#333', border: '1px solid #ccc' }));
+                    mockBtnRow.appendChild(chip('Save anyway →', '#e65100'));
+                    checkWrap.appendChild(mockBtnRow);
+                    body.appendChild(checkWrap);
+
+                    bullets(body, [
+                        'Only activates on inline policy pages and endpoint DLP pages, not on other Netskope pages.',
+                        'Click "Save anyway" to skip the reminder and save immediately.',
+                    ]);
+                },
+            },
+            {
+                icon: '📝',
+                title: 'Description Log Buttons',
+                buildContent(body) {
+                    lead(body, 'Two buttons appear below the policy description textarea for structured change tracking.');
+
+                    const btnRowEl = document.createElement('div');
+                    Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
+                    btnRowEl.appendChild(chip('+ Add Log Entry', '#0073e6'));
+                    btnRowEl.appendChild(chip('📋 View Log', '#4caf50'));
+                    body.appendChild(btnRowEl);
+
+                    const box = document.createElement('div');
+                    Object.assign(box.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                        marginBottom: '8px', overflowX: 'auto', whiteSpace: 'nowrap',
+                    });
+                    box.textContent = 'RITM1234567 | 2026-06-16 | Jane Smith | Blocked social media domains';
+                    body.appendChild(box);
+                    caption(body, 'Each log entry follows the format: RITM | Date | Name | Description.');
+
+                    bullets(body, [
+                        '"Add Log Entry" opens a form to fill in the RITM, date (auto-filled today), name (auto-filled from settings), and a description. The entry is appended to the textarea.',
+                        '"View Log" shows all entries as cards with RITM, date, and user badges. Filter by RITM number or date range.',
+                        'Use "Remove Older Than" in the View Log panel to clean up entries before a chosen date.',
+                    ]);
+                },
+            },
+            {
+                icon: '📜',
+                title: 'URL List History Buttons',
+                buildContent(body) {
+                    lead(body, 'On URL list edit pages, three buttons appear below the URL textarea for tracking domain changes over time.');
+
+                    const btnRowEl = document.createElement('div');
+                    Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
+                    btnRowEl.appendChild(chip('+ Log Entry', '#0073e6'));
+                    btnRowEl.appendChild(chip('🗑 Delete Selected', '#e53935'));
+                    btnRowEl.appendChild(chip('📜 View History', '#4caf50'));
+                    body.appendChild(btnRowEl);
+
+                    bullets(body, [
+                        '"+ Log Entry" inserts a #RITM | Date | Name header at your cursor position. Add the domains below it.',
+                        '"Delete Selected" comments out the highlighted domains with a # prefix and inserts a Deleted log header above them.',
+                        '"View History" shows all change groups with their domains, filterable by RITM and date range.',
+                    ]);
+                },
+            },
+            {
+                icon: '🔒',
+                title: 'SSL Decryption Removal Entry',
+                buildContent(body) {
+                    lead(body, 'On SSL Decryption policy pages, an "+ Add Removal Entry" button appears alongside the description log buttons.');
+
+                    const btnRowEl = document.createElement('div');
+                    Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
+                    btnRowEl.appendChild(chip('+ Add Log Entry', '#0073e6'));
+                    btnRowEl.appendChild(chip('+ Add Removal Entry', '#e53935'));
+                    btnRowEl.appendChild(chip('📋 View Log', '#4caf50'));
+                    body.appendChild(btnRowEl);
+
+                    const box = document.createElement('div');
+                    Object.assign(box.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                        marginBottom: '8px', overflowX: 'auto', whiteSpace: 'nowrap',
+                    });
+                    box.textContent = '#RITM1234567 | 2026-06-16 | Jane Smith | Removed | domain1.com, domain2.com';
+                    body.appendChild(box);
+                    caption(body, 'Format: #RITM | Date | Name | Removed | domains (optional).');
+
+                    bullets(body, [
+                        'The entry is inserted at your cursor position in the description textarea.',
+                        'On SSL pages, the "Add Log Entry" modal relabels the description field to "Domain Changes" to reflect the context.',
+                    ]);
+                },
+            },
+            {
+                icon: '🔢',
+                title: 'DLP Entity Character Counter',
+                buildContent(body) {
+                    lead(body, 'A live character count appears below the regex or keyword input field in the DLP Edit Entity modal.');
+
+                    const mockInputWrap = document.createElement('div');
+                    Object.assign(mockInputWrap.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '12px 14px', marginBottom: '10px',
+                    });
+                    const mockInput = document.createElement('div');
+                    Object.assign(mockInput.style, {
+                        border: '1px solid #ccc', borderRadius: '4px',
+                        padding: '6px 10px', background: '#fff',
+                        fontSize: '12px', color: '#333', fontFamily: 'monospace', marginBottom: '4px',
+                    });
+                    mockInput.textContent = '\\b[A-Z]{2}[0-9]{6}\\b';
+                    const counterEl = document.createElement('div');
+                    counterEl.textContent = 'Characters: 18';
+                    Object.assign(counterEl.style, {
+                        fontSize: '12px', color: '#666', fontFamily: 'Arial, sans-serif', marginTop: '4px',
+                    });
+                    mockInputWrap.appendChild(mockInput);
+                    mockInputWrap.appendChild(counterEl);
+                    body.appendChild(mockInputWrap);
+
+                    bullets(body, [
+                        'The count updates live as you type and also tracks programmatic value changes.',
+                        'Useful for staying within Netskope character limits on regex patterns and keyword lists.',
+                    ]);
+                },
+            },
+            {
+                icon: '⚙️',
+                title: 'Settings',
+                buildContent(body) {
+                    lead(body, 'Open the settings panel by clicking the shield icon in the toolbar, then use the controls inside.');
+
+                    const headerButtons = [
+                        { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' },
+                        { bg: '#e53935',     color: '#fff',    border: 'none',              label: '✕',      desc: 'Closes the settings panel.' },
+                    ];
+                    for (const item of headerButtons) {
+                        const brow = document.createElement('div');
+                        Object.assign(brow.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0',
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, border: item.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0',
+                            fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start',
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        brow.appendChild(badge);
+                        brow.appendChild(descEl);
+                        body.appendChild(brow);
+                    }
+
+                    const nameRowMock = document.createElement('div');
+                    Object.assign(nameRowMock.style, {
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '8px 12px', marginBottom: '8px',
+                    });
+                    nameRowMock.appendChild(span('👤 Your Name', { fontSize: '12px', fontWeight: 'bold', color: '#333' }));
+                    const nameInputMock = document.createElement('div');
+                    Object.assign(nameInputMock.style, {
+                        flex: '1', border: '1px solid #ccc', borderRadius: '4px',
+                        padding: '4px 8px', background: '#fff',
+                        fontSize: '12px', color: '#999', fontFamily: 'Arial, sans-serif', fontStyle: 'italic',
+                    });
+                    nameInputMock.textContent = 'Your full name';
+                    nameRowMock.appendChild(nameInputMock);
+                    nameRowMock.appendChild(chip('Save', '#1a73e8'));
+                    body.appendChild(nameRowMock);
+                    caption(body, 'Your name is auto-filled in all Add Log Entry and deletion modals.');
+
+                    const togglesWrap = document.createElement('div');
+                    togglesWrap.style.marginTop = '10px';
+                    togglesWrap.appendChild(toggle('📋 Chirp Copy Buttons',          true, 'Copy buttons on all blue picker tags.'));
+                    togglesWrap.appendChild(toggle('↗ DLP Profile Open Buttons', true, 'Open-in-new-tab on DLP Profile = tags.'));
+                    togglesWrap.appendChild(toggle('✉ SMTP Header Auto-Fill',    true, 'Fill with Block Headers button next to Add SMTP Header.'));
+                    togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
+                    togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
+
+                    const logGroup = document.createElement('div');
+                    Object.assign(logGroup.style, {
+                        background: '#eef2ff', border: '1px solid #c5cae9', borderRadius: '6px',
+                        padding: '8px 12px', marginBottom: '8px',
+                    });
+                    const logGroupLabel = document.createElement('div');
+                    logGroupLabel.textContent = '📋 Log Buttons (collapsible group in settings)';
+                    Object.assign(logGroupLabel.style, {
+                        fontWeight: 'bold', fontSize: '12px', color: '#3949ab',
+                        marginBottom: '8px', fontFamily: 'Arial, sans-serif',
+                    });
+                    logGroup.appendChild(logGroupLabel);
+                    logGroup.appendChild(toggle('📝 Description Log Buttons', true, 'Add Log Entry and View Log on policy descriptions.'));
+                    logGroup.appendChild(toggle('📜 URL List History Buttons', true, 'Log entry, delete, and view history on URL list pages.'));
+                    logGroup.appendChild(toggle('🔒 SSL Decryption Removal Entry', true, 'Add Removal Entry button on SSL Decryption pages.'));
+                    togglesWrap.appendChild(logGroup);
+                    body.appendChild(togglesWrap);
+                },
+            },
+        ];
+
+        /* ── Overlay ── */
+        const overlay = document.createElement('div');
+        overlay.id = 'nsToolkitHelpModalOverlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0',
+            width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: '1000000',
+        });
+
+        /* ── Modal ── */
+        const modal = document.createElement('div');
+        modal.id = 'nsToolkitHelpModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: '1000001',
+            background: '#fff', border: '2px solid #333',
+            padding: '20px', borderRadius: '10px',
+            width: '640px', maxWidth: '92vw', maxHeight: '82vh',
+            overflowY: 'auto', color: '#333333',
+            fontFamily: 'Arial, sans-serif', boxSizing: 'border-box',
+        });
+
+        /* ── Header ── */
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px',
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `NS Policies Toolkit • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif',
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        /* ── Section cards (all start expanded) ── */
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border: '1px solid #e8e8f0', borderRadius: '6px',
+                marginBottom: '8px', overflow: 'hidden',
+            });
+
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0',
+            });
+
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+            });
+
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        /* ── Close button ── */
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif',
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
     }
 
     function showSettingsModal() {
