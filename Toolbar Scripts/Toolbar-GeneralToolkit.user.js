@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.3
+// @version      1.4
 // @description  Highlight a RITM, PER, or Netskope case number on any page to get a floating button that opens it in a new tab. Toggle via Toolbar.
 // @author       J.R.
 // @match        *://*/*
@@ -19,8 +19,11 @@
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.3.3';
-    const CHANGELOG = `Version 1.3.3:
+    const SCRIPT_VERSION = '1.4';
+    const CHANGELOG = `Version 1.4:
+- Added a ? Help button to the settings panel that opens a visual Feature Guide covering both tool groups and the ticket quick-open mechanism.
+
+Version 1.3.3:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.3.2:
@@ -100,6 +103,22 @@ Version 1.2:
             color: '#00897b',
         },
     };
+
+    // ─────────────────────────────────────────────────────────────
+    // DARK MODE ISOLATION
+    // ─────────────────────────────────────────────────────────────
+
+    const darkModeStyle = document.createElement('style');
+    darkModeStyle.textContent = `
+        #tqo-settings-modal, #tqo-changelog-modal, #tqoHelpModal {
+            color: #333333 !important;
+        }
+        #tqoHelpModal input, #tqoHelpModal select, #tqoHelpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+    `;
+    document.head.appendChild(darkModeStyle);
 
     // ─────────────────────────────────────────────────────────────
     // TOOLBAR NOTIFICATION DOT
@@ -493,7 +512,27 @@ Version 1.2:
             cursor: 'pointer', padding: '4px 9px', fontWeight: 'bold', fontSize: '13px',
         });
         closeBtn.addEventListener('click', hideSettingsModal);
-        header.appendChild(closeBtn);
+
+        const headerRight = document.createElement('div');
+        Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif',
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+
+        headerRight.appendChild(helpBtn);
+        headerRight.appendChild(closeBtn);
+        header.appendChild(headerRight);
         modal.appendChild(header);
 
         /* ── Body (scrollable) ── */
@@ -576,6 +615,546 @@ Version 1.2:
         modal.appendChild(footer);
         backdrop.appendChild(modal);
         document.body.appendChild(backdrop);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // FEATURE GUIDE MODAL
+    // ─────────────────────────────────────────────────────────────
+
+    function showHelpModal() {
+        if (document.getElementById('tqoHelpModal')) return;
+
+        // lead: single orienting sentence at the top of a section.
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif',
+            });
+            body.appendChild(p);
+        }
+
+        // bullets: compact list with purple dot markers.
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: small italic note placed under a visual.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif',
+            });
+            body.appendChild(c);
+        }
+
+        // span: inline element with optional styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: horizontal flex row for side-by-side mocks.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0',
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: small colored rounded label.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: '4px', padding: '3px 8px',
+                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block',
+            });
+            return c;
+        }
+
+        // toolSquare: rounded icon tile resembling a real toolbar button.
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative',
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, {
+                    position: 'absolute', top: '-3px', right: '-3px',
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: '#ff8c00', border: '1px solid #fff',
+                });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: thin vertical divider between toolbar groups.
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        // menuMock: white card wrapping toolbar icon tiles.
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+
+        // toggle: checkbox preview with an optional per-control description.
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 0 0';
+            const box = document.createElement('span');
+            Object.assign(box.style, {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
+                border: on ? 'none' : '1px solid #b0b0b0',
+                background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block',
+            });
+            box.textContent = on ? '✓' : '';
+            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+            return wrap;
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Click the ticket icon in the floating toolbar to open the General Toolkit settings panel.');
+
+                    body.appendChild(hrow([
+                        menuMock([
+                            toolSquare('📊'), menuSep(),
+                            toolSquare('🎫', { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: '2px solid #667eea' }),
+                            menuSep(),
+                            toolSquare('🛡'), toolSquare('🔗'),
+                        ]),
+                    ], { marginBottom: '10px' }));
+                    caption(body, 'The toolkit registers as a ticket icon in the floating toolbar.');
+
+                    bullets(body, [
+                        'A pulsing dot on the icon means a new version is available. Open settings to see what is new.',
+                        'Two feature groups are available: ServiceNow tickets and Netskope support cases.',
+                        'Each group can be toggled on or off independently from the settings panel.',
+                    ]);
+                },
+            },
+            {
+                icon: '🎫',
+                title: 'Ticket Quick Open',
+                buildContent(body) {
+                    lead(body, 'Highlight any recognised ticket or case number on any page, then click the floating button that appears near your cursor.');
+
+                    const selDemo = document.createElement('div');
+                    Object.assign(selDemo.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '13px', color: '#333',
+                        marginBottom: '8px', lineHeight: '2',
+                    });
+                    selDemo.appendChild(document.createTextNode('...related to ticket '));
+                    const hl = document.createElement('span');
+                    hl.textContent = 'RITM1234567';
+                    Object.assign(hl.style, {
+                        background: '#0073e6', color: '#fff', padding: '1px 4px', borderRadius: '2px',
+                    });
+                    selDemo.appendChild(hl);
+                    selDemo.appendChild(document.createTextNode(' which was...'));
+                    body.appendChild(selDemo);
+                    caption(body, 'Step 1: highlight the ticket number with your mouse on any page.');
+
+                    const floatWrap = document.createElement('div');
+                    floatWrap.style.margin = '10px 0';
+                    const floatBtn = document.createElement('div');
+                    floatBtn.textContent = '🎫 Open RITM1234567';
+                    Object.assign(floatBtn.style, {
+                        display: 'inline-block', background: '#0073e6', color: '#fff',
+                        borderRadius: '5px', padding: '6px 14px',
+                        fontSize: '12px', fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold', boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
+                    });
+                    floatWrap.appendChild(floatBtn);
+                    body.appendChild(floatWrap);
+                    caption(body, 'Step 2: click the floating button to open the ticket in a new tab.');
+
+                    bullets(body, [
+                        'The button appears near your cursor and clamps to the viewport so it never goes off-screen.',
+                        'Click anywhere else, press Escape, or scroll to dismiss the button without opening anything.',
+                    ]);
+                },
+            },
+            {
+                icon: '☁️',
+                title: 'ServiceNow Tickets',
+                buildContent(body) {
+                    lead(body, 'Three ServiceNow ticket types are supported, each with a distinct color and destination form.');
+
+                    const types = [
+                        { bg: '#0073e6', label: 'RITM', desc: 'Service request items. Opens the request item form in ServiceNow.' },
+                        { bg: '#e53935', label: 'INC',  desc: 'Incident tickets. Opens the incident form in ServiceNow.' },
+                        { bg: '#7c3aed', label: 'PER',  desc: 'Policy exception requests. Opens the compliance exception form in ServiceNow.' },
+                    ];
+                    for (const t of types) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0',
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = t.label;
+                        Object.assign(badge.style, {
+                            background: t.bg, color: '#fff', borderRadius: '4px',
+                            padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
+                            alignSelf: 'flex-start', minWidth: '40px', textAlign: 'center',
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = t.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+
+                    bullets(body, [
+                        'Format: prefix (RITM, INC, or PER) followed immediately by digits, e.g. RITM1234567.',
+                        'Leading and trailing punctuation around the highlighted number is stripped automatically.',
+                    ]);
+                },
+            },
+            {
+                icon: '🛡️',
+                title: 'Netskope Cases',
+                buildContent(body) {
+                    lead(body, 'Highlight an eight-digit number starting with 006 to look it up in Netskope global search.');
+
+                    const rowEl = document.createElement('div');
+                    Object.assign(rowEl.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0',
+                    });
+                    const nsBadge = document.createElement('span');
+                    nsBadge.textContent = 'NS';
+                    Object.assign(nsBadge.style, {
+                        background: '#00897b', color: '#fff', borderRadius: '4px',
+                        padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
+                    });
+                    const nsDescEl = document.createElement('span');
+                    nsDescEl.textContent = 'Netskope support case. Opens the global search page filtered to the case number.';
+                    Object.assign(nsDescEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    rowEl.appendChild(nsBadge);
+                    rowEl.appendChild(nsDescEl);
+                    body.appendChild(rowEl);
+
+                    const box = document.createElement('div');
+                    Object.assign(box.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0',
+                        borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333', marginBottom: '8px',
+                    });
+                    box.textContent = '00612345   →   eight digits, starting with 006';
+                    body.appendChild(box);
+
+                    bullets(body, [
+                        'There is no direct URL for a Netskope case number, so the script opens global search instead.',
+                        'Click the matching result in the search list to open the full case.',
+                    ]);
+                },
+            },
+            {
+                icon: '⚙️',
+                title: 'Settings',
+                buildContent(body) {
+                    lead(body, 'Open the settings panel by clicking the ticket icon in the toolbar.');
+
+                    const headerButtons = [
+                        { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' },
+                        { bg: '#e53935',     color: '#fff',    border: 'none',              label: '✕',      desc: 'Closes the settings panel.' },
+                    ];
+                    for (const item of headerButtons) {
+                        const brow = document.createElement('div');
+                        Object.assign(brow.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0',
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, border: item.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0',
+                            fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start',
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        brow.appendChild(badge);
+                        brow.appendChild(descEl);
+                        body.appendChild(brow);
+                    }
+
+                    // ServiceNow toggle section mock
+                    const snowWrap = document.createElement('div');
+                    Object.assign(snowWrap.style, {
+                        background: '#fff', border: '1px solid #1a73e833',
+                        borderRadius: '8px', marginBottom: '12px', overflow: 'hidden',
+                    });
+                    const snowHdr = document.createElement('div');
+                    Object.assign(snowHdr.style, {
+                        background: '#1a73e818', borderBottom: '1px solid #1a73e833', padding: '6px 12px',
+                    });
+                    const snowHdrTitle = document.createElement('span');
+                    snowHdrTitle.textContent = '☁️  SERVICENOW';
+                    Object.assign(snowHdrTitle.style, {
+                        fontSize: '11px', fontWeight: 'bold', color: '#1a73e8',
+                        textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'Arial, sans-serif',
+                    });
+                    snowHdr.appendChild(snowHdrTitle);
+                    snowWrap.appendChild(snowHdr);
+                    const snowToggleWrap = document.createElement('div');
+                    snowToggleWrap.style.padding = '10px 14px';
+                    const snowToggleEl = toggle('Enable ServiceNow tickets', true, 'Detect RITM, INC, and PER numbers on any page.');
+                    snowToggleWrap.appendChild(snowToggleEl);
+                    snowWrap.appendChild(snowToggleWrap);
+                    const snowBadgesRow = document.createElement('div');
+                    Object.assign(snowBadgesRow.style, {
+                        display: 'flex', gap: '6px', padding: '8px 14px', borderTop: '1px solid #f0f0f0',
+                    });
+                    [['RITM','#0073e6'],['INC','#e53935'],['PER','#7c3aed']].forEach(([lbl, bg]) => {
+                        const b = document.createElement('span');
+                        b.textContent = lbl;
+                        Object.assign(b.style, {
+                            background: bg, color: '#fff', borderRadius: '4px',
+                            padding: '2px 8px', fontWeight: 'bold', fontSize: '11px', fontFamily: 'Arial, sans-serif',
+                        });
+                        snowBadgesRow.appendChild(b);
+                    });
+                    snowWrap.appendChild(snowBadgesRow);
+                    body.appendChild(snowWrap);
+
+                    // Netskope toggle section mock
+                    const nsWrap = document.createElement('div');
+                    Object.assign(nsWrap.style, {
+                        background: '#fff', border: '1px solid #00897b33',
+                        borderRadius: '8px', marginBottom: '8px', overflow: 'hidden',
+                    });
+                    const nsHdr = document.createElement('div');
+                    Object.assign(nsHdr.style, {
+                        background: '#00897b18', borderBottom: '1px solid #00897b33', padding: '6px 12px',
+                    });
+                    const nsHdrTitle = document.createElement('span');
+                    nsHdrTitle.textContent = '🛡️  NETSKOPE';
+                    Object.assign(nsHdrTitle.style, {
+                        fontSize: '11px', fontWeight: 'bold', color: '#00897b',
+                        textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: 'Arial, sans-serif',
+                    });
+                    nsHdr.appendChild(nsHdrTitle);
+                    nsWrap.appendChild(nsHdr);
+                    const nsToggleWrap = document.createElement('div');
+                    nsToggleWrap.style.padding = '10px 14px';
+                    const nsToggleEl = toggle('Enable Netskope support cases', true, 'Detect 006XXXXX case numbers on any page.');
+                    nsToggleWrap.appendChild(nsToggleEl);
+                    nsWrap.appendChild(nsToggleWrap);
+                    const nsBadgesRow = document.createElement('div');
+                    Object.assign(nsBadgesRow.style, {
+                        display: 'flex', gap: '6px', padding: '8px 14px', borderTop: '1px solid #f0f0f0',
+                    });
+                    const nsB = document.createElement('span');
+                    nsB.textContent = 'NS';
+                    Object.assign(nsB.style, {
+                        background: '#00897b', color: '#fff', borderRadius: '4px',
+                        padding: '2px 8px', fontWeight: 'bold', fontSize: '11px', fontFamily: 'Arial, sans-serif',
+                    });
+                    nsBadgesRow.appendChild(nsB);
+                    nsWrap.appendChild(nsBadgesRow);
+                    body.appendChild(nsWrap);
+                },
+            },
+        ];
+
+        /* ── Overlay ── */
+        const overlay = document.createElement('div');
+        overlay.id = 'tqoHelpModalOverlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0',
+            width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)',
+            zIndex: '1000000',
+        });
+
+        /* ── Modal ── */
+        const modal = document.createElement('div');
+        modal.id = 'tqoHelpModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: '1000001',
+            background: '#fff', border: '2px solid #333',
+            padding: '20px', borderRadius: '10px',
+            width: '640px', maxWidth: '92vw', maxHeight: '82vh',
+            overflowY: 'auto', color: '#333333',
+            fontFamily: 'Arial, sans-serif', boxSizing: 'border-box',
+        });
+
+        /* ── Header ── */
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px',
+        });
+
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `General Toolkit • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif',
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        /* ── Section cards (all start expanded) ── */
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border: '1px solid #e8e8f0', borderRadius: '6px',
+                marginBottom: '8px', overflow: 'hidden',
+            });
+
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0',
+            });
+
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+            });
+
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        /* ── Close button ── */
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif',
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
     }
 
     function showSettingsModal() {
