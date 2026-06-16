@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.3.8
+// @version      1.4
 // @description  Work note & comment draft autosave with toolbar management panel
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -23,8 +23,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.8';
-    const CHANGELOG = `Version 1.3.8:
+    const SCRIPT_VERSION = '1.4';
+    const CHANGELOG = `Version 1.4:
+- Added a ? Help button to the settings panel that opens a visual Feature Guide covering draft autosave, restore prompts, the saved drafts panel, and the SCTASK auto-open feature.
+
+Version 1.3.8:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.3.7:
@@ -242,6 +245,23 @@ Version 1.1.4:
     }
 
     /* ==========================================================
+     *  DARK MODE ISOLATION
+     * ==========================================================*/
+
+    const darkModeStyle = document.createElement('style');
+    darkModeStyle.textContent = `
+        #sn-toolkit-modal, #snToolkitHelpModal {
+            color: #333333 !important;
+        }
+        #sn-toolkit-modal input, #sn-toolkit-modal select, #sn-toolkit-modal textarea,
+        #snToolkitHelpModal input, #snToolkitHelpModal select, #snToolkitHelpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
+    `;
+    document.head.appendChild(darkModeStyle);
+
+    /* ==========================================================
      *  UI COMPONENTS — floating indicator (ticket pages)
      * ==========================================================*/
 
@@ -323,6 +343,510 @@ Version 1.1.4:
         row.style.background  = enabled ? '#f0f6ff' : '#ffffff';
     }
 
+    /* ==========================================================
+     *  UI COMPONENTS — feature guide modal
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('snToolkitHelpModal')) return;
+
+        /* ---- Reusable content helpers. Define these once at the top of showHelpModal.
+         *      Each section's buildContent calls them. lead/bullets/caption append to
+         *      the section body; span/hrow/chip return an element you place yourself. ---- */
+
+        // lead: the single orienting sentence at the very top of a section. One line only.
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: a small italic note placed directly under a visual to explain it.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(c);
+        }
+
+        // span: an inline text node with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: a small colored rounded label. Use for categories and button previews.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: '4px', padding: '3px 8px',
+                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block'
+            });
+            return c;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button.
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, {
+                    position: 'absolute', top: '-3px', right: '-3px',
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: '#ff8c00', border: '1px solid #fff'
+                });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: the thin vertical divider used between groups in a menu mock.
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        // toggle: a checkbox preview row with label and optional description.
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = document.createElement('span');
+            Object.assign(box.style, {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
+                border: on ? 'none' : '1px solid #b0b0b0',
+                background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+            });
+            box.textContent = on ? '✓' : '';
+            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+            return wrap;
+        }
+
+        const sections = [
+            {
+                icon: '🚀', title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Click the 🛠️ toolbar icon on any ServiceNow page to open the Settings panel.');
+                    const menuMock = document.createElement('div');
+                    Object.assign(menuMock.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                        padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                        marginBottom: '10px'
+                    });
+                    menuMock.appendChild(toolSquare('🛠️', { bg: '#e8f0fe', border: '2px solid #667eea' }));
+                    menuMock.appendChild(menuSep());
+                    menuMock.appendChild(toolSquare('📋'));
+                    menuMock.appendChild(toolSquare('🔗'));
+                    body.appendChild(hrow([menuMock]));
+                    caption(body, 'The 🛠️ tile opens the ServiceNow Toolkit settings panel.');
+                    bullets(body, [
+                        'On RITM and INC ticket pages, autosave activates automatically when Work Notes or Comments fields are detected.',
+                        'A floating indicator in the bottom-right corner shows save status and any restore prompts.',
+                        'Settings are saved across browser sessions via Tampermonkey storage.',
+                    ]);
+                }
+            },
+            {
+                icon: '📝', title: 'Draft Autosave',
+                buildContent(body) {
+                    lead(body, 'Work Notes and Comments are saved automatically every 3 seconds as you type on ticket pages.');
+                    const indicator = document.createElement('div');
+                    Object.assign(indicator.style, {
+                        display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px',
+                        padding: '7px 12px', background: '#ffffff',
+                        border: '1px solid #c5d3f0', borderLeft: '4px solid #4a90d9',
+                        borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.14)',
+                        fontSize: '12px', color: '#2c3e6a', fontFamily: 'Arial, Helvetica, sans-serif',
+                        marginBottom: '10px', maxWidth: '360px'
+                    });
+                    const msgSpan = document.createElement('span');
+                    msgSpan.textContent = '💾 Work Notes draft saved';
+                    Object.assign(msgSpan.style, { fontSize: '12px', color: '#2c3e6a', fontFamily: 'Arial, sans-serif' });
+                    const clearBtn = document.createElement('span');
+                    clearBtn.textContent = 'Clear';
+                    Object.assign(clearBtn.style, {
+                        padding: '3px 9px', fontSize: '11px',
+                        border: '1px solid #c5d3f0', borderRadius: '3px',
+                        background: '#f7f9ff', color: '#3a3a6a',
+                        fontFamily: 'Arial, Helvetica, sans-serif', whiteSpace: 'nowrap'
+                    });
+                    indicator.appendChild(msgSpan);
+                    indicator.appendChild(clearBtn);
+                    body.appendChild(indicator);
+                    caption(body, 'The indicator appears at the bottom-right of the page after each auto-save.');
+                    bullets(body, [
+                        'Drafts are stored in Tampermonkey storage and persist across sessions and page reloads.',
+                        'Both Work Notes and Comments can be saved independently for the same ticket.',
+                        'Click "Clear" on the indicator to delete the draft immediately without navigating away.',
+                        'Drafts older than 7 days are automatically removed on the next page load.',
+                    ]);
+                }
+            },
+            {
+                icon: '↩', title: 'Draft Restore Prompt',
+                buildContent(body) {
+                    lead(body, 'When you open a ticket that has a saved draft, a restore bar appears at the bottom of the page.');
+                    const restoreBar = document.createElement('div');
+                    Object.assign(restoreBar.style, {
+                        display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px',
+                        padding: '7px 12px', background: '#ffffff',
+                        border: '1px solid #c5d3f0', borderLeft: '4px solid #4a90d9',
+                        borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.14)',
+                        fontSize: '12px', color: '#2c3e6a', fontFamily: 'Arial, Helvetica, sans-serif',
+                        marginBottom: '10px', maxWidth: '420px'
+                    });
+                    const restoreMsg = document.createElement('span');
+                    restoreMsg.textContent = '📝 Saved draft found (Work Notes)';
+                    Object.assign(restoreMsg.style, { fontSize: '12px', color: '#2c3e6a', fontFamily: 'Arial, sans-serif' });
+                    const restoreBtn = document.createElement('span');
+                    restoreBtn.textContent = 'Restore';
+                    Object.assign(restoreBtn.style, {
+                        padding: '3px 9px', fontSize: '11px',
+                        border: '1px solid #4a90d9', borderRadius: '3px',
+                        background: '#e8f0fe', color: '#1a5cb8',
+                        fontFamily: 'Arial, Helvetica, sans-serif', whiteSpace: 'nowrap', fontWeight: 'bold'
+                    });
+                    const deleteBtn = document.createElement('span');
+                    deleteBtn.textContent = 'Delete';
+                    Object.assign(deleteBtn.style, {
+                        padding: '3px 9px', fontSize: '11px',
+                        border: '1px solid #c5d3f0', borderRadius: '3px',
+                        background: '#f7f9ff', color: '#3a3a6a',
+                        fontFamily: 'Arial, Helvetica, sans-serif', whiteSpace: 'nowrap'
+                    });
+                    restoreBar.appendChild(restoreMsg);
+                    restoreBar.appendChild(restoreBtn);
+                    restoreBar.appendChild(deleteBtn);
+                    body.appendChild(restoreBar);
+                    caption(body, 'Click Restore to paste the draft back into the field, or Delete to discard it.');
+                    bullets(body, [
+                        'Click "Restore" to paste the saved draft back into the Work Notes or Comments field.',
+                        'Click "Delete" to permanently discard the draft.',
+                        'If both Work Notes and Comments have drafts, each gets its own "↩ Label" restore button.',
+                    ]);
+                }
+            },
+            {
+                icon: '📋', title: 'Saved Drafts Panel',
+                buildContent(body) {
+                    lead(body, 'Click "View Saved Drafts →" in Settings to browse all drafts stored across sessions.');
+                    const card = document.createElement('div');
+                    Object.assign(card.style, {
+                        background: '#fff', border: '1px solid #dee2e6',
+                        borderRadius: '8px', padding: '10px 12px',
+                        display: 'flex', flexDirection: 'column', gap: '4px',
+                        marginBottom: '10px', maxWidth: '380px'
+                    });
+                    const cardHeader = document.createElement('div');
+                    Object.assign(cardHeader.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center' });
+                    const ticketLabel = document.createElement('strong');
+                    ticketLabel.textContent = 'RITM1234567';
+                    Object.assign(ticketLabel.style, { fontSize: '13px', color: '#222', fontFamily: 'Arial, sans-serif' });
+                    const meta = document.createElement('div');
+                    Object.assign(meta.style, { display: 'flex', gap: '6px', alignItems: 'center' });
+                    const fieldBadge = document.createElement('span');
+                    fieldBadge.textContent = 'Work Notes';
+                    Object.assign(fieldBadge.style, {
+                        fontSize: '11px', padding: '2px 6px', borderRadius: '3px',
+                        background: '#e8f0fe', color: '#1a73e8', fontFamily: 'Arial, sans-serif'
+                    });
+                    const timeSpan = document.createElement('span');
+                    timeSpan.textContent = '5m ago';
+                    Object.assign(timeSpan.style, { fontSize: '11px', color: '#888', fontFamily: 'Arial, sans-serif' });
+                    const delSpan = document.createElement('span');
+                    delSpan.textContent = '🗑️';
+                    Object.assign(delSpan.style, { fontSize: '14px', opacity: '0.65', cursor: 'default' });
+                    meta.appendChild(fieldBadge);
+                    meta.appendChild(timeSpan);
+                    meta.appendChild(delSpan);
+                    cardHeader.appendChild(ticketLabel);
+                    cardHeader.appendChild(meta);
+                    const preview = document.createElement('div');
+                    preview.textContent = 'Hi there, I have reviewed the request and confirmed the…';
+                    Object.assign(preview.style, {
+                        fontSize: '12px', color: '#555', lineHeight: '1.45',
+                        fontFamily: 'Arial, sans-serif',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                    });
+                    card.appendChild(cardHeader);
+                    card.appendChild(preview);
+                    body.appendChild(card);
+                    bullets(body, [
+                        'Each card shows the ticket number, field type (Work Notes or Comments), time saved, and a content preview.',
+                        'Click 🗑️ on a card to delete that specific draft.',
+                        '"Clear All" at the top of the list removes every draft at once.',
+                        'Click "← Back" in the header to return to the main Settings view.',
+                    ]);
+                }
+            },
+            {
+                icon: '🔗', title: 'SCTASK Auto-Open',
+                buildContent(body) {
+                    lead(body, 'Saving a ticket whose short description contains "Closed" automatically opens its linked SCTASK in a background tab.');
+                    const wrap = document.createElement('div');
+                    Object.assign(wrap.style, { marginBottom: '12px', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+                    const rows = [
+                        { label: 'Trigger', bg: '#f8f8ff', labelColor: '#888',    text: 'Short description contains "Closed" and you click Save and Stay or Update' },
+                        { label: 'Result',  bg: '#f2fff7', labelColor: '#2a7d4f', text: 'The linked SCTASK opens automatically in a new background tab' }
+                    ];
+                    for (const r of rows) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', alignItems: 'baseline', gap: '10px',
+                            padding: '7px 12px', background: r.bg,
+                            borderBottom: r.label === 'Trigger' ? '1px solid #e8e8f0' : 'none'
+                        });
+                        const labelEl = document.createElement('span');
+                        labelEl.textContent = r.label;
+                        Object.assign(labelEl.style, {
+                            fontSize: '10px', fontWeight: 'bold', color: r.labelColor,
+                            textTransform: 'uppercase', whiteSpace: 'nowrap',
+                            width: '52px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                        });
+                        const textEl = document.createElement('span');
+                        textEl.textContent = r.text;
+                        Object.assign(textEl.style, { fontFamily: 'Arial, sans-serif', fontSize: '12px', color: '#333', lineHeight: '1.5' });
+                        row.appendChild(labelEl);
+                        row.appendChild(textEl);
+                        wrap.appendChild(row);
+                    }
+                    body.appendChild(wrap);
+                    bullets(body, [
+                        'Only triggers on "Save and Stay" and "Update" buttons, not a plain Save.',
+                        'Looks for SCTASK links in the related list first, then falls back to a REST API lookup if the list has not loaded.',
+                        'Can be toggled on or off in Settings independently of the autosave feature.',
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️', title: 'Settings',
+                buildContent(body) {
+                    lead(body, 'Open the Settings panel from the toolbar icon to toggle features and manage drafts.');
+                    const headerButtons = [
+                        { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' },
+                        { bg: '#e53935',     color: '#fff',    border: 'none',                label: '✕',     desc: 'Closes the Settings panel.' },
+                    ];
+                    for (const item of headerButtons) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badge = document.createElement('span');
+                        badge.textContent = item.label;
+                        Object.assign(badge.style, {
+                            background: item.bg, color: item.color, border: item.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = item.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badge);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                    const togglesLabel = document.createElement('div');
+                    togglesLabel.textContent = 'Feature toggles:';
+                    Object.assign(togglesLabel.style, { fontSize: '11px', color: '#888', marginBottom: '8px', fontFamily: 'Arial, sans-serif' });
+                    body.appendChild(togglesLabel);
+                    body.appendChild(toggle('📝 Work Note Draft Autosave', true, 'Auto-saves Work Notes and Comments as you type. Drafts persist until deleted or expired after 7 days.'));
+                    body.appendChild(toggle('🔗 Open SCTASK on Closed Save', true, 'Opens the linked SCTASK in a background tab when saving a ticket whose short description contains "Closed".'));
+                    const viewRow = document.createElement('div');
+                    Object.assign(viewRow.style, {
+                        display: 'flex', gap: '10px', alignItems: 'flex-start',
+                        marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f0f0f0'
+                    });
+                    const viewBadge = document.createElement('span');
+                    viewBadge.textContent = 'View Saved Drafts →';
+                    Object.assign(viewBadge.style, {
+                        background: '#e8f0fe', color: '#1a73e8', border: '1px solid #1a73e8',
+                        borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+                    });
+                    const viewDesc = document.createElement('span');
+                    viewDesc.textContent = 'Switches to the Saved Drafts panel, showing all stored drafts with previews and delete options.';
+                    Object.assign(viewDesc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    viewRow.appendChild(viewBadge);
+                    viewRow.appendChild(viewDesc);
+                    body.appendChild(viewRow);
+                }
+            },
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'snToolkitHelpModalOverlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)', zIndex: '999999'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'snToolkitHelpModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+            zIndex: '1000000', background: '#fff', border: '2px solid #333', padding: '20px',
+            borderRadius: '10px', width: '640px', maxWidth: '92vw', maxHeight: '82vh',
+            overflowY: 'auto', color: '#333333', fontFamily: 'Arial, sans-serif'
+        });
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `ServiceNow Toolkit • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards — all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
+    /* ==========================================================
+     *  UI COMPONENTS — settings / drafts modal
+     * ==========================================================*/
+
     function buildModal() {
         if (document.getElementById(MODAL_ID)) return;
 
@@ -388,8 +912,25 @@ Version 1.1.4:
             padding: '4px 9px', fontWeight: 'bold', fontSize: '13px', flexShrink: '0',
         });
         closeBtn.addEventListener('click', hideModal);
+        const headerRight = document.createElement('div');
+        Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif',
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+        headerRight.appendChild(helpBtn);
+        headerRight.appendChild(closeBtn);
         header.appendChild(headerLeft);
-        header.appendChild(closeBtn);
+        header.appendChild(headerRight);
         card.appendChild(header);
 
         /* ── Scrollable body ── */
