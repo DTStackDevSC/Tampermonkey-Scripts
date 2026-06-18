@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.10.3
+// @version      1.11.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.10.3';
-    const CHANGELOG = `Version 1.10.3:
+    const SCRIPT_VERSION = '1.11.0';
+    const CHANGELOG = `Version 1.11.0:
+- Added a new "Handover Note" entry type under a dedicated Handover group in the change-type dropdown. Use it to record context when passing a ticket to another technician: who it is going to, the current status, and the next steps. Handover notes are stored and synced with the team log like any other entry type.
+
+Version 1.10.3:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.10.2:
@@ -244,6 +247,11 @@ Version 1.4.3:
         certified_pinned_app_removed: [
             { key: 'appName', label: 'App name', type: 'text' },
         ],
+        handover_note: [
+            { key: 'handoverTo',    label: 'Handing over to', type: 'text'     },
+            { key: 'currentStatus', label: 'Current status',  type: 'textarea' },
+            { key: 'nextSteps',     label: 'Next steps',      type: 'textarea' },
+        ],
     };
 
     /* ==========================================================
@@ -362,6 +370,12 @@ Version 1.4.3:
             group: 'Recategorization',
             items: [
                 { label: 'Recategorization Request', value: 'Recategorization Request', color: '#17a2b8', schema: 'recat_request' },
+            ],
+        },
+        {
+            group: 'Handover',
+            items: [
+                { label: 'Handover Note', value: 'Handover Note', color: '#e67e22', schema: 'handover_note' },
             ],
         },
         {
@@ -594,6 +608,7 @@ Version 1.4.3:
         { label: 'Custom Apps',                 types: ['Custom App Added', 'Custom App Edited', 'Custom App Removed'] },
         { label: 'Certified Pinned Apps',       types: ['Certified Pinned App Added', 'Certified Pinned App Edited', 'Certified Pinned App Removed'] },
         { label: 'Recategorization Requests',   types: ['Recategorization Request'] },
+        { label: 'Handover Notes',              types: ['Handover Note'] },
         { label: 'Other',                       types: ['Custom'] },
     ];
 
