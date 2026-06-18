@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.11.0
+// @version      1.12.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.11.0';
-    const CHANGELOG = `Version 1.11.0:
+    const SCRIPT_VERSION = '1.12.0';
+    const CHANGELOG = `Version 1.12.0:
+- Added a new "Constraints" group with a "User Constraint" entry type. Use it to record when a user constraint is configured on a DLP policy: it captures the constraint name and the list of users it applies to.
+- Added a new "File Profiles" group with Added, Modified, and Removed entry types. Each entry captures the file profile name along with its configuration: name pattern or extension, file type, file hash, object ID, file size, protection status, and sensitivity label.
+- Added a new "DLP Profiles" group with Added, Modified, and Removed entry types. Each entry captures the profile name, the associated file profile, and the content rules.
+
+Version 1.11.0:
 - Added a new "Handover Note" entry type under a dedicated Handover group in the change-type dropdown. Use it to record context when passing a ticket to another technician: who it is going to, the current status, and the next steps. Handover notes are stored and synced with the team log like any other entry type.
 
 Version 1.10.3:
@@ -252,6 +257,31 @@ Version 1.4.3:
             { key: 'currentStatus', label: 'Current status',  type: 'textarea' },
             { key: 'nextSteps',     label: 'Next steps',      type: 'textarea' },
         ],
+        constraint_user: [
+            { key: 'name',  label: 'Name', type: 'text'     },
+            { key: 'users', label: 'User', type: 'textarea' },
+        ],
+        file_profile_full: [
+            { key: 'name',               label: 'Name',                type: 'text' },
+            { key: 'nameOrExtension',    label: 'Name or extension',   type: 'text' },
+            { key: 'fileType',           label: 'File Type',           type: 'text' },
+            { key: 'fileHash',           label: 'File Hash',           type: 'text' },
+            { key: 'objectId',           label: 'Object ID',           type: 'text' },
+            { key: 'fileSize',           label: 'File Size',           type: 'text' },
+            { key: 'protectedEncrypted', label: 'Protected/Encrypted', type: 'text' },
+            { key: 'sensitivityLabel',   label: 'Sensitivity Label',   type: 'text' },
+        ],
+        file_profile_deleted: [
+            { key: 'name', label: 'Name', type: 'text' },
+        ],
+        dlp_profile_full: [
+            { key: 'name',         label: 'Name',          type: 'text'     },
+            { key: 'fileProfile',  label: 'File Profile',  type: 'text'     },
+            { key: 'contentRules', label: 'Content Rules', type: 'textarea' },
+        ],
+        dlp_profile_deleted: [
+            { key: 'name', label: 'Name', type: 'text' },
+        ],
     };
 
     /* ==========================================================
@@ -370,6 +400,28 @@ Version 1.4.3:
             group: 'Recategorization',
             items: [
                 { label: 'Recategorization Request', value: 'Recategorization Request', color: '#17a2b8', schema: 'recat_request' },
+            ],
+        },
+        {
+            group: 'Constraints',
+            items: [
+                { label: 'User Constraint', value: 'User Constraint', color: '#17a2b8', schema: 'constraint_user' },
+            ],
+        },
+        {
+            group: 'File Profiles',
+            items: [
+                { label: 'File Profile Added',    value: 'File Profile Added',    color: '#28a745', schema: 'file_profile_full'    },
+                { label: 'File Profile Modified', value: 'File Profile Modified', color: '#6610f2', schema: 'file_profile_full'    },
+                { label: 'File Profile Removed',  value: 'File Profile Removed',  color: '#dc3545', schema: 'file_profile_deleted' },
+            ],
+        },
+        {
+            group: 'DLP Profiles',
+            items: [
+                { label: 'DLP Profile Added',    value: 'DLP Profile Added',    color: '#007bff', schema: 'dlp_profile_full'    },
+                { label: 'DLP Profile Modified', value: 'DLP Profile Modified', color: '#6610f2', schema: 'dlp_profile_full'    },
+                { label: 'DLP Profile Removed',  value: 'DLP Profile Removed',  color: '#c0392b', schema: 'dlp_profile_deleted' },
             ],
         },
         {
@@ -608,6 +660,9 @@ Version 1.4.3:
         { label: 'Custom Apps',                 types: ['Custom App Added', 'Custom App Edited', 'Custom App Removed'] },
         { label: 'Certified Pinned Apps',       types: ['Certified Pinned App Added', 'Certified Pinned App Edited', 'Certified Pinned App Removed'] },
         { label: 'Recategorization Requests',   types: ['Recategorization Request'] },
+        { label: 'Constraints',                 types: ['User Constraint'] },
+        { label: 'File Profiles',               types: ['File Profile Added', 'File Profile Modified', 'File Profile Removed'] },
+        { label: 'DLP Profiles',                types: ['DLP Profile Added', 'DLP Profile Modified', 'DLP Profile Removed'] },
         { label: 'Handover Notes',              types: ['Handover Note'] },
         { label: 'Other',                       types: ['Custom'] },
     ];
@@ -1693,6 +1748,40 @@ Version 1.4.3:
                 commentsHeader: 'A recategorization request has been submitted to Netskope. Please allow 24–48 hours for them to review it and apply any necessary changes.',
             },
 
+            // ── Constraints ────────────────────────────────────────
+            'User Constraint': {
+                workNoteHeader: 'Netskope User Constraint has been configured:',
+                commentsHeader: "We've configured the following Netskope User Constraint:",
+            },
+
+            // ── File Profiles ──────────────────────────────────────
+            'File Profile Added': {
+                workNoteHeader: 'Netskope File Profile has been added:',
+                commentsHeader: "We've added the following Netskope File Profile:",
+            },
+            'File Profile Modified': {
+                workNoteHeader: 'Netskope File Profile has been modified:',
+                commentsHeader: "We've modified the following Netskope File Profile:",
+            },
+            'File Profile Removed': {
+                workNoteHeader: 'Netskope File Profile has been removed:',
+                commentsHeader: "We've removed the following Netskope File Profile as requested:",
+            },
+
+            // ── DLP Profiles ───────────────────────────────────────
+            'DLP Profile Added': {
+                workNoteHeader: 'Netskope DLP Profile has been added:',
+                commentsHeader: "We've added the following Netskope DLP Profile:",
+            },
+            'DLP Profile Modified': {
+                workNoteHeader: 'Netskope DLP Profile has been modified:',
+                commentsHeader: "We've modified the following Netskope DLP Profile:",
+            },
+            'DLP Profile Removed': {
+                workNoteHeader: 'Netskope DLP Profile has been removed:',
+                commentsHeader: "We've removed the following Netskope DLP Profile as requested:",
+            },
+
             // 'Custom' is intentionally absent — freeform notes don't auto-write.
         };
 
@@ -2269,6 +2358,18 @@ Version 1.4.3:
             createTypes: ['Certified Pinned App Added'],
             modifyTypes: ['Certified Pinned App Edited'],
             deleteTypes: ['Certified Pinned App Removed'],
+        },
+        'File Profiles': {
+            nameKey:     'name',
+            createTypes: ['File Profile Added'],
+            modifyTypes: ['File Profile Modified'],
+            deleteTypes: ['File Profile Removed'],
+        },
+        'DLP Profiles': {
+            nameKey:     'name',
+            createTypes: ['DLP Profile Added'],
+            modifyTypes: ['DLP Profile Modified'],
+            deleteTypes: ['DLP Profile Removed'],
         },
     };
 
