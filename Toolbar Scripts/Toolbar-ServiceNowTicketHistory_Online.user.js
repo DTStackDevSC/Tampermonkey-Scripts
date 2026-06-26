@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.12.0
+// @version      1.12.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.12.0';
-    const CHANGELOG = `Version 1.12.0:
+    const SCRIPT_VERSION = '1.12.1';
+    const CHANGELOG = `Version 1.12.1:
+- Field titles in entry cards (for example "Policy Name:", "Source:") are now displayed in bold, making it easier to distinguish titles from their values at a glance.
+
+Version 1.12.0:
 - Added a new "Constraints" group with a "User Constraint" entry type. Use it to record when a user constraint is configured on a DLP policy: it captures the constraint name and the list of users it applies to.
 - Added a new "File Profiles" group with Added, Modified, and Removed entry types. Each entry captures the file profile name along with its configuration: name pattern or extension, file type, file hash, object ID, file size, protection status, and sensitivity label.
 - Added a new "DLP Profiles" group with Added, Modified, and Removed entry types. Each entry captures the profile name, the associated file profile, and the content rules.
@@ -2723,10 +2726,58 @@ Version 1.4.3:
 
         // Content
         const contentEl = css(mk('div'), {
-            fontSize:'12px', color:'#333', lineHeight:'1.6', whiteSpace:'pre-wrap',
+            fontSize:'12px', color:'#333', lineHeight:'1.6',
             wordBreak:'break-word', fontFamily:'Arial, sans-serif'
         });
-        contentEl.textContent = formatEntryContent(entry);
+        if (entry.fields && typeof entry.fields === 'object') {
+            const schema = getSchema(entry.type);
+            if (schema) {
+                const labelMap = {};
+                const orderedKeys = [];
+                schema.forEach(f => {
+                    labelMap[f.key] = f.label;
+                    orderedKeys.push(f.key);
+                    if (f.extraFields) f.extraFields.forEach(ef => {
+                        labelMap[ef.key] = ef.label;
+                        orderedKeys.push(ef.key);
+                    });
+                });
+                const visibleKeys = orderedKeys.filter(k => entry.fields[k]);
+                if (!visibleKeys.length && !entry.note) {
+                    contentEl.textContent = '(all fields empty)';
+                } else {
+                    visibleKeys.forEach(k => {
+                        const row = mk('div');
+                        const lbl = mk('strong');
+                        lbl.textContent = (labelMap[k] || k) + ':';
+                        const val = mk('span');
+                        val.style.whiteSpace = 'pre-wrap';
+                        val.textContent = ' ' + entry.fields[k];
+                        row.append(lbl, val);
+                        contentEl.appendChild(row);
+                    });
+                    if (entry.note) {
+                        const row = mk('div');
+                        const lbl = mk('strong');
+                        lbl.textContent = 'Additional Details:';
+                        const val = mk('span');
+                        val.style.whiteSpace = 'pre-wrap';
+                        val.textContent = ' ' + entry.note;
+                        row.append(lbl, val);
+                        contentEl.appendChild(row);
+                    }
+                }
+            } else {
+                contentEl.style.whiteSpace = 'pre-wrap';
+                contentEl.textContent = Object.entries(entry.fields)
+                    .filter(([, v]) => v)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join('\n') || '(all fields empty)';
+            }
+        } else {
+            contentEl.style.whiteSpace = 'pre-wrap';
+            contentEl.textContent = entry.note || '(no detail provided)';
+        }
         card.appendChild(contentEl);
 
         // Timestamp + author
