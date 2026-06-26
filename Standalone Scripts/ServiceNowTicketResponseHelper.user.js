@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.18.0
+// @version      2.18.1
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.18.0';
-    const CHANGELOG = `Version 2.18.0:
+    const SCRIPT_VERSION = '2.18.1';
+    const CHANGELOG = `Version 2.18.1:
+- Fixed footer signature: the separator line now appears correctly when the footer is pre-filled on page load. Fixed an issue where inserting a template would duplicate the footer instead of replacing it.
+
+Version 2.18.0:
 - Added a Footer Signature feature. Enable it in Settings to automatically append a separator and footer text to every inserted response. The separator is rendered as a horizontal rule using [code]<hr>[/code] markup. When enabled and the comment field is empty, the footer is pre-filled as a signature when the page loads. The toggle and footer text persist across sessions and can be edited at any time via the Edit button in Settings.
 
 Version 2.17.4:
@@ -3301,7 +3304,7 @@ Regards.`,
             return;
         }
         if (textarea.value.trim() === '') {
-            textarea.value = footerText;
+            textarea.value = FOOTER_SEPARATOR + footerText;
             textarea.dispatchEvent(new Event('input',  { bubbles: true }));
             textarea.dispatchEvent(new Event('change', { bubbles: true }));
         }
