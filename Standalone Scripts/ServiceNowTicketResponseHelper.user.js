@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.17.4
+// @version      2.18.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.4';
-    const CHANGELOG = `Version 2.17.4:
+    const SCRIPT_VERSION = '2.18.0';
+    const CHANGELOG = `Version 2.18.0:
+- Added a Footer Signature feature. Enable it in Settings to automatically append a separator and footer text to every inserted response. The separator is rendered as a horizontal rule using [code]<hr>[/code] markup. When enabled and the comment field is empty, the footer is pre-filled as a signature when the page loads. The toggle and footer text persist across sessions and can be edited at any time via the Edit button in Settings.
+
+Version 2.17.4:
 - Updated the EMEA team first, second, and third reminder response texts.
 
 Version 2.17.3:
@@ -1661,6 +1664,22 @@ Regards.`,
         GM_setValue('ticketResponseAutoUpdateDate', val);
     }
 
+    function getFooterEnabled() {
+        return GM_getValue('ticketResponseFooterEnabled', false);
+    }
+
+    function setFooterEnabled(val) {
+        GM_setValue('ticketResponseFooterEnabled', !!val);
+    }
+
+    function getFooterText() {
+        return GM_getValue('ticketResponseFooterText', '');
+    }
+
+    function setFooterText(text) {
+        GM_setValue('ticketResponseFooterText', text);
+    }
+
     /* ==========================================================
      *  DATE UPDATE HELPERS
      * ==========================================================*/
@@ -2014,6 +2033,18 @@ Regards.`,
      * ==========================================================*/
 
     async function insertTextWithMention(textarea, text, fieldType = 'comments') {
+        // Footer: strip any existing footer from textarea to avoid duplication, then append to text
+        if (getFooterEnabled()) {
+            const footerText = getFooterText().trim();
+            if (footerText) {
+                const footerSuffix = FOOTER_SEPARATOR + footerText;
+                if (textarea.value.endsWith(footerSuffix)) {
+                    textarea.value = textarea.value.slice(0, -footerSuffix.length);
+                }
+                text = text + footerSuffix;
+            }
+        }
+
         console.group('📝 Inserting text with mentions');
         console.log('Text to insert:', text);
 
@@ -3158,6 +3189,124 @@ Regards.`,
         document.body.appendChild(modal);
     }
 
+    /* ==========================================================
+     *  FOOTER SIGNATURE
+     * ==========================================================*/
+
+    const FOOTER_SEPARATOR = '\n\n[code]<hr>[/code]\n\n';
+
+    function showFooterEditModal() {
+        if (document.getElementById('responseHelperFooterEditOverlay')) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'responseHelperFooterEditOverlay';
+        Object.assign(overlay.style, { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: '10002' });
+
+        const modal = document.createElement('div');
+        modal.id = 'responseHelperFooterEditModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: '10003', background: '#fff', border: '2px solid #333',
+            padding: '0', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            fontFamily: 'Arial, sans-serif', borderRadius: '10px',
+            minWidth: '400px', maxWidth: '560px', width: '90vw'
+        });
+
+        const headerBar = document.createElement('div');
+        Object.assign(headerBar.style, {
+            padding: '14px 18px', borderBottom: '2px solid #667eea',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            background: '#f8f9fa', borderRadius: '8px 8px 0 0'
+        });
+        const title = document.createElement('h2');
+        title.textContent = 'Edit Footer';
+        Object.assign(title.style, { margin: '0', fontSize: '15px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, { background: 'none', border: 'none', fontSize: '16px', cursor: 'pointer', color: '#666', padding: '0', lineHeight: '1' });
+        closeX.onmouseover = () => closeX.style.color = '#333';
+        closeX.onmouseout  = () => closeX.style.color = '#666';
+        closeX.onclick = () => { overlay.remove(); modal.remove(); };
+        headerBar.appendChild(title);
+        headerBar.appendChild(closeX);
+
+        const body = document.createElement('div');
+        Object.assign(body.style, { padding: '16px 18px' });
+
+        const hint = document.createElement('div');
+        hint.textContent = 'This text is appended to every inserted response, separated by a horizontal rule.';
+        Object.assign(hint.style, { fontSize: '12px', color: '#777', marginBottom: '12px', fontFamily: 'Arial, sans-serif' });
+        body.appendChild(hint);
+
+        const ta = document.createElement('textarea');
+        ta.value = getFooterText();
+        Object.assign(ta.style, {
+            width: '100%', minHeight: '120px', padding: '8px 10px',
+            border: '1px solid #ccc', borderRadius: '4px',
+            fontSize: '12px', fontFamily: 'Arial, sans-serif', lineHeight: '1.5',
+            resize: 'vertical', boxSizing: 'border-box', color: '#333', background: '#fff'
+        });
+        body.appendChild(ta);
+
+        const footerBar = document.createElement('div');
+        Object.assign(footerBar.style, {
+            padding: '12px 18px', borderTop: '1px solid #e0e0e0',
+            display: 'flex', justifyContent: 'flex-end', gap: '8px',
+            background: '#f8f9fa', borderRadius: '0 0 8px 8px'
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        Object.assign(cancelBtn.style, {
+            padding: '7px 16px', background: '#e9ecef', color: '#555',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontSize: '13px', fontFamily: 'Arial, sans-serif'
+        });
+        cancelBtn.onmouseover = () => cancelBtn.style.background = '#dee2e6';
+        cancelBtn.onmouseout  = () => cancelBtn.style.background = '#e9ecef';
+        cancelBtn.onclick = () => { overlay.remove(); modal.remove(); };
+
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save';
+        Object.assign(saveBtn.style, {
+            padding: '7px 16px', background: '#667eea', color: 'white',
+            border: 'none', borderRadius: '5px', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif'
+        });
+        saveBtn.onmouseover = () => saveBtn.style.background = '#5568d3';
+        saveBtn.onmouseout  = () => saveBtn.style.background = '#667eea';
+        saveBtn.onclick = () => {
+            setFooterText(ta.value);
+            overlay.remove();
+            modal.remove();
+        };
+
+        footerBar.appendChild(cancelBtn);
+        footerBar.appendChild(saveBtn);
+        modal.appendChild(headerBar);
+        modal.appendChild(body);
+        modal.appendChild(footerBar);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); modal.remove(); } };
+    }
+
+    function maybeInjectFooterSignature() {
+        if (!getFooterEnabled()) return;
+        const footerText = getFooterText().trim();
+        if (!footerText) return;
+        const textarea = getTargetTextarea('comments');
+        if (!textarea) {
+            setTimeout(maybeInjectFooterSignature, 800);
+            return;
+        }
+        if (textarea.value.trim() === '') {
+            textarea.value = footerText;
+            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
     function showSettingsModal() {
         if (document.getElementById('responseHelperSettingsOverlay')) return;
 
@@ -3246,6 +3395,81 @@ Regards.`,
         const separator = document.createElement('div');
         Object.assign(separator.style, { borderTop: '1px solid #e0e0e0', margin: '10px 0' });
         body.appendChild(separator);
+
+        // Footer section
+        const footerSectionTitle = document.createElement('div');
+        footerSectionTitle.textContent = '📝 Footer Signature';
+        Object.assign(footerSectionTitle.style, {
+            fontWeight: 'bold', fontSize: '13px', color: '#333',
+            marginBottom: '8px', fontFamily: 'Arial, sans-serif'
+        });
+        body.appendChild(footerSectionTitle);
+
+        const footerToggleRow = document.createElement('div');
+        Object.assign(footerToggleRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0' });
+
+        const footerLabelCol = document.createElement('div');
+        const footerLabelText = document.createElement('div');
+        footerLabelText.textContent = 'Append footer on insert';
+        Object.assign(footerLabelText.style, { fontSize: '13px', fontWeight: 'bold', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const footerLabelDesc = document.createElement('div');
+        footerLabelDesc.textContent = 'Adds a separator and footer text to every inserted response.';
+        Object.assign(footerLabelDesc.style, { fontSize: '11px', color: '#777', marginTop: '3px', fontFamily: 'Arial, sans-serif' });
+        footerLabelCol.appendChild(footerLabelText);
+        footerLabelCol.appendChild(footerLabelDesc);
+
+        const footerControls = document.createElement('div');
+        Object.assign(footerControls.style, { display: 'flex', alignItems: 'center', gap: '10px', flexShrink: '0', marginLeft: '12px' });
+
+        const editFooterBtn = document.createElement('button');
+        editFooterBtn.textContent = 'Edit';
+        Object.assign(editFooterBtn.style, {
+            padding: '4px 10px', background: 'transparent', color: '#667eea',
+            border: '1px solid #c0c8f0', borderRadius: '4px', cursor: 'pointer',
+            fontSize: '11px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif'
+        });
+        editFooterBtn.onmouseover = () => { editFooterBtn.style.background = '#eef0ff'; };
+        editFooterBtn.onmouseout  = () => { editFooterBtn.style.background = 'transparent'; };
+        editFooterBtn.onclick = () => showFooterEditModal();
+
+        const footerToggleLabel = document.createElement('label');
+        Object.assign(footerToggleLabel.style, { position: 'relative', display: 'inline-block', width: '40px', height: '22px', flexShrink: '0' });
+        const footerToggleInput = document.createElement('input');
+        footerToggleInput.type = 'checkbox';
+        footerToggleInput.checked = getFooterEnabled();
+        Object.assign(footerToggleInput.style, { opacity: '0', width: '0', height: '0', position: 'absolute' });
+        const footerSlider = document.createElement('span');
+        Object.assign(footerSlider.style, {
+            position: 'absolute', cursor: 'pointer', top: '0', left: '0', right: '0', bottom: '0',
+            backgroundColor: footerToggleInput.checked ? '#667eea' : '#ccc',
+            borderRadius: '22px', transition: 'background-color 0.25s'
+        });
+        const footerKnob = document.createElement('span');
+        Object.assign(footerKnob.style, {
+            position: 'absolute', height: '16px', width: '16px', left: '3px', bottom: '3px',
+            backgroundColor: '#fff', borderRadius: '50%', transition: 'transform 0.25s',
+            transform: footerToggleInput.checked ? 'translateX(18px)' : 'translateX(0)'
+        });
+        footerSlider.appendChild(footerKnob);
+        footerToggleInput.onchange = () => {
+            const on = footerToggleInput.checked;
+            setFooterEnabled(on);
+            footerSlider.style.backgroundColor = on ? '#667eea' : '#ccc';
+            footerKnob.style.transform = on ? 'translateX(18px)' : 'translateX(0)';
+        };
+        footerToggleLabel.appendChild(footerToggleInput);
+        footerToggleLabel.appendChild(footerSlider);
+
+        footerControls.appendChild(editFooterBtn);
+        footerControls.appendChild(footerToggleLabel);
+        footerToggleRow.appendChild(footerLabelCol);
+        footerToggleRow.appendChild(footerControls);
+        body.appendChild(footerToggleRow);
+
+        // Separator before Team section
+        const separator2 = document.createElement('div');
+        Object.assign(separator2.style, { borderTop: '1px solid #e0e0e0', margin: '10px 0' });
+        body.appendChild(separator2);
 
         // Team section
         const teamSectionTitle = document.createElement('div');
@@ -3961,7 +4185,8 @@ Regards.`,
         /* Dark mode isolation */
         #ticket-response-dropdown, #customResponsesModal,
         #teamSelector, #changelogModal,
-        #responseHelperSettingsModal { color: #333333 !important; }
+        #responseHelperSettingsModal,
+        #responseHelperFooterEditModal { color: #333333 !important; }
         #ticket-response-dropdown input, #ticket-response-dropdown select,
         #ticket-response-dropdown textarea,
         #customResponsesModal input, #customResponsesModal select,
@@ -3969,7 +4194,9 @@ Regards.`,
         #teamSelector input, #teamSelector select, #teamSelector textarea,
         #changelogModal input, #changelogModal select, #changelogModal textarea,
         #responseHelperSettingsModal input, #responseHelperSettingsModal select,
-        #responseHelperSettingsModal textarea {
+        #responseHelperSettingsModal textarea,
+        #responseHelperFooterEditModal input, #responseHelperFooterEditModal select,
+        #responseHelperFooterEditModal textarea {
             background-color: #ffffff !important;
             color: #333333 !important;
         }
@@ -3977,6 +4204,7 @@ Regards.`,
         #customResponsesModal { background-color: #ffffff !important; }
         #changelogModal { background-color: #ffffff !important; }
         #responseHelperSettingsModal { background-color: #ffffff !important; }
+        #responseHelperFooterEditModal { background-color: #ffffff !important; }
 
         /* Help Modal */
         #responseHelperHelpModalOverlay {
@@ -4090,6 +4318,8 @@ Regards.`,
                 document.querySelectorAll('.bypass-submenu').forEach(sm => sm.style.display = 'none');
             }
         });
+
+        maybeInjectFooterSignature();
     }
 
     /* ==========================================================
