@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.17.3
+// @version      2.17.4
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.3';
-    const CHANGELOG = `Version 2.17.3:
+    const SCRIPT_VERSION = '2.17.4';
+    const CHANGELOG = `Version 2.17.4:
+- Updated the EMEA team first, second, and third reminder response texts.
+
+Version 2.17.3:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 2.17.2:
@@ -578,36 +581,36 @@ To add you as an approved Member Firm requestor, could you please provide confir
 Kind regards,
 Global Data Security Enablement`,
                 first: (vars) => `Hi @[${vars.openedByName}],
-I hope you're doing well. I'm reaching out with a gentle reminder that we still need the following information to continue working on your ${vars.pageType}:
+I hope you're doing well. I'm reaching out as we are waiting for an update on your end regarding the following:
 
 >
 
-Whenever you have a moment, please share the details so we can move forward as quickly as possible.
+Could you please take a moment to get back to us when convenient? Your response will allow us to move your request forward as quickly as possible.
+
 Thank you in advance for your help!
 
 Kind regards,
 Global Data Security Enablement`,
                 second: (vars) => `Hi @[${vars.openedByName}],
-I hope you're doing well. This is a second gentle reminder that we still need the information below in order to continue working on your ${vars.pageType}:
+I hope you're doing well. This is a second reminder as we have still not received an update from you regarding the following:
 
 >
 
-Whenever you have a moment, please share the required details so we can proceed as soon as possible.
-If we don't receive a response by the end of the next business day, we will need to close the ticket in accordance with our standard procedure.
+Please get back to us at your earliest convenience so we can continue progressing with your request.
+
+If we do not receive a response by the end of the next business day, we will need to close the ticket in accordance with our standard procedure.
 
 Thank you in advance for your cooperation.
-
 Kind regards,
 Global Data Security Enablement`,
                 third: (vars) => `Hello @[${vars.openedByName}],
-I hope you're doing well. This is a gentle third reminder that we still require the following information to continue working on your ${vars.pageType}:
+I hope you're doing well. This is our third and final reminder as we have yet to receive any update from you regarding the following:
 
 >
 
-Whenever you have a moment, please share the requested details so we can proceed as quickly as possible.
-If we do not receive a response by the end of the day, we will need to close the ticket in accordance with our standard procedure.
+Please note that if we do not hear back by the end of the day, we will close this ticket in accordance with our standard procedure.
 
-Thank you very much in advance for your cooperation.
+Thank you very much for your understanding.
 
 Kind regards,
 Global Data Security Enablement`,
