@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.18.4
+// @version      2.18.5
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.18.4';
-    const CHANGELOG = `Version 2.18.4:
+    const SCRIPT_VERSION = '2.18.5';
+    const CHANGELOG = `Version 2.18.5:
+- EMEA: Removed "Please update the agent & report back with the results." from the Slack URL Added response.
+
+Version 2.18.4:
 - EMEA: Restored the original "When you have a moment, please update the agent configuration and run a quick test" sentence to the SSL Bypass, Domain Bypass, SSL to Domain Bypass, Application Bypass, Policy Create, Policy Modify, DLP Policy Create, and DLP Policy Modify responses. The "Please update the agent & report back with the results." line remains only on responses that did not previously include a test instruction.
 
 Version 2.18.3:
@@ -733,7 +736,6 @@ Slack URL:
 >
 
 Has been added to the requested MF Slack Allow list.
-Please update the agent & report back with the results.
 
 Kind regards,`,
                 tier2SOCreq: (vars) => `Hello,
