@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.4.2
+// @version      1.5.0
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.2';
-    const CHANGELOG = `Version 1.4.2:
+    const SCRIPT_VERSION = '1.5.0';
+    const CHANGELOG = `Version 1.5.0:
+- Added a "Response Type" dropdown to the assignment form. The default option uses the existing standard assignment text. Selecting "SPM Request" inserts a different comment directing the requester to the SCC/SPM team form and closes the request.
+
+Version 1.4.2:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.4.1:
@@ -1709,6 +1712,27 @@ Version 1.2.1:
         formGroup.appendChild(label);
         formGroup.appendChild(dropdown);
 
+        // Response Type dropdown
+        const responseTypeGroup = document.createElement('div');
+        responseTypeGroup.className = 'sn-assign-form-group';
+        const responseTypeLabel = document.createElement('label');
+        responseTypeLabel.className = 'sn-assign-label';
+        responseTypeLabel.textContent = 'Response Type:';
+        const responseTypeDropdown = document.createElement('select');
+        responseTypeDropdown.id = 'sn-assign-response-type';
+        responseTypeDropdown.className = 'sn-assign-dropdown';
+        [
+            { value: 'default', text: 'Default (Standard Assignment Text)' },
+            { value: 'spm',     text: 'SPM Request' },
+        ].forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.text;
+            responseTypeDropdown.appendChild(option);
+        });
+        responseTypeGroup.appendChild(responseTypeLabel);
+        responseTypeGroup.appendChild(responseTypeDropdown);
+
         // Missing Info checkbox
         const checkboxContainer = document.createElement('div');
         checkboxContainer.className = 'sn-assign-checkbox-container';
@@ -1818,6 +1842,7 @@ Version 1.2.1:
 
         content.appendChild(infoBox);
         content.appendChild(formGroup);
+        content.appendChild(responseTypeGroup);
         content.appendChild(shortDescGroup);
         content.appendChild(checkboxContainer);
         content.appendChild(freezeContainer);
@@ -1930,6 +1955,8 @@ Version 1.2.1:
             if (freezePicker) freezePicker.classList.remove('active');
             const shortDescInput = document.getElementById('sn-assign-short-desc');
             if (shortDescInput) shortDescInput.value = '';
+            const responseTypeDropdown = document.getElementById('sn-assign-response-type');
+            if (responseTypeDropdown) responseTypeDropdown.value = 'default';
         }
     }
 
@@ -2164,6 +2191,7 @@ Version 1.2.1:
         const freezeCheckbox = document.getElementById('sn-assign-freeze-checkbox');
         const useFreezeReminder = freezeCheckbox.checked;
         const shortDescVal = document.getElementById('sn-assign-short-desc')?.value?.trim() || '';
+        const responseType = document.getElementById('sn-assign-response-type')?.value || 'default';
 
         _ctx = getTicketContext();
         if (!_ctx) {
@@ -2177,7 +2205,7 @@ Version 1.2.1:
             await assignToTeamMember(assigneeName);
             await updateShortDescription();
             const openedByName = getOpenedByName();
-            await addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder);
+            await addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType);
             await openSCTASKInBackground();
 
             let clipText = null;
@@ -2340,12 +2368,26 @@ Version 1.2.1:
         return null;
     }
 
-    async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder) {
+    async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType) {
         const iframeDoc = _ctx ? _ctx.doc : document;
         const textarea = await findCommentsTextarea(iframeDoc);
         if (!textarea) throw new Error('Could not find Additional Comments textarea');
 
-        const greeting = `Hi @[${openedByName}],
+        let commentText;
+
+        if (responseType === 'spm') {
+            commentText = `Hi @[${openedByName}],
+Uploads to applications such as <App Name> are managed by the SCC/SPM team.
+Please complete the ServiceNow form to submit an exception request for the client engagement:
+
+https://deloitteglobal.service-now.com/mysupport?id=sc_cat_item&sys_id=84c6c452e7600300dd926217c2f6a980
+
+As no further action is required from the Global Data Protection team, this request will be closed.
+
+Kind regards,
+Global Data Security Enablement`;
+        } else {
+            const greeting = `Hi @[${openedByName}],
 
 Our team has taken ownership of your request, and @[${assigneeName}] will be working with you directly.
 Once the ticket details have been reviewed, they will reach out if there are any questions or if additional information is required.
@@ -2354,11 +2396,11 @@ Please expect an update within the next two business days.
 
 If this is an urgent request, please let us know.`;
 
-        const freezeReminderText = useFreezeReminder ?
-            `\n\nA reminder we are currently on a change freeze for Data Security products and will be in effect until ${formatFreezeDate(getStoredFreezeDate(), getStoredTimezone())}. If you require an emergency P1 change, kindly provide business justification.` : '';
+            const freezeReminderText = useFreezeReminder ?
+                `\n\nA reminder we are currently on a change freeze for Data Security products and will be in effect until ${formatFreezeDate(getStoredFreezeDate(), getStoredTimezone())}. If you require an emergency P1 change, kindly provide business justification.` : '';
 
-        const missingInfoText = useMissingInfoTemplate ?
-            `\n\nTo proceed with your case, please provide the following mandatory information that was not included:
+            const missingInfoText = useMissingInfoTemplate ?
+                `\n\nTo proceed with your case, please provide the following mandatory information that was not included:
 
 - Number of users affected
 - When the issue started
@@ -2374,9 +2416,12 @@ Please note that without the required information, we will be unable to proceed 
 
 Thank you for your cooperation.` : '';
 
-        const signature = `\n\nBest regards,\nGlobal Data Security Enablement`;
+            const signature = `\n\nBest regards,\nGlobal Data Security Enablement`;
 
-        await insertTextWithMention(textarea, greeting + freezeReminderText + missingInfoText + signature);
+            commentText = greeting + freezeReminderText + missingInfoText + signature;
+        }
+
+        await insertTextWithMention(textarea, commentText);
         console.log('✓ Added Additional Comments with @mentions');
     }
 
