@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.0
+// @version      1.5.1
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.0';
-    const CHANGELOG = `Version 1.5.0:
+    const SCRIPT_VERSION = '1.5.1';
+    const CHANGELOG = `Version 1.5.1:
+- Added "Reassignment/Handover" as a new Response Type option. It inserts a message informing the requester of the PTO reassignment and @mentions the newly assigned team member.
+- Fixed SPM Request response to include a blank line between the greeting and the body text.
+
+Version 1.5.0:
 - Added a "Response Type" dropdown to the assignment form. The default option uses the existing standard assignment text. Selecting "SPM Request" inserts a different comment directing the requester to the SCC/SPM team form and closes the request.
 
 Version 1.4.2:
@@ -1722,8 +1726,9 @@ Version 1.2.1:
         responseTypeDropdown.id = 'sn-assign-response-type';
         responseTypeDropdown.className = 'sn-assign-dropdown';
         [
-            { value: 'default', text: 'Default (Standard Assignment Text)' },
-            { value: 'spm',     text: 'SPM Request' },
+            { value: 'default',  text: 'Default (Standard Assignment Text)' },
+            { value: 'spm',      text: 'SPM Request' },
+            { value: 'handover', text: 'Reassignment/Handover' },
         ].forEach(opt => {
             const option = document.createElement('option');
             option.value = opt.value;
@@ -2377,12 +2382,21 @@ Version 1.2.1:
 
         if (responseType === 'spm') {
             commentText = `Hi @[${openedByName}],
+
 Uploads to applications such as <App Name> are managed by the SCC/SPM team.
 Please complete the ServiceNow form to submit an exception request for the client engagement:
 
 https://deloitteglobal.service-now.com/mysupport?id=sc_cat_item&sys_id=84c6c452e7600300dd926217c2f6a980
 
 As no further action is required from the Global Data Protection team, this request will be closed.
+
+Kind regards,
+Global Data Security Enablement`;
+        } else if (responseType === 'handover') {
+            commentText = `Hi @[${openedByName}],
+
+As I will be on PTO over the coming days, this request has been reassigned to @[${assigneeName}].
+Please work with him to ensure the request continues to progress.
 
 Kind regards,
 Global Data Security Enablement`;
