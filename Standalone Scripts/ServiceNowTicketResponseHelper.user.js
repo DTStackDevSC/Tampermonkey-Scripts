@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.18.1
+// @version      2.18.2
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.18.1';
-    const CHANGELOG = `Version 2.18.1:
+    const SCRIPT_VERSION = '2.18.2';
+    const CHANGELOG = `Version 2.18.2:
+- EMEA: Added "Please update the agent & report back with the results." to all change-type responses: SSL Bypass, Domain Bypass, SSL to Domain Bypass, Application Bypass, Policy Create, Policy Modify, Policy Delete, DLP Policy Create, DLP Policy Modify, DLP Policy Delete, Steering/Client Configuration, and Slack URL Added.
+
+Version 2.18.1:
 - Fixed footer signature: the separator line now appears correctly when the footer is pre-filled on page load. Fixed an issue where inserting a template would duplicate the footer instead of replacing it.
 
 Version 2.18.0:
@@ -525,6 +528,7 @@ We've added the following bypasses to help address the issue:
 >
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -536,6 +540,7 @@ We've added the following bypasses to help address the issue:
 >
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -547,6 +552,7 @@ We've switched the following bypasses from SSL Bypass to Domain Bypass to help a
 >
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -558,6 +564,7 @@ We've added the following bypasses to help address the issue:
 >
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -691,6 +698,7 @@ We've created the following Netskope policy to help address the issue:
 - Action:
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -705,6 +713,7 @@ We've modified the following Netskope policy to help address the issue:
 - Action:
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -714,6 +723,7 @@ We've scheduled for deletion the following Netskope policy to help address the i
 - Policy name:
 
 This policy has been disabled and scheduled for deletion in 30 days.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -723,6 +733,7 @@ Slack URL:
 >
 
 Has been added to the requested MF Slack Allow list.
+Please update the agent & report back with the results.
 
 Kind regards,`,
                 tier2SOCreq: (vars) => `Hello,
@@ -759,6 +770,8 @@ Partner Tenant Access configured:
 1 –
 
 
+
+Please update the agent & report back with the results.
 
 Kind regards,`,
                 configMgmtWorknotes: (vars) => ``,
@@ -801,6 +814,7 @@ We've created the following Netskope DLP policy to help address the request:
 - Group position:
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -818,6 +832,7 @@ We've modified the following Netskope DLP policy to help address the request:
 - Group position:
 
 When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
@@ -827,6 +842,7 @@ We've scheduled for deletion the following Netskope DLP policy:
 - Policy name:
 
 This policy has been disabled and scheduled for deletion in 30 days.
+Please update the agent & report back with the results.
 
 Best regards,
 Global Data Security Enablement`,
