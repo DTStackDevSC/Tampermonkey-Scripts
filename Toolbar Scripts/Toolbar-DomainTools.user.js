@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.2.2
+// @version      1.3.0
 // @description  Extract domains from text and check their security reputation. Replaces Domain Extractor and Domain Security Check.
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -23,8 +23,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.2';
-    const CHANGELOG = `Version 1.2.2:
+    const SCRIPT_VERSION = '1.3.0';
+    const CHANGELOG = `Version 1.3.0:
+- The Open SPM Request Form option now opens a fixed SPM request link and automatically
+  adds the RITM number of the ticket you have open. You no longer need to set or paste an
+  SPM URL, so the URL setup prompt and the Set URL link have been removed.
+
+Version 1.2.2:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.2.1:
@@ -66,7 +71,6 @@ Version 1.0:
 
     const GM_KEY_VERSION        = 'domainToolsVersion';
     const GM_KEY_CHANGELOG_SEEN = 'domainToolsChangelogSeen';
-    const GM_KEY_SNOW_URL       = 'domainSecurityCheckServiceNowURL';
 
     function getStoredVersion()    { return GM_getValue(GM_KEY_VERSION, null); }
     function saveVersion(v)        { GM_setValue(GM_KEY_VERSION, v); }
@@ -285,114 +289,47 @@ Version 1.0:
     const REGISTRATION_RETRY_DELAY  = 500;
 
     /* ==========================================================
-     *  SPM URL MANAGEMENT
+     *  SPM REQUEST FORM
      * ==========================================================*/
 
-    function getStoredSPMURL() { return GM_getValue(GM_KEY_SNOW_URL, null); }
-    function saveSPMURL(url)   { GM_setValue(GM_KEY_SNOW_URL, url); }
+    // Fixed SPM request catalog item. The current RITM number is appended to ritm_id.
+    const SPM_REQUEST_BASE_URL = 'https://deloitteglobal.service-now.com/mysupport?id=sc_cat_item&sys_id=809dca521bd015103c2fa64fad4bcb21&ritm_id=';
 
-    function showSPMURLModal(isReconfigure, onSave) {
-        if (document.getElementById('dt-spm-overlay')) return;
-
-        const overlay = document.createElement('div');
-        overlay.id = 'dt-spm-overlay';
-        Object.assign(overlay.style, {
-            position: 'fixed', inset: '0', background: 'rgba(0,0,0,0.55)', zIndex: '1000010',
-        });
-
-        const modal = document.createElement('div');
-        Object.assign(modal.style, {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            zIndex: '1000011', background: '#fff', border: '2px solid #333',
-            padding: '24px', boxShadow: '0 6px 20px rgba(0,0,0,0.35)', borderRadius: '10px',
-            fontFamily: 'Arial, sans-serif', width: '520px', maxWidth: '92vw',
-            display: 'flex', flexDirection: 'column', gap: '14px',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = isReconfigure ? '⚙️ Reconfigure SPM Request URL' : '⚙️ SPM Request URL Setup';
-        Object.assign(title.style, {
-            margin: '0', fontSize: '17px', color: '#222',
-            borderBottom: '2px solid #667eea', paddingBottom: '10px',
-        });
-
-        const infoBox = document.createElement('div');
-        Object.assign(infoBox.style, {
-            background: '#fff8e1', borderLeft: '4px solid #f39c12',
-            padding: '10px 12px', borderRadius: '5px', fontSize: '13px',
-            color: '#555', lineHeight: '1.55',
-        });
-        infoBox.innerHTML = '<strong>Where to find this URL:</strong><br>The ServiceNow SPM Request Form URL is in the <em>General Scripts User Guide</em> under <strong>Required information and variables</strong>.';
-
-        const warning = document.createElement('div');
-        Object.assign(warning.style, {
-            background: '#fff0f0', border: '1px solid #f5c6cb', borderRadius: '6px',
-            padding: '10px 14px', fontSize: '13px', color: '#c0392b', lineHeight: '1.5',
-        });
-        warning.innerHTML = '⚠️ <strong>Important:</strong> Enter the URL exactly as shown. Do not add or remove characters, slashes, or parameters.';
-
-        const inputLabel = document.createElement('label');
-        inputLabel.textContent = 'ServiceNow SPM Request Form URL:';
-        Object.assign(inputLabel.style, { fontSize: '13px', fontWeight: 'bold', color: '#444' });
-
-        const inputField = document.createElement('input');
-        inputField.type = 'text';
-        inputField.placeholder = 'https://...';
-        Object.assign(inputField.style, {
-            width: '100%', padding: '9px 10px', border: '1px solid #ccc', borderRadius: '6px',
-            fontSize: '13px', fontFamily: '"Courier New", monospace', boxSizing: 'border-box',
-        });
-        if (isReconfigure) inputField.value = getStoredSPMURL() || '';
-
-        const validationMsg = document.createElement('div');
-        Object.assign(validationMsg.style, { fontSize: '12px', minHeight: '16px' });
-
-        const btnRow = document.createElement('div');
-        Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
-
-        const saveBtn = document.createElement('button');
-        saveBtn.textContent = '💾 Save URL';
-        Object.assign(saveBtn.style, {
-            flex: '1', padding: '9px',
-            background: 'linear-gradient(135deg,#667eea 0%,#764ba2 100%)',
-            color: '#fff', border: 'none', borderRadius: '6px',
-            fontSize: '13px', fontWeight: 'bold', cursor: 'pointer',
-        });
-
-        const skipBtn = document.createElement('button');
-        skipBtn.textContent = isReconfigure ? 'Cancel' : 'Skip for now';
-        Object.assign(skipBtn.style, {
-            padding: '9px 16px', background: '#e0e0e0', color: '#444',
-            border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer',
-        });
-
-        btnRow.append(saveBtn, skipBtn);
-        modal.append(title, infoBox, warning, inputLabel, inputField, validationMsg, btnRow);
-        document.body.append(overlay, modal);
-
-        function closeModal() { overlay.remove(); modal.remove(); }
-
-        function validateAndSave() {
-            const url = inputField.value.trim();
-            if (!url) {
-                validationMsg.textContent = 'Please enter a URL before saving.';
-                validationMsg.style.color = '#c0392b';
-                return;
+    // Resolve the ticket form across both classic (new tab) and Polaris (dashboard) modes.
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
+                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
             }
-            if (!url.startsWith('https://')) {
-                validationMsg.textContent = 'URL must start with https://';
-                validationMsg.style.color = '#c0392b';
-                return;
-            }
-            saveSPMURL(url);
-            closeModal();
-            if (typeof onSave === 'function') onSave(url);
         }
+        if (window.g_form) {
+            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        }
+        return null;
+    }
 
-        saveBtn.addEventListener('click', validateAndSave);
-        inputField.addEventListener('keydown', e => { if (e.key === 'Enter') validateAndSave(); });
-        skipBtn.addEventListener('click', closeModal);
-        setTimeout(() => inputField.focus(), 100);
+    // Read the RITM number of the currently open ticket, or null when none is open.
+    function getCurrentRITM() {
+        const ctx = getTicketContext();
+        if (ctx && ctx.gForm) {
+            try {
+                const num = ctx.gForm.getValue('number');
+                if (num && /^RITM\d+$/i.test(num.trim())) return num.trim().toUpperCase();
+            } catch (e) { /* field not on this form, fall through to DOM */ }
+        }
+        const doc = (ctx && ctx.doc) || document;
+        const el = doc.getElementById('sc_req_item.number');
+        const val = el?.value?.trim();
+        if (val && /^RITM\d+$/i.test(val)) return val.toUpperCase();
+        return null;
+    }
+
+    // Build the SPM request link with the current RITM appended (empty when none is open).
+    function buildSPMRequestURL() {
+        return SPM_REQUEST_BASE_URL + (getCurrentRITM() || '');
     }
 
     /* ==========================================================
@@ -662,24 +599,12 @@ Version 1.0:
             cursor: 'pointer', fontSize: '13px', color: '#555', flex: '1', margin: '0',
         });
 
-        const spmConfigLink = document.createElement('span');
-        spmConfigLink.id = 'dt-spm-config-link';
-        spmConfigLink.textContent = getStoredSPMURL() ? '⚙️ Change URL' : '⚙️ Set URL';
-        Object.assign(spmConfigLink.style, {
-            fontSize: '11px', color: '#0066cc', textDecoration: 'underline',
-            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0',
-        });
-        spmConfigLink.addEventListener('click', e => {
-            e.stopPropagation();
-            showSPMURLModal(true, () => { spmConfigLink.textContent = '⚙️ Change URL'; });
-        });
-
         spmRow.addEventListener('click', e => {
-            if (e.target === spmCheckbox || e.target === spmConfigLink) return;
+            if (e.target === spmCheckbox) return;
             e.preventDefault();
             spmCheckbox.checked = !spmCheckbox.checked;
         });
-        spmRow.append(spmCheckbox, spmLabel, spmConfigLink);
+        spmRow.append(spmCheckbox, spmLabel);
 
         const checkBtn = document.createElement('button');
         checkBtn.textContent = '🔍 Check Domain Security';
@@ -701,7 +626,7 @@ Version 1.0:
             '✓ Netskope URL Lookup (domain pre-filled)<br>' +
             '✓ IBM X-Force Exchange<br>' +
             '✓ VirusTotal<br>' +
-            '✓ ServiceNow SPM Request Form (if checked and URL is configured)';
+            '✓ ServiceNow SPM Request Form (if checked, with the current RITM added)';
 
         /* ── Mode toggle ── */
         const modeToggleRow = document.createElement('div');
@@ -971,15 +896,7 @@ Version 1.0:
             GM_openInTab(`https://www.virustotal.com/gui/domain/${domain}`,             { active: false, insert: true });
 
             if (spmCheckbox.checked) {
-                const url = getStoredSPMURL();
-                if (url) {
-                    GM_openInTab(url, { active: false, insert: true });
-                } else {
-                    showSPMURLModal(false, saved => {
-                        GM_openInTab(saved, { active: false, insert: true });
-                        spmConfigLink.textContent = '⚙️ Change URL';
-                    });
-                }
+                GM_openInTab(buildSPMRequestURL(), { active: false, insert: true });
             }
         }
 
@@ -1214,19 +1131,19 @@ Version 1.0:
                     });
                     const spmCb = document.createElement('span');
                     Object.assign(spmCb.style, { width: '16px', height: '16px', border: '1px solid #b0b0b0', borderRadius: '3px', flexShrink: '0', background: '#fff', display: 'inline-block' });
-                    spmMock.append(spmCb, span('Open SPM Request Form', { fontSize: '13px', color: '#555', flex: '1' }), span('⚙️ Set URL', { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' }));
+                    spmMock.append(spmCb, span('Open SPM Request Form', { fontSize: '13px', color: '#555', flex: '1' }));
                     body.appendChild(spmMock);
                     bullets(body, [
                         'Each domain opens its own background tabs so you can review them one by one.',
-                        'Tick Open SPM Request Form to also open your saved SPM form when you run a check.'
+                        'Tick Open SPM Request Form to also open the SPM request form when you run a check. The RITM number of the ticket you have open is added automatically.'
                     ]);
                 }
             },
             {
                 icon: '⚙️',
-                title: 'SPM URL & Settings',
+                title: 'SPM Request & Settings',
                 buildContent(body) {
-                    lead(body, 'Header controls and the one stored setting Domain Tools keeps.');
+                    lead(body, 'Header controls and how the SPM request form opens.');
                     const controls = [
                         { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' },
                         { bg: 'transparent', color: '#667eea', border: 'none', label: "What's new", desc: 'Appears with a pulsing dot after an update. Opens the changelog.' },
@@ -1246,21 +1163,21 @@ Version 1.0:
                         body.appendChild(row);
                     }
                     const setupHeader = document.createElement('div');
-                    setupHeader.textContent = 'SPM Request URL';
+                    setupHeader.textContent = 'SPM Request Form';
                     Object.assign(setupHeader.style, { fontSize: '12px', fontWeight: 'bold', color: '#667eea', marginTop: '6px', marginBottom: '6px', fontFamily: 'Arial, sans-serif' });
                     body.appendChild(setupHeader);
                     const infoMock = document.createElement('div');
                     Object.assign(infoMock.style, {
-                        background: '#fff8e1', borderLeft: '4px solid #f39c12',
+                        background: '#eef7ff', borderLeft: '4px solid #667eea',
                         padding: '8px 12px', borderRadius: '5px', fontSize: '12px',
                         color: '#555', lineHeight: '1.5', marginBottom: '8px', fontFamily: 'Arial, sans-serif'
                     });
-                    infoMock.textContent = 'The SPM Request Form URL is in the General Scripts User Guide, under Required information and variables.';
+                    infoMock.textContent = 'The SPM request form now uses a fixed link, so there is nothing to set up.';
                     body.appendChild(infoMock);
                     bullets(body, [
-                        'On first load the setup prompt appears automatically until you save a URL.',
-                        'Use the Set URL or Change URL link in the Security Check tab to update it any time.',
-                        'Enter the URL exactly as shown in the guide. Do not add or remove characters or parameters.'
+                        'Tick Open SPM Request Form in the Security Check tab to open the form when you run a check.',
+                        'The RITM number of the ticket you have open is added to the request automatically.',
+                        'Open the RITM in ServiceNow before you run the check so the number can be picked up.'
                     ]);
                 }
             }
@@ -1466,14 +1383,6 @@ Version 1.0:
 
         buildModal();
         setTimeout(attemptRegistration, 1000);
-
-        // First run: prompt for the SPM Request URL when none is stored yet
-        if (!getStoredSPMURL()) {
-            setTimeout(() => showSPMURLModal(false, () => {
-                const link = document.getElementById('dt-spm-config-link');
-                if (link) link.textContent = '⚙️ Change URL';
-            }), 1200);
-        }
     }
 
     if (document.readyState === 'loading') {
