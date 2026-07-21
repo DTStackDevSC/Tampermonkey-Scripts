@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.12.1
+// @version      1.13.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.12.1';
-    const CHANGELOG = `Version 1.12.1:
+    const SCRIPT_VERSION = '1.13.0';
+    const CHANGELOG = `Version 1.13.0:
+- DLP Policy and DLP Process Exception entries now generate ticket notes and show the "Write" button, just like the other entry types. Creating one of these entries auto-writes to the worknote and comments fields, and you can also write it manually from the entry card.
+
+Version 1.12.1:
 - Field titles in entry cards (for example "Policy Name:", "Source:") are now displayed in bold, making it easier to distinguish titles from their values at a glance.
 
 Version 1.12.0:
@@ -1587,6 +1590,34 @@ Version 1.4.3:
                 workNoteHeader: 'Netskope Policy has been scheduled to be deleted (currently disabled):',
                 commentsHeader: "We've scheduled for deletion the following Netskope policy to help address the issue:",
                 commentsCloser: 'This policy has been disabled and scheduled for deletion in 30 days.',
+            },
+
+            // ── DLP Policies ───────────────────────────────────
+            'DLP Policy Created': {
+                workNoteHeader: 'Netskope DLP Policy has been created:',
+                commentsHeader: "We've created the following Netskope DLP policy to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'DLP Policy Modified': {
+                workNoteHeader: 'Netskope DLP Policy has been modified:',
+                commentsHeader: "We've modified the following Netskope DLP policy to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'DLP Policy Deleted': {
+                workNoteHeader: 'Netskope DLP Policy has been scheduled to be deleted (currently disabled):',
+                commentsHeader: "We've scheduled for deletion the following Netskope DLP policy to help address the issue:",
+                commentsCloser: 'This policy has been disabled and scheduled for deletion in 30 days.',
+            },
+
+            // ── DLP Process Exceptions ─────────────────────────
+            'DLP Process Exception Added': {
+                workNoteHeader: 'Netskope DLP Process Exception has been added:',
+                commentsHeader: "We've added the following DLP Process Exception to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any issues.',
+            },
+            'DLP Process Exception Removed': {
+                workNoteHeader: 'Netskope DLP Process Exception has been removed:',
+                commentsHeader: "We've removed the following DLP Process Exception as requested:",
             },
 
             // ── URL Lists ──────────────────────────────────────
