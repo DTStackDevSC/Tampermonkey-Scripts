@@ -183,7 +183,7 @@
         modal.id = 'toolbarChangelogModal';
 
         const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
+        title.textContent = `What's New: Version ${SCRIPT_VERSION}`;
 
         const versionInfo = document.createElement('div');
         versionInfo.className = 'toolbar-version-info';
@@ -1689,7 +1689,7 @@
     `;
 
     /* ==========================================================
-     *  INITIALIZATION
+     *  TOOLBAR CORE: bootstrap and event wiring
      * ==========================================================*/
 
     function initToolbar() {
@@ -2111,7 +2111,7 @@
             resetDragBtn.addEventListener('click', () => {
                 GM_deleteValue('toolbar-custom-left');
                 GM_deleteValue('toolbar-custom-top');
-                alert('Settings saved. The page will reload.');
+                alert('✅ Drag position cleared! The page will reload.');
                 location.reload();
             });
         }
@@ -2187,7 +2187,7 @@
         GM_deleteValue('toolbar-custom-left');
         GM_deleteValue('toolbar-custom-top');
 
-        alert('Settings saved. The page will reload to apply changes.');
+        alert('✅ Settings saved! The page will reload to apply changes.');
     }
 
     function populatePinnedToolsList() {
@@ -2325,10 +2325,10 @@
                         setSetting(key, settings[key]);
                     });
                     loadSettings();
-                    alert('Settings imported. The page will reload to apply changes.');
+                    alert('✅ Settings imported successfully! The page will reload to apply changes.');
                     location.reload();
                 } catch (error) {
-                    alert('Error importing settings: ' + error.message);
+                    alert('❌ Error importing settings: ' + error.message);
                 }
             };
             reader.readAsText(file);
@@ -2343,7 +2343,7 @@
             });
             GM_deleteValue('toolbar-custom-left');
             GM_deleteValue('toolbar-custom-top');
-            alert('Settings reset to default. The page will reload.');
+            alert('✅ Settings reset to default! The page will reload.');
             location.reload();
         }
     }
