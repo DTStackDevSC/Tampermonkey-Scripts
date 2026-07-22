@@ -106,6 +106,168 @@
             background-color: #ffffff !important;
             color: #333333 !important;
         }
+        /* Mini Summary Sidebar (harvested from its theme-independence style block) */
+        /* Z-INDEX HIERARCHY
+         * Main Sidebar: 999997
+         * SPM Modal: 999998
+         * Changelog Overlay: 20000
+         * Changelog Modal: 20001
+         */
+
+        /* Changelog Notification Badge */
+        #miniSummaryChangelogNotification {
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            cursor: pointer !important;
+            margin-left: 10px !important;
+            padding: 3px 8px !important;
+            border-radius: 4px !important;
+            transition: background-color 0.2s ease !important;
+            background-color: transparent !important;
+        }
+
+        #miniSummaryChangelogNotification:hover {
+            background-color: rgba(102, 126, 234, 0.1) !important;
+        }
+
+        #miniSummaryChangelogNotification .notification-dot {
+            width: 8px !important;
+            height: 8px !important;
+            border-radius: 50% !important;
+            animation: miniSummaryColorPulse 1s ease-in-out infinite !important;
+        }
+
+        @keyframes miniSummaryColorPulse {
+            0%, 100% { background-color: #007bff; }
+            50% { background-color: #ff8c00; }
+        }
+
+        #miniSummaryChangelogNotification .notification-text {
+            font-size: 11px !important;
+            color: #0066cc !important;
+            text-decoration: underline !important;
+            font-family: Arial, sans-serif !important;
+            font-weight: normal !important;
+        }
+
+        /* Changelog Modal */
+        #miniSummaryChangelogModal {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            z-index: 20001 !important;
+            background: #ffffff !important;
+            border: 2px solid #333333 !important;
+            padding: 20px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+            font-family: Arial, sans-serif !important;
+            border-radius: 10px !important;
+            max-width: 600px !important;
+            max-height: 80vh !important;
+            overflow-y: auto !important;
+            color: #333333 !important;
+        }
+
+        #miniSummaryChangelogModal h2 {
+            margin-top: 0 !important;
+            margin-bottom: 15px !important;
+            color: #333333 !important;
+            border-bottom: 2px solid #667eea !important;
+            padding-bottom: 10px !important;
+            font-size: 1.5em !important;
+            font-weight: bold !important;
+            font-family: Arial, sans-serif !important;
+        }
+
+        #miniSummaryChangelogModal .version-info {
+            background-color: #f8f9fa !important;
+            color: #333333 !important;
+            padding: 10px !important;
+            border-radius: 5px !important;
+            margin-bottom: 15px !important;
+            border-left: 4px solid #667eea !important;
+            font-family: Arial, sans-serif !important;
+            font-size: 14px !important;
+            font-weight: normal !important;
+        }
+
+        #miniSummaryChangelogModal .changelog-content {
+            white-space: pre-wrap !important;
+            line-height: 1.6 !important;
+            color: #333333 !important;
+            font-family: 'Courier New', Courier, monospace !important;
+            font-size: 13px !important;
+            font-weight: normal !important;
+            background-color: #fafafa !important;
+            padding: 10px !important;
+            border-radius: 5px !important;
+        }
+
+        #miniSummaryChangelogModal .close-changelog {
+            margin-top: 15px !important;
+            padding: 10px 20px !important;
+            background-color: #667eea !important;
+            color: #ffffff !important;
+            border: none !important;
+            border-radius: 5px !important;
+            cursor: pointer !important;
+            font-weight: bold !important;
+            width: 100% !important;
+            font-family: Arial, sans-serif !important;
+            font-size: 14px !important;
+        }
+
+        #miniSummaryChangelogModal .close-changelog:hover {
+            background-color: #5568d3 !important;
+        }
+
+        #miniSummaryChangelogModalOverlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: rgba(0, 0, 0, 0.5) !important;
+            z-index: 20000 !important;
+        }
+
+        /* Help Modal */
+        #miniSummarySidebarHelpModalOverlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: rgba(0, 0, 0, 0.5) !important;
+            z-index: 21000 !important;
+        }
+
+        #miniSummarySidebarHelpModal {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            z-index: 21001 !important;
+            background: #ffffff !important;
+            border: 2px solid #333333 !important;
+            padding: 20px !important;
+            border-radius: 10px !important;
+            width: 640px !important;
+            max-width: 92vw !important;
+            max-height: 82vh !important;
+            overflow-y: auto !important;
+            color: #333333 !important;
+            font-family: Arial, sans-serif !important;
+        }
+
+        #miniSummarySidebarHelpModal input,
+        #miniSummarySidebarHelpModal select,
+        #miniSummarySidebarHelpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
         /* tool modal IDs appended below */
     `;
     document.head.appendChild(darkModeStyle);
@@ -3588,6 +3750,1459 @@ Version 1.2:
 
     /* === TOOL: MINI SUMMARY SIDEBAR === */
 
+    const registerMiniSummarySidebar = (() => {
+        'use strict';
+
+    console.log('📊 Mini Summary Sidebar loading...');
+
+    /* ==========================================================
+     *  VERSION CONTROL
+     * ==========================================================*/
+
+    const SCRIPT_VERSION = '1.1.2';
+    const CHANGELOG = `Version 1.1.2:
+- Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
+
+Version 1.1.1:
+- Moved the automatic update source to a new file so future updates keep installing correctly.
+
+Version 1.1.0:
+- Added a ? Help button next to the panel title. Clicking it opens an illustrated Feature Guide covering the summary fields, the SPM Copy modal, and all sidebar controls.
+
+Version 1.0.7:
+- Business Justification is now shown in the SPM copy modal only when the actual
+  Business Justification field is populated on the ticket form. It no longer falls
+  back to the short description, so the label always reflects the true field value.
+
+Version 1.0.6:
+- Fixed sidebar peeking on the right edge in dashboard (Polaris) mode. The hidden
+  offset now accounts for padding and border, pushing the sidebar fully off-screen.
+
+Version 1.0.5:
+- Renamed the version notification badge label from "Changelog" to "What's New".
+
+Version 1.0.4:
+- Added dual mode support for Polaris (Dashboard) and Classic (New Tab) ticket access.
+  All field extraction now works when tickets are opened from the ServiceNow dashboard
+  via shadow DOM iframe traversal. Script now also matches the dashboard URL pattern.
+- Standard ticket fields prefer g_form.getDisplayValue() over DOM queries for
+  more reliable value resolution in both modes.
+
+Version 1.0.3:
+- Changelog modal now renders as collapsible version cards - most recent
+  expanded by default, older entries can be opened individually.
+- Toolbar button now shows a pulsing notification dot when a new version
+  is available and has not been seen yet.
+
+Version 1.0.2:
+- Update URL Changed`;
+
+    /* ==========================================================
+     *  VERSION MANAGEMENT FUNCTIONS
+     * ==========================================================*/
+
+    function getStoredVersion() {
+        return GM_getValue('miniSummarySidebarVersion', null);
+    }
+
+    function saveVersion(version) {
+        GM_setValue('miniSummarySidebarVersion', version);
+    }
+
+    function hasSeenChangelog() {
+        return GM_getValue('miniSummarySidebarChangelogSeen', null) === SCRIPT_VERSION;
+    }
+
+    function markChangelogAsSeen() {
+        GM_setValue('miniSummarySidebarChangelogSeen', SCRIPT_VERSION);
+    }
+
+
+    function isNewVersion() {
+        const storedVersion = getStoredVersion();
+        return compareVersions(storedVersion, SCRIPT_VERSION);
+    }
+
+    /* ==========================================================
+     *  CHANGELOG MODAL
+     * ==========================================================*/
+
+
+    function showChangelogModal() {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'miniSummaryChangelogOverlay';
+
+        // Create modal
+        const modal = document.createElement('div');
+        modal.id = 'miniSummaryChangelogModal';
+
+        const title = document.createElement('h2');
+        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
+
+        const versionInfo = document.createElement('div');
+        versionInfo.className = 'version-info';
+        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
+
+        const closeButton = document.createElement('button');
+        closeButton.className = 'close-changelog';
+        closeButton.textContent = 'Got it!';
+        closeButton.onclick = () => {
+            overlay.remove();
+            modal.remove();
+            markChangelogAsSeen();
+            saveVersion(SCRIPT_VERSION);
+            removeToolbarNotificationDot();
+
+            // Remove the notification dot from sidebar
+            const notification = document.getElementById('miniSummaryChangelogNotification');
+            if (notification) {
+                notification.remove();
+            }
+        };
+
+        modal.appendChild(title);
+        modal.appendChild(versionInfo);
+
+        const cardsWrap = document.createElement('div');
+        cardsWrap.style.marginBottom = '0';
+        parseChangelog(CHANGELOG).forEach((entry, index) => {
+            const isLatest = index === 0;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
+                borderRadius: '6px',
+                marginBottom: '8px',
+                overflow:     'hidden',
+            });
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px',
+                background: isLatest ? '#f0f0ff' : '#f8f8f8',
+                cursor: 'pointer', userSelect: 'none',
+            });
+            const versionWrap = document.createElement('span');
+            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
+            const versionLabel = document.createElement('span');
+            versionLabel.textContent = `Version ${entry.version}`;
+            Object.assign(versionLabel.style, {
+                fontWeight: 'bold', fontSize: '13px',
+                color: isLatest ? '#667eea' : '#555',
+                fontFamily: 'Arial, sans-serif',
+            });
+            versionWrap.appendChild(versionLabel);
+            if (isLatest) {
+                const tag = document.createElement('span');
+                tag.textContent = 'Latest';
+                Object.assign(tag.style, {
+                    fontSize: '10px', fontWeight: 'bold',
+                    background: '#667eea', color: '#fff',
+                    borderRadius: '3px', padding: '1px 6px',
+                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+                });
+                versionWrap.appendChild(tag);
+            }
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, {
+                fontSize: '12px', color: '#999',
+                transition: 'transform 0.2s', display: 'inline-block',
+                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+            });
+            header.appendChild(versionWrap);
+            header.appendChild(chevron);
+            card.appendChild(header);
+            const body = document.createElement('div');
+            Object.assign(body.style, {
+                padding: isLatest ? '10px 14px' : '0',
+                display: isLatest ? 'block' : 'none',
+                background: '#fff',
+            });
+            entry.bullets.forEach(bullet => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '3px 0',
+                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                    color: '#444', lineHeight: '1.5',
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const text = document.createElement('span');
+                text.textContent = bullet;
+                row.appendChild(dot);
+                row.appendChild(text);
+                body.appendChild(row);
+            });
+            card.appendChild(body);
+            let expanded = isLatest;
+            header.addEventListener('click', () => {
+                expanded = !expanded;
+                body.style.display  = expanded ? 'block' : 'none';
+                body.style.padding  = expanded ? '10px 14px' : '0';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            cardsWrap.appendChild(card);
+        });
+        modal.appendChild(cardsWrap);
+
+        modal.appendChild(closeButton);
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+
+        // Close on overlay click
+        overlay.onclick = () => {
+            closeButton.click();
+        };
+    }
+
+
+    /* ==========================================================
+     *  CONFIGURATION
+     * ==========================================================*/
+
+    // Tool icon (summary/info icon)
+    const toolIcon = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+    </svg>`;
+
+    // Tool ID
+    const TOOL_ID = 'miniSummary';
+
+    let sidebarVisible = false;
+
+    /* ==========================================================
+     *  DATA EXTRACTION FUNCTIONS
+     * ==========================================================*/
+
+
+    function getFieldValue(fieldId) {
+        const ctx = getTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+
+        // Prefer g_form display values for standard ticket fields
+        if (ctx && ctx.gForm) {
+            const bareField = fieldId.includes('.') ? fieldId.split('.').slice(1).join('.') : fieldId;
+            try {
+                const dv = ctx.gForm.getDisplayValue(bareField);
+                if (dv && dv.trim() && !/^[a-f0-9]{32}$/i.test(dv.trim())) return dv.trim();
+                const v = ctx.gForm.getValue(bareField);
+                if (v && v.trim() && !/^[a-f0-9]{32}$/i.test(v.trim())) return v.trim();
+            } catch(e) { /* field not on form, fall through to DOM */ }
+        }
+
+        // DOM fallback — uses ctx.doc so it works inside the Polaris iframe
+        const patterns = [
+            `${fieldId}_label`,
+            `sys_display.${fieldId}`,
+            `sys_readonly.${fieldId}`,
+            `sys_readonly.sys_display.${fieldId}`,
+            fieldId
+        ];
+
+        for (const pattern of patterns) {
+            const element = doc.getElementById(pattern);
+            if (element) {
+                if (element.value && element.value.trim()) {
+                    if (!/^[a-f0-9]{32}$/i.test(element.value.trim())) {
+                        return element.value.trim();
+                    }
+                }
+                if (element.textContent && element.textContent.trim()) {
+                    const text = element.textContent.trim();
+                    if (!/^[a-f0-9]{32}$/i.test(text)) {
+                        return text;
+                    }
+                }
+            }
+        }
+
+        const selectElement = doc.getElementById(fieldId) ||
+                             doc.getElementById(`sys_readonly.${fieldId}`);
+        if (selectElement && selectElement.tagName === 'SELECT') {
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            if (selectedOption && selectedOption.text) {
+                return selectedOption.text;
+            }
+        }
+
+        return 'N/A';
+    }
+
+    function getVariableValue(variableName) {
+        const ctx = getTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+
+        const displayPatterns = [
+            `sys_display.ni.VE${variableName}`,
+            `ni.VE${variableName}_label`
+        ];
+
+        for (const pattern of displayPatterns) {
+            const elements = doc.querySelectorAll(`input[id*="${pattern}"]`);
+            for (const elem of elements) {
+                if (elem.value && elem.value.trim() && !/^[a-f0-9]{32}$/i.test(elem.value.trim())) {
+                    return elem.value.trim();
+                }
+            }
+        }
+
+        const directElement = doc.getElementById(`ni.VE${variableName}`);
+        if (directElement) {
+            if (directElement.tagName === 'TEXTAREA' && directElement.value && directElement.value.trim()) {
+                return directElement.value.trim();
+            }
+            if (directElement.tagName === 'INPUT' && directElement.value && directElement.value.trim() && !/^[a-f0-9]{32}$/i.test(directElement.value.trim())) {
+                return directElement.value.trim();
+            }
+        }
+
+        const textarea = doc.querySelector(`textarea[name*="${variableName}"], textarea[id*="${variableName}"]`);
+        if (textarea && textarea.value && textarea.value.trim()) {
+            return textarea.value.trim();
+        }
+
+        const input = doc.querySelector(`input[name*="${variableName}"][type="text"], input[name*="${variableName}"][type="hidden"]`);
+        if (input && input.value && input.value.trim() && !/^[a-f0-9]{32}$/i.test(input.value.trim())) {
+            return input.value.trim();
+        }
+
+        const select = doc.querySelector(`select[name*="${variableName}"], select[id*="${variableName}"]`);
+        if (select && select.value && select.value !== '') {
+            const selectedOption = select.options[select.selectedIndex];
+            return selectedOption ? selectedOption.text : select.value;
+        }
+
+        return 'N/A';
+    }
+
+    function extractSummaryData() {
+        const ctx = getTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+        const data = {};
+
+        // Basic fields
+        data.number = getFieldValue('sc_req_item.number') || getFieldValue('incident.number');
+        data.requestedFor = getFieldValue('sc_req_item.request.requested_for') || getFieldValue('incident.caller_id');
+        data.openedBy = getFieldValue('sc_req_item.opened_by') || getFieldValue('incident.opened_by');
+        data.openedAt = getFieldValue('sc_req_item.opened_at') || getFieldValue('incident.opened_at');
+        data.assignmentGroup = getFieldValue('sc_req_item.assignment_group') || getFieldValue('incident.assignment_group');
+        data.assignedTo = getFieldValue('sc_req_item.assigned_to') || getFieldValue('incident.assigned_to');
+        data.dueDate = getFieldValue('sc_req_item.due_date') || getFieldValue('incident.due_date');
+        data.configItem = getFieldValue('sc_req_item.configuration_item') || getFieldValue('incident.cmdb_ci');
+
+        // Catalog specific fields
+        data.catalogItem = getFieldValue('sc_req_item.cat_item');
+
+        // Try to get business justification by finding span with aria-label inside label
+        const businessJustSpan = doc.querySelector('span[aria-label="Business Justification"]');
+        if (businessJustSpan) {
+            const parentLabel = businessJustSpan.closest('label');
+            if (parentLabel) {
+                const labelFor = parentLabel.getAttribute('for');
+                if (labelFor) {
+                    const businessJustTextarea = doc.getElementById(labelFor);
+                    if (businessJustTextarea && businessJustTextarea.value && businessJustTextarea.value.trim()) {
+                        data.description = businessJustTextarea.value.trim();
+                        data.businessJustification = businessJustTextarea.value.trim();
+                    }
+                }
+            }
+        }
+
+        // Fallback business justification via variable (no short_description fallback)
+        if (!data.businessJustification) {
+            const bjVar = getVariableValue('business_justification');
+            if (bjVar && bjVar !== 'N/A') data.businessJustification = bjVar;
+        }
+
+        // Fallback to other methods if not found for description
+        if (!data.description || data.description === 'N/A') {
+            data.description = getVariableValue('business_justification') ||
+                              getVariableValue('short_description') ||
+                              getFieldValue('incident.short_description');
+        }
+
+        // Get web protection platform - search by span aria-label
+        const platformSpan = doc.querySelector('span[aria-label="Web Protection Platform"]');
+        if (platformSpan) {
+            const parentLabel = platformSpan.closest('label');
+            if (parentLabel) {
+                const labelFor = parentLabel.getAttribute('for');
+                if (labelFor) {
+                    const platformSelect = doc.getElementById(labelFor);
+                    if (platformSelect && platformSelect.value) {
+                        const selectedOption = platformSelect.options[platformSelect.selectedIndex];
+                        data.platform = selectedOption ? selectedOption.text : platformSelect.value;
+                    }
+                }
+            }
+        }
+        if (!data.platform || data.platform === 'N/A') {
+            data.platform = getVariableValue('web_protection_platform');
+        }
+
+        // Get type of request - search by span aria-label
+        const typeSpan = doc.querySelector('span[aria-label="Type of Request"]');
+        if (typeSpan) {
+            const parentLabel = typeSpan.closest('label');
+            if (parentLabel) {
+                const labelFor = parentLabel.getAttribute('for');
+                if (labelFor) {
+                    const typeSelect = doc.getElementById(labelFor);
+                    if (typeSelect && typeSelect.value) {
+                        const selectedOption = typeSelect.options[typeSelect.selectedIndex];
+                        data.requestType = selectedOption ? selectedOption.text : typeSelect.value;
+                    }
+                }
+            }
+        }
+        if (!data.requestType || data.requestType === 'N/A') {
+            data.requestType = getVariableValue('type_of_request');
+        }
+
+        // Get requesting member firm - search by span aria-label
+        const firmSpan = doc.querySelector('span[aria-label="Requesting Member Firm"]');
+        if (firmSpan) {
+            const parentLabel = firmSpan.closest('label');
+            if (parentLabel) {
+                const labelFor = parentLabel.getAttribute('for');
+                if (labelFor) {
+                    const firmInput = doc.getElementById(labelFor);
+                    if (firmInput && firmInput.value && firmInput.value.trim() && !/^[a-f0-9]{32}$/i.test(firmInput.value.trim())) {
+                        data.memberFirm = firmInput.value.trim();
+                    }
+                }
+            }
+        }
+        if (!data.memberFirm || data.memberFirm === 'N/A') {
+            data.memberFirm = getVariableValue('ref_member_firm') ||
+                             getFieldValue('sc_req_item.u_member_firm');
+        }
+
+        // Get application/URL - search by span aria-label
+        const appSpan = doc.querySelector('span[aria-label="Application / URL"]');
+        if (appSpan) {
+            const parentLabel = appSpan.closest('label');
+            if (parentLabel) {
+                const labelFor = parentLabel.getAttribute('for');
+                if (labelFor) {
+                    const appInput = doc.getElementById(labelFor);
+                    if (appInput && appInput.value && appInput.value.trim()) {
+                        data.applicationUrl = appInput.value.trim();
+                    }
+                }
+            }
+        }
+        if (!data.applicationUrl || data.applicationUrl === 'N/A') {
+            data.applicationUrl = getVariableValue('application_url') ||
+                                 getFieldValue('sc_req_item.u_application_url');
+        }
+
+        return data;
+    }
+
+    /* ==========================================================
+     *  FEATURE GUIDE MODAL
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('miniSummarySidebarHelpModal')) return;
+
+        // lead: one orienting sentence at the top of a section
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(p);
+        }
+
+        // bullets: compact list of usage notes with a purple dot each
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: small italic note placed under a visual
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
+            body.appendChild(c);
+        }
+
+        // span: inline text node with optional extra styles, returned not appended
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: horizontal wrapping flex row for placing visual mocks side by side
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: thin vertical divider between groups in a mock menu
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Click the chart icon in the floating toolbar to open the summary panel.');
+                    const menu = document.createElement('div');
+                    Object.assign(menu.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                        padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', marginBottom: '12px'
+                    });
+                    const pinStyle = { bg: '#e8f0fe', border: '2px solid #667eea' };
+                    [toolSquare('📊', pinStyle), menuSep(), toolSquare('📝'), toolSquare('🔗'), menuSep(), toolSquare('⚙️')].forEach(el => menu.appendChild(el));
+                    body.appendChild(hrow([menu], { margin: '0 0 12px 0' }));
+                    caption(body, 'The 📊 icon is the Mini Summary Sidebar tool in the toolbar.');
+                    bullets(body, [
+                        'The sidebar slides in from the right edge of the ticket page.',
+                        'Fields are read automatically when the panel opens.',
+                        'Click the toolbar icon again or the × button inside the panel to close it.'
+                    ]);
+                }
+            },
+            {
+                icon: '📊',
+                title: 'Summary Fields',
+                buildContent(body) {
+                    lead(body, 'The sidebar reads ticket data and groups it into labeled sections.');
+                    const fieldSections = [
+                        { icon: '📋', label: 'Basic Info', fields: ['Number', 'Catalog Item'] },
+                        { icon: '👥', label: 'People', fields: ['Requested For', 'Opened By', 'Assigned To', 'Assignment Group'] },
+                        { icon: '🔧', label: 'Technical Details', fields: ['Member Firm', 'Config Item', 'Platform', 'Request Type', 'Application / URL'] },
+                        { icon: '📅', label: 'Dates', fields: ['Opened', 'Due Date'] },
+                        { icon: '📝', label: 'Description', fields: ['Business Justification or short description'] }
+                    ];
+                    for (const sec of fieldSections) {
+                        const secHeader = document.createElement('div');
+                        secHeader.textContent = `${sec.icon} ${sec.label}`;
+                        Object.assign(secHeader.style, {
+                            fontSize: '12px', fontWeight: 'bold', color: '#667eea',
+                            borderBottom: '1px solid #c0c8f0', paddingBottom: '3px',
+                            marginBottom: '5px', marginTop: '10px', fontFamily: 'Arial, sans-serif'
+                        });
+                        body.appendChild(secHeader);
+                        const fieldRow = document.createElement('div');
+                        Object.assign(fieldRow.style, { display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '4px' });
+                        for (const f of sec.fields) {
+                            const pill = document.createElement('span');
+                            pill.textContent = f;
+                            Object.assign(pill.style, {
+                                background: '#f5f5f5', border: '1px solid #e0e0e0',
+                                borderRadius: '4px', padding: '2px 7px', fontSize: '11px',
+                                color: '#555', fontFamily: 'Arial, sans-serif'
+                            });
+                            fieldRow.appendChild(pill);
+                        }
+                        body.appendChild(fieldRow);
+                    }
+                    bullets(body, [
+                        'Fields showing "N/A" were not found or are not yet populated on the form.',
+                        'Use the Refresh button to re-read all fields after editing the ticket.',
+                        'Standard fields prefer the ServiceNow form API; catalog variables fall back to DOM lookup.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'SPM Copy Modal',
+                buildContent(body) {
+                    lead(body, 'The green SPM button opens a modal with individual clipboard copy buttons for fields commonly needed in SPM requests.');
+                    const btnRow = document.createElement('div');
+                    Object.assign(btnRow.style, {
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        marginBottom: '12px', padding: '10px 14px',
+                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+                    });
+                    const badge = document.createElement('span');
+                    badge.textContent = '📋 Copy relevant information for SPM Request';
+                    Object.assign(badge.style, {
+                        background: '#28a745', color: '#fff', borderRadius: '4px',
+                        padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
+                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                    });
+                    const desc = document.createElement('span');
+                    desc.textContent = 'Opens the SPM Copy modal above the ticket.';
+                    Object.assign(desc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                    btnRow.appendChild(badge);
+                    btnRow.appendChild(desc);
+                    body.appendChild(btnRow);
+                    const mockField = document.createElement('div');
+                    Object.assign(mockField.style, {
+                        background: '#fff', border: '1px solid #ddd', borderRadius: '6px',
+                        padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px'
+                    });
+                    const mockLabel = document.createElement('div');
+                    mockLabel.textContent = '🔓 Opened By';
+                    Object.assign(mockLabel.style, { fontWeight: 'bold', color: '#555', fontSize: '11px', fontFamily: 'Arial, sans-serif' });
+                    const mockValueRow = document.createElement('div');
+                    Object.assign(mockValueRow.style, { display: 'flex', gap: '8px', alignItems: 'center' });
+                    const mockValue = document.createElement('div');
+                    mockValue.textContent = 'Jane Smith';
+                    Object.assign(mockValue.style, {
+                        flex: '1', color: '#333', fontSize: '12px',
+                        fontFamily: 'Courier New, monospace', background: '#f5f5f5',
+                        padding: '6px 8px', borderRadius: '4px'
+                    });
+                    const mockCopyBtn = document.createElement('span');
+                    mockCopyBtn.textContent = 'Copy';
+                    Object.assign(mockCopyBtn.style, {
+                        background: '#28a745', color: '#fff', borderRadius: '4px',
+                        padding: '5px 14px', fontSize: '12px', fontWeight: 'bold',
+                        fontFamily: 'Arial, sans-serif', whiteSpace: 'nowrap'
+                    });
+                    mockValueRow.appendChild(mockValue);
+                    mockValueRow.appendChild(mockCopyBtn);
+                    mockField.appendChild(mockLabel);
+                    mockField.appendChild(mockValueRow);
+                    body.appendChild(mockField);
+                    caption(body, 'Each field gets its own Copy button. It briefly flashes blue with a checkmark after copying.');
+                    bullets(body, [
+                        'Fields included: Opened By, Requesting Member Firm, Business Justification, Number.',
+                        'Only populated fields appear. Fields without a value are omitted from the modal.',
+                        'Close the modal with the red X button in its top-right corner.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Sidebar Controls',
+                buildContent(body) {
+                    lead(body, 'Every control in the sidebar and what it does.');
+                    const controls = [
+                        { bg: '#e53e3e', color: '#fff', border: 'none',                   label: '×',                                              desc: 'Closes and hides the sidebar. Click the toolbar icon to reopen it.' },
+                        { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: '#fff', border: 'none', label: '🔄 Refresh',               desc: 'Re-reads all fields from the current ticket state. Use this after editing a field to see the updated value.' },
+                        { bg: '#28a745',     color: '#fff', border: 'none',               label: '📋 Copy relevant information for SPM Request',   desc: 'Opens the SPM Copy modal.' },
+                        { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help',                                       desc: 'Opens this Feature Guide.' }
+                    ];
+                    for (const ctrl of controls) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', gap: '10px', alignItems: 'flex-start',
+                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+                        });
+                        const badgeEl = document.createElement('span');
+                        badgeEl.textContent = ctrl.label;
+                        Object.assign(badgeEl.style, {
+                            background: ctrl.bg, color: ctrl.color, border: ctrl.border,
+                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
+                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif', alignSelf: 'flex-start'
+                        });
+                        const descEl = document.createElement('span');
+                        descEl.textContent = ctrl.desc;
+                        Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
+                        row.appendChild(badgeEl);
+                        row.appendChild(descEl);
+                        body.appendChild(row);
+                    }
+                    const notifNote = document.createElement('div');
+                    Object.assign(notifNote.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '8px 12px', fontSize: '12px', color: '#555',
+                        fontFamily: 'Arial, sans-serif', lineHeight: '1.5', marginTop: '4px'
+                    });
+                    const notifDot = document.createElement('span');
+                    notifDot.textContent = '● ';
+                    Object.assign(notifDot.style, { color: '#007bff', fontWeight: 'bold' });
+                    const notifLink = document.createElement('span');
+                    notifLink.textContent = "What's New";
+                    Object.assign(notifLink.style, { color: '#0066cc', textDecoration: 'underline', fontWeight: 'bold', fontFamily: 'Arial, sans-serif' });
+                    const notifText = document.createTextNode(' appears next to the version number when a script update has not been viewed yet. Click it to open the changelog.');
+                    notifNote.appendChild(notifDot);
+                    notifNote.appendChild(notifLink);
+                    notifNote.appendChild(notifText);
+                    body.appendChild(notifNote);
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'miniSummarySidebarHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'miniSummarySidebarHelpModal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Mini Summary Sidebar • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards, all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
+    /* ==========================================================
+     *  SIDEBAR INITIALIZATION
+     * ==========================================================*/
+
+    function initializeSidebar() {
+        if (document.getElementById('mini-summary-sidebar')) return;
+
+        const sidebar = document.createElement('div');
+        sidebar.id = 'mini-summary-sidebar';
+        Object.assign(sidebar.style, {
+            position: 'fixed',
+            top: '60px',
+            right: '-420px', // Hidden by default — must exceed actual rendered width (350px content + 40px padding + 1px border = 391px)
+            width: '350px',
+            maxHeight: 'calc(100vh - 80px)',
+            backgroundColor: '#f9f9f9',
+            border: '1px solid #ccc',
+            borderRight: 'none',
+            boxShadow: '-4px 4px 12px rgba(0,0,0,0.1)',
+            padding: '20px',
+            zIndex: '999997', // Below toolbar and modals
+            borderRadius: '10px 0 0 10px',
+            fontFamily: 'Arial, sans-serif',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            transition: 'right 0.3s ease-in-out'
+        });
+
+        // Close button
+        const closeButton = document.createElement('button');
+        closeButton.textContent = '×';
+        Object.assign(closeButton.style, {
+            position: 'absolute',
+            top: '5px',
+            right: '5px',
+            background: 'red',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            padding: '4px 10px',
+            fontWeight: 'bold',
+            fontSize: '18px',
+            lineHeight: '1'
+        });
+        closeButton.onclick = hideSidebar;
+        sidebar.appendChild(closeButton);
+
+        // Title row with ? Help pill
+        const titleRow = document.createElement('div');
+        Object.assign(titleRow.style, {
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '10px',
+            paddingRight: '35px'
+        });
+        const title = document.createElement('div');
+        title.textContent = '📊 Ticket Summary';
+        Object.assign(title.style, {
+            fontSize: '16px',
+            fontWeight: 'bold',
+            color: '#333'
+        });
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif', flexShrink: '0'
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+        titleRow.appendChild(title);
+        titleRow.appendChild(helpBtn);
+        sidebar.appendChild(titleRow);
+
+        // Version row with changelog notification
+        const versionRow = document.createElement('div');
+        Object.assign(versionRow.style, {
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: '11px',
+            color: '#666',
+            marginBottom: '15px',
+            paddingRight: '30px',
+            flexWrap: 'wrap'
+        });
+
+        const versionIndicator = document.createElement('span');
+        versionIndicator.textContent = `v${SCRIPT_VERSION}`;
+        Object.assign(versionIndicator.style, {
+            fontFamily: 'monospace',
+            fontSize: '10px'
+        });
+        versionRow.appendChild(versionIndicator);
+
+        // Check if there's a new version and user hasn't seen the changelog
+        const showChangelog = isNewVersion() && !hasSeenChangelog();
+
+        console.log('📊 Version check:', {
+            currentVersion: SCRIPT_VERSION,
+            storedVersion: getStoredVersion(),
+            isNewVersion: isNewVersion(),
+            hasSeenChangelog: hasSeenChangelog(),
+            showChangelog: showChangelog
+        });
+
+        if (showChangelog) {
+            const changelogNotification = document.createElement('span');
+            changelogNotification.id = 'miniSummaryChangelogNotification';
+
+            const notificationDot = document.createElement('span');
+            notificationDot.className = 'notification-dot';
+
+            const notificationText = document.createElement('span');
+            notificationText.className = 'notification-text';
+            notificationText.textContent = "What's New";
+
+            changelogNotification.appendChild(notificationDot);
+            changelogNotification.appendChild(notificationText);
+
+            changelogNotification.onclick = () => {
+                showChangelogModal();
+            };
+
+            versionRow.appendChild(changelogNotification);
+        }
+
+        sidebar.appendChild(versionRow);
+
+        // Refresh button
+        const refreshButton = document.createElement('button');
+        refreshButton.textContent = '🔄 Refresh';
+        Object.assign(refreshButton.style, {
+            padding: '6px 12px',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            marginBottom: '8px',
+            width: '100%'
+        });
+        refreshButton.onclick = updateSidebarContent;
+        sidebar.appendChild(refreshButton);
+
+        // Copy SPM button
+        const spmButton = document.createElement('button');
+        spmButton.textContent = '📋 Copy relevant information for SPM Request';
+        Object.assign(spmButton.style, {
+            padding: '6px 12px',
+            background: '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '11px',
+            fontWeight: 'bold',
+            marginBottom: '15px',
+            width: '100%'
+        });
+        spmButton.onclick = copySPMData;
+        sidebar.appendChild(spmButton);
+
+        // Content container
+        const content = document.createElement('div');
+        content.id = 'summary-content';
+        Object.assign(content.style, {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+        });
+        sidebar.appendChild(content);
+
+        document.body.appendChild(sidebar);
+        return sidebar;
+    }
+
+    function createField(label, value, icon = '📌') {
+        const field = document.createElement('div');
+        Object.assign(field.style, {
+            background: '#ffffff',
+            border: '1px solid #ddd',
+            borderRadius: '6px',
+            padding: '10px',
+            fontSize: '12px'
+        });
+
+        const labelEl = document.createElement('div');
+        labelEl.textContent = `${icon} ${label}`;
+        Object.assign(labelEl.style, {
+            fontWeight: 'bold',
+            color: '#555',
+            marginBottom: '4px',
+            fontSize: '11px'
+        });
+
+        const valueEl = document.createElement('div');
+        valueEl.textContent = value || 'N/A';
+        Object.assign(valueEl.style, {
+            color: '#333',
+            fontSize: '12px',
+            wordWrap: 'break-word',
+            lineHeight: '1.4'
+        });
+
+        field.appendChild(labelEl);
+        field.appendChild(valueEl);
+        return field;
+    }
+
+    function createSection(title) {
+        const section = document.createElement('div');
+        section.textContent = title;
+        Object.assign(section.style, {
+            fontSize: '13px',
+            fontWeight: 'bold',
+            color: '#667eea',
+            marginTop: '10px',
+            marginBottom: '5px',
+            borderBottom: '2px solid #667eea',
+            paddingBottom: '4px'
+        });
+        return section;
+    }
+
+    function updateSidebarContent() {
+        const content = document.getElementById('summary-content');
+        if (!content) return;
+
+        // Clear existing content
+        content.innerHTML = '';
+
+        // Extract data
+        const data = extractSummaryData();
+
+        // Log extracted data for debugging
+        console.log('📊 Extracted data:', data);
+
+        // Basic Information Section
+        content.appendChild(createSection('📋 Basic Info'));
+
+        if (data.number && data.number !== 'N/A') {
+            content.appendChild(createField('Number', data.number, '🎫'));
+        }
+
+        if (data.catalogItem && data.catalogItem !== 'N/A') {
+            content.appendChild(createField('Catalog Item', data.catalogItem, '📦'));
+        }
+
+        // People Section
+        content.appendChild(createSection('👥 People'));
+
+        if (data.requestedFor && data.requestedFor !== 'N/A') {
+            content.appendChild(createField('Requested For', data.requestedFor, '👤'));
+        }
+
+        if (data.openedBy && data.openedBy !== 'N/A') {
+            content.appendChild(createField('Opened By', data.openedBy, '🔓'));
+        }
+
+        if (data.assignedTo && data.assignedTo !== 'N/A') {
+            content.appendChild(createField('Assigned To', data.assignedTo, '👨‍💼'));
+        }
+
+        if (data.assignmentGroup && data.assignmentGroup !== 'N/A') {
+            content.appendChild(createField('Assignment Group', data.assignmentGroup, '👥'));
+        }
+
+        // Technical Details Section
+        content.appendChild(createSection('🔧 Technical Details'));
+
+        if (data.memberFirm && data.memberFirm !== 'N/A') {
+            content.appendChild(createField('Requesting Member Firm', data.memberFirm, '🏢'));
+        }
+
+        if (data.configItem && data.configItem !== 'N/A') {
+            content.appendChild(createField('Configuration Item', data.configItem, '🖥️'));
+        }
+
+        if (data.platform && data.platform !== 'N/A') {
+            content.appendChild(createField('Platform', data.platform, '🛡️'));
+        }
+
+        if (data.requestType && data.requestType !== 'N/A') {
+            content.appendChild(createField('Request Type', data.requestType, '📋'));
+        }
+
+        if (data.applicationUrl && data.applicationUrl !== 'N/A') {
+            content.appendChild(createField('Application / URL', data.applicationUrl, '🌐'));
+        }
+
+        // Dates Section
+        content.appendChild(createSection('📅 Dates'));
+
+        if (data.openedAt && data.openedAt !== 'N/A') {
+            content.appendChild(createField('Opened', data.openedAt, '🕐'));
+        }
+
+        if (data.dueDate && data.dueDate !== 'N/A') {
+            content.appendChild(createField('Due Date', data.dueDate, '⏰'));
+        }
+
+        // Description Section
+        if (data.description && data.description !== 'N/A') {
+            content.appendChild(createSection('📝 Description'));
+            content.appendChild(createField('Details', data.description, '💬'));
+        }
+
+        console.log('✅ Summary updated!');
+    }
+
+    /* ==========================================================
+     *  SPM COPY MODAL
+     * ==========================================================*/
+
+    function initializeSPMModal() {
+        if (document.getElementById('spm-copy-modal')) return;
+
+        const modal = document.createElement('div');
+        modal.id = 'spm-copy-modal';
+        Object.assign(modal.style, {
+            position: 'fixed',
+            top: '60px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#f9f9f9',
+            border: '1px solid #ccc',
+            boxShadow: '0px 4px 12px rgba(0,0,0,0.1)',
+            padding: '50px 20px 20px 20px',
+            zIndex: '999998',
+            borderRadius: '10px',
+            fontFamily: 'Arial, sans-serif',
+            display: 'none',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '15px',
+            minWidth: '600px',
+            maxWidth: '700px',
+            maxHeight: 'calc(100vh - 80px)',
+            overflowY: 'auto'
+        });
+
+        // Close button
+        const closeButton = document.createElement('button');
+        closeButton.textContent = 'X';
+        Object.assign(closeButton.style, {
+            position: 'absolute',
+            top: '5px',
+            right: '5px',
+            background: 'red',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            padding: '4px 8px',
+            fontWeight: 'bold'
+        });
+        closeButton.onclick = () => modal.style.display = 'none';
+        modal.appendChild(closeButton);
+
+        // Title
+        const title = document.createElement('div');
+        title.textContent = '📋 SPM Request Information';
+        Object.assign(title.style, {
+            position: 'absolute',
+            top: '12px',
+            left: '12px',
+            fontSize: '14px',
+            fontWeight: 'bold',
+            color: '#333'
+        });
+        modal.appendChild(title);
+
+        // Instructions
+        const instructions = document.createElement('p');
+        instructions.textContent = 'Click each "Copy" button to copy the field individually:';
+        Object.assign(instructions.style, {
+            fontSize: '13px',
+            color: '#666',
+            margin: '0',
+            textAlign: 'center',
+            width: '100%'
+        });
+        modal.appendChild(instructions);
+
+        // Content container
+        const content = document.createElement('div');
+        content.id = 'spm-modal-content';
+        Object.assign(content.style, {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            width: '100%'
+        });
+        modal.appendChild(content);
+
+        document.body.appendChild(modal);
+        return modal;
+    }
+
+    function createCopyField(label, value, icon = '📌') {
+        const container = document.createElement('div');
+        Object.assign(container.style, {
+            background: '#ffffff',
+            border: '1px solid #ddd',
+            borderRadius: '6px',
+            padding: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+        });
+
+        // Label
+        const labelEl = document.createElement('div');
+        labelEl.textContent = `${icon} ${label}`;
+        Object.assign(labelEl.style, {
+            fontWeight: 'bold',
+            color: '#555',
+            fontSize: '12px'
+        });
+        container.appendChild(labelEl);
+
+        // Value container
+        const valueContainer = document.createElement('div');
+        Object.assign(valueContainer.style, {
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'flex-start'
+        });
+
+        // Value display
+        const valueEl = document.createElement('div');
+        valueEl.textContent = value;
+        Object.assign(valueEl.style, {
+            flex: '1',
+            color: '#333',
+            fontSize: '12px',
+            fontFamily: 'Courier New, monospace',
+            background: '#f5f5f5',
+            padding: '8px',
+            borderRadius: '4px',
+            wordWrap: 'break-word',
+            lineHeight: '1.4',
+            maxHeight: '150px',
+            overflowY: 'auto'
+        });
+
+        // Copy button
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy';
+        Object.assign(copyBtn.style, {
+            padding: '6px 16px',
+            background: '#28a745',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            whiteSpace: 'nowrap'
+        });
+        copyBtn.onclick = async () => {
+            try {
+                await navigator.clipboard.writeText(value);
+                const originalText = copyBtn.textContent;
+                const originalBg = copyBtn.style.background;
+                copyBtn.textContent = '✓ Copied!';
+                copyBtn.style.background = '#0066cc';
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.style.background = originalBg;
+                }, 1500);
+            } catch (err) {
+                console.error('Copy failed:', err);
+                alert('❌ Failed to copy');
+            }
+        };
+
+        valueContainer.appendChild(valueEl);
+        valueContainer.appendChild(copyBtn);
+        container.appendChild(valueContainer);
+
+        return container;
+    }
+
+    function showSPMModal() {
+        const modal = document.getElementById('spm-copy-modal');
+        const content = document.getElementById('spm-modal-content');
+
+        if (!modal || !content) {
+            initializeSPMModal();
+            return showSPMModal();
+        }
+
+        // Clear existing content
+        content.innerHTML = '';
+
+        // Extract data
+        const data = extractSummaryData();
+
+        // Add fields in order
+        const fields = [
+            { label: 'Opened By', value: data.openedBy, icon: '🔓' },
+            { label: 'Requesting Member Firm', value: data.memberFirm, icon: '🏢' },
+            { label: 'Business Justification', value: data.businessJustification, icon: '📝' },
+            { label: 'Number', value: data.number, icon: '🎫' }
+        ];
+
+        let hasData = false;
+        fields.forEach(field => {
+            if (field.value && field.value !== 'N/A') {
+                content.appendChild(createCopyField(field.label, field.value, field.icon));
+                hasData = true;
+            }
+        });
+
+        if (!hasData) {
+            const noData = document.createElement('p');
+            noData.textContent = '⚠️ No data available to copy';
+            Object.assign(noData.style, {
+                color: '#999',
+                fontSize: '13px',
+                textAlign: 'center',
+                padding: '20px'
+            });
+            content.appendChild(noData);
+        }
+
+        modal.style.display = 'flex';
+    }
+
+    function copySPMData() {
+        showSPMModal();
+    }
+
+    /* ==========================================================
+     *  SHOW/HIDE SIDEBAR FUNCTIONS
+     * ==========================================================*/
+
+    function showSidebar() {
+        const sidebar = document.getElementById('mini-summary-sidebar');
+        if (sidebar) {
+            sidebar.style.right = '0px';
+            sidebarVisible = true;
+            updateSidebarContent();
+        }
+    }
+
+    function hideSidebar() {
+        const sidebar = document.getElementById('mini-summary-sidebar');
+        if (sidebar) {
+            sidebar.style.right = '-420px';
+            sidebarVisible = false;
+        }
+    }
+
+    function toggleSidebar() {
+        if (sidebarVisible) {
+            hideSidebar();
+        } else {
+            showSidebar();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // TOOLBAR NOTIFICATION DOT
+    // ─────────────────────────────────────────────────────────────
+
+    const TOOLBAR_DOT_CLASS = 'miniSummary-notif-dot';
+
+    function addToolbarNotificationDot() {
+        if (!isNewVersion() || hasSeenChangelog()) return;
+        const tryAdd = (attempts) => {
+            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+            if (!toolEl) {
+                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
+                return;
+            }
+            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
+            toolEl.style.position = 'relative';
+            const dot = document.createElement('div');
+            dot.className = TOOLBAR_DOT_CLASS;
+            Object.assign(dot.style, {
+                position: 'absolute', top: '2px', right: '2px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#007bff', pointerEvents: 'none', zIndex: '10',
+            });
+            let dotBlue = true;
+            const intervalId = setInterval(() => {
+                dotBlue = !dotBlue;
+                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
+            }, 500);
+            dot.dataset.intervalId = intervalId;
+            toolEl.appendChild(dot);
+        };
+        setTimeout(() => tryAdd(0), 500);
+    }
+
+    function removeToolbarNotificationDot() {
+        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
+        if (dot) {
+            clearInterval(Number(dot.dataset.intervalId));
+            dot.remove();
+        }
+    }
+
+
+    /* ==========================================================
+     *  EVENT LISTENERS
+     * ==========================================================*/
+
+    document.addEventListener('toolbarToolClicked', function(e) {
+        if (e.detail.id === 'miniSummary') {
+            console.log('📊 Mini Summary Sidebar clicked!');
+            toggleSidebar();
+        }
+    });
+
+        return function register() {
+            initializeSidebar();
+            initializeSPMModal();
+            document.dispatchEvent(new CustomEvent('addToolbarTool', {
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Mini Summary Sidebar', position: 6 }
+            }));
+            if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
+        };
+    })();
+
     /* === TOOL: ENHANCEMENT REQUEST LOGGER === */
 
     const registerEnhancementRequestLogger = (() => {
@@ -5534,7 +7149,8 @@ Version 1.0:
         if (/\.service-now\.com|\.servicenow\.com/.test(location.hostname)) {
             registerDomainTools();
             registerEnhancementRequestLogger();
-            // Phases 4 to 9 add ServiceNow tool registrations here.
+            registerMiniSummarySidebar();
+            // Phases 5 to 9 add ServiceNow tool registrations here.
         }
         if (/\.goskope\.com|\.netskope\.com/.test(location.hostname)) {
             // Phases 10 to 11 add Netskope tool registrations here.
