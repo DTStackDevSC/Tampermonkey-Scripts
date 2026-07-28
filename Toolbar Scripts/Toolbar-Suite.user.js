@@ -9652,6 +9652,36 @@ Version 1.2.1:
      *  TICKET ASSIGNMENT FUNCTIONALITY
      * ==========================================================*/
 
+    // This tool keeps its own richer ticket context detection (local to this IIFE,
+    // shadowing the shared getTicketContext). The shared helper returns null unless
+    // g_form is directly reachable, but this tool must still resolve the ticket
+    // document via a top level #gsft_main iframe or the classic top document.
+    function getTicketContext() {
+        const macro = Array.from(document.querySelectorAll('*'))
+            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        if (macro && macro.shadowRoot) {
+            const iframe = macro.shadowRoot.querySelector('#gsft_main');
+            if (iframe && iframe.contentDocument) {
+                return {
+                    win: iframe.contentWindow,
+                    doc: iframe.contentDocument,
+                    gForm: (iframe.contentWindow && iframe.contentWindow.g_form) || null,
+                    mode: 'polaris'
+                };
+            }
+        }
+        const directIframe = document.getElementById('gsft_main');
+        if (directIframe && directIframe.contentDocument) {
+            return {
+                win: directIframe.contentWindow,
+                doc: directIframe.contentDocument,
+                gForm: (directIframe.contentWindow && directIframe.contentWindow.g_form) || null,
+                mode: 'classic'
+            };
+        }
+        // Classic direct page: return the top document even if g_form is not yet set
+        return { win: window, doc: document, gForm: window.g_form || null, mode: 'classic' };
+    }
 
     async function performAssignment() {
         const dropdown = document.getElementById('sn-assign-team-dropdown');
