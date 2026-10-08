@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.20.1
+// @version      1.21
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -41,8 +41,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.20.1';
-    const CHANGELOG = `Version 1.20.1:
+    const SCRIPT_VERSION = '1.21';
+    const CHANGELOG = `Version 1.21:
+- Bulk Constraint Tools (by Sameena K.) now also work in Netskope's new user constraint profile side panel, with the buttons shown beside Save in the panel header. The old modal is still supported.
+
+Version 1.20.1:
 - The Bulk Constraint Tools settings row now shows its "Contributed by Sameena K." credit as a highlighted footer line.
 
 Version 1.20:
@@ -540,7 +543,7 @@ Version 1.16:
         {
             key:         'bulkConstraints',
             label:       '📥 Bulk Constraint Tools',
-            description: 'In the user constraint profile modal, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel.',
+            description: 'In the user constraint profile editor, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel (old modal) or Save (new side panel).',
             credit:      'Contributed by Sameena K.',
         },
     ];
@@ -1442,7 +1445,7 @@ Version 1.16:
                 icon: '📥',
                 title: 'Bulk Constraint Tools',
                 buildContent(body) {
-                    lead(body, 'In the user constraint profile modal, three buttons appear beside Cancel for working with many email or domain constraints at once.');
+                    lead(body, 'In the user constraint profile editor, three buttons appear for working with many email or domain constraints at once: beside Cancel in the old modal, or beside Save in the header of the new side panel.');
 
                     const btnRowEl = document.createElement('div');
                     Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
@@ -1451,7 +1454,7 @@ Version 1.16:
                     btnRowEl.appendChild(chip('Copy constraints', '#fff', { color: '#333', border: '1px solid #a7a8aa' }));
                     btnRowEl.appendChild(chip('Cancel', '#e0e0e0', { color: '#333', border: '1px solid #ccc' }));
                     body.appendChild(btnRowEl);
-                    caption(body, 'The buttons are added to the footer of the constraint profile modal.');
+                    caption(body, 'Old modal: buttons sit before Cancel in the footer. New side panel: buttons sit before Save in the header.');
 
                     bullets(body, [
                         '"Bulk entry": paste domains one per line. Each is added as a new row set to "Does not match" (untick the option to use "Matches"). Duplicates are skipped and you confirm before anything is inserted.',
@@ -3672,18 +3675,26 @@ Version 1.16:
 
     // ─────────────────────────────────────────────────────────────
     // FEATURE 9 — BULK CONSTRAINT TOOLS  (contributed by Sameena K.)
-    // "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside
-    // Cancel in the user constraint profile modal.
+    // "Bulk entry", "Bulk delete" and "Copy constraints" buttons in the user
+    // constraint profile editor. Netskope runs two UIs side by side:
+    //   - old: Angular modal (#activities-constraint-modal), buttons beside Cancel
+    //   - new: React side panel, buttons beside Save in the panel header
     // ─────────────────────────────────────────────────────────────
 
     const BC_PRIMARY_ID       = 'activities-constraint-modal';
+    const BC_PANEL_SELECTOR   = '[data-testid="user-constraint-profile-form-panel-sidepanel"]';
+    const BC_LIST_SELECTOR    = '[data-testid="constraint-profile-email-list-wrapper"]';
     // Button IDs match the original standalone scripts so a copy of those
     // that is still installed never adds a second set of buttons.
     const BC_ENTRY_BUTTON_ID  = 'bulk-constraint-entry-button';
     const BC_DELETE_BUTTON_ID = 'bulk-constraint-delete-button';
     const BC_COPY_BUTTON_ID   = 'bulk-constraint-copy-button';
     const BC_HOST_ID          = 'nstk-bulk-constraint-host';
-    const BC_EMAIL_SELECTOR   = 'ul[data-testid="constraint-profile-email-list-wrapper"] input[name="email.key"]';
+    const BC_EMAIL_SELECTOR   =
+        `${BC_LIST_SELECTOR} input[name="email.key"], ` +                         // old modal
+        `${BC_LIST_SELECTOR} input[name^="userConditions."][name$=".email"]`;     // new side panel
+    const BC_DROPDOWN_SELECTOR =
+        '[role="combobox"], button[aria-label="Match type"], button[aria-haspopup="menu"]';
 
     const bc = {
         host:        null,
@@ -3706,7 +3717,23 @@ Version 1.16:
 
     function bcGetModal() {
         const modal = document.getElementById(BC_PRIMARY_ID);
-        return bcIsVisible(modal) ? modal : null;
+        if (bcIsVisible(modal)) return modal;
+        return [...document.querySelectorAll(BC_PANEL_SELECTOR)].find(bcIsVisible) || null;
+    }
+
+    const bcIsPanel = modal => !!modal && modal.matches(BC_PANEL_SELECTOR);
+
+    // Old UI rows are <li>; new UI rows are the direct children of the list wrapper
+    function bcGetRow(input) {
+        const li = input.closest('li') || input.closest("[role='listitem']");
+        if (li) return li;
+        let el = input;
+        while (el.parentElement && !el.parentElement.matches(BC_LIST_SELECTOR)) el = el.parentElement;
+        return el.parentElement ? el : null;
+    }
+
+    function bcGetRowDropdown(row) {
+        return row ? row.querySelector(BC_DROPDOWN_SELECTOR) : null;
     }
 
     function bcGetInputs(modal) {
@@ -3717,7 +3744,12 @@ Version 1.16:
         return [...root.querySelectorAll(selector)].filter(bcIsVisible).find(test);
     }
 
-    function bcGetCancelButton(modal) {
+    // Our buttons go immediately before this one: Cancel (old modal) or Save (new panel)
+    function bcGetAnchorButton(modal) {
+        if (bcIsPanel(modal)) {
+            return bcFindVisible(modal, 'button',
+                b => b.getAttribute('aria-label') === 'Save' || bcNormalize(b.textContent) === 'Save');
+        }
         return bcFindVisible(modal, 'footer button, [mat-dialog-actions] button',
             b => bcNormalize(b.textContent) === 'Cancel');
     }
@@ -3808,7 +3840,7 @@ Version 1.16:
         if (!modal) return [];
         return bcGetInputs(modal)
             .map(input => {
-                const dropdown = input.closest('li')?.querySelector('[role="combobox"]');
+                const dropdown = bcGetRowDropdown(bcGetRow(input));
                 return {
                     operator: dropdown ? bcGetDropdownText(dropdown) : '',
                     value:    input.value.trim(),
@@ -3896,12 +3928,31 @@ Version 1.16:
             .sort((a, b) => a.children.length - b.children.length)[0];
     }
 
+    // Old UI combobox opens on click. The new UI's menu button may open on
+    // pointerdown (Radix-style) or on click, so press first and only click if
+    // it did not open — clicking an already-open menu would close it again.
+    async function bcOpenDropdown(dropdown) {
+        if (dropdown.getAttribute('role') === 'combobox') {
+            dropdown.click();
+            return;
+        }
+        dropdown.scrollIntoView({ block: 'center' });
+        const opts = { bubbles: true, cancelable: true, view: window, button: 0 };
+        dropdown.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerType: 'mouse', isPrimary: true }));
+        dropdown.dispatchEvent(new MouseEvent('mousedown', opts));
+        await bcWait(150);
+        if (dropdown.getAttribute('aria-expanded') === 'true') return;
+        dropdown.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerType: 'mouse', isPrimary: true }));
+        dropdown.dispatchEvent(new MouseEvent('mouseup', opts));
+        dropdown.click();
+    }
+
     async function bcSelectDropdown(row, target) {
-        const dropdown = row.querySelector('[role="combobox"]');
+        const dropdown = bcGetRowDropdown(row);
         if (!dropdown) throw new Error('Could not find the row dropdown.');
         if (bcChoiceMatches(bcGetDropdownText(dropdown), target)) return;
 
-        dropdown.click();
+        await bcOpenDropdown(dropdown);
         await bcWait(250);
 
         const timeout = Date.now() + 5000;
@@ -3975,7 +4026,7 @@ Version 1.16:
         try {
             for (let i = 0; i < entries.length; i++) {
                 const input = await bcGetNextEmptyInput();
-                const row = input.closest('li');
+                const row = bcGetRow(input);
                 if (!row) throw new Error('Could not find the current form row.');
 
                 await bcSelectDropdown(row, target);
@@ -3996,10 +4047,6 @@ Version 1.16:
 
     /* ── Bulk delete ── */
 
-    function bcGetRow(input) {
-        return input.closest('li') || input.closest("[role='listitem']") || input.parentElement;
-    }
-
     function bcGetControlLabel(control) {
         return bcNormalize([
             control.getAttribute('aria-label'),
@@ -4011,6 +4058,10 @@ Version 1.16:
     }
 
     function bcFindDeleteControl(row) {
+        // New UI has a dedicated remove button per row
+        const direct = row.querySelector('[data-testid^="remove-condition-btn"], button[aria-label="Remove email entry"]');
+        if (direct && bcIsVisible(direct)) return direct;
+
         const candidates = [...row.querySelectorAll(
             "button, a[role='button'], [role='button'], [aria-label], [title], [data-testid], " +
             "[class*='delete' i], [class*='remove' i], [class*='trash' i]"
@@ -4333,14 +4384,24 @@ Version 1.16:
         bc.shadow = shadow;
     }
 
-    /* ── Buttons beside Cancel ── */
+    /* ── Buttons beside Cancel (old modal) / Save (new panel) ── */
 
-    function bcMakeButton(id, label, extraClass, view) {
+    function bcMakeButton(id, label, danger, view, panel) {
         const button = document.createElement('button');
         button.id = id;
         button.type = 'button';
-        button.className = 'ns-btn ns-btn-secondary ns-left mr-2' + (extraClass ? ' ' + extraClass : '');
         button.textContent = label;
+        if (panel) {
+            // New UI is Tailwind-styled, so the old ns-btn classes do nothing there
+            Object.assign(button.style, {
+                padding: '6px 12px', fontSize: '13px', fontWeight: '600', lineHeight: '1.25',
+                borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap',
+                background: '#fff', color: danger ? '#da291c' : '#282728',
+                border: '1px solid ' + (danger ? '#da291c' : '#a7a8aa'),
+            });
+        } else {
+            button.className = 'ns-btn ns-btn-secondary ns-left mr-2' + (danger ? ' ns-color-red' : '');
+        }
         button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -4358,22 +4419,23 @@ Version 1.16:
         const hasCopy   = modal.querySelector('#' + BC_COPY_BUTTON_ID);
         if (hasEntry && hasDelete && hasCopy) return;
 
-        const cancelButton = bcGetCancelButton(modal);
-        if (!cancelButton) return;
+        const anchor = bcGetAnchorButton(modal);
+        if (!anchor) return;
+        const panel = bcIsPanel(modal);
 
-        // Final order: [Bulk entry] [Bulk delete] [Copy constraints] [Cancel]
+        // Final order: [Bulk entry] [Bulk delete] [Copy constraints] [Cancel / Save]
         let entryButton = hasEntry;
         if (!entryButton) {
-            entryButton = bcMakeButton(BC_ENTRY_BUTTON_ID, 'Bulk entry', '', 'bulk');
-            cancelButton.insertAdjacentElement('beforebegin', entryButton);
+            entryButton = bcMakeButton(BC_ENTRY_BUTTON_ID, 'Bulk entry', false, 'bulk', panel);
+            anchor.insertAdjacentElement('beforebegin', entryButton);
         }
         if (!hasCopy) {
-            cancelButton.insertAdjacentElement('beforebegin',
-                bcMakeButton(BC_COPY_BUTTON_ID, 'Copy constraints', '', 'copy'));
+            anchor.insertAdjacentElement('beforebegin',
+                bcMakeButton(BC_COPY_BUTTON_ID, 'Copy constraints', false, 'copy', panel));
         }
         if (!hasDelete) {
             entryButton.insertAdjacentElement('afterend',
-                bcMakeButton(BC_DELETE_BUTTON_ID, '🗑️ Bulk delete', 'ns-color-red', 'delete'));
+                bcMakeButton(BC_DELETE_BUTTON_ID, '🗑️ Bulk delete', true, 'delete', panel));
         }
     }
 
