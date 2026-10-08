@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.20
+// @version      1.20.1
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -41,8 +41,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.20';
-    const CHANGELOG = `Version 1.20:
+    const SCRIPT_VERSION = '1.20.1';
+    const CHANGELOG = `Version 1.20.1:
+- The Bulk Constraint Tools settings row now shows its "Contributed by Sameena K." credit as a highlighted footer line.
+
+Version 1.20:
 - Added Bulk Constraint Tools, contributed by Sameena K. In the user constraint profile modal, "Bulk entry", "Bulk delete" and "Copy constraints" buttons now appear beside Cancel.
 - Bulk entry adds pasted domains as new rows (Does not match by default), Bulk delete removes every row matching the pasted domains, and Copy constraints copies all values to the clipboard.
 - Replaces the standalone "Netskope Bulk Constraint Entry" and "Netskope Bulk Constraint Delete" scripts; uninstall those after updating. Can be toggled in settings like all other features.
@@ -537,7 +540,8 @@ Version 1.16:
         {
             key:         'bulkConstraints',
             label:       '📥 Bulk Constraint Tools',
-            description: 'In the user constraint profile modal, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel. Contributed by Sameena K.',
+            description: 'In the user constraint profile modal, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel.',
+            credit:      'Contributed by Sameena K.',
         },
     ];
 
@@ -723,7 +727,7 @@ Version 1.16:
         scrollBody.appendChild(nameRow);
 
         /* ── Helper: build a single feature toggle row ── */
-        function buildFeatureRow({ key, label, description }, indented) {
+        function buildFeatureRow({ key, label, description, credit }, indented) {
             const row = document.createElement('div');
             row.className = 'nstk-feature-row';
             Object.assign(row.style, {
@@ -811,6 +815,18 @@ Version 1.16:
 
             textBlock.appendChild(featureLabel);
             textBlock.appendChild(featureDesc);
+
+            // Optional contributor credit, shown as a footer line on the row
+            if (credit) {
+                const creditEl = document.createElement('div');
+                creditEl.textContent = '✨ ' + credit;
+                Object.assign(creditEl.style, {
+                    fontSize: '11px', fontWeight: 'bold', color: '#3949ab',
+                    marginTop: '8px', paddingTop: '6px',
+                    borderTop: '1px dashed #c5cae9',
+                });
+                textBlock.appendChild(creditEl);
+            }
             row.appendChild(textBlock);
 
             row.addEventListener('click', (e) => { if (e.target !== toggle) toggle.click(); });
