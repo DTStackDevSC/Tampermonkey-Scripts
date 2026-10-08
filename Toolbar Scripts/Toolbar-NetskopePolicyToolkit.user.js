@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.19
+// @version      1.19.1
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, and DLP entity character counter. Integrated with Toolbar v2.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -40,8 +40,14 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.19';
-    const CHANGELOG = `Version 1.19:
+    const SCRIPT_VERSION = '1.19.1';
+    const CHANGELOG = `Version 1.19.1:
+- Fixed a startup error that could stop the toolkit from loading on some page loads.
+- SMTP "Fill with Block Headers" now targets the header field next to the trigger and asks before overwriting existing text.
+- "Remove Older Than" now only removes entries with a YYYY-MM-DD date, and keeps blank lines in URL lists.
+- Fixed settings rows not refreshing their highlight, and extended dark mode fixes to the name prompt and filter fields.
+
+Version 1.19:
 - Added a ? Help button to the toolkit settings panel that opens a visual Feature Guide covering all eight toolkit features and the settings controls.
 
 Version 1.18.2:
@@ -393,7 +399,7 @@ Version 1.16:
         #ns-add-log-modal, #ns-view-log-modal,
         #ns-remove-older-confirm, #ns-ssl-removal-modal,
         #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal,
-        #ns-username-overlay, #nsToolkitChangelogModal,
+        #ns-username-overlay, #ns-username-modal, #nsToolkitChangelogModal,
         #nsToolkitHelpModal {
             color: #333333 !important;
         }
@@ -407,13 +413,16 @@ Version 1.16:
         #ns-url-log-add-modal textarea,
         #ns-url-del-modal input, #ns-url-del-modal select,
         #ns-url-del-modal textarea,
-        #ns-username-overlay input, #ns-username-overlay select,
-        #ns-username-overlay textarea {
+        #ns-username-modal input, #ns-username-modal select,
+        #ns-username-modal textarea,
+        #ns-view-log-modal input, #ns-url-log-view-modal input,
+        #ns-remove-older-confirm input {
             background-color: #ffffff !important;
             color: #333333 !important;
         }
     `;
-    document.head.appendChild(darkModeStyle);
+    // document.head may not exist yet at document-start
+    (document.head || document.documentElement).appendChild(darkModeStyle);
 
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
@@ -622,7 +631,7 @@ Version 1.16:
 
         /* ── Subtitle ── */
         const subtitle = document.createElement('p');
-        subtitle.textContent = 'Toggle features on or off. Changes take effect immediately and are saved across sessions.';
+        subtitle.textContent = 'Toggle features on or off. Changes are saved across sessions and take effect after reloading the page.';
         Object.assign(subtitle.style, {
             fontSize:   '12px',
             color:      '#666',
@@ -701,6 +710,7 @@ Version 1.16:
         /* ── Helper: build a single feature toggle row ── */
         function buildFeatureRow({ key, label, description }, indented) {
             const row = document.createElement('div');
+            row.className = 'nstk-feature-row';
             Object.assign(row.style, {
                 display:      'flex',
                 alignItems:   'flex-start',
@@ -1621,7 +1631,7 @@ Version 1.16:
             const toggle = document.getElementById(`toolkit-toggle-${key}`);
             if (toggle) {
                 toggle.checked = getSetting(key);
-                const row = toggle.closest('div[style]');
+                const row = toggle.closest('.nstk-feature-row');
                 if (row) updateRowStyle(row, toggle.checked);
             }
         });
@@ -1873,9 +1883,21 @@ Version 1.16:
             e.stopPropagation();
             e.preventDefault();
 
-            const textarea = document.querySelector('textarea.policy-description-container.ns-form-textarea');
+            // The header field shares its classes with the policy description, so take
+            // the matching textarea closest to the trigger rather than the first on the page.
+            const SMTP_TA_SELECTOR = 'textarea.policy-description-container.ns-form-textarea';
+            let textarea = null;
+            for (let el = triggerEl.parentElement; el && !textarea; el = el.parentElement) {
+                textarea = el.querySelector(SMTP_TA_SELECTOR);
+            }
             if (!textarea) {
                 alert('Could not find the SMTP header textarea. Make sure the panel is open.');
+                return;
+            }
+            const existingText = textarea.value.trim();
+            if (existingText && existingText !== SMTP_HEADERS &&
+                !confirm('The target field already contains text:\n\n' + existingText.slice(0, 200) +
+                         (existingText.length > 200 ? '…' : '') + '\n\nOverwrite it with the block headers?')) {
                 return;
             }
 
@@ -2154,6 +2176,12 @@ Version 1.16:
         'textarea#category-description',
         'textarea[aria-label*="description" i]',
     ];
+
+    // Log dates are compared as strings, which is only valid for YYYY-MM-DD.
+    const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    function isOlderThan(date, cutoff) {
+        return ISO_DATE_RE.test(date || '') && date < cutoff;
+    }
 
     function getTodayDate() {
         const d = new Date();
@@ -2591,15 +2619,11 @@ Version 1.16:
         removeOlderBtn.addEventListener('mouseleave', () => { removeOlderBtn.style.background = '#fff'; });
         removeOlderBtn.addEventListener('click', () => {
             showRemoveOlderConfirm(
-                (cutoff) => logEntries.filter(e => e.date && e.date < cutoff).length,
+                (cutoff) => logEntries.filter(e => isOlderThan(e.date, cutoff)).length,
                 (cutoff) => {
                     const newLines = textarea.value.split('\n').filter(line => {
                         const parts = line.split('|').map(p => p.trim());
-                        if (parts.length >= 4) {
-                            const date = parts[1];
-                            return !date || date >= cutoff;
-                        }
-                        return true;
+                        return !(parts.length >= 4 && isOlderThan(parts[1], cutoff));
                     });
                     setAngularValue(textarea, newLines.join('\n').replace(/\n{3,}/g, '\n\n').trim());
                     overlay.remove(); modal.remove();
@@ -3550,17 +3574,20 @@ Version 1.16:
         removeOlderBtn.addEventListener('mouseleave', () => { removeOlderBtn.style.background = '#fff'; });
         removeOlderBtn.addEventListener('click', () => {
             showRemoveOlderConfirm(
-                (cutoff) => allGroups.filter(g => !g.isOrphan && g.date && g.date < cutoff).length,
+                (cutoff) => allGroups.filter(g => !g.isOrphan && isOlderThan(g.date, cutoff)).length,
                 (cutoff) => {
-                    const groups = parseUrlListLog(textarea.value);
-                    const keepLines = [];
-                    groups.forEach(group => {
-                        if (group.isOrphan || !group.date || group.date >= cutoff) {
-                            if (group.raw) keepLines.push(group.raw);
-                            group.domains.forEach(d => keepLines.push(d.raw));
+                    // Walk lines directly (same header rule as parseUrlListLog) so blank
+                    // lines inside kept groups survive.
+                    let keepGroup = true;
+                    const keepLines = textarea.value.split('\n').filter(line => {
+                        const trimmed = line.trim();
+                        if (/^#\w/.test(trimmed)) {
+                            const date = (trimmed.slice(1).split('|')[1] || '').trim();
+                            keepGroup = !isOlderThan(date, cutoff);
                         }
+                        return keepGroup;
                     });
-                    setAngularValue(textarea, keepLines.join('\n').trim());
+                    setAngularValue(textarea, keepLines.join('\n').replace(/\n{3,}/g, '\n\n').trim());
                     overlay.remove(); modal.remove();
                 }
             );
