@@ -3,9 +3,9 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.19.1
-// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, and DLP entity character counter. Integrated with Toolbar v2.
-// @author       J.R.
+// @version      1.20
+// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
+// @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -31,6 +31,7 @@
         urlListHistory:  'toolkit_urlListHistory',
         sslDomainLog:    'toolkit_sslDomainLog',
         dlpCharCounter:  'toolkit_dlpCharCounter',
+        bulkConstraints: 'toolkit_bulkConstraints',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -40,8 +41,13 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.19.1';
-    const CHANGELOG = `Version 1.19.1:
+    const SCRIPT_VERSION = '1.20';
+    const CHANGELOG = `Version 1.20:
+- Added Bulk Constraint Tools, contributed by Sameena K. In the user constraint profile modal, "Bulk entry", "Bulk delete" and "Copy constraints" buttons now appear beside Cancel.
+- Bulk entry adds pasted domains as new rows (Does not match by default), Bulk delete removes every row matching the pasted domains, and Copy constraints copies all values to the clipboard.
+- Replaces the standalone "Netskope Bulk Constraint Entry" and "Netskope Bulk Constraint Delete" scripts; uninstall those after updating. Can be toggled in settings like all other features.
+
+Version 1.19.1:
 - Fixed a startup error that could stop the toolkit from loading on some page loads.
 - SMTP "Fill with Block Headers" now targets the header field next to the trigger and asks before overwriting existing text.
 - "Remove Older Than" now only removes entries with a YYYY-MM-DD date, and keeps blank lines in URL lists.
@@ -421,8 +427,12 @@ Version 1.16:
             color: #333333 !important;
         }
     `;
-    // document.head may not exist yet at document-start
-    (document.head || document.documentElement).appendChild(darkModeStyle);
+    // At document-start neither head nor even documentElement is guaranteed to exist yet
+    (function appendDarkModeStyle() {
+        const parent = document.head || document.documentElement;
+        if (parent) parent.appendChild(darkModeStyle);
+        else setTimeout(appendDarkModeStyle, 10);
+    })();
 
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
@@ -523,6 +533,11 @@ Version 1.16:
             key:         'dlpCharCounter',
             label:       '🔢 DLP Entity Character Counter',
             description: 'Adds a live character count below the regex/keyword input field in the DLP Edit Entity modal.',
+        },
+        {
+            key:         'bulkConstraints',
+            label:       '📥 Bulk Constraint Tools',
+            description: 'In the user constraint profile modal, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel. Contributed by Sameena K.',
         },
     ];
 
@@ -765,6 +780,7 @@ Version 1.16:
                         });
                         injectDescriptionLogButtons();
                     }
+                    if (key === 'bulkConstraints') cleanupBulkConstraintTools();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -804,7 +820,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -1407,6 +1423,30 @@ Version 1.16:
                 },
             },
             {
+                icon: '📥',
+                title: 'Bulk Constraint Tools',
+                buildContent(body) {
+                    lead(body, 'In the user constraint profile modal, three buttons appear beside Cancel for working with many email or domain constraints at once.');
+
+                    const btnRowEl = document.createElement('div');
+                    Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
+                    btnRowEl.appendChild(chip('Bulk entry', '#fff', { color: '#333', border: '1px solid #a7a8aa' }));
+                    btnRowEl.appendChild(chip('🗑️ Bulk delete', '#fff', { color: '#da291c', border: '1px solid #da291c' }));
+                    btnRowEl.appendChild(chip('Copy constraints', '#fff', { color: '#333', border: '1px solid #a7a8aa' }));
+                    btnRowEl.appendChild(chip('Cancel', '#e0e0e0', { color: '#333', border: '1px solid #ccc' }));
+                    body.appendChild(btnRowEl);
+                    caption(body, 'The buttons are added to the footer of the constraint profile modal.');
+
+                    bullets(body, [
+                        '"Bulk entry": paste domains one per line. Each is added as a new row set to "Does not match" (untick the option to use "Matches"). Duplicates are skipped and you confirm before anything is inserted.',
+                        '"Bulk delete": paste domains one per line. Every row matching each domain is removed; domains that are not in the profile are skipped and counted.',
+                        '"Copy constraints": copies every value in the profile to the clipboard, optionally with the Matches / Does not match operator and with duplicates removed.',
+                        'Changes are made in the form only. Click Save in the profile modal to keep them.',
+                        'Contributed by Sameena K.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -1464,6 +1504,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('✉ SMTP Header Auto-Fill',    true, 'Fill with Block Headers button next to Add SMTP Header.'));
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
+                    togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
@@ -3614,6 +3655,742 @@ Version 1.16:
     }
 
     // ─────────────────────────────────────────────────────────────
+    // FEATURE 9 — BULK CONSTRAINT TOOLS  (contributed by Sameena K.)
+    // "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside
+    // Cancel in the user constraint profile modal.
+    // ─────────────────────────────────────────────────────────────
+
+    const BC_PRIMARY_ID       = 'activities-constraint-modal';
+    // Button IDs match the original standalone scripts so a copy of those
+    // that is still installed never adds a second set of buttons.
+    const BC_ENTRY_BUTTON_ID  = 'bulk-constraint-entry-button';
+    const BC_DELETE_BUTTON_ID = 'bulk-constraint-delete-button';
+    const BC_COPY_BUTTON_ID   = 'bulk-constraint-copy-button';
+    const BC_HOST_ID          = 'nstk-bulk-constraint-host';
+    const BC_EMAIL_SELECTOR   = 'ul[data-testid="constraint-profile-email-list-wrapper"] input[name="email.key"]';
+
+    const bc = {
+        host:        null,
+        shadow:      null,
+        observer:    null,
+        busy:        false,
+        constraints: [],
+        lastButton:  null,
+    };
+
+    const bcWait      = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const bcNormalize = value => String(value || '').replace(/\s+/g, ' ').trim();
+    const bcKey       = value => bcNormalize(value).toLowerCase();
+
+    function bcIsVisible(el) {
+        if (!el || !el.getClientRects().length) return false;
+        const style = getComputedStyle(el);
+        return style.display !== 'none' && style.visibility !== 'hidden';
+    }
+
+    function bcGetModal() {
+        const modal = document.getElementById(BC_PRIMARY_ID);
+        return bcIsVisible(modal) ? modal : null;
+    }
+
+    function bcGetInputs(modal) {
+        return [...modal.querySelectorAll(BC_EMAIL_SELECTOR)];
+    }
+
+    function bcFindVisible(root, selector, test) {
+        return [...root.querySelectorAll(selector)].filter(bcIsVisible).find(test);
+    }
+
+    function bcGetCancelButton(modal) {
+        return bcFindVisible(modal, 'footer button, [mat-dialog-actions] button',
+            b => bcNormalize(b.textContent) === 'Cancel');
+    }
+
+    function bcGetAddButton(modal) {
+        return bcFindVisible(modal, "a[role='button'], button",
+            b => /^\+?\s*Add Another$/i.test(bcNormalize(b.textContent)));
+    }
+
+    function bcSetStatus(id, message, isError) {
+        const status = bc.shadow?.getElementById(id);
+        if (!status) return;
+        status.textContent = message;
+        status.classList.toggle('error', !!isError);
+    }
+
+    function bcParseEntries(text) {
+        const seen = new Set();
+        return String(text)
+            .split(/\r?\n/)
+            .map(v => v.replace(/^﻿/, '').trim())
+            .filter(v => {
+                const key = bcKey(v);
+                if (!v || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }
+
+    /* ── Overlay open / close ── */
+
+    function bcShowView(view) {
+        ['bulk', 'copy', 'delete'].forEach(v => {
+            bc.shadow.getElementById(`bc-${v}-view`).hidden = v !== view;
+        });
+        bc.host.dataset.open = 'true';
+        bc.host.removeAttribute('aria-hidden');
+    }
+
+    function bcClose() {
+        if (!bc.host) return;
+        bc.shadow?.activeElement?.blur?.();
+        bc.host.dataset.open = 'false';
+        bc.host.setAttribute('aria-hidden', 'true');
+        if (bc.lastButton?.isConnected) bc.lastButton.focus({ preventScroll: true });
+    }
+
+    function bcOpen(view, button) {
+        if (!bcGetModal()) {
+            console.warn('[NS Toolkit] Open the user constraint profile modal first.');
+            return;
+        }
+        bc.lastButton = button;
+
+        if (view === 'bulk') {
+            const textarea = bc.shadow.getElementById('bc-bulk-textarea');
+            textarea.value = '';
+            bc.shadow.getElementById('bc-bulk-does-not-match').checked = true;
+            bcSetStatus('bc-bulk-status', '');
+            bcShowView('bulk');
+            setTimeout(() => textarea.focus(), 0);
+        } else if (view === 'delete') {
+            const textarea = bc.shadow.getElementById('bc-delete-textarea');
+            textarea.value = '';
+            bcSetStatus('bc-delete-status', '');
+            bcShowView('delete');
+            setTimeout(() => textarea.focus(), 0);
+        } else {
+            bc.constraints = bcReadConstraints();
+            bcSetStatus('bc-copy-status',
+                bc.constraints.length ? '' : 'No constraints found in this profile.',
+                !bc.constraints.length);
+            bcRefreshCopyPreview();
+            bcShowView('copy');
+            setTimeout(() => bc.shadow.querySelector('.copy-action')?.focus(), 0);
+        }
+    }
+
+    /* ── Copy constraints ── */
+
+    function bcGetDropdownText(dropdown) {
+        const placeholder = dropdown.querySelector('.placeholder');
+        return bcNormalize(placeholder ? placeholder.textContent : dropdown.textContent);
+    }
+
+    function bcReadConstraints() {
+        const modal = bcGetModal();
+        if (!modal) return [];
+        return bcGetInputs(modal)
+            .map(input => {
+                const dropdown = input.closest('li')?.querySelector('[role="combobox"]');
+                return {
+                    operator: dropdown ? bcGetDropdownText(dropdown) : '',
+                    value:    input.value.trim(),
+                };
+            })
+            .filter(item => item.value);
+    }
+
+    function bcBuildCopyLines() {
+        const includeOperator = bc.shadow.getElementById('bc-copy-include-operator').checked;
+        const dedupe          = bc.shadow.getElementById('bc-copy-dedupe').checked;
+        const seen  = new Set();
+        const lines = [];
+        for (const item of bc.constraints) {
+            const line = includeOperator ? `${item.operator}: ${item.value}` : item.value;
+            const key  = line.toLowerCase();
+            if (dedupe && seen.has(key)) continue;
+            seen.add(key);
+            lines.push(line);
+        }
+        return lines;
+    }
+
+    function bcRefreshCopyPreview() {
+        const lines = bcBuildCopyLines();
+        bc.shadow.getElementById('bc-copy-preview').value = lines.join('\n');
+        bc.shadow.getElementById('bc-copy-count').textContent =
+            `${lines.length} constraint${lines.length === 1 ? '' : 's'} to copy`;
+        bc.shadow.querySelector('.copy-action').disabled = !lines.length;
+    }
+
+    async function bcCopyConstraints() {
+        const lines = bcBuildCopyLines();
+        if (!lines.length) { bcSetStatus('bc-copy-status', 'Nothing to copy.', true); return; }
+
+        const text = lines.join('\n');
+        let ok;
+        try {
+            await navigator.clipboard.writeText(text);
+            ok = true;
+        } catch {
+            const preview = bc.shadow.getElementById('bc-copy-preview');
+            preview.focus();
+            preview.select();
+            try { ok = document.execCommand('copy'); } catch { ok = false; }
+        }
+
+        if (ok) {
+            bcSetStatus('bc-copy-status',
+                `Copied ${lines.length} constraint${lines.length === 1 ? '' : 's'} to the clipboard.`);
+        } else {
+            bcSetStatus('bc-copy-status', 'Clipboard blocked. Text is selected; press Ctrl+C to copy.', true);
+        }
+    }
+
+    /* ── Bulk entry ── */
+
+    function bcSetInputValue(input, value) {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        input.focus();
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.dispatchEvent(new Event('blur',   { bubbles: true }));
+    }
+
+    function bcChoiceMatches(actual, target) {
+        const actualText = bcKey(actual);
+        const targetText = bcKey(target);
+        if (targetText === 'does not match') return /^does not match(?:es)?$/.test(actualText);
+        return actualText === targetText;
+    }
+
+    function bcFindDropdownOption(target, dropdown) {
+        const menus = [...document.querySelectorAll(".dropdown-menu-wrapper, [role='listbox'], [role='menu']")]
+            .filter(bcIsVisible);
+        return menus
+            .flatMap(menu => [menu, ...menu.querySelectorAll('*')])
+            .filter(el =>
+                el !== dropdown &&
+                bcIsVisible(el) &&
+                !bc.host?.contains(el) &&
+                bcChoiceMatches(el.textContent, target)
+            )
+            .sort((a, b) => a.children.length - b.children.length)[0];
+    }
+
+    async function bcSelectDropdown(row, target) {
+        const dropdown = row.querySelector('[role="combobox"]');
+        if (!dropdown) throw new Error('Could not find the row dropdown.');
+        if (bcChoiceMatches(bcGetDropdownText(dropdown), target)) return;
+
+        dropdown.click();
+        await bcWait(250);
+
+        const timeout = Date.now() + 5000;
+        let option = null;
+        while (!option && Date.now() < timeout) {
+            option = bcFindDropdownOption(target, dropdown);
+            if (!option) await bcWait(100);
+        }
+        if (!option) throw new Error(`Could not find the "${target}" option.`);
+
+        option.click();
+        while (Date.now() < timeout && !bcChoiceMatches(bcGetDropdownText(dropdown), target)) {
+            await bcWait(100);
+        }
+        if (!bcChoiceMatches(bcGetDropdownText(dropdown), target)) {
+            throw new Error(`Dropdown did not change to "${target}".`);
+        }
+    }
+
+    async function bcWaitForInputCount(expectedCount) {
+        const timeout = Date.now() + 5000;
+        while (Date.now() < timeout) {
+            const modal = bcGetModal();
+            if (modal && bcGetInputs(modal).length >= expectedCount) return;
+            await bcWait(100);
+        }
+        throw new Error('Timed out waiting for a new form row.');
+    }
+
+    async function bcGetNextEmptyInput() {
+        const modal = bcGetModal();
+        if (!modal) throw new Error('The profile modal is no longer open.');
+
+        const inputs = bcGetInputs(modal);
+        const emptyInput = inputs.find(input => !input.value.trim());
+        if (emptyInput) return emptyInput;
+
+        const addButton = bcGetAddButton(modal);
+        if (!addButton) throw new Error('Could not find the "+ Add Another" button.');
+
+        addButton.click();
+        await bcWaitForInputCount(inputs.length + 1);
+
+        const updated = bcGetInputs(bcGetModal());
+        return updated[updated.length - 1];
+    }
+
+    async function bcInsertEntries() {
+        if (bc.busy) return;
+
+        const textarea = bc.shadow.getElementById('bc-bulk-textarea');
+        const checkbox = bc.shadow.getElementById('bc-bulk-does-not-match');
+        const insertBtn = bc.shadow.querySelector('.insert');
+        const entries = bcParseEntries(textarea.value);
+
+        if (!entries.length) { bcSetStatus('bc-bulk-status', 'Paste at least one domain first.', true); return; }
+
+        const target = checkbox.checked ? 'Does not match' : 'Matches';
+        if (!window.confirm([
+            `Insert ${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}?`,
+            `First: ${entries[0]}`,
+            `Last: ${entries[entries.length - 1]}`,
+            `Selection: ${target}`,
+            '',
+            'Continue?',
+        ].join('\n'))) return;
+
+        bc.busy = true;
+        insertBtn.disabled = textarea.disabled = checkbox.disabled = true;
+
+        try {
+            for (let i = 0; i < entries.length; i++) {
+                const input = await bcGetNextEmptyInput();
+                const row = input.closest('li');
+                if (!row) throw new Error('Could not find the current form row.');
+
+                await bcSelectDropdown(row, target);
+                bcSetInputValue(input, entries[i]);
+                bcSetStatus('bc-bulk-status', `Inserted ${i + 1} of ${entries.length}: ${entries[i]}`);
+                await bcWait(150);
+            }
+            textarea.value = '';
+            bcSetStatus('bc-bulk-status', `Completed ${entries.length} entries as "${target}".`);
+        } catch (error) {
+            console.error('[NS Toolkit] Bulk entry:', error);
+            bcSetStatus('bc-bulk-status', `Stopped: ${error.message}`, true);
+        } finally {
+            insertBtn.disabled = textarea.disabled = checkbox.disabled = false;
+            bc.busy = false;
+        }
+    }
+
+    /* ── Bulk delete ── */
+
+    function bcGetRow(input) {
+        return input.closest('li') || input.closest("[role='listitem']") || input.parentElement;
+    }
+
+    function bcGetControlLabel(control) {
+        return bcNormalize([
+            control.getAttribute('aria-label'),
+            control.getAttribute('title'),
+            control.getAttribute('data-testid'),
+            control.textContent,
+            String(control.className || ''),
+        ].filter(Boolean).join(' '));
+    }
+
+    function bcFindDeleteControl(row) {
+        const candidates = [...row.querySelectorAll(
+            "button, a[role='button'], [role='button'], [aria-label], [title], [data-testid], " +
+            "[class*='delete' i], [class*='remove' i], [class*='trash' i]"
+        )].filter(bcIsVisible);
+
+        const explicit = candidates.find(c => /(delete|remove|trash)/i.test(bcGetControlLabel(c)));
+        if (explicit) return explicit;
+
+        // Fall back to the row's only other control, if it is unambiguous
+        const fallback = candidates.filter(c =>
+            c.getAttribute('role') !== 'combobox' &&
+            !/add another|save|cancel|matches|does not match/.test(bcGetControlLabel(c).toLowerCase())
+        );
+        return fallback.length === 1 ? fallback[0] : null;
+    }
+
+    function bcGetMatchingInputs(modal, targetKey) {
+        return bcGetInputs(modal).filter(input => bcKey(input.value) === targetKey);
+    }
+
+    async function bcWaitForOneMatchToDisappear(targetKey, beforeCount) {
+        const timeout = Date.now() + 5000;
+        while (Date.now() < timeout) {
+            const modal = bcGetModal();
+            if (!modal) throw new Error('The profile modal was closed.');
+            if (bcGetMatchingInputs(modal, targetKey).length < beforeCount) return;
+            await bcWait(100);
+        }
+        throw new Error('The matching row did not disappear after clicking its delete control.');
+    }
+
+    async function bcDeleteAllMatchesForDomain(domain) {
+        const targetKey = bcKey(domain);
+        let deleted = 0;
+
+        while (true) {
+            const modal = bcGetModal();
+            if (!modal) throw new Error('The profile modal was closed.');
+
+            const matching = bcGetMatchingInputs(modal, targetKey);
+            if (!matching.length) return deleted;
+
+            const row = bcGetRow(matching[0]);
+            if (!row) throw new Error(`Could not find the row for "${domain}".`);
+
+            const deleteControl = bcFindDeleteControl(row);
+            if (!deleteControl) throw new Error(`Could not find the delete control for "${domain}".`);
+
+            deleteControl.click();
+            await bcWaitForOneMatchToDisappear(targetKey, matching.length);
+            deleted++;
+        }
+    }
+
+    async function bcDeleteEntries() {
+        if (bc.busy) return;
+
+        const modal     = bcGetModal();
+        const textarea  = bc.shadow.getElementById('bc-delete-textarea');
+        const deleteBtn = bc.shadow.querySelector('.delete');
+
+        if (!modal) { bcSetStatus('bc-delete-status', 'Open the user constraint profile first.', true); return; }
+
+        const entries = bcParseEntries(textarea.value);
+        if (!entries.length) { bcSetStatus('bc-delete-status', 'Paste at least one domain first.', true); return; }
+
+        const inputs       = bcGetInputs(modal);
+        const existingKeys = new Set(inputs.map(input => bcKey(input.value)).filter(Boolean));
+        const entryKeys    = new Set(entries.map(bcKey));
+        const missingCount = entries.filter(e => !existingKeys.has(bcKey(e))).length;
+        const rowsToDelete = inputs.filter(input => entryKeys.has(bcKey(input.value))).length;
+
+        if (!rowsToDelete) {
+            bcSetStatus('bc-delete-status',
+                `No matching domains found. Total domains: ${entries.length}. Missing domains: ${missingCount}.`, true);
+            return;
+        }
+
+        if (!window.confirm([
+            'Bulk delete confirmation',
+            '',
+            `Total domains provided: ${entries.length}`,
+            `Missing domains: ${missingCount}`,
+            `Rows to delete: ${rowsToDelete}`,
+            '',
+            'Continue deleting the matching rows?',
+        ].join('\n'))) {
+            bcSetStatus('bc-delete-status', 'Deletion cancelled.');
+            return;
+        }
+
+        bc.busy = true;
+        deleteBtn.disabled = textarea.disabled = true;
+        let deletedCount = 0;
+        bcSetStatus('bc-delete-status', `Deleting ${rowsToDelete} matching row${rowsToDelete === 1 ? '' : 's'}...`);
+
+        try {
+            for (const domain of entries) {
+                const deletedForDomain = await bcDeleteAllMatchesForDomain(domain);
+                deletedCount += deletedForDomain;
+                if (deletedForDomain) {
+                    bcSetStatus('bc-delete-status', `Deleted ${deletedCount} of ${rowsToDelete} rows...`);
+                }
+            }
+            textarea.value = '';
+            bcSetStatus('bc-delete-status',
+                `Completed. Deleted ${deletedCount} row${deletedCount === 1 ? '' : 's'}. Missing domains: ${missingCount}.`);
+        } catch (error) {
+            console.error('[NS Toolkit] Bulk delete:', error);
+            bcSetStatus('bc-delete-status',
+                `Stopped after deleting ${deletedCount} row${deletedCount === 1 ? '' : 's'}: ${error.message}`, true);
+        } finally {
+            deleteBtn.disabled = textarea.disabled = false;
+            bc.busy = false;
+        }
+    }
+
+    /* ── Overlay (shadow DOM keeps Netskope styles out) ── */
+
+    function bcCreateHost() {
+        const host   = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet  = new CSSStyleSheet();
+
+        host.id = BC_HOST_ID;
+        host.dataset.open = 'false';
+        host.setAttribute('aria-hidden', 'true');
+
+        sheet.replaceSync(`
+            :host {
+                all: initial;
+                position: fixed !important;
+                inset: 0 !important;
+                z-index: 2147483647 !important;
+                display: block !important;
+                pointer-events: none;
+                font-family: Arial, sans-serif;
+            }
+            :host([data-open="false"]) { display: none !important; }
+            :host([data-open="true"])  { pointer-events: auto; }
+
+            .backdrop {
+                position: fixed; inset: 0;
+                display: flex; align-items: center; justify-content: center;
+                padding: 24px; box-sizing: border-box;
+                background: rgba(0, 0, 0, .48);
+            }
+            .backdrop[hidden] { display: none; }
+
+            .panel {
+                display: flex; flex-direction: column;
+                width: min(640px, calc(100vw - 32px));
+                max-height: calc(100vh - 48px);
+                overflow: hidden; box-sizing: border-box;
+                color: #282728; background: #fff;
+                border: 1px solid #d5d5d5; border-top: 5px solid #86bc25;
+                border-radius: 6px;
+                box-shadow: 0 8px 28px rgba(0, 0, 0, .3);
+            }
+            .panel.danger { border-top-color: #da291c; }
+
+            .header, .footer {
+                display: flex; align-items: center; gap: 8px;
+                flex: 0 0 auto; padding: 16px 20px; box-sizing: border-box;
+            }
+            .header { justify-content: space-between; border-bottom: 1px solid #e6e6e6; }
+            .header h2 { margin: 0; color: #1a1a1a; font-size: 20px; font-weight: 700; }
+
+            .close {
+                padding: 2px 8px; color: #53565a; background: transparent;
+                border: 0; font-size: 24px; line-height: 1; cursor: pointer;
+            }
+
+            .body { overflow: auto; padding: 20px; box-sizing: border-box; }
+
+            .label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+
+            textarea {
+                display: block; width: 100%; min-height: 240px;
+                box-sizing: border-box; padding: 10px; resize: vertical;
+                border: 1px solid #a7a8aa; border-radius: 4px;
+                color: #282728; background: #fff;
+                font: 14px Arial, sans-serif;
+            }
+            textarea[readonly] {
+                background: #f6f6f6;
+                font-family: Consolas, "Courier New", monospace;
+                font-size: 13px; white-space: pre;
+            }
+            textarea:focus { outline: 2px solid #86bc25; }
+            .danger textarea:focus { outline-color: #da291c; outline-offset: 1px; }
+
+            .option { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 14px; }
+            .options-row { display: flex; flex-wrap: wrap; gap: 4px 24px; }
+
+            .help  { margin-top: 8px; color: #53565a; font-size: 13px; }
+            .count { margin-top: 12px; color: #53565a; font-size: 13px; }
+
+            .status { min-height: 20px; margin-top: 12px; color: #005587; font-size: 13px; }
+            .status.error { color: #da291c; }
+
+            .footer { justify-content: flex-end; border-top: 1px solid #e6e6e6; }
+            .footer button {
+                min-width: 84px; padding: 9px 18px; border-radius: 4px;
+                font-weight: 600; cursor: pointer;
+            }
+            .cancel { color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .insert, .copy-action { color: #fff; background: #6b9a1e; border: 1px solid #6b9a1e; }
+            .delete { color: #fff; background: #da291c; border: 1px solid #da291c; }
+
+            button:disabled, textarea:disabled { cursor: wait; opacity: .6; }
+        `);
+
+        shadow.adoptedStyleSheets = [sheet];
+
+        shadow.innerHTML = `
+            <div class="backdrop" id="bc-bulk-view" hidden>
+                <section class="panel" role="dialog" aria-modal="true" aria-labelledby="bc-bulk-title">
+                    <header class="header">
+                        <h2 id="bc-bulk-title">Bulk entry</h2>
+                        <button type="button" class="close" data-action="close" aria-label="Close bulk entry">×</button>
+                    </header>
+                    <main class="body">
+                        <label class="label" for="bc-bulk-textarea">Paste domains, one per line</label>
+                        <textarea id="bc-bulk-textarea" placeholder="*@example.com&#10;*@another-example.com"></textarea>
+                        <label class="option">
+                            <input id="bc-bulk-does-not-match" type="checkbox" checked>
+                            <span>Use "Does not match"</span>
+                        </label>
+                        <div id="bc-bulk-status" class="status" role="status" aria-live="polite"></div>
+                    </main>
+                    <footer class="footer">
+                        <button type="button" class="cancel" data-action="close">Cancel</button>
+                        <button type="button" class="insert" data-action="insert">Insert</button>
+                    </footer>
+                </section>
+            </div>
+
+            <div class="backdrop" id="bc-delete-view" hidden>
+                <section class="panel danger" role="dialog" aria-modal="true" aria-labelledby="bc-delete-title">
+                    <header class="header">
+                        <h2 id="bc-delete-title">Bulk delete</h2>
+                        <button type="button" class="close" data-action="close" aria-label="Close bulk delete">×</button>
+                    </header>
+                    <main class="body">
+                        <label class="label" for="bc-delete-textarea">Paste domains to delete, one per line</label>
+                        <textarea id="bc-delete-textarea" placeholder="*@example.com&#10;*@another-example.com"></textarea>
+                        <div class="help">Only matching entries will be deleted. Missing entries will be skipped.</div>
+                        <div id="bc-delete-status" class="status" role="status" aria-live="polite"></div>
+                    </main>
+                    <footer class="footer">
+                        <button type="button" class="cancel" data-action="close">Cancel</button>
+                        <button type="button" class="delete" data-action="delete">Delete</button>
+                    </footer>
+                </section>
+            </div>
+
+            <div class="backdrop" id="bc-copy-view" hidden>
+                <section class="panel" role="dialog" aria-modal="true" aria-labelledby="bc-copy-title">
+                    <header class="header">
+                        <h2 id="bc-copy-title">Copy constraints</h2>
+                        <button type="button" class="close" data-action="close" aria-label="Close copy constraints">×</button>
+                    </header>
+                    <main class="body">
+                        <label class="label" for="bc-copy-preview">Constraints in this profile</label>
+                        <textarea id="bc-copy-preview" readonly></textarea>
+                        <div class="options-row">
+                            <label class="option">
+                                <input id="bc-copy-include-operator" type="checkbox">
+                                <span>Include "Matches / Does not match"</span>
+                            </label>
+                            <label class="option">
+                                <input id="bc-copy-dedupe" type="checkbox" checked>
+                                <span>Remove duplicates</span>
+                            </label>
+                        </div>
+                        <div id="bc-copy-count" class="count"></div>
+                        <div id="bc-copy-status" class="status" role="status" aria-live="polite"></div>
+                    </main>
+                    <footer class="footer">
+                        <button type="button" class="cancel" data-action="close">Close</button>
+                        <button type="button" class="copy-action" data-action="copy">Copy</button>
+                    </footer>
+                </section>
+            </div>
+        `;
+
+        // Keep clicks inside the overlay from reaching Netskope's modal handlers
+        ['pointerdown', 'mousedown', 'click'].forEach(name => {
+            shadow.addEventListener(name, e => e.stopPropagation());
+        });
+
+        shadow.addEventListener('click', (e) => {
+            if (!(e.target instanceof Element)) return;
+            const action = e.target.closest('[data-action]')?.dataset.action;
+            if (action === 'close')  bcClose();
+            if (action === 'insert') bcInsertEntries();
+            if (action === 'delete') bcDeleteEntries();
+            if (action === 'copy')   bcCopyConstraints();
+        });
+
+        shadow.addEventListener('change', (e) => {
+            const id = e.target?.id;
+            if (id === 'bc-copy-include-operator' || id === 'bc-copy-dedupe') {
+                bcRefreshCopyPreview();
+                bcSetStatus('bc-copy-status', '');
+            }
+        });
+
+        // Escape closes the overlay only; it must not reach (and close) the Netskope modal
+        shadow.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (!bc.busy) bcClose();
+        });
+
+        document.body.appendChild(host);
+        bc.host   = host;
+        bc.shadow = shadow;
+    }
+
+    /* ── Buttons beside Cancel ── */
+
+    function bcMakeButton(id, label, extraClass, view) {
+        const button = document.createElement('button');
+        button.id = id;
+        button.type = 'button';
+        button.className = 'ns-btn ns-btn-secondary ns-left mr-2' + (extraClass ? ' ' + extraClass : '');
+        button.textContent = label;
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            bcOpen(view, button);
+        });
+        return button;
+    }
+
+    function installBulkConstraintButtons() {
+        const modal = bcGetModal();
+        if (!modal) return;
+
+        const hasEntry  = modal.querySelector('#' + BC_ENTRY_BUTTON_ID);
+        const hasDelete = modal.querySelector('#' + BC_DELETE_BUTTON_ID);
+        const hasCopy   = modal.querySelector('#' + BC_COPY_BUTTON_ID);
+        if (hasEntry && hasDelete && hasCopy) return;
+
+        const cancelButton = bcGetCancelButton(modal);
+        if (!cancelButton) return;
+
+        // Final order: [Bulk entry] [Bulk delete] [Copy constraints] [Cancel]
+        let entryButton = hasEntry;
+        if (!entryButton) {
+            entryButton = bcMakeButton(BC_ENTRY_BUTTON_ID, 'Bulk entry', '', 'bulk');
+            cancelButton.insertAdjacentElement('beforebegin', entryButton);
+        }
+        if (!hasCopy) {
+            cancelButton.insertAdjacentElement('beforebegin',
+                bcMakeButton(BC_COPY_BUTTON_ID, 'Copy constraints', '', 'copy'));
+        }
+        if (!hasDelete) {
+            entryButton.insertAdjacentElement('afterend',
+                bcMakeButton(BC_DELETE_BUTTON_ID, '🗑️ Bulk delete', 'ns-color-red', 'delete'));
+        }
+    }
+
+    function initBulkConstraintTools() {
+        if (!getSetting('bulkConstraints') || bc.host) return;
+
+        bcCreateHost();
+
+        let scheduled = false;
+        const scheduleInstall = () => {
+            if (scheduled) return;
+            scheduled = true;
+            requestAnimationFrame(() => {
+                scheduled = false;
+                installBulkConstraintButtons();
+            });
+        };
+
+        bc.observer = new MutationObserver(scheduleInstall);
+        bc.observer.observe(document.body, { childList: true, subtree: true });
+        scheduleInstall();
+        console.log('[NS Toolkit] Bulk constraint tools ready.');
+    }
+
+    function cleanupBulkConstraintTools() {
+        bc.observer?.disconnect();
+        bc.observer = null;
+        removeAll(`#${BC_ENTRY_BUTTON_ID}, #${BC_DELETE_BUTTON_ID}, #${BC_COPY_BUTTON_ID}`);
+        bc.host?.remove();
+        bc.host = bc.shadow = null;
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // FIRST-BOOT USERNAME PROMPT
     // ─────────────────────────────────────────────────────────────
 
@@ -3770,6 +4547,7 @@ Version 1.16:
 
         observer.observe(document.body, { childList: true, subtree: true });
         buildSettingsModal();
+        initBulkConstraintTools();
         setTimeout(attemptRegistration, 1000);
 
         if (!GM_getValue('toolkit_username', '')) {
