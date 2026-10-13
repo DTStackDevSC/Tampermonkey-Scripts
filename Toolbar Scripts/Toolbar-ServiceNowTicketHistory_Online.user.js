@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.16.0
+// @version      1.17.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.16.0';
-    const CHANGELOG = `Version 1.16.0:
+    const SCRIPT_VERSION = '1.17.0';
+    const CHANGELOG = `Version 1.17.0:
+- Added a new "DLP Rules" group with Added, Modified, and Removed entry types. Added and Modified entries capture the rule name and a description where you can write notes about the rule. Removed entries capture the rule name. All three generate ticket notes, show the "Write" button, and appear in the grouped summary like DLP Profiles.
+
+Version 1.16.0:
 - Writing an entry to the ticket now also sets the status in the short description: "Waiting Vendor" for Recategorization Request entries and "Waiting Requester" for every other entry type.
 - New setting "Update short description on write" in the setup panel. It is on by default; turn it off to leave the short description date and status untouched when writing entries.
 
@@ -305,6 +308,13 @@ Version 1.4.3:
         dlp_profile_deleted: [
             { key: 'name', label: 'Name', type: 'text' },
         ],
+        dlp_rule_full: [
+            { key: 'name',        label: 'Name',        type: 'text'     },
+            { key: 'description', label: 'Description', type: 'textarea' },
+        ],
+        dlp_rule_deleted: [
+            { key: 'name', label: 'Name', type: 'text' },
+        ],
     };
 
     /* ==========================================================
@@ -454,6 +464,14 @@ Version 1.4.3:
                 { label: 'DLP Profile Added',    value: 'DLP Profile Added',    color: '#007bff', schema: 'dlp_profile_full'    },
                 { label: 'DLP Profile Modified', value: 'DLP Profile Modified', color: '#6610f2', schema: 'dlp_profile_full'    },
                 { label: 'DLP Profile Removed',  value: 'DLP Profile Removed',  color: '#c0392b', schema: 'dlp_profile_deleted' },
+            ],
+        },
+        {
+            group: 'DLP Rules',
+            items: [
+                { label: 'DLP Rule Added',    value: 'DLP Rule Added',    color: '#007bff', schema: 'dlp_rule_full'    },
+                { label: 'DLP Rule Modified', value: 'DLP Rule Modified', color: '#6610f2', schema: 'dlp_rule_full'    },
+                { label: 'DLP Rule Removed',  value: 'DLP Rule Removed',  color: '#c0392b', schema: 'dlp_rule_deleted' },
             ],
         },
         {
@@ -696,6 +714,7 @@ Version 1.4.3:
         { label: 'Constraints',                 types: ['User Constraint'] },
         { label: 'File Profiles',               types: ['File Profile Added', 'File Profile Modified', 'File Profile Removed'] },
         { label: 'DLP Profiles',                types: ['DLP Profile Added', 'DLP Profile Modified', 'DLP Profile Removed'] },
+        { label: 'DLP Rules',                   types: ['DLP Rule Added', 'DLP Rule Modified', 'DLP Rule Removed'] },
         { label: 'Handover Notes',              types: ['Handover Note'] },
         { label: 'Other',                       types: ['Custom'] },
     ];
@@ -1922,6 +1941,20 @@ Version 1.4.3:
                 commentsHeader: "We've removed the following Netskope DLP Profile as requested:",
             },
 
+            // ── DLP Rules ──────────────────────────────────────────
+            'DLP Rule Added': {
+                workNoteHeader: 'Netskope DLP Rule has been added:',
+                commentsHeader: "We've added the following Netskope DLP Rule:",
+            },
+            'DLP Rule Modified': {
+                workNoteHeader: 'Netskope DLP Rule has been modified:',
+                commentsHeader: "We've modified the following Netskope DLP Rule:",
+            },
+            'DLP Rule Removed': {
+                workNoteHeader: 'Netskope DLP Rule has been removed:',
+                commentsHeader: "We've removed the following Netskope DLP Rule as requested:",
+            },
+
             // 'Custom' is intentionally absent — freeform notes don't auto-write.
         };
 
@@ -2523,6 +2556,12 @@ Version 1.4.3:
             createTypes: ['DLP Profile Added'],
             modifyTypes: ['DLP Profile Modified'],
             deleteTypes: ['DLP Profile Removed'],
+        },
+        'DLP Rules': {
+            nameKey:     'name',
+            createTypes: ['DLP Rule Added'],
+            modifyTypes: ['DLP Rule Modified'],
+            deleteTypes: ['DLP Rule Removed'],
         },
     };
 
