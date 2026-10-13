@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.18.0
+// @version      1.19.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.18.0';
-    const CHANGELOG = `Version 1.18.0:
+    const SCRIPT_VERSION = '1.19.0';
+    const CHANGELOG = `Version 1.19.0:
+- New batch session mode. Click "Start batch session" under the Add Entry button to log several changes in a row without writing each one to the ticket. When you are done, click "Write all to ticket" to generate a single worknote and a single comment with every change of the session, grouped by category. The short description date and status are updated once at the end.
+- "End without writing" closes the session and keeps the changes in the log without writing anything to the ticket.
+- New setting "Keep batch session after page reload". It is off by default, so an open session ends when the page reloads; turn it on to continue the session where you left it.
+
+Version 1.18.0:
 - Added a new "Email Notifications" group with Added, Modified, and Removed entry types. Added and Modified entries capture the notification name, subject, and message. Removed entries capture the notification name. All three generate ticket notes, show the "Write" button, and appear in the grouped summary like User Notifications.
 
 Version 1.17.0:
@@ -761,6 +766,40 @@ Version 1.4.3:
     const UPDATE_SHORT_DESC_KEY = 'changeTrackerUpdateShortDescEnabled';
     function getUpdateShortDescEnabled()  { return GM_getValue(UPDATE_SHORT_DESC_KEY, true) !== false; }
     function setUpdateShortDescEnabled(v) { GM_setValue(UPDATE_SHORT_DESC_KEY, !!v); }
+
+    // Batch sessions: while a session is active for a ticket, new entries
+    // are saved to the log as usual but NOT written to the ticket. "Write
+    // all" then writes them together as one worknote + one comment.
+    // Sessions live in memory and end on page reload, unless the
+    // "keep batch session" setting is on (then they are mirrored to GM).
+    const BATCH_PERSIST_KEY  = 'changeTrackerBatchPersistEnabled';
+    const BATCH_SESSIONS_KEY = 'changeTrackerBatchSessions';
+    function getBatchPersistEnabled()  { return GM_getValue(BATCH_PERSIST_KEY, false) === true; }
+    function setBatchPersistEnabled(v) { GM_setValue(BATCH_PERSIST_KEY, !!v); saveBatchSessions(); }
+
+    let batchSessions = getBatchPersistEnabled() ? (GM_getValue(BATCH_SESSIONS_KEY, {}) || {}) : {};
+    if (!getBatchPersistEnabled()) GM_deleteValue(BATCH_SESSIONS_KEY);
+
+    function saveBatchSessions() {
+        if (getBatchPersistEnabled()) GM_setValue(BATCH_SESSIONS_KEY, batchSessions);
+        else GM_deleteValue(BATCH_SESSIONS_KEY);
+    }
+    function getBatchSession(ticket)   { return batchSessions[ticket] || null; }
+    function startBatchSession(ticket) { batchSessions[ticket] = { startedAt: Date.now(), ids: [] }; saveBatchSessions(); }
+    function endBatchSession(ticket)   { delete batchSessions[ticket]; saveBatchSessions(); }
+    function addToBatchSession(ticket, id) {
+        const session = batchSessions[ticket];
+        if (!session) return;
+        session.ids.push(id);
+        saveBatchSessions();
+    }
+    // Current (possibly edited) entries of the session; deleted ones drop out.
+    function getBatchEntries(ticket) {
+        const session = getBatchSession(ticket);
+        if (!session) return [];
+        const ids = new Set(session.ids);
+        return loadEntries(ticket).filter(e => ids.has(e.id));
+    }
 
     const CACHE_TTL_KEY = 'changeTrackerCacheTtlDays';
     const CACHE_TTL_DEFAULT = 30;
@@ -2040,8 +2079,9 @@ Version 1.4.3:
          *   { ok: true,  wrote: 'both' | 'workNotes' | 'comments' }
          *   { ok: false, reason: 'no-template' | 'no-field' | 'error', error? }
          */
-        async function writeEntry(entry) {
-            if (!NOTE_TEMPLATES[entry.type]) return { ok: false, reason: 'no-template' };
+        // Shared write path: picks the visible journal field(s), writes the
+        // worknote and/or comment text, then refreshes the short description.
+        async function writeToTicket(buildWorkNote, buildComments, status) {
             const vis = detectVisibility();
             if (vis.mode === 'none') {
                 console.warn('CT: no SNow worknote/comments field visible — skipping ticket write');
@@ -2053,24 +2093,24 @@ Version 1.4.3:
             try {
                 let wrote;
                 if (vis.mode === 'both') {
-                    const wnText = buildWorkNoteText(entry);
-                    const cmText = buildCommentsText(entry, openedByName);
+                    const wnText = buildWorkNote();
+                    const cmText = buildComments(openedByName);
                     if (wnText) appendText(vis.workNotes, wnText);
                     if (cmText) await insertTextWithMention(vis.comments, cmText, 'comments');
                     wrote = 'both';
 
                 } else if (vis.mode === 'workNotesOnly') {
-                    const text = buildWorkNoteText(entry);
+                    const text = buildWorkNote();
                     if (text) appendText(vis.workNotes, text);
                     wrote = 'workNotes';
 
                 } else { // 'commentsOnly' or 'unknown' (assume comments-style)
-                    const text = buildCommentsText(entry, openedByName);
+                    const text = buildComments(openedByName);
                     if (text) await insertTextWithMention(vis.comments, text, 'comments');
                     wrote = 'comments';
                 }
                 if (getUpdateShortDescEnabled()) {
-                    try { updateShortDescription(statusForEntry(entry)); } catch (e) { console.warn('CT: short description update failed', e); }
+                    try { updateShortDescription(status); } catch (e) { console.warn('CT: short description update failed', e); }
                 }
                 return { ok: true, wrote };
             } catch (e) {
@@ -2080,8 +2120,68 @@ Version 1.4.3:
             }
         }
 
+        async function writeEntry(entry) {
+            if (!NOTE_TEMPLATES[entry.type]) return { ok: false, reason: 'no-template' };
+            return writeToTicket(
+                () => buildWorkNoteText(entry),
+                name => buildCommentsText(entry, name),
+                statusForEntry(entry)
+            );
+        }
+
+        // ── Batch write (one worknote + one comment for a whole session) ──
+
+        function categoryIndex(type) {
+            const i = CATEGORY_GROUPS.findIndex(g => g.types.includes(type));
+            return i === -1 ? CATEGORY_GROUPS.length : i;
+        }
+
+        // Group by category (dropdown group order), keeping the order the
+        // entries were added within each category.
+        function sortByCategory(entries) {
+            return entries
+                .map((entry, i) => ({ entry, i }))
+                .sort((a, b) => (categoryIndex(a.entry.type) - categoryIndex(b.entry.type)) || (a.i - b.i))
+                .map(x => x.entry);
+        }
+
+        function buildBatchWorkNoteText(entries) {
+            const blocks = entries.map(entry =>
+                [NOTE_TEMPLATES[entry.type].workNoteHeader, ...fieldLines(entry)].join('\n'));
+            return ['#Changes applied in this session:', '', blocks.join('\n\n')].join('\n');
+        }
+
+        function buildBatchCommentsText(entries, openedByName) {
+            const greeting = openedByName ? `Hi @[${openedByName}],` : 'Hi,';
+            const blocks = entries.map(entry =>
+                [NOTE_TEMPLATES[entry.type].commentsHeader, ...fieldLines(entry)].join('\n'));
+            const parts = [greeting, '', "We've applied the following changes to support your request:", '', blocks.join('\n\n')];
+            // Closers ask the requester to test; say it once, using the most complete wording.
+            const closer = entries
+                .map(entry => NOTE_TEMPLATES[entry.type].commentsCloser)
+                .filter(Boolean)
+                .sort((a, b) => b.length - a.length)[0];
+            if (closer) parts.push('', closer);
+            parts.push('', SIGN_OFF);
+            return parts.join('\n');
+        }
+
+        async function writeBatch(entries) {
+            const templated = sortByCategory(entries.filter(entry => NOTE_TEMPLATES[entry.type]));
+            if (!templated.length) return { ok: false, reason: 'no-template' };
+            const statuses = new Set(templated.map(statusForEntry));
+            const status   = statuses.size === 1 ? [...statuses][0] : 'Waiting Requester';
+            const result = await writeToTicket(
+                () => buildBatchWorkNoteText(templated),
+                name => buildBatchCommentsText(templated, name),
+                status
+            );
+            return { ...result, count: templated.length, skipped: entries.length - templated.length };
+        }
+
         return {
             writeEntry,
+            writeBatch,
             detectVisibility,                              // exposed for diagnostics
             hasTemplate: type => Boolean(NOTE_TEMPLATES[type]),
         };
@@ -3056,6 +3156,7 @@ Version 1.4.3:
      * ==========================================================*/
 
     function refreshLog(ticket) {
+        renderBatchBar();
         const container = document.getElementById('ct-log-container');
         const countEl   = document.getElementById('ct-entry-count');
         if (!container) return;
@@ -3285,7 +3386,7 @@ Version 1.4.3:
 
         // ══ INPUT AREA ═══════════════════════════════════════════
 
-        const inputArea = css(mk('div'), {
+        const inputArea = css(mk('div', { id:'ct-input-area' }), {
             background:'#fff', border:'1px solid #ddd', borderRadius:'7px',
             padding:'12px', marginBottom:'10px'
         });
@@ -3321,6 +3422,9 @@ Version 1.4.3:
         addBtn.title = 'Ctrl+Enter also works inside the detail field';
         addBtn.onclick = handleAddEntry;
         inputArea.appendChild(addBtn);
+
+        // Batch session controls (filled by renderBatchBar)
+        inputArea.appendChild(mk('div', { id:'ct-batch-bar' }));
         sidebar.appendChild(inputArea);
 
         // ── Status ───────────────────────────────────────────────
@@ -3456,6 +3560,7 @@ Version 1.4.3:
         // Reflect current connectivity state into the freshly-built DOM
         renderConnBanner();
         renderInputLock();
+        renderBatchBar();
     }
 
     /* ==========================================================
@@ -3569,14 +3674,26 @@ Version 1.4.3:
             note = ta ? ta.value.trim() : '';
         }
 
-        const ticket  = getTicketNumber();
-        const entries = await addEntry(ticket, type, fields, note);
+        const ticket    = getTicketNumber();
+        const knownIds  = new Set(loadEntries(ticket).map(e => e.id));
+        const entries   = await addEntry(ticket, type, fields, note);
 
         // Reset
         select.value = '';
         const fc = document.getElementById('ct-input-fields');
         if (fc) rebuildInputFields('', {}, '', 'ct-field', fc);
         renderInputLock();   // re-apply lock to freshly-rendered inputs
+
+        const lastEntry = entries.find(e => !knownIds.has(e.id)) || entries[entries.length - 1];
+
+        // Batch session: keep the entry in the log, defer the ticket write
+        // to "Write all".
+        if (getBatchSession(ticket)) {
+            addToBatchSession(ticket, lastEntry.id);
+            refreshLog(ticket);
+            flashStatus(`✓ Added to batch  (${getBatchEntries(ticket).length} pending)`);
+            return;
+        }
 
         refreshLog(ticket);
         flashStatus(`✓ Entry added  (${entries.length} total)`);
@@ -3585,11 +3702,115 @@ Version 1.4.3:
         // textareas based on which are visible. Custom entries (no template)
         // are skipped silently. Errors here must not block the entry save.
         if (getAutoWriteEnabled() && ticketWriter.hasTemplate(type)) {
-            const lastEntry = entries[entries.length - 1];
             ticketWriter.writeEntry(lastEntry).catch(err => {
                 console.warn('CT: ticket auto-write failed', err);
             });
         }
+    }
+
+    /* ==========================================================
+     *  BATCH SESSION  (defer ticket writes, then write all at once)
+     * ==========================================================*/
+
+    function renderBatchBar() {
+        const bar       = document.getElementById('ct-batch-bar');
+        const inputArea = document.getElementById('ct-input-area');
+        if (!bar) return;
+        const ticket  = getTicketNumber();
+        const session = getBatchSession(ticket);
+        bar.innerHTML = '';
+
+        if (inputArea) {
+            inputArea.style.borderColor = session ? '#f0ad4e' : '#ddd';
+            inputArea.style.background  = session ? '#fffaf0' : '#fff';
+        }
+
+        const btnStyle = {
+            flex:'1', padding:'6px 4px', border:'none', borderRadius:'4px', cursor:'pointer',
+            fontSize:'11px', fontWeight:'bold', fontFamily:'Arial, sans-serif', whiteSpace:'nowrap'
+        };
+
+        if (!session) {
+            const startBtn = css(mk('button', { id:'ct-batch-start-btn', type:'button' }), {
+                ...btnStyle, width:'100%', marginTop:'6px', background:'transparent',
+                color:'#b36b00', border:'1px solid #f0ad4e'
+            });
+            startBtn.textContent = '⏯ Start batch session';
+            startBtn.title = 'Log several changes without writing each one to the ticket, then write them all at once';
+            startBtn.onclick = handleBatchStart;
+            bar.appendChild(startBtn);
+            return;
+        }
+
+        const pending = getBatchEntries(ticket).length;
+        const info = css(mk('div'), {
+            marginTop:'8px', fontSize:'11px', fontWeight:'bold', color:'#b36b00', fontFamily:'Arial, sans-serif'
+        });
+        info.textContent = `🟠 Batch session · ${pending} ${pending === 1 ? 'change' : 'changes'} pending`;
+        bar.appendChild(info);
+
+        const row = css(mk('div'), { display:'flex', gap:'5px', marginTop:'6px' });
+        const writeBtn = css(mk('button', { id:'ct-batch-write-btn', type:'button' }), {
+            ...btnStyle, background:'#f0ad4e', color:'#fff'
+        });
+        writeBtn.textContent = '✍ Write all to ticket';
+        writeBtn.title = 'Write every change of this session as one worknote and one comment';
+        writeBtn.onclick = () => handleBatchWriteAll(writeBtn);
+        const endBtn = css(mk('button', { id:'ct-batch-end-btn', type:'button' }), {
+            ...btnStyle, background:'transparent', color:'#666', border:'1px solid #ccc'
+        });
+        endBtn.textContent = '✕ End without writing';
+        endBtn.title = 'Close the session; the changes stay in the log but nothing is written to the ticket';
+        endBtn.onclick = handleBatchEnd;
+        row.append(writeBtn, endBtn);
+        bar.appendChild(row);
+    }
+
+    function handleBatchStart() {
+        startBatchSession(getTicketNumber());
+        renderBatchBar();
+        flashStatus('⏯ Batch session started. Changes will be written when you click "Write all".', '#b36b00', 4000);
+    }
+
+    async function handleBatchWriteAll(btn) {
+        const ticket  = getTicketNumber();
+        const entries = getBatchEntries(ticket);
+        if (!entries.length) { flashStatus('⚠️ No changes in this batch yet.', '#e67e22'); return; }
+
+        btn.disabled = true;
+        btn.textContent = '…';
+        const res = await ticketWriter.writeBatch(entries);
+        if (res.ok) {
+            endBatchSession(ticket);
+            renderBatchBar();
+            const where = res.wrote === 'both'      ? 'Work Notes + Comments'
+                        : res.wrote === 'workNotes' ? 'Work Notes'
+                        :                             'Comments';
+            const skipped = res.skipped ? `, ${res.skipped} custom skipped` : '';
+            flashStatus(`✓ ${res.count} ${res.count === 1 ? 'change' : 'changes'} written to ${where}${skipped}`, '#28a745', 4000);
+            return;
+        }
+        btn.disabled = false;
+        btn.textContent = '✍ Write all to ticket';
+        if (res.reason === 'no-template') flashStatus('⚠️ Only custom entries in this batch; nothing to write.', '#e67e22');
+        else if (res.reason === 'no-field') flashStatus('⚠️ No worknote/comments field visible.', '#e67e22');
+        else                                flashStatus('✗ Write failed (see console).', '#dc3545');
+    }
+
+    function handleBatchEnd() {
+        const ticket  = getTicketNumber();
+        const pending = getBatchEntries(ticket).length;
+        const close = () => {
+            endBatchSession(ticket);
+            renderBatchBar();
+            flashStatus('Batch session ended. Nothing was written to the ticket.', '#666');
+        };
+        if (!pending) { close(); return; }
+        confirmModal(
+            `End the batch session without writing?\n` +
+            `The ${pending} ${pending === 1 ? 'change stays' : 'changes stay'} in the log, but no worknote or comment is generated.`,
+            close
+        );
     }
 
     /* ==========================================================
@@ -3825,6 +4046,30 @@ Version 1.4.3:
         shortDescRow.append(shortDescInput, shortDescText);
         modal.appendChild(shortDescRow);
 
+        // Batch persistence toggle: keep an open batch session across page reloads
+        const batchRow = css(mk('label', { htmlFor:'ct-setup-batchpersist' }), {
+            display:'flex', alignItems:'flex-start', gap:'8px',
+            padding:'8px 10px', marginBottom:'14px',
+            background:'#f6f8fa', border:'1px solid #e1e4e8', borderRadius:'4px',
+            cursor:'pointer', fontFamily:'Arial, sans-serif'
+        });
+        const batchInput = css(mk('input', { id:'ct-setup-batchpersist', type:'checkbox' }), {
+            marginTop:'2px', cursor:'pointer'
+        });
+        batchInput.checked = getBatchPersistEnabled();
+
+        const batchText  = css(mk('div'), { fontSize:'12px', color:'#333', lineHeight:'1.4' });
+        const batchTitle = css(mk('div'), { fontWeight:'bold', marginBottom:'2px' });
+        batchTitle.textContent = 'Keep batch session after page reload';
+        const batchDesc  = css(mk('div'), { fontSize:'11px', color:'#666' });
+        batchDesc.textContent =
+            'When off, an open batch session ends when the page is reloaded ' +
+            '(its changes stay in the log). When on, the session continues where you left it.';
+        batchText.append(batchTitle, batchDesc);
+
+        batchRow.append(batchInput, batchText);
+        modal.appendChild(batchRow);
+
         // Cache TTL row
         const ttlRow = css(mk('div'), {
             padding:'8px 10px', marginBottom:'14px',
@@ -3963,6 +4208,7 @@ Version 1.4.3:
             GM_setValue('changeTrackerToken',     token);
             setAutoWriteEnabled(autoWriteInput.checked);
             setUpdateShortDescEnabled(shortDescInput.checked);
+            setBatchPersistEnabled(batchInput.checked);
             setCacheTtlDays(ttlInput.value);
             setSearchableDropdown(searchableInput.checked);
 
