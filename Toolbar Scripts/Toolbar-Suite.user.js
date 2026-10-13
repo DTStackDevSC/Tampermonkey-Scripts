@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.0
+// @version      1.1.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
+    const SCRIPT_VERSION = '1.1.1';
+    const CHANGELOG = `Version 1.1.1:
+- URL List Editor: fixed a security issue where a URL List with a specially crafted name could run unwanted code on your page when the list was shown. List names are now always displayed as plain text.
+
+Version 1.1.0:
 - Change Tracker: added a new "Destination Profiles" group with Created, Destinations Added, Destinations Removed, and Removed entry types. Each entry can hold any mix of IPs, IP ranges, and URLs, and generates ticket notes just like URL Lists.
 - Change Tracker: worknotes for SSL Decryption, Steering Exception, App Bypass, and Recategorization entries now start with a single "#" instead of two.
 
@@ -10071,8 +10074,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.3';
-    const CHANGELOG = `Version 1.6.3:
+    const SCRIPT_VERSION = '1.6.4';
+    const CHANGELOG = `Version 1.6.4:
+- Fixed a security issue where a URL List with a specially crafted name could run unwanted code on your page when the list was shown. List names are now always displayed as plain text.
+
+Version 1.6.3:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.6.2:
@@ -12128,9 +12134,9 @@ Version 1.4.1:
                 : filteredLists.map(list => {
                     const urlCount = list.data?.urls?.length || 0;
                     return `
-                        <div class="url-list-item" data-list-id="${list.id}" style="padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #fff; cursor: pointer; transition: all 0.2s ease;">
-                            <div style="font-weight: bold; font-size: 14px; color: #333; margin-bottom: 5px;">${list.name || 'Unnamed List'}</div>
-                            <div style="font-size: 12px; color: #666;">ID: ${list.id} • ${urlCount} URLs</div>
+                        <div class="url-list-item" data-list-id="${escapeHtml(String(list.id))}" style="padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #fff; cursor: pointer; transition: all 0.2s ease;">
+                            <div style="font-weight: bold; font-size: 14px; color: #333; margin-bottom: 5px;">${escapeHtml(String(list.name || 'Unnamed List'))}</div>
+                            <div style="font-size: 12px; color: #666;">ID: ${escapeHtml(String(list.id))} • ${urlCount} URLs</div>
                         </div>`;
                 }).join('');
 
@@ -12221,8 +12227,8 @@ Version 1.4.1:
         container.style.flex          = '1';
         container.style.minHeight     = '0';
         container.innerHTML = `
-            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Update: ${list.name}</h3>
-            <div style="font-size: 12px; color: #666; margin-bottom: 10px;">List ID: ${list.id}</div>
+            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Update: ${escapeHtml(String(list.name || ''))}</h3>
+            <div style="font-size: 12px; color: #666; margin-bottom: 10px;">List ID: ${escapeHtml(String(list.id))}</div>
         `;
 
         const textarea   = UI.createTextArea('update-urls-input', 'URLs (one per line)', 'example.com\ntest.example.com', 10);
@@ -12492,8 +12498,8 @@ Version 1.4.1:
 
             const listInfo = UI.createElement('div');
             listInfo.innerHTML = `
-                <div style="font-weight: bold; font-size: 14px; color: #333;">${list.name || 'Unnamed List'}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 2px;">ID: ${list.id} • ${totalUrls} total URLs • ${matchedEntries.length} match${matchedEntries.length !== 1 ? 'es' : ''}</div>
+                <div style="font-weight: bold; font-size: 14px; color: #333;">${escapeHtml(String(list.name || 'Unnamed List'))}</div>
+                <div style="font-size: 11px; color: #888; margin-top: 2px;">ID: ${escapeHtml(String(list.id))} • ${totalUrls} total URLs • ${matchedEntries.length} match${matchedEntries.length !== 1 ? 'es' : ''}</div>
             `;
 
             const editBtn = UI.createElement('button', {
