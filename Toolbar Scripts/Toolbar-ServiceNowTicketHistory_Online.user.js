@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.20.0
+// @version      1.21.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,14 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.20.0';
-    const CHANGELOG = `Version 1.20.0:
+    const SCRIPT_VERSION = '1.21.0';
+    const CHANGELOG = `Version 1.21.0:
+- Fixed changes being lost when the tracker went offline. Entries, edits, and deletions that could not reach the server are now kept on this computer, even after a page reload, and are sent to the server automatically when the connection comes back. Before, reconnecting replaced the log with the server copy and silently dropped them.
+- A brief network glitch no longer switches the tracker to offline: the request is retried once first.
+- While offline, the tracker now tries to reconnect in the background every minute.
+- Entries that have not reached the server yet show a "Not synced" tag, and the offline banner shows how many changes are waiting to sync.
+
+Version 1.20.0:
 - Added a "? Help" button next to "Configure" in the sidebar. It opens a visual Feature Guide covering entries, writing to the ticket, batch sessions, search and filters, log actions, the connection banners, and every setting.
 
 Version 1.19.0:
@@ -1267,7 +1273,7 @@ Version 1.4.3:
             if (!key.startsWith(PREFIX)) continue;
             const ticket = key.slice(PREFIX.length);
             const last   = map[ticket] || 0;
-            if (now - last > ttlMs) {
+            if (now - last > ttlMs && !hasPending(ticket)) {
                 GM_deleteValue(key);
                 delete map[ticket];
                 changed = true;
@@ -1311,7 +1317,10 @@ Version 1.4.3:
 
         // Shared fetch wrapper.
         // Returns { ok: true, data } or { ok: false, status, network: bool }
-        async request(method, path, body) {
+        // A failed network attempt (dropped connection, proxy hiccup) is
+        // retried once before reporting the failure, so one glitch does not
+        // flip the sidebar to offline.
+        async request(method, path, body, retries = 1) {
             const { url, token } = api.getConfig();
             try {
                 const res = await fetch(`${url}${path}`, {
@@ -1327,6 +1336,10 @@ Version 1.4.3:
                 }
                 return { ok: false, status: res.status, network: false };
             } catch (e) {
+                if (retries > 0) {
+                    await new Promise(r => setTimeout(r, 800));
+                    return api.request(method, path, body, retries - 1);
+                }
                 return { ok: false, status: 0, network: true };
             }
         },
@@ -2229,6 +2242,142 @@ Version 1.4.3:
      *  instant and lets the offline mode degrade gracefully.
      * ==========================================================*/
 
+    /* ──────────────────────────────────────────────────────────
+     *  PENDING SYNC QUEUE
+     *  Any mutation that does not reach the Worker (offline, network
+     *  failure, 5xx) is recorded per ticket in GM, so it survives a page
+     *  reload. The queue is flushed before every server read, and server
+     *  reads are merged with what is still pending instead of replacing
+     *  the local cache. This is what keeps offline changes from being
+     *  wiped when the sidebar reconnects.
+     *    { upserts: [entryId], deletes: [entryId], cleared: bool }
+     * ────────────────────────────────────────────────────────── */
+
+    const PENDING_PREFIX = 'changeTracker_pending_';
+
+    function _emptyPending() { return { upserts: [], deletes: [], cleared: false }; }
+
+    function loadPending(ticket) {
+        try { return { ..._emptyPending(), ...JSON.parse(GM_getValue(PENDING_PREFIX + ticket, 'null') || 'null') }; }
+        catch { return _emptyPending(); }
+    }
+
+    function savePending(ticket, p) {
+        if (!p.upserts.length && !p.deletes.length && !p.cleared) GM_deleteValue(PENDING_PREFIX + ticket);
+        else GM_setValue(PENDING_PREFIX + ticket, JSON.stringify(p));
+    }
+
+    function hasPending(ticket) {
+        const p = loadPending(ticket);
+        return p.upserts.length > 0 || p.deletes.length > 0 || p.cleared;
+    }
+
+    function pendingCount(ticket) {
+        const p = loadPending(ticket);
+        return p.upserts.length + p.deletes.length + (p.cleared ? 1 : 0);
+    }
+
+    function isEntryPending(ticket, id) { return loadPending(ticket).upserts.includes(id); }
+
+    function markPendingUpsert(ticket, id) {
+        const p = loadPending(ticket);
+        if (!p.upserts.includes(id)) p.upserts.push(id);
+        p.deletes = p.deletes.filter(x => x !== id);
+        savePending(ticket, p);
+    }
+
+    function markPendingDelete(ticket, id) {
+        const p = loadPending(ticket);
+        p.upserts = p.upserts.filter(x => x !== id);
+        if (!p.deletes.includes(id)) p.deletes.push(id);
+        savePending(ticket, p);
+    }
+
+    function markPendingClear(ticket) {
+        savePending(ticket, { upserts: [], deletes: [], cleared: true });
+    }
+
+    function ticketsWithPending() {
+        return GM_listValues()
+            .filter(k => k.startsWith(PENDING_PREFIX))
+            .map(k => k.slice(PENDING_PREFIX.length));
+    }
+
+    // Network / 5xx / 401 failures stop the flush (try again later);
+    // other client errors (400, 404, 429) are handled per item.
+    function isTransientFailure(res) {
+        return res.network || res.status >= 500 || res.status === 401;
+    }
+
+    /**
+     * Sends a ticket's pending changes to the Worker.
+     * Returns { ok, synced }: ok=false means the Worker could not be reached
+     * (the rest stays queued); synced counts the changes that went through.
+     */
+    async function flushPending(ticket) {
+        const p = loadPending(ticket);
+        let synced = 0;
+
+        if (p.cleared) {
+            const res = await api.deleteTicket(ticket);
+            if (!res.ok) { handleApiResponse(res); return { ok: false, synced }; }
+            p.cleared = false; synced++;
+            savePending(ticket, p);
+        }
+
+        for (const id of [...p.deletes]) {
+            const res = await api.deleteEntry(ticket, id);
+            if (!res.ok && isTransientFailure(res)) { handleApiResponse(res); return { ok: false, synced }; }
+            // 404 means it is already gone on the server, which is the goal.
+            p.deletes = p.deletes.filter(x => x !== id); synced++;
+            savePending(ticket, p);
+        }
+
+        const local = loadEntries(ticket);
+        const toPush = local.filter(e => p.upserts.includes(e.id));
+        // Queued ids whose entry no longer exists locally have nothing to send.
+        p.upserts = p.upserts.filter(id => toPush.some(e => e.id === id));
+        savePending(ticket, p);
+
+        for (let i = 0; i < toPush.length; i += 50) {
+            const chunk = toPush.slice(i, i + 50);
+            const res = await api.pushEntries(chunk.map(e => ({ ...e, ticket })));
+            if (!res.ok) {
+                if (isTransientFailure(res)) { handleApiResponse(res); return { ok: false, synced }; }
+                console.warn(`CT: server rejected ${chunk.length} pending entries for ${ticket} (HTTP ${res.status}); they stay queued`);
+                continue;
+            }
+            const done = new Set(chunk.map(e => e.id));
+            p.upserts = p.upserts.filter(id => !done.has(id)); synced += chunk.length;
+            savePending(ticket, p);
+        }
+        return { ok: true, synced };
+    }
+
+    async function flushAllPending() {
+        let synced = 0;
+        for (const ticket of ticketsWithPending()) {
+            const res = await flushPending(ticket);
+            synced += res.synced;
+            if (!res.ok) return { ok: false, synced };
+        }
+        return { ok: true, synced };
+    }
+
+    // Server entries are authoritative, except for changes still queued
+    // locally: pending deletes stay deleted, pending upserts keep the local copy.
+    function mergeWithPending(ticket, serverEntries) {
+        const p = loadPending(ticket);
+        if (p.cleared) return loadEntries(ticket);
+        const del   = new Set(p.deletes);
+        const local = loadEntries(ticket).filter(e => p.upserts.includes(e.id));
+        const localIds = new Set(local.map(e => e.id));
+        return serverEntries
+            .filter(e => !del.has(e.id) && !localIds.has(e.id))
+            .concat(local)
+            .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    }
+
     async function addEntry(ticket, type, fields, note) {
         const entry   = {
             id:     uid(),
@@ -2240,11 +2389,17 @@ Version 1.4.3:
         const current = loadEntries(ticket);
         current.push(entry);
         _cacheEntries(ticket, current);                          // optimistic local update
+        markPendingUpsert(ticket, entry.id);                     // cleared once the Worker confirms
 
         if (connState === 'ONLINE') {
             const res = await api.pushEntries([{ ...entry, ticket }]);
             handleApiResponse(res);
-            if (res.ok) await syncTicket(ticket);
+            if (res.ok) {
+                const p = loadPending(ticket);
+                p.upserts = p.upserts.filter(id => id !== entry.id);
+                savePending(ticket, p);
+                await syncTicket(ticket);
+            }
         }
         return loadEntries(ticket);
     }
@@ -2255,10 +2410,16 @@ Version 1.4.3:
         if (idx !== -1) {
             entries[idx] = { ...entries[idx], type, fields: fields || null, note: note || null };
             _cacheEntries(ticket, entries);
+            markPendingUpsert(ticket, entryId);
 
             if (connState === 'ONLINE') {
                 const res = await api.pushEntries([{ ...entries[idx], ticket }]);
                 handleApiResponse(res);
+                if (res.ok) {
+                    const p = loadPending(ticket);
+                    p.upserts = p.upserts.filter(id => id !== entryId);
+                    savePending(ticket, p);
+                }
             }
         }
         return entries;
@@ -2267,30 +2428,43 @@ Version 1.4.3:
     async function deleteEntry(ticket, entryId) {
         const entries = loadEntries(ticket).filter(e => e.id !== entryId);
         _cacheEntries(ticket, entries);
+        markPendingDelete(ticket, entryId);
 
         if (connState === 'ONLINE') {
             const res = await api.deleteEntry(ticket, entryId);
             handleApiResponse(res);
+            if (res.ok || res.status === 404) {
+                const p = loadPending(ticket);
+                p.deletes = p.deletes.filter(id => id !== entryId);
+                savePending(ticket, p);
+            }
         }
         return entries;
     }
 
     async function clearEntries(ticket) {
         GM_deleteValue(storeKey(ticket));
+        markPendingClear(ticket);
 
         if (connState === 'ONLINE') {
             const res = await api.deleteTicket(ticket);
             handleApiResponse(res);
+            if (res.ok) savePending(ticket, _emptyPending());
         }
     }
 
     // Pull authoritative entries from D1 into the cache for one ticket.
+    // Pending local changes are sent first and kept if they still fail.
     // Called when the sidebar opens, after a successful reconnect, etc.
     async function syncTicket(ticket) {
         if (connState !== 'ONLINE') return;
+        if (hasPending(ticket)) {
+            const flushed = await flushPending(ticket);
+            if (!flushed.ok) return;
+        }
         const res = await api.fetchEntries(ticket);
         if (res.ok) {
-            _cacheEntries(ticket, res.data.entries || []);
+            _cacheEntries(ticket, mergeWithPending(ticket, res.data.entries || []));
         } else {
             handleApiResponse(res);
         }
@@ -3126,9 +3300,20 @@ Version 1.4.3:
 
         // Timestamp + author
         const author = entry.author_label || entry.author_user_id || '(unknown)';
-        card.appendChild(css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}` }), {
+        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}` }), {
             fontSize:'10px', color:'#bbb', marginTop:'6px', fontFamily:'monospace'
-        }));
+        });
+        if (isEntryPending(ticket, entry.id)) {
+            const tag = css(mk('span'), {
+                marginLeft:'8px', padding:'1px 6px', borderRadius:'8px',
+                background:'#fff3cd', color:'#856404', border:'1px solid #ffc107',
+                fontFamily:'Arial, sans-serif', fontWeight:'bold'
+            });
+            tag.textContent = '⏳ Not synced';
+            tag.title = 'Saved on this computer only. It is sent to the server automatically when the connection is back.';
+            footer.appendChild(tag);
+        }
+        card.appendChild(footer);
 
         return card;
     }
@@ -3172,6 +3357,7 @@ Version 1.4.3:
 
     function refreshLog(ticket) {
         renderBatchBar();
+        renderConnBanner();   // keeps the "waiting to sync" count current
         const container = document.getElementById('ct-log-container');
         const countEl   = document.getElementById('ct-entry-count');
         if (!container) return;
@@ -3618,7 +3804,11 @@ Version 1.4.3:
             css(banner, {
                 background:'#fff3cd', border:'1px solid #ffc107', color:'#856404'
             });
-            const msg = mk('span'); msg.textContent = '⚠ Offline — read only';
+            const waiting = pendingCount(getTicketNumber());
+            const msg = mk('span');
+            msg.textContent = waiting
+                ? `⚠ Offline · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync`
+                : '⚠ Offline — read only';
             const btn = css(mk('button', { id:'ct-reconnect-btn' }), {
                 background:'#ffc107', color:'#333', border:'none', borderRadius:'3px',
                 cursor:'pointer', padding:'3px 10px', fontSize:'11px',
@@ -3721,12 +3911,14 @@ Version 1.4.3:
         if (getBatchSession(ticket)) {
             addToBatchSession(ticket, lastEntry.id);
             refreshLog(ticket);
-            flashStatus(`✓ Added to batch  (${getBatchEntries(ticket).length} pending)`);
+            if (isEntryPending(ticket, lastEntry.id)) flashStatus('⏳ Added to batch, saved locally. It syncs when the connection is back.', '#e67e22', 4000);
+            else flashStatus(`✓ Added to batch  (${getBatchEntries(ticket).length} pending)`);
             return;
         }
 
         refreshLog(ticket);
-        flashStatus(`✓ Entry added  (${entries.length} total)`);
+        if (isEntryPending(ticket, lastEntry.id)) flashStatus('⏳ Saved locally. It syncs with the server when the connection is back.', '#e67e22', 4000);
+        else flashStatus(`✓ Entry added  (${entries.length} total)`);
 
         // Auto-write the equivalent text into the SNow worknote/comments
         // textareas based on which are visible. Custom entries (no template)
@@ -3905,10 +4097,20 @@ Version 1.4.3:
         // Ping succeeded — verify token with a real request
         const res = await api.fetchEntries(ticket);
         if (res.ok) {
-            _cacheEntries(ticket, res.data.entries || []);
             setConnState('ONLINE');
+            // Send everything that was queued while offline (all tickets),
+            // then refresh this ticket from the server without losing
+            // anything that is still pending.
+            const flushed = await flushAllPending();
+            const fresh   = flushed.synced ? await api.fetchEntries(ticket) : res;
+            _cacheEntries(ticket, mergeWithPending(ticket, (fresh.ok ? fresh : res).data.entries || []));
             refreshLog(ticket);
-            if (!silent) flashStatus('✓ Back online!');
+            renderConnBanner();
+            if (flushed.synced) {
+                flashStatus(`✓ Back online · ${flushed.synced} pending ${flushed.synced === 1 ? 'change' : 'changes'} synced`, '#28a745', 4000);
+            } else if (!silent) {
+                flashStatus('✓ Back online!');
+            }
         } else {
             handleApiResponse(res);
             if (!silent && connState !== 'ONLINE') {
@@ -4256,10 +4458,17 @@ Version 1.4.3:
                         b.appendChild(chip(btnText, btnBg, { color: btnColor, radius: '3px' }));
                         return b;
                     }
-                    body.appendChild(banner('⚠ Offline — read only', '↺ Reconnect', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
+                    body.appendChild(banner('⚠ Offline · 2 changes waiting to sync', '↺ Reconnect', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
                     body.appendChild(banner('🔑 Token invalid', 'Reset token', '#f8d7da', '#f5c6cb', '#721c24', 'transparent', '#721c24'));
+                    body.appendChild(hrow([
+                        span('2026-10-13 14:05  ·  by Jane', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace' }),
+                        chip('⏳ Not synced', '#fff3cd', { color: '#856404', border: '1px solid #ffc107', fontSize: '10px', padding: '1px 6px', radius: '8px' })
+                    ], { margin: '6px 0 0 0' }));
+                    caption(body, 'Entries that have not reached the server yet show this tag at the bottom of their card.');
                     bullets(body, [
-                        'Offline: you can read the cached log, but adding entries is disabled until you reconnect.',
+                        'Changes that cannot reach the server are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
+                        'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
+                        'Offline: adding new entries is disabled until you reconnect.',
                         'Token invalid: open the setup panel and enter a new API token.'
                     ]);
                 }
@@ -4882,6 +5091,22 @@ Version 1.4.3:
         console.log('✅ Change Tracker ready!');
         setTimeout(attemptRegistration, 1000);
         setTimeout(purgeStaleCache, 3000);
+
+        // Changes left unsynced by an earlier page: try to send them now,
+        // without waiting for the sidebar to be opened.
+        setTimeout(() => {
+            if (api.isConfigured() && connState !== 'ONLINE' && ticketsWithPending().length) {
+                _ctx = getTicketContext();
+                attemptReconnect(getTicketNumber(), /* silent */ true);
+            }
+        }, 2500);
+
+        // While offline, retry the connection in the background every minute.
+        setInterval(() => {
+            if (connState === 'OFFLINE' && api.isConfigured()) {
+                attemptReconnect(getTicketNumber(), /* silent */ true);
+            }
+        }, 60000);
     }
 
     if (document.readyState === 'loading') {
