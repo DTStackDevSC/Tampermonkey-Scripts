@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.17.0
+// @version      1.18.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.17.0';
-    const CHANGELOG = `Version 1.17.0:
+    const SCRIPT_VERSION = '1.18.0';
+    const CHANGELOG = `Version 1.18.0:
+- Added a new "Email Notifications" group with Added, Modified, and Removed entry types. Added and Modified entries capture the notification name, subject, and message. Removed entries capture the notification name. All three generate ticket notes, show the "Write" button, and appear in the grouped summary like User Notifications.
+
+Version 1.17.0:
 - Added a new "DLP Rules" group with Added, Modified, and Removed entry types. Added and Modified entries capture the rule name and a description where you can write notes about the rule. Removed entries capture the rule name. All three generate ticket notes, show the "Write" button, and appear in the grouped summary like DLP Profiles.
 
 Version 1.16.0:
@@ -254,6 +257,14 @@ Version 1.4.3:
         user_notification: [
             { key: 'notificationName', label: 'Notification name', type: 'text' },
         ],
+        email_notification_full: [
+            { key: 'name',    label: 'Name',    type: 'text'     },
+            { key: 'subject', label: 'Subject', type: 'text'     },
+            { key: 'message', label: 'Message', type: 'textarea' },
+        ],
+        email_notification_deleted: [
+            { key: 'name', label: 'Name', type: 'text' },
+        ],
         custom_app_full: [
             { key: 'appName',  label: 'App name',  type: 'text'     },
             { key: 'appType',  label: 'App type',  type: 'select',  options: ['Predefined', 'Universal Connector', 'Custom Connector'] },
@@ -420,6 +431,14 @@ Version 1.4.3:
                 { label: 'User Notification Added',    value: 'User Notification Added',    color: '#28a745', schema: 'user_notification' },
                 { label: 'User Notification Modified', value: 'User Notification Modified', color: '#6610f2', schema: 'user_notification' },
                 { label: 'User Notification Removed',  value: 'User Notification Removed',  color: '#dc3545', schema: 'user_notification' },
+            ],
+        },
+        {
+            group: 'Email Notifications',
+            items: [
+                { label: 'Email Notification Added',    value: 'Email Notification Added',    color: '#28a745', schema: 'email_notification_full'    },
+                { label: 'Email Notification Modified', value: 'Email Notification Modified', color: '#6610f2', schema: 'email_notification_full'    },
+                { label: 'Email Notification Removed',  value: 'Email Notification Removed',  color: '#dc3545', schema: 'email_notification_deleted' },
             ],
         },
         {
@@ -708,6 +727,7 @@ Version 1.4.3:
         { label: 'App Exceptions',              types: ['App Exception Added', 'App Exception Removed'] },
         { label: 'Steering / Client Configs',   types: ['Steering/Client Config Created', 'Steering/Client Config Modified', 'Steering/Client Config Deleted'] },
         { label: 'User Notifications',          types: ['User Notification Added', 'User Notification Modified', 'User Notification Removed'] },
+        { label: 'Email Notifications',         types: ['Email Notification Added', 'Email Notification Modified', 'Email Notification Removed'] },
         { label: 'Custom Apps',                 types: ['Custom App Added', 'Custom App Edited', 'Custom App Removed'] },
         { label: 'Certified Pinned Apps',       types: ['Certified Pinned App Added', 'Certified Pinned App Edited', 'Certified Pinned App Removed'] },
         { label: 'Recategorization Requests',   types: ['Recategorization Request'] },
@@ -1869,6 +1889,20 @@ Version 1.4.3:
                 commentsHeader: "We've removed the following Netskope User Notification as requested:",
             },
 
+            // ── Email Notifications ────────────────────────────
+            'Email Notification Added': {
+                workNoteHeader: 'Netskope Email Notification has been added:',
+                commentsHeader: "We've added the following Netskope Email Notification:",
+            },
+            'Email Notification Modified': {
+                workNoteHeader: 'Netskope Email Notification has been modified:',
+                commentsHeader: "We've modified the following Netskope Email Notification:",
+            },
+            'Email Notification Removed': {
+                workNoteHeader: 'Netskope Email Notification has been removed:',
+                commentsHeader: "We've removed the following Netskope Email Notification as requested:",
+            },
+
             // ── Custom Apps ────────────────────────────────────
             'Custom App Added': {
                 workNoteHeader: 'Netskope Custom App has been added:',
@@ -2532,6 +2566,12 @@ Version 1.4.3:
             createTypes: ['User Notification Added'],
             modifyTypes: ['User Notification Modified'],
             deleteTypes: ['User Notification Removed'],
+        },
+        'Email Notifications': {
+            nameKey:     'name',
+            createTypes: ['Email Notification Added'],
+            modifyTypes: ['Email Notification Modified'],
+            deleteTypes: ['Email Notification Removed'],
         },
         'Custom Apps': {
             nameKey:     'appName',
