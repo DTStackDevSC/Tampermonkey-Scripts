@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.8.0
+// @version      1.9.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.8.0';
-    const CHANGELOG = `Version 1.8.0:
+    const SCRIPT_VERSION = '1.9.0';
+    const CHANGELOG = `Version 1.9.0:
+- Change Tracker: you can now keep adding entries while the tracker is offline. They are saved on this computer with a "Not synced" tag and sent to the server automatically when the connection is back.
+- Change Tracker: new setting "Allow adding entries while offline", on by default. Turn it off to make the log read only while offline, as before.
+
+Version 1.8.0:
 - Change Tracker: fixed changes being lost when the tracker went offline. Entries, edits, and deletions that could not reach the server are now kept on this computer, even after a page reload, and are sent to the server automatically when the connection comes back.
 - Change Tracker: a brief network glitch no longer switches the tracker to offline, and while offline it tries to reconnect in the background every minute.
 - Change Tracker: entries that have not reached the server yet show a "Not synced" tag, and the offline banner shows how many changes are waiting to sync.
@@ -16237,8 +16241,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.21.0';
-    const CHANGELOG = `Version 1.21.0:
+    const SCRIPT_VERSION = '1.22.0';
+    const CHANGELOG = `Version 1.22.0:
+- You can now keep adding entries while the tracker is offline. They are saved on this computer with a "Not synced" tag and sent to the server automatically when the connection is back.
+- New setting "Allow adding entries while offline", on by default. Turn it off to make the log read only while offline, as before.
+
+Version 1.21.0:
 - Fixed changes being lost when the tracker went offline. Entries, edits, and deletions that could not reach the server are now kept on this computer, even after a page reload, and are sent to the server automatically when the connection comes back. Before, reconnecting replaced the log with the server copy and silently dropped them.
 - A brief network glitch no longer switches the tracker to offline: the request is retried once first.
 - While offline, the tracker now tries to reconnect in the background every minute.
@@ -16993,6 +17001,15 @@ Version 1.4.3:
     // all" then writes them together as one worknote + one comment.
     // Sessions live in memory and end on page reload, unless the
     // "keep batch session" setting is on (then they are mirrored to GM).
+    // Offline fallback: when the Worker is unreachable, new entries can
+    // still be added. They are saved locally and synced on reconnect
+    // (see PENDING SYNC QUEUE). Default ON.
+    const OFFLINE_ADD_KEY = 'changeTrackerOfflineAddEnabled';
+    function getOfflineAddEnabled()  { return GM_getValue(OFFLINE_ADD_KEY, true) !== false; }
+    function setOfflineAddEnabled(v) { GM_setValue(OFFLINE_ADD_KEY, !!v); }
+    // Adding is possible online, or offline when the fallback is on.
+    function canAddEntries() { return connState === 'ONLINE' || (connState === 'OFFLINE' && getOfflineAddEnabled()); }
+
     const BATCH_PERSIST_KEY  = 'changeTrackerBatchPersistEnabled';
     const BATCH_SESSIONS_KEY = 'changeTrackerBatchSessions';
     function getBatchPersistEnabled()  { return GM_getValue(BATCH_PERSIST_KEY, false) === true; }
@@ -19968,7 +19985,7 @@ Version 1.4.3:
             const msg = mk('span');
             msg.textContent = waiting
                 ? `⚠ Offline · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync`
-                : '⚠ Offline — read only';
+                : (getOfflineAddEnabled() ? '⚠ Offline · new entries are saved locally' : '⚠ Offline — read only');
             const btn = css(mk('button', { id:'ct-reconnect-btn' }), {
                 background:'#ffc107', color:'#333', border:'none', borderRadius:'3px',
                 cursor:'pointer', padding:'3px 10px', fontSize:'11px',
@@ -20006,7 +20023,7 @@ Version 1.4.3:
         const addBtn = document.getElementById('ct-add-btn');
         if (!select && !fields && !addBtn) return;
 
-        const locked = connState !== 'ONLINE';
+        const locked = !canAddEntries();
 
         if (select) select.disabled = locked;
         if (addBtn) {
@@ -20029,8 +20046,9 @@ Version 1.4.3:
         const select = document.getElementById('ct-snippet-select');
         if (!select) return;
 
-        // Block adding when the API is not currently usable
-        if (connState !== 'ONLINE') {
+        // Block adding when the API is not currently usable (offline adds
+        // are allowed when the offline fallback setting is on)
+        if (!canAddEntries()) {
             if (connState === 'OFFLINE')           flashStatus('⚠️ Offline — adding new entries is disabled.', '#e67e22');
             else if (connState === 'INVALID_TOKEN') flashStatus('🔑 Token invalid — reset to add entries.', '#dc3545');
             else                                    flashStatus('⚠️ Not connected yet.', '#e67e22');
@@ -20628,7 +20646,7 @@ Version 1.4.3:
                     bullets(body, [
                         'Changes that cannot reach the server are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
                         'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
-                        'Offline: adding new entries is disabled until you reconnect.',
+                        'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
                         'Token invalid: open the setup panel and enter a new API token.'
                     ]);
                 }
@@ -20656,6 +20674,7 @@ Version 1.4.3:
 
                     body.appendChild(toggle('Auto-write entries to ticket', true, 'Writes the worknote and comment as soon as you add an entry.'));
                     body.appendChild(toggle('Update short description on write', true, 'Sets today\'s date and the matching status whenever an entry is written.'));
+                    body.appendChild(toggle('Allow adding entries while offline', true, 'Keeps adding entries when the server is unreachable; they sync once it is back.'));
                     body.appendChild(toggle('Keep batch session after page reload', false, 'When on, an open batch session survives a page reload.'));
                     body.appendChild(toggle('Searchable change-type dropdown', true, 'Lets you type to filter the change types, including by group name.'));
                 }
@@ -20922,6 +20941,30 @@ Version 1.4.3:
         shortDescRow.append(shortDescInput, shortDescText);
         modal.appendChild(shortDescRow);
 
+        // Offline fallback toggle: allow adding entries while the server is unreachable
+        const offlineRow = css(mk('label', { htmlFor:'ct-setup-offlineadd' }), {
+            display:'flex', alignItems:'flex-start', gap:'8px',
+            padding:'8px 10px', marginBottom:'14px',
+            background:'#f6f8fa', border:'1px solid #e1e4e8', borderRadius:'4px',
+            cursor:'pointer', fontFamily:'Arial, sans-serif'
+        });
+        const offlineInput = css(mk('input', { id:'ct-setup-offlineadd', type:'checkbox' }), {
+            marginTop:'2px', cursor:'pointer'
+        });
+        offlineInput.checked = getOfflineAddEnabled();
+
+        const offlineText  = css(mk('div'), { fontSize:'12px', color:'#333', lineHeight:'1.4' });
+        const offlineTitle = css(mk('div'), { fontWeight:'bold', marginBottom:'2px' });
+        offlineTitle.textContent = 'Allow adding entries while offline';
+        const offlineDesc  = css(mk('div'), { fontSize:'11px', color:'#666' });
+        offlineDesc.textContent =
+            'When the server cannot be reached, keep adding entries: they are saved on this computer ' +
+            'and sent automatically when the connection is back. When off, the log is read only while offline.';
+        offlineText.append(offlineTitle, offlineDesc);
+
+        offlineRow.append(offlineInput, offlineText);
+        modal.appendChild(offlineRow);
+
         // Batch persistence toggle: keep an open batch session across page reloads
         const batchRow = css(mk('label', { htmlFor:'ct-setup-batchpersist' }), {
             display:'flex', alignItems:'flex-start', gap:'8px',
@@ -21085,6 +21128,7 @@ Version 1.4.3:
             setAutoWriteEnabled(autoWriteInput.checked);
             setUpdateShortDescEnabled(shortDescInput.checked);
             setBatchPersistEnabled(batchInput.checked);
+            setOfflineAddEnabled(offlineInput.checked);
             setCacheTtlDays(ttlInput.value);
             setSearchableDropdown(searchableInput.checked);
 
