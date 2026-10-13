@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.0
+// @version      1.1.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.0';
-    const CHANGELOG = `Version 1.0.0:
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Change Tracker: added a new "Destination Profiles" group with Created, Destinations Added, Destinations Removed, and Removed entry types. Each entry can hold any mix of IPs, IP ranges, and URLs, and generates ticket notes just like URL Lists.
+- Change Tracker: worknotes for SSL Decryption, Steering Exception, App Bypass, and Recategorization entries now start with a single "#" instead of two.
+
+Version 1.0.0:
 - Combined the eleven separate toolbar tools into a single install. Every tool keeps its own settings and its own "what's new" notification.`;
 
     function getStoredVersion() {
@@ -16201,8 +16205,14 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.13.0';
-    const CHANGELOG = `Version 1.13.0:
+    const SCRIPT_VERSION = '1.14.1';
+    const CHANGELOG = `Version 1.14.1:
+- Fixed worknotes starting with two "#" instead of one for SSL Decryption, Steering Exception, App Bypass, and Recategorization entries. All worknotes now start with a single "#".
+
+Version 1.14.0:
+- Added a new "Destination Profiles" group with Created, Destinations Added, Destinations Removed, and Removed entry types. It works like URL Lists, but each entry can hold any mix of IPs, IP ranges, and URLs. Entries generate ticket notes and are reconciled in the grouped summary just like URL Lists.
+
+Version 1.13.0:
 - DLP Policy and DLP Process Exception entries now generate ticket notes and show the "Write" button, just like the other entry types. Creating one of these entries auto-writes to the worknote and comments fields, and you can also write it manually from the entry card.
 
 Version 1.12.1:
@@ -16403,6 +16413,10 @@ Version 1.4.3:
             { key: 'locationName', label: 'Network Location name', type: 'text'     },
             { key: 'ips',          label: 'IPs',                   type: 'textarea' },
         ],
+        destination_profile: [
+            { key: 'profileName',  label: 'Destination Profile name', type: 'text'     },
+            { key: 'destinations', label: 'IPs / Ranges / URLs',      type: 'textarea' },
+        ],
         custom_category: [
             { key: 'categoryName', label: 'Custom Category name', type: 'text'     },
             { key: 'urlLists',     label: 'URL Lists',            type: 'textarea' },
@@ -16512,6 +16526,15 @@ Version 1.4.3:
                 { label: 'Network Location — IPs Added',    value: 'Network Location — IPs Added',    color: '#17a2b8', schema: 'network_location' },
                 { label: 'Network Location — IPs Removed',  value: 'Network Location — IPs Removed',  color: '#fd7e14', schema: 'network_location' },
                 { label: 'Network Location Removed',        value: 'Network Location Removed',        color: '#dc3545', schema: 'network_location' },
+            ],
+        },
+        {
+            group: 'Destination Profiles',
+            items: [
+                { label: 'Destination Profile Created',                value: 'Destination Profile Created',                color: '#28a745', schema: 'destination_profile' },
+                { label: 'Destination Profile — Destinations Added',   value: 'Destination Profile — Destinations Added',   color: '#20c997', schema: 'destination_profile' },
+                { label: 'Destination Profile — Destinations Removed', value: 'Destination Profile — Destinations Removed', color: '#fd7e14', schema: 'destination_profile' },
+                { label: 'Destination Profile Removed',                value: 'Destination Profile Removed',                color: '#dc3545', schema: 'destination_profile' },
             ],
         },
         {
@@ -16833,6 +16856,7 @@ Version 1.4.3:
         { label: 'DLP Process Exceptions',      types: ['DLP Process Exception Added', 'DLP Process Exception Removed'] },
         { label: 'URL Lists',                   types: ['URL List Created', 'URL List — URLs Added', 'URL List — URLs Removed', 'URL List Removed'] },
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
+        { label: 'Destination Profiles',        types: ['Destination Profile Created', 'Destination Profile — Destinations Added', 'Destination Profile — Destinations Removed', 'Destination Profile Removed'] },
         { label: 'Custom Categories',           types: ['Custom Category Created', 'Custom Category — URL Lists Added', 'Custom Category — URL Lists Removed', 'Custom Category Removed'] },
         { label: 'SSL Decryption Policies',     types: ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added', 'SSL Decryption — URLs Removed', 'SSL Decryption Policy Removed'] },
         { label: 'Steering Exceptions',         types: ['Steering Exception Added', 'Steering Exception Removed'] },
@@ -17780,6 +17804,24 @@ Version 1.4.3:
                 commentsHeader: "We've removed the following Netskope Network Location as requested:",
             },
 
+            // ── Destination Profiles ───────────────────────────
+            'Destination Profile Created': {
+                workNoteHeader: 'Netskope Destination Profile has been created:',
+                commentsHeader: "We've created the following Netskope Destination Profile to support the requested change:",
+            },
+            'Destination Profile — Destinations Added': {
+                workNoteHeader: 'Destinations have been added to the following Netskope Destination Profile:',
+                commentsHeader: "We've added the following destinations to the requested Netskope Destination Profile:",
+            },
+            'Destination Profile — Destinations Removed': {
+                workNoteHeader: 'Destinations have been removed from the following Netskope Destination Profile:',
+                commentsHeader: "We've removed the following destinations from the requested Netskope Destination Profile:",
+            },
+            'Destination Profile Removed': {
+                workNoteHeader: 'Netskope Destination Profile has been removed:',
+                commentsHeader: "We've removed the following Netskope Destination Profile as requested:",
+            },
+
             // ── Custom Categories ──────────────────────────────
             'Custom Category Created': {
                 workNoteHeader: 'Netskope Custom Category has been created:',
@@ -17800,43 +17842,43 @@ Version 1.4.3:
 
             // ── SSL Decryption ─────────────────────────────────
             'SSL Decryption Policy Created': {
-                workNoteHeader: '# Added to SSL Decryption policy:',
+                workNoteHeader: 'Added to SSL Decryption policy:',
                 commentsHeader: "We've added the following SSL Decryption bypasses to help address the issue:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
             },
             'SSL Decryption — URLs Added': {
-                workNoteHeader: '# URLs added to SSL Decryption policy:',
+                workNoteHeader: 'URLs added to SSL Decryption policy:',
                 commentsHeader: "We've added the following URLs to the existing SSL Decryption policy:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test.',
             },
             'SSL Decryption — URLs Removed': {
-                workNoteHeader: '# URLs removed from SSL Decryption policy:',
+                workNoteHeader: 'URLs removed from SSL Decryption policy:',
                 commentsHeader: "We've removed the following URLs from the SSL Decryption policy as requested:",
             },
             'SSL Decryption Policy Removed': {
-                workNoteHeader: '# SSL Decryption policy has been removed:',
+                workNoteHeader: 'SSL Decryption policy has been removed:',
                 commentsHeader: "We've removed the following SSL Decryption policy as requested:",
             },
 
             // ── Steering Exceptions ────────────────────────────
             'Steering Exception Added': {
-                workNoteHeader: '# Added Steering Exception:',
+                workNoteHeader: 'Added Steering Exception:',
                 commentsHeader: "We've added the following Steering Exception (Domain bypass) to help address the issue:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
             },
             'Steering Exception Removed': {
-                workNoteHeader: '# Removed Steering Exception:',
+                workNoteHeader: 'Removed Steering Exception:',
                 commentsHeader: "We've removed the following Steering Exception as requested:",
             },
 
             // ── App Exceptions ─────────────────────────────────
             'App Exception Added': {
-                workNoteHeader: '# Added App Bypass:',
+                workNoteHeader: 'Added App Bypass:',
                 commentsHeader: "We've added the following Application bypass to help address the issue:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
             },
             'App Exception Removed': {
-                workNoteHeader: '# Removed App Bypass:',
+                workNoteHeader: 'Removed App Bypass:',
                 commentsHeader: "We've removed the following Application bypass as requested:",
             },
 
@@ -17902,7 +17944,7 @@ Version 1.4.3:
 
             // ── Recategorization ───────────────────────────────────
             'Recategorization Request': {
-                workNoteHeader: '# Recategorization request submitted to Netskope:',
+                workNoteHeader: 'Recategorization request submitted to Netskope:',
                 commentsHeader: 'A recategorization request has been submitted to Netskope. Please allow 24–48 hours for them to review it and apply any necessary changes.',
             },
 
@@ -18421,7 +18463,7 @@ Version 1.4.3:
      * ==========================================================*/
 
     // ── Domain-list reconciliation ─────────────────────────────
-    // Used for URL Lists, SSL Decryption, Steering Exceptions, App Exceptions.
+    // Used for URL Lists, Destination Profiles, SSL Decryption, Steering Exceptions, App Exceptions.
     // nameKey   : entry.fields key that identifies the entity (e.g. the list name)
     // domainKey : entry.fields key that holds the items to reconcile (domains, apps, etc.)
     // addTypes / removeTypes / deleteTypes : entry type strings for each operation
@@ -18464,6 +18506,14 @@ Version 1.4.3:
             addTypes:    ['Network Location Created', 'Network Location — IPs Added'],
             removeTypes: ['Network Location — IPs Removed'],
             deleteTypes: ['Network Location Removed'],
+        },
+        'Destination Profiles': {
+            nameKey:     'profileName',
+            domainKey:   'destinations',
+            createTypes: ['Destination Profile Created'],
+            addTypes:    ['Destination Profile Created', 'Destination Profile — Destinations Added'],
+            removeTypes: ['Destination Profile — Destinations Removed'],
+            deleteTypes: ['Destination Profile Removed'],
         },
         'Custom Categories': {
             nameKey:     'categoryName',
