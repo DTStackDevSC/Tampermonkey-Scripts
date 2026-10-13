@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.6.0
+// @version      1.7.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.0';
-    const CHANGELOG = `Version 1.6.0:
+    const SCRIPT_VERSION = '1.7.0';
+    const CHANGELOG = `Version 1.7.0:
+- Change Tracker: added a "? Help" button next to "Configure" in the sidebar. It opens a visual Feature Guide covering entries, writing to the ticket, batch sessions, search and filters, log actions, the connection banners, and every setting.
+
+Version 1.6.0:
 - Change Tracker: new batch session mode. Click "Start batch session" under the Add Entry button to log several changes in a row without writing each one to the ticket. When you are done, click "Write all to ticket" to generate a single worknote and a single comment with every change of the session, grouped by category. The short description date and status are updated once at the end.
 - Change Tracker: "End without writing" closes the session and keeps the changes in the log without writing anything to the ticket.
 - Change Tracker: new setting "Keep batch session after page reload". It is off by default, so an open session ends when the page reloads; turn it on to continue the session where you left it.
@@ -16229,8 +16232,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.19.0';
-    const CHANGELOG = `Version 1.19.0:
+    const SCRIPT_VERSION = '1.20.0';
+    const CHANGELOG = `Version 1.20.0:
+- Added a "? Help" button next to "Configure" in the sidebar. It opens a visual Feature Guide covering entries, writing to the ticket, batch sessions, search and filters, log actions, the connection banners, and every setting.
+
+Version 1.19.0:
 - New batch session mode. Click "Start batch session" under the Add Entry button to log several changes in a row without writing each one to the ticket. When you are done, click "Write all to ticket" to generate a single worknote and a single comment with every change of the session, grouped by category. The short description date and status are updated once at the end.
 - "End without writing" closes the session and keeps the changes in the log without writing anything to the ticket.
 - New setting "Keep batch session after page reload". It is off by default, so an open session ends when the page reloads; turn it on to continue the session where you left it.
@@ -17138,6 +17144,7 @@ Version 1.4.3:
          * Change Tracker sidebar         : 999997  (peer)
          * Edit / Setup modal             : 1050000
          * Confirm modal                  : 1100000
+         * Help modal (Feature Guide)     : 1060000/1060001
          * Changelog overlay/modal        : 20000/20001
          * ─────────────────────────────────────────────────────*/
 
@@ -17258,6 +17265,17 @@ Version 1.4.3:
         .ct-cs-search   { background-color: #ffffff !important; color: #333333 !important; }
         .ct-cs-item     { color: #333333 !important; }
         .ct-cs-group-header { background-color: #e9edf2 !important; color: #555555 !important; }
+
+        /* Feature Guide (? Help): above the sidebar and the edit / setup modals */
+        #changeTrackerHelpModalOverlay { position: fixed !important; top: 0 !important; left: 0 !important;
+            width: 100% !important; height: 100% !important; background: rgba(0,0,0,0.5) !important; z-index: 1060000 !important; }
+        #changeTrackerHelpModal { position: fixed !important; top: 50% !important; left: 50% !important;
+            transform: translate(-50%,-50%) !important; z-index: 1060001 !important; background: #fff !important;
+            border: 2px solid #333 !important; padding: 20px !important; border-radius: 10px !important;
+            width: 640px !important; max-width: 92vw !important; max-height: 82vh !important;
+            overflow-y: auto !important; box-sizing: border-box !important; color: #333333 !important; }
+        #changeTrackerHelpModal input, #changeTrackerHelpModal select, #changeTrackerHelpModal textarea {
+            background-color: #ffffff !important; color: #333333 !important; }
     `;
     // Deferred to initialize() where document.head is guaranteed to exist.
 
@@ -19516,6 +19534,21 @@ Version 1.4.3:
         };
         verRow.appendChild(cfgBtn);
 
+        // Help pill: opens the Feature Guide
+        const helpBtn = css(mk('span', { id:'ct-help-btn' }), {
+            color:'#667eea', cursor:'pointer', fontSize:'11px', display:'inline-flex',
+            alignItems:'center', padding:'1px 6px', borderRadius:'3px', marginLeft:'4px',
+            border:'1px solid #c0c8f0', fontWeight:'bold', userSelect:'none',
+            backgroundColor:'transparent', transition:'background-color 0.2s ease',
+            fontFamily:'Arial, sans-serif'
+        });
+        helpBtn.textContent = '? Help';
+        helpBtn.title       = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick     = () => showHelpModal();
+        verRow.appendChild(helpBtn);
+
         sidebar.appendChild(verRow);
 
         // ── Ticket badge ─────────────────────────────────────────
@@ -20037,6 +20070,483 @@ Version 1.4.3:
                 flashStatus('Could not reconnect.', '#dc3545');
             }
         }
+    }
+
+    /* ==========================================================
+     *  FEATURE GUIDE  (? Help modal)
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('changeTrackerHelpModal')) return;
+
+        // lead: the single orienting sentence at the very top of a section. One line only.
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: a small italic note placed directly under a visual to explain it.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(c);
+        }
+
+        // span: an inline text node with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: a small colored rounded label. Use for categories and button previews.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block', textDecoration: opts.underline ? 'underline' : 'none'
+            });
+            return c;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button.
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            return sq;
+        }
+
+        // menuMock: a white rounded card that holds toolbar tiles.
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+
+        // panel: a light card that frames a mock of part of the sidebar.
+        function panel(extra) {
+            const p = document.createElement('div');
+            Object.assign(p.style, {
+                background: '#fff', border: '1px solid #ddd', borderRadius: '7px',
+                padding: '10px', margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+            }, extra || {});
+            return p;
+        }
+
+        // mockField: a fake input or select showing placeholder or value text.
+        function mockField(text, opts) {
+            opts = opts || {};
+            const f = document.createElement('div');
+            f.textContent = text;
+            Object.assign(f.style, {
+                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
+                background: '#fff', fontSize: '11px', color: opts.value ? '#333' : '#aaa',
+                fontStyle: opts.value ? 'normal' : 'italic', margin: '0 0 6px 0',
+                fontFamily: 'Arial, sans-serif', whiteSpace: 'pre-line',
+                minHeight: opts.tall ? '34px' : 'auto', flex: opts.flex || 'none'
+            });
+            return f;
+        }
+
+        // codeBox: monospace box for generated text (worknotes, comments, short description).
+        function codeBox(body, text) {
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                background: '#f8f8ff', border: '1px solid #d0d0f0',
+                borderRadius: '6px', padding: '8px 12px',
+                fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                margin: '0 0 8px 0', whiteSpace: 'pre-wrap', lineHeight: '1.45'
+            });
+            box.textContent = text;
+            body.appendChild(box);
+        }
+
+        // badgeRow: a button or label preview with a one-line description beside it.
+        function badgeRow(body, badgeEl, desc) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+            });
+            badgeEl.style.flexShrink = '0';
+            badgeEl.style.minWidth = '96px';
+            badgeEl.style.textAlign = 'center';
+            const d = span(desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' });
+            row.appendChild(badgeEl);
+            row.appendChild(d);
+            body.appendChild(row);
+        }
+
+        // beforeAfter: two stacked rows showing a value before and after a change.
+        function beforeAfter(body, before, after, labels) {
+            labels = labels || ['Before', 'After'];
+            const wrap = document.createElement('div');
+            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+            [[labels[0], '#f8f8ff', '#888', before], [labels[1], '#f2fff7', '#2a7d4f', after]].forEach(([label, bg, color, text], i) => {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', alignItems: 'baseline', gap: '10px',
+                    padding: '7px 12px', background: bg,
+                    borderBottom: i === 0 ? '1px solid #e8e8f0' : 'none'
+                });
+                row.appendChild(span(label, {
+                    fontSize: '10px', fontWeight: 'bold', color, textTransform: 'uppercase',
+                    whiteSpace: 'nowrap', width: '48px', flexShrink: '0'
+                }));
+                row.appendChild(span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333' }));
+                wrap.appendChild(row);
+            });
+            body.appendChild(wrap);
+        }
+
+        // toggle: a checkbox setting preview with its one-line description.
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = document.createElement('span');
+            Object.assign(box.style, {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
+                border: on ? 'none' : '1px solid #b0b0b0',
+                background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+            });
+            box.textContent = on ? '✓' : '';
+            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+            return wrap;
+        }
+
+        const sections = [
+            {
+                icon: '🚀',
+                title: 'Getting Started',
+                buildContent: (body) => {
+                    lead(body, 'Click the pencil in the toolbar to open the Change Tracker sidebar for the ticket you are on.');
+                    body.appendChild(hrow([
+                        menuMock([ toolSquare('📊'), toolSquare('✏️', { bg: '#e8f0fe', border: '2px solid #667eea' }), toolSquare('🔗') ]),
+                        span('→', { fontSize: '16px', color: '#999' }),
+                        chip('Ticket: RITM0012345', '#e8f5e9', { color: '#444', border: '1px solid #a5d6a7', fontSize: '10px' })
+                    ], { margin: '0 0 10px 0' }));
+
+                    const p = panel();
+                    p.appendChild(span('NEW ENTRY', { fontSize: '10px', fontWeight: 'bold', color: '#888', letterSpacing: '.6px', display: 'block', margin: '0 0 6px 0' }));
+                    p.appendChild(mockField('SSL Decryption Policy Created', { value: true }));
+                    p.appendChild(mockField('SSL Policy name'));
+                    p.appendChild(mockField('Domains', { tall: true }));
+                    const add = chip('+ Add Entry', '#28a745', { padding: '6px 8px', fontSize: '12px' });
+                    add.style.display = 'block'; add.style.textAlign = 'center';
+                    p.appendChild(add);
+                    body.appendChild(p);
+                    bullets(body, [
+                        'Pick the change type, fill in its fields, then click "+ Add Entry" (Ctrl+Enter also works).',
+                        'Every entry is saved to the shared team log, so anyone opening this ticket sees the same history.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'Entries',
+                buildContent: (body) => {
+                    lead(body, 'Each change you add appears as a card in the log below the form.');
+                    const card = panel({ border: '1px solid #e0e0e0', borderRadius: '6px' });
+                    const top = hrow([
+                        chip('SSL Decryption Policy Created', '#28a745', { fontSize: '10px', padding: '2px 8px', radius: '10px' }),
+                        span('', { flex: '1' }),
+                        chip('✎ Edit', '#667eea', { fontSize: '10px', padding: '2px 8px', radius: '3px' }),
+                        chip('↪ Write', '#17a2b8', { fontSize: '10px', padding: '2px 8px', radius: '3px' }),
+                        chip('×', '#e9ecef', { color: '#6c757d', fontSize: '11px', padding: '1px 7px', radius: '3px' })
+                    ], { gap: '5px', margin: '0 0 6px 0' });
+                    top.children[1].style.flex = '1';
+                    card.appendChild(top);
+                    card.appendChild(span('SSL Policy name: SSL Bypass EMEA', { fontSize: '12px', color: '#333', display: 'block' }));
+                    card.appendChild(span('Domains: example.com, test.com', { fontSize: '12px', color: '#333', display: 'block' }));
+                    card.appendChild(span('2026-10-13 14:05', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace', display: 'block', marginTop: '6px' }));
+                    body.appendChild(card);
+                    bullets(body, [
+                        '✎ Edit changes the type or any field of the entry.',
+                        '↪ Write writes this entry into the ticket again. It only shows on types that have a ticket note.',
+                        '× deletes the entry: click it twice to confirm.',
+                        'Some types show "+ Add fields" in the form to record optional extra details.'
+                    ]);
+                }
+            },
+            {
+                icon: '✍️',
+                title: 'Writing to the Ticket',
+                buildContent: (body) => {
+                    lead(body, 'Adding an entry also writes a ready to send note into the ticket fields.');
+                    badgeRow(body, chip('Work Notes', '#5a6672', { padding: '4px 8px' }), 'Internal note starting with "#", the change title and every field.');
+                    badgeRow(body, chip('Comments', '#0066cc', { padding: '4px 8px' }), 'Customer message with an @mention to the requester, the change details and the team sign off.');
+                    codeBox(body, 'Hi @[Jane Doe],\n\nWe\'ve added the following SSL Decryption bypasses to help address the issue:\n- SSL Policy name: SSL Bypass EMEA\n...');
+                    beforeAfter(body, '01-10-2026 | MF | Product | WIP | ...', '13-10-2026 | MF | Product | Waiting Requester | ...');
+                    caption(body, 'The short description gets today\'s date and the status Waiting Requester (Waiting Vendor for recategorization requests).');
+                    bullets(body, [
+                        'Only the fields visible on the ticket are filled: work notes, comments, or both.',
+                        'Custom entries are never written to the ticket.'
+                    ]);
+                }
+            },
+            {
+                icon: '⏯',
+                title: 'Batch Session',
+                buildContent: (body) => {
+                    lead(body, 'Log several changes in a row and write them to the ticket all at once.');
+                    const start = chip('⏯ Start batch session', 'transparent', { color: '#b36b00', border: '1px solid #f0ad4e', padding: '5px 10px' });
+                    const active = panel({ background: '#fffaf0', border: '1px solid #f0ad4e', margin: '0' });
+                    active.appendChild(span('🟠 Batch session · 3 changes pending', { fontSize: '11px', fontWeight: 'bold', color: '#b36b00', display: 'block', margin: '0 0 6px 0' }));
+                    active.appendChild(hrow([
+                        chip('✍ Write all to ticket', '#f0ad4e', { padding: '5px 8px' }),
+                        chip('✕ End without writing', 'transparent', { color: '#666', border: '1px solid #ccc', padding: '5px 8px' })
+                    ], { gap: '5px', margin: '0' }));
+                    body.appendChild(hrow([ start, span('→', { fontSize: '16px', color: '#999' }), active ], { margin: '0 0 10px 0' }));
+                    codeBox(body, '#Changes applied in this session:\n\nAdded to SSL Decryption policy:\n- SSL Policy name: SSL Bypass EMEA\n\nNetskope DLP Rule has been added:\n- Name: Credit Cards EU');
+                    caption(body, 'One worknote and one comment for the whole session, grouped by category.');
+                    bullets(body, [
+                        'While the session is open, entries are saved to the log but nothing is written to the ticket.',
+                        '"Write all to ticket" also updates the short description date and status once.',
+                        '"End without writing" closes the session; the entries stay in the log.'
+                    ]);
+                }
+            },
+            {
+                icon: '🔍',
+                title: 'Search & Filter',
+                buildContent: (body) => {
+                    lead(body, 'Narrow the log by text or by date range.');
+                    const p = panel({ background: '#f9f9f9' });
+                    p.appendChild(mockField('Filter by type, value, author…'));
+                    p.appendChild(hrow([
+                        span('Date:', { fontSize: '10px', color: '#999' }),
+                        mockField('dd/mm/yyyy', { flex: '1' }),
+                        span('–', { fontSize: '10px', color: '#aaa' }),
+                        mockField('dd/mm/yyyy', { flex: '1' })
+                    ], { gap: '4px', margin: '0', flexWrap: 'nowrap' }));
+                    body.appendChild(p);
+                    caption(body, 'The entry count shows how many entries match, for example "2 of 7 entries". Click × to clear a filter.');
+                }
+            },
+            {
+                icon: '⚡',
+                title: 'Log Actions',
+                buildContent: (body) => {
+                    lead(body, 'The buttons above the log act on every entry of the ticket.');
+                    badgeRow(body, chip('📋 Copy All', '#667eea', { padding: '5px 8px', radius: '3px' }), 'Copies the full log as text to the clipboard.');
+                    badgeRow(body, chip('📝 Worknote', '#5a6268', { padding: '5px 8px', radius: '3px' }), 'Copies a closing worknote that summarizes the net result of all changes, grouped by category.');
+                    badgeRow(body, chip('🗑️ Clear', '#dc3545', { padding: '5px 8px', radius: '3px' }), 'Deletes every entry of this ticket for the whole team, after a confirmation.');
+                }
+            },
+            {
+                icon: '🔗',
+                title: 'Connection',
+                buildContent: (body) => {
+                    lead(body, 'The log syncs with the team server; a banner appears when it cannot.');
+                    function banner(text, btnText, bg, border, color, btnBg, btnColor) {
+                        const b = document.createElement('div');
+                        Object.assign(b.style, {
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            padding: '7px 10px', borderRadius: '4px', margin: '0 0 6px 0',
+                            background: bg, border: '1px solid ' + border, color, fontSize: '12px', fontFamily: 'Arial, sans-serif'
+                        });
+                        b.appendChild(span(text));
+                        b.appendChild(chip(btnText, btnBg, { color: btnColor, radius: '3px' }));
+                        return b;
+                    }
+                    body.appendChild(banner('⚠ Offline — read only', '↺ Reconnect', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
+                    body.appendChild(banner('🔑 Token invalid', 'Reset token', '#f8d7da', '#f5c6cb', '#721c24', 'transparent', '#721c24'));
+                    bullets(body, [
+                        'Offline: you can read the cached log, but adding entries is disabled until you reconnect.',
+                        'Token invalid: open the setup panel and enter a new API token.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️',
+                title: 'Settings',
+                buildContent: (body) => {
+                    lead(body, 'The links next to the version number open the setup panel and this guide.');
+                    badgeRow(body, chip('⚙ Configure', 'transparent', { color: '#666', underline: true }), 'Opens the setup panel with the connection details and options below.');
+                    badgeRow(body, chip('? Help', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0', radius: '3px' }), 'Opens this Feature Guide.');
+
+                    const pairs = [
+                        ['Worker URL', 'Address of the team server that stores the shared log.'],
+                        ['API token', 'Your personal access key, provided by your administrator.'],
+                        ['Local cache expiry', 'Days a ticket log stays cached in your browser (default 30).']
+                    ];
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '4px 0 12px 0' });
+                    for (const [key, val] of pairs) {
+                        grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0' }));
+                        grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0' }));
+                    }
+                    body.appendChild(grid);
+
+                    body.appendChild(toggle('Auto-write entries to ticket', true, 'Writes the worknote and comment as soon as you add an entry.'));
+                    body.appendChild(toggle('Update short description on write', true, 'Sets today\'s date and the matching status whenever an entry is written.'));
+                    body.appendChild(toggle('Keep batch session after page reload', false, 'When on, an open batch session survives a page reload.'));
+                    body.appendChild(toggle('Searchable change-type dropdown', true, 'Lets you type to filter the change types, including by group name.'));
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'changeTrackerHelpModalOverlay';
+
+        const modal = document.createElement('div');
+        modal.id = 'changeTrackerHelpModal';
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Change Tracker • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards, all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
     }
 
     /* ==========================================================
