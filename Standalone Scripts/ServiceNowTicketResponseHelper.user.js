@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.18.5
+// @version      2.18.6
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.18.5';
-    const CHANGELOG = `Version 2.18.5:
+    const SCRIPT_VERSION = '2.18.6';
+    const CHANGELOG = `Version 2.18.6:
+- EMEA: Updated the "First NPA Access for MF" and "Additional NPA Access" response texts with the new wording, required AD group structure and partner/client information fields.
+
+Version 2.18.5:
 - EMEA: Removed "Please update the agent & report back with the results." from the Slack URL Added response.
 
 Version 2.18.4:
@@ -884,27 +887,51 @@ Best regards,
 Global Data Security Enablement`,
                 npaAccess: (vars) => ``,
                 npaAccessFirst: (vars) => `Hi @[${vars.openedByName}],
-Hope you are doing well.
+I hope you are well.
 
-Since this is the first NPA to be created in your Firm, we require the following:
-• (1) An AD group that will contain all sub-groups for each client's NPA now or in the future.
-• (2) An AD group containing the required members needed for a specific client's NPA. This group must be nested into the Firm group of point 1.
+As this is the first NPA configuration for your Member Firm, please provide the information below and arrange for the required AD groups to be created.
 
-Example of AD groups:
+Required AD Groups:
+1. Firm NPA Parent Group: Parent AD group containing all current and future client-specific NPA groups.
+2. Client-Specific NPA Group: AD group containing the users requiring access to a specific partner/client NPA. This group must be nested within the Firm NPA Parent Group.
 
-(1) ES NPA Access → (2) Client 1 NPA, (2) Client 2 NPA, (2) Client 3 NPA
+Example structure:
+ES NPA Access
+├── Client 1 NPA
+├── Client 2 NPA
+└── Client 3 NPA
 
-Please let us know once the required AD groups are updated and available.
-Regards,`,
+Required client information:
+- Partner/Client Name:
+- Partner/Client URL:
+- Client-Specific NPA AD Group:
+
+Once the AD groups have been created, correctly nested, and populated with the required users, please confirm so we can proceed with the NPA configuration.
+
+Thank you for your cooperation.
+
+Kind regards,
+Global Data Security Enablement`,
                 npaAccessAdditional: (vars) => `Hi @[${vars.openedByName}],
-Hope you are doing well.
+I hope you are well.
 
-Since there are already other NPAs in your firm, we need the following:
-• An AD group containing the required members needed for this specific NPA.
-• In addition, the group of point 1 must be nested into the following AD group that contains all the users in your Firm using NPAs: <Firm_Level_NPA_AD_Group>
+To proceed with the configuration of the new NPA, please provide the following information and complete the required AD group setup.
 
-Please let us know once the required AD groups are updated and available.
-Regards,`
+1. AD Group Setup:
+Please create an AD group containing all users who require access to this NPA.
+The group must be nested within the following Firm-level AD group, which contains all NPA users for your Member Firm:
+<Firm_Level_NPA_AD_Group>
+
+2. Partner/Client Information:
+- Partner/Client Name:
+- Partner/Client URL:
+
+Once the AD group has been created, populated with the appropriate users, and nested within the Firm-level NPA group, please confirm and we will proceed with the NPA client configuration.
+
+Thank you for your cooperation.
+
+Kind regards,
+Global Data Security Enablement`
         }
     },
 
