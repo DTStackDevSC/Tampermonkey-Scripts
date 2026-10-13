@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.1.1
+// @version      1.2.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.1';
-    const CHANGELOG = `Version 1.1.1:
+    const SCRIPT_VERSION = '1.2.0';
+    const CHANGELOG = `Version 1.2.0:
+- Change Tracker: writing an entry to the ticket, automatically or with the "Write" button, now also updates the date at the start of the short description to today, the same way the Ticket Response Helper does. If the short description has no date yet, today's date is added in front.
+
+Version 1.1.1:
 - URL List Editor: fixed a security issue where a URL List with a specially crafted name could run unwanted code on your page when the list was shown. List names are now always displayed as plain text.
 
 Version 1.1.0:
@@ -16211,8 +16214,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.14.1';
-    const CHANGELOG = `Version 1.14.1:
+    const SCRIPT_VERSION = '1.15.0';
+    const CHANGELOG = `Version 1.15.0:
+- Writing an entry to the ticket, automatically or with the "Write" button, now also updates the date at the start of the short description to today, the same way the Ticket Response Helper does. If the short description has no date yet, today's date is added in front.
+
+Version 1.14.1:
 - Fixed worknotes starting with two "#" instead of one for SSL Decryption, Steering Exception, App Bypass, and Recategorization entries. All worknotes now start with a single "#".
 
 Version 1.14.0:
@@ -17552,6 +17558,44 @@ Version 1.4.3:
             textarea.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
+        // ── Short description date (DD-MM-YYYY | ...) ──────────────
+        // Same date prefix the Ticket Response Helper keeps up to date:
+        // replace a leading date with today's, or prepend one if missing.
+
+        function formattedToday() {
+            const d = new Date();
+            return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
+        }
+
+        function updateShortDescriptionDate() {
+            const gf  = getTicketWin().g_form;
+            const doc = getTicketDoc();
+            let current = '';
+            try { current = (gf && gf.getValue('short_description')) || ''; } catch (e) { /* not on this form */ }
+            const input = doc.getElementById('sc_req_item.short_description') ||
+                          doc.getElementById('incident.short_description') ||
+                          doc.getElementById('sc_task.short_description');
+            if (!current && input) current = input.value || '';
+            current = current.trim();
+            if (!current) return;
+
+            const today       = formattedToday();
+            const datePattern = /^\d{2}-\d{2}-\d{4}/;
+            const next = datePattern.test(current)
+                ? current.replace(datePattern, today)
+                : `${today} | ${current}`;
+            if (next === current) return;
+
+            try {
+                if (gf) { gf.setValue('short_description', next); return; }
+            } catch (e) { /* fall through to the DOM input */ }
+            if (input) {
+                input.value = next;
+                input.dispatchEvent(new Event('input',  { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
         // ── @mention insertion (best-effort: API → keystroke fallback) ──
 
         async function insertMentionViaAPI(textarea, name) {
@@ -18050,23 +18094,26 @@ Version 1.4.3:
             const openedByName = await getOpenedByName().catch(() => null);
 
             try {
+                let wrote;
                 if (vis.mode === 'both') {
                     const wnText = buildWorkNoteText(entry);
                     const cmText = buildCommentsText(entry, openedByName);
                     if (wnText) appendText(vis.workNotes, wnText);
                     if (cmText) await insertTextWithMention(vis.comments, cmText, 'comments');
-                    return { ok: true, wrote: 'both' };
+                    wrote = 'both';
 
                 } else if (vis.mode === 'workNotesOnly') {
                     const text = buildWorkNoteText(entry);
                     if (text) appendText(vis.workNotes, text);
-                    return { ok: true, wrote: 'workNotes' };
+                    wrote = 'workNotes';
 
                 } else { // 'commentsOnly' or 'unknown' (assume comments-style)
                     const text = buildCommentsText(entry, openedByName);
                     if (text) await insertTextWithMention(vis.comments, text, 'comments');
-                    return { ok: true, wrote: 'comments' };
+                    wrote = 'comments';
                 }
+                try { updateShortDescriptionDate(); } catch (e) { console.warn('CT: short description date update failed', e); }
+                return { ok: true, wrote };
             } catch (e) {
                 console.warn('CT: ticket write failed', e);
                 hideBlocker();
