@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.18.6
+// @version      2.19.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,17 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.18.6';
-    const CHANGELOG = `Version 2.18.6:
+    const SCRIPT_VERSION = '2.19.0';
+    const CHANGELOG = `Version 2.19.0:
+- Inserting a response now also updates the status in the short description to match it, the same way Solved Closure already set it to "Closed":
+  Waiting Requester: initial contact, information requests, reminders, bypasses, Slack URL added, policy, DLP policy and steering changes, unknown requestor, troubleshooting steps and NPA access.
+  WIP: "Working on the request" reminder and SOC Tier 2 task request.
+  Waiting Vendor: vendor case opened, recategorization request and IDEA request.
+  Waiting SPM: SPM request loaded.
+  Closed: Timeout Closure and End User Closure, in addition to Solved Closure.
+- Work note responses do not change the status.
+
+Version 2.18.6:
 - EMEA: Updated the "First NPA Access for MF" and "Additional NPA Access" response texts with the new wording, required AD group structure and partner/client information fields.
 
 Version 2.18.5:
@@ -156,12 +165,14 @@ Version 2.11.1:
             initial: {
                 label: 'Initial Contact',
                 category: 'first_contact',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             initialmiss: {
                 label: 'Initial Contact (Missing Info)',
                 category: 'first_contact',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypass: {
                 label: 'SSL/Domain/App Bypass',
@@ -173,40 +184,47 @@ Version 2.11.1:
                 label: 'SSL Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypassdomain: {
                 label: 'Domain Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             ssltodomain: {
                 label: 'SSL Bypass > Domain Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypassapp: {
                 label: 'Application Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             teststeps: {
                 label: 'Initial Troubleshooting Steps',
                 category: 'responses',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             unknownreq: {
                 label: 'Unknown Requestor',
                 category: 'responses',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             vendorcaseloaded: {
                 label: 'Vendor Case Opened',
                 category: 'responses',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Vendor' }]
             },
             policymgmt: {
                 label: 'Policy Managment',
@@ -218,34 +236,40 @@ Version 2.11.1:
                 label: 'Create',
                 category: 'responses',
                 parentItem: 'policymgmt',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             policymodify: {
                 label: 'Modify',
                 category: 'responses',
                 parentItem: 'policymgmt',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             policydelete: {
                 label: 'Delete',
                 category: 'responses',
                 parentItem: 'policymgmt',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             first: {
                 label: 'First reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             second: {
                 label: 'Second Reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             third: {
                 label: 'Third Reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             solved: {
                 label: 'Solved Closure',
@@ -256,12 +280,14 @@ Version 2.11.1:
             timeout: {
                 label: 'Timeout Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             enduser: {
                 label: 'End User Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             bypasscomments: {
                 label: '# SSL/Domain/App Bypass',
@@ -290,27 +316,32 @@ Version 2.11.1:
             moreinfo: {
                 label: 'More Information Request',
                 category: 'other',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             vpninfo: {
                 label: 'VPN Info & Req.',
                 category: 'other',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             slackAddComment: {
                 label: 'Slack URL Added',
                 category: 'responses',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             tier2SOCreq: {
                 label: 'SOC Tier 2 Task Request',
                 category: 'other',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'WIP' }]
             },
             recatRequest: {
                 label: 'Recategorization Request',
                 category: 'responses',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Vendor' }]
             },
             recatRequestWorknote: {
                 label: '# Recategorization Request',
@@ -320,7 +351,8 @@ Version 2.11.1:
             ideaFeatureRequest: {
                 label: 'IDEA Request Opened',
                 category: 'responses',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Vendor' }]
             },
             configMgmt: {
                 label: 'Configuration Managment',
@@ -332,7 +364,8 @@ Version 2.11.1:
                 label: 'Steering/Client Configuration',
                 category: 'responses',
                 parentItem: 'configMgmt',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             configMgmtWorknotes: {
                 label: '# Configuration Managment',
@@ -380,19 +413,22 @@ Version 2.11.1:
                 label: 'Create',
                 category: 'responses',
                 parentItem: 'dlpPolicyMgmt',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             dlpPolicyModify: {
                 label: 'Modify',
                 category: 'responses',
                 parentItem: 'dlpPolicyMgmt',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             dlpPolicyDelete: {
                 label: 'Delete',
                 category: 'responses',
                 parentItem: 'dlpPolicyMgmt',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             dlpPolicyMgmtWorknote: {
                 label: '# DLP Policy Managment',
@@ -421,12 +457,14 @@ Version 2.11.1:
             workingOnReminder: {
                 label: 'Working on the request Reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'WIP' }]
             },
             spmLoaded: {
                 label: 'SPM Request Loaded',
                 category: 'responses',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting SPM' }]
             },
             npaAccess: {
                 label: 'NPA Access',
@@ -438,13 +476,15 @@ Version 2.11.1:
                 label: 'First NPA Access for MF',
                 category: 'responses',
                 parentItem: 'npaAccess',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             npaAccessAdditional: {
                 label: 'Additional NPA Access',
                 category: 'responses',
                 parentItem: 'npaAccess',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             }
         },
 
@@ -959,12 +999,14 @@ Global Data Security Enablement`
             initial: {
                 label: 'Initial Contact',
                 category: 'first_contact',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             initialmiss: {
                 label: 'Initial Contact (Missing Info)',
                 category: 'first_contact',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypass: {
                 label: 'SSL/Domain/App Bypass',
@@ -976,34 +1018,40 @@ Global Data Security Enablement`
                 label: 'SSL Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypassdomain: {
                 label: 'Domain Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypassapp: {
                 label: 'Application Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             first: {
                 label: 'First reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             second: {
                 label: 'Second Reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             third: {
                 label: 'Third Reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             solved: {
                 label: 'Solved Closure',
@@ -1014,22 +1062,26 @@ Global Data Security Enablement`
             timeout: {
                 label: 'Timeout Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             enduser: {
                 label: 'End User Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             moreinfo: {
                 label: 'More Information Request',
                 category: 'other',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             vpninfo: {
                 label: 'VPN Info & Req.',
                 category: 'other',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             }
         },
 
@@ -1180,12 +1232,14 @@ Regards.`,
             initial: {
                 label: 'Initial Contact',
                 category: 'first_contact',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             initialmiss: {
                 label: 'Initial Contact (Missing Info)',
                 category: 'first_contact',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypass: {
                 label: 'SSL/Domain/App Bypass',
@@ -1197,34 +1251,40 @@ Regards.`,
                 label: 'SSL Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypassdomain: {
                 label: 'Domain Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             bypassapp: {
                 label: 'Application Bypass',
                 category: 'responses',
                 parentItem: 'bypass',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             first: {
                 label: 'First reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             second: {
                 label: 'Second Reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             third: {
                 label: 'Third Reminder',
                 category: 'reminders',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             solved: {
                 label: 'Solved Closure',
@@ -1235,22 +1295,26 @@ Regards.`,
             timeout: {
                 label: 'Timeout Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             enduser: {
                 label: 'End User Closure',
                 category: 'closures',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Closed' }]
             },
             moreinfo: {
                 label: 'More Information Request',
                 category: 'other',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             },
             vpninfo: {
                 label: 'VPN Info & Req.',
                 category: 'other',
-                fieldType: 'comments'
+                fieldType: 'comments',
+                shortDescTransforms: [{ field: 'status', value: 'Waiting Requester' }]
             }
         },
 
@@ -2903,6 +2967,58 @@ Regards.`,
                     }
 
                     addParagraph(body, 'Some templates have sub-options: hover over the item to reveal a flyout menu with variants. Click any variant to insert it.');
+
+                    addParagraph(body, 'Inserting a response also updates the status in the short description to match it. Work note templates leave the status unchanged.');
+
+                    const statusWrap = document.createElement('div');
+                    Object.assign(statusWrap.style, { marginBottom: '8px', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+                    const statusRows = [
+                        { label: 'Before', bg: '#f8f8ff', labelColor: '#888',    text: '01-10-2026 | MF | Product | WIP | ...' },
+                        { label: 'After',  bg: '#f2fff7', labelColor: '#2a7d4f', text: '13-10-2026 | MF | Product | Closed | ...' }
+                    ];
+                    for (const r of statusRows) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', alignItems: 'baseline', gap: '10px',
+                            padding: '7px 12px', background: r.bg,
+                            borderBottom: r.label === 'Before' ? '1px solid #e8e8f0' : 'none'
+                        });
+                        const labelEl = document.createElement('span');
+                        labelEl.textContent = r.label;
+                        Object.assign(labelEl.style, {
+                            fontSize: '10px', fontWeight: 'bold', color: r.labelColor,
+                            textTransform: 'uppercase', whiteSpace: 'nowrap',
+                            width: '42px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                        });
+                        const textEl = document.createElement('span');
+                        textEl.textContent = r.text;
+                        Object.assign(textEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#333' });
+                        row.appendChild(labelEl);
+                        row.appendChild(textEl);
+                        statusWrap.appendChild(row);
+                    }
+                    body.appendChild(statusWrap);
+
+                    const statusPairs = [
+                        ['Waiting Requester', 'Contact, information requests, reminders, bypasses and configuration changes'],
+                        ['WIP',               '"Working on the request" reminder and SOC Tier 2 task request'],
+                        ['Waiting Vendor',    'Vendor case, recategorization and IDEA requests'],
+                        ['Waiting SPM',       'SPM request loaded'],
+                        ['Closed',            'Solved, Timeout and End User closures']
+                    ];
+                    const statusGrid = document.createElement('div');
+                    Object.assign(statusGrid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
+                    for (const [key, val] of statusPairs) {
+                        const keyEl = document.createElement('span');
+                        keyEl.textContent = key;
+                        Object.assign(keyEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0' });
+                        const valEl = document.createElement('span');
+                        valEl.textContent = val;
+                        Object.assign(valEl.style, { fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
+                        statusGrid.appendChild(keyEl);
+                        statusGrid.appendChild(valEl);
+                    }
+                    body.appendChild(statusGrid);
                 }
             },
             {

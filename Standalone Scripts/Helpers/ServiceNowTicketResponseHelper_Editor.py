@@ -177,12 +177,18 @@ def _parse_response_metadata(text):
         if not obj: break
         o = obj[1:-1]
         pi = _pstr(o, 'parentItem') or None
+        # shortDescTransforms is kept as raw JS text so it survives a save untouched
+        sdt = None
+        sm = re.search(r'\bshortDescTransforms\s*:\s*\[', o)
+        if sm:
+            sdt, _ = _bal(o, '[', ']', o.index('[', sm.start()))
         result[key] = {
             'label':      _pstr(o, 'label'),
             'category':   _pstr(o, 'category'),
             'fieldType':  _pstr(o, 'fieldType') or 'comments',
             'hasSubmenu': _pbool(o, 'hasSubmenu', False),
             'parentItem': pi,
+            'shortDescTransforms': sdt,
         }
         pos = end
     return result
@@ -259,7 +265,9 @@ def build_teams_block(teams):
             L.append(f"                category: {_esc(mm['category'])},")
             if mm.get('hasSubmenu'): L.append('                hasSubmenu: true,')
             if mm.get('parentItem'): L.append(f"                parentItem: {_esc(mm['parentItem'])},")
-            L.append(f"                fieldType: {_esc(mm['fieldType'])}")
+            sdt = mm.get('shortDescTransforms')
+            L.append(f"                fieldType: {_esc(mm['fieldType'])}" + (',' if sdt else ''))
+            if sdt: L.append(f'                shortDescTransforms: {sdt}')
             L.append('            }' + (',' if i < len(mk)-1 else ''))
         L += ['        },', '']
         # enabledResponses
@@ -587,6 +595,7 @@ class TeamEditor(QWidget):
         dlg = ResponseDialog(key, meta, body, self)
         if dlg.exec_() != QDialog.Accepted: return
         data = dlg.result_data()
+        data['meta']['shortDescTransforms'] = meta.get('shortDescTransforms')
         self._t['responseMetadata'][key] = data['meta']
         if not data['meta']['hasSubmenu']:
             self._t['responses'][key] = data['body']

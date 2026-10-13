@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.15.0
+// @version      1.16.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.15.0';
-    const CHANGELOG = `Version 1.15.0:
+    const SCRIPT_VERSION = '1.16.0';
+    const CHANGELOG = `Version 1.16.0:
+- Writing an entry to the ticket now also sets the status in the short description: "Waiting Vendor" for Recategorization Request entries and "Waiting Requester" for every other entry type.
+- New setting "Update short description on write" in the setup panel. It is on by default; turn it off to leave the short description date and status untouched when writing entries.
+
+Version 1.15.0:
 - Writing an entry to the ticket, automatically or with the "Write" button, now also updates the date at the start of the short description to today, the same way the Ticket Response Helper does. If the short description has no date yet, today's date is added in front.
 
 Version 1.14.1:
@@ -711,6 +715,13 @@ Version 1.4.3:
     const AUTO_WRITE_KEY = 'changeTrackerAutoWriteEnabled';
     function getAutoWriteEnabled()  { return GM_getValue(AUTO_WRITE_KEY, true) !== false; }
     function setAutoWriteEnabled(v) { GM_setValue(AUTO_WRITE_KEY, !!v); }
+
+    // Short description toggle: when enabled, writing an entry into the
+    // ticket also refreshes the date and status segments of the short
+    // description. Default ON.
+    const UPDATE_SHORT_DESC_KEY = 'changeTrackerUpdateShortDescEnabled';
+    function getUpdateShortDescEnabled()  { return GM_getValue(UPDATE_SHORT_DESC_KEY, true) !== false; }
+    function setUpdateShortDescEnabled(v) { GM_setValue(UPDATE_SHORT_DESC_KEY, !!v); }
 
     const CACHE_TTL_KEY = 'changeTrackerCacheTtlDays';
     const CACHE_TTL_DEFAULT = 30;
@@ -1421,16 +1432,25 @@ Version 1.4.3:
             textarea.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
-        // ── Short description date (DD-MM-YYYY | ...) ──────────────
-        // Same date prefix the Ticket Response Helper keeps up to date:
-        // replace a leading date with today's, or prepend one if missing.
+        // ── Short description date + status ──────────────────────
+        // Format: DD-MM-YYYY | MF | Product | Status | ...
+        // Same rules as the Ticket Response Helper: replace a leading date
+        // with today's (or prepend one), then set the status segment.
+
+        const SHORT_DESC_STATUS_INDEX = 3;
+        const STATUS_BY_TYPE = {
+            'Recategorization Request': 'Waiting Vendor',
+        };
+        function statusForEntry(entry) {
+            return STATUS_BY_TYPE[entry.type] || 'Waiting Requester';
+        }
 
         function formattedToday() {
             const d = new Date();
             return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
         }
 
-        function updateShortDescriptionDate() {
+        function updateShortDescription(status) {
             const gf  = getTicketWin().g_form;
             const doc = getTicketDoc();
             let current = '';
@@ -1444,9 +1464,16 @@ Version 1.4.3:
 
             const today       = formattedToday();
             const datePattern = /^\d{2}-\d{2}-\d{4}/;
-            const next = datePattern.test(current)
+            let next = datePattern.test(current)
                 ? current.replace(datePattern, today)
                 : `${today} | ${current}`;
+            if (status) {
+                const parts = next.split('|').map(p => p.trim());
+                if (parts.length > SHORT_DESC_STATUS_INDEX) {
+                    parts[SHORT_DESC_STATUS_INDEX] = status;
+                    next = parts.join(' | ');
+                }
+            }
             if (next === current) return;
 
             try {
@@ -1975,7 +2002,9 @@ Version 1.4.3:
                     if (text) await insertTextWithMention(vis.comments, text, 'comments');
                     wrote = 'comments';
                 }
-                try { updateShortDescriptionDate(); } catch (e) { console.warn('CT: short description date update failed', e); }
+                if (getUpdateShortDescEnabled()) {
+                    try { updateShortDescription(statusForEntry(entry)); } catch (e) { console.warn('CT: short description update failed', e); }
+                }
                 return { ok: true, wrote };
             } catch (e) {
                 console.warn('CT: ticket write failed', e);
@@ -3693,6 +3722,30 @@ Version 1.4.3:
         autoWriteRow.append(autoWriteInput, autoWriteText);
         modal.appendChild(autoWriteRow);
 
+        // Short description toggle: refresh date + status when writing to the ticket
+        const shortDescRow = css(mk('label', { htmlFor:'ct-setup-shortdesc' }), {
+            display:'flex', alignItems:'flex-start', gap:'8px',
+            padding:'8px 10px', marginBottom:'14px',
+            background:'#f6f8fa', border:'1px solid #e1e4e8', borderRadius:'4px',
+            cursor:'pointer', fontFamily:'Arial, sans-serif'
+        });
+        const shortDescInput = css(mk('input', { id:'ct-setup-shortdesc', type:'checkbox' }), {
+            marginTop:'2px', cursor:'pointer'
+        });
+        shortDescInput.checked = getUpdateShortDescEnabled();
+
+        const shortDescText  = css(mk('div'), { fontSize:'12px', color:'#333', lineHeight:'1.4' });
+        const shortDescTitle = css(mk('div'), { fontWeight:'bold', marginBottom:'2px' });
+        shortDescTitle.textContent = 'Update short description on write';
+        const shortDescDesc  = css(mk('div'), { fontSize:'11px', color:'#666' });
+        shortDescDesc.textContent =
+            'When an entry is written to the ticket, set the short description date ' +
+            'to today and the status to Waiting Requester (Waiting Vendor for recategorization requests).';
+        shortDescText.append(shortDescTitle, shortDescDesc);
+
+        shortDescRow.append(shortDescInput, shortDescText);
+        modal.appendChild(shortDescRow);
+
         // Cache TTL row
         const ttlRow = css(mk('div'), {
             padding:'8px 10px', marginBottom:'14px',
@@ -3830,6 +3883,7 @@ Version 1.4.3:
             GM_setValue('changeTrackerWorkerUrl', url);
             GM_setValue('changeTrackerToken',     token);
             setAutoWriteEnabled(autoWriteInput.checked);
+            setUpdateShortDescEnabled(shortDescInput.checked);
             setCacheTtlDays(ttlInput.value);
             setSearchableDropdown(searchableInput.checked);
 
