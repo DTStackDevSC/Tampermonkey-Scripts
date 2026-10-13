@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.14.0
+// @version      1.14.1
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.14.0';
-    const CHANGELOG = `Version 1.14.0:
+    const SCRIPT_VERSION = '1.14.1';
+    const CHANGELOG = `Version 1.14.1:
+- Fixed worknotes starting with two "#" instead of one for SSL Decryption, Steering Exception, App Bypass, and Recategorization entries. All worknotes now start with a single "#".
+
+Version 1.14.0:
 - Added a new "Destination Profiles" group with Created, Destinations Added, Destinations Removed, and Removed entry types. It works like URL Lists, but each entry can hold any mix of IPs, IP ranges, and URLs. Entries generate ticket notes and are reconciled in the grouped summary just like URL Lists.
 
 Version 1.13.0:
@@ -1711,43 +1714,43 @@ Version 1.4.3:
 
             // ── SSL Decryption ─────────────────────────────────
             'SSL Decryption Policy Created': {
-                workNoteHeader: '# Added to SSL Decryption policy:',
+                workNoteHeader: 'Added to SSL Decryption policy:',
                 commentsHeader: "We've added the following SSL Decryption bypasses to help address the issue:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
             },
             'SSL Decryption — URLs Added': {
-                workNoteHeader: '# URLs added to SSL Decryption policy:',
+                workNoteHeader: 'URLs added to SSL Decryption policy:',
                 commentsHeader: "We've added the following URLs to the existing SSL Decryption policy:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test.',
             },
             'SSL Decryption — URLs Removed': {
-                workNoteHeader: '# URLs removed from SSL Decryption policy:',
+                workNoteHeader: 'URLs removed from SSL Decryption policy:',
                 commentsHeader: "We've removed the following URLs from the SSL Decryption policy as requested:",
             },
             'SSL Decryption Policy Removed': {
-                workNoteHeader: '# SSL Decryption policy has been removed:',
+                workNoteHeader: 'SSL Decryption policy has been removed:',
                 commentsHeader: "We've removed the following SSL Decryption policy as requested:",
             },
 
             // ── Steering Exceptions ────────────────────────────
             'Steering Exception Added': {
-                workNoteHeader: '# Added Steering Exception:',
+                workNoteHeader: 'Added Steering Exception:',
                 commentsHeader: "We've added the following Steering Exception (Domain bypass) to help address the issue:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
             },
             'Steering Exception Removed': {
-                workNoteHeader: '# Removed Steering Exception:',
+                workNoteHeader: 'Removed Steering Exception:',
                 commentsHeader: "We've removed the following Steering Exception as requested:",
             },
 
             // ── App Exceptions ─────────────────────────────────
             'App Exception Added': {
-                workNoteHeader: '# Added App Bypass:',
+                workNoteHeader: 'Added App Bypass:',
                 commentsHeader: "We've added the following Application bypass to help address the issue:",
                 commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
             },
             'App Exception Removed': {
-                workNoteHeader: '# Removed App Bypass:',
+                workNoteHeader: 'Removed App Bypass:',
                 commentsHeader: "We've removed the following Application bypass as requested:",
             },
 
@@ -1813,7 +1816,7 @@ Version 1.4.3:
 
             // ── Recategorization ───────────────────────────────────
             'Recategorization Request': {
-                workNoteHeader: '# Recategorization request submitted to Netskope:',
+                workNoteHeader: 'Recategorization request submitted to Netskope:',
                 commentsHeader: 'A recategorization request has been submitted to Netskope. Please allow 24–48 hours for them to review it and apply any necessary changes.',
             },
 
