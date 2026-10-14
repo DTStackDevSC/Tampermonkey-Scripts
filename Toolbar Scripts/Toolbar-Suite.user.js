@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.10.0
+// @version      1.10.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.10.0';
-    const CHANGELOG = `Version 1.10.0:
+   const SCRIPT_VERSION = '1.10.1';
+    const CHANGELOG = `Version 1.10.1:
+- Change Tracker: the change summary is now only shared with the Ticket Response Helper on ServiceNow pages, and only for the ticket open on that page.
+
+Version 1.10.0:
 - Change Tracker: the Ticket Response Helper can now include this ticket's change summary in its "Solved Closure" response when its new "Add Change Tracker summary to Solved Closure" setting is on. Handover Notes and Custom entries are left out of the customer comment.
 
 Version 1.9.0::
@@ -16244,8 +16247,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.23.0';
-    const CHANGELOG = `Version 1.23.0:
+    const SCRIPT_VERSION = '1.23.1';
+    const CHANGELOG = `Version 1.23.1:
+- The change summary is now only shared with the Ticket Response Helper on ServiceNow pages, and only for the ticket open on that page.
+
+Version 1.23.0:
 - The Ticket Response Helper can now include this ticket's change summary in its "Solved Closure" response when its new "Add Change Tracker summary to Solved Closure" setting is on. The summary is the same one the "Worknote" button copies; Handover Notes and Custom entries are left out of the customer comment.
 
 Version 1.22.0:
@@ -20232,7 +20238,11 @@ Version 1.4.3:
 
     const INTERNAL_SUMMARY_TYPES = ['Handover Note', 'Custom'];
 
-    document.addEventListener('changeTracker:summaryRequest', async (e) => {
+    // Only answer on ServiceNow, and only for the ticket open on this page,
+    // so no other site or script can read the team's change logs this way.
+    const IS_SERVICENOW_PAGE = /\.service-now\.com$|\.servicenow\.com$/.test(location.hostname);
+
+    if (IS_SERVICENOW_PAGE) document.addEventListener('changeTracker:summaryRequest', async (e) => {
         let req = {};
         try { req = JSON.parse(e.detail || '{}'); } catch { return; }
         const reply = (payload) => document.dispatchEvent(new CustomEvent('changeTracker:summaryResponse', {
@@ -20240,7 +20250,11 @@ Version 1.4.3:
         }));
         try {
             if (!_ctx) _ctx = getTicketContext();
-            const ticket = req.ticket || getTicketNumber();
+            const ticket = getTicketNumber();
+            if (!ticket || ticket === 'UNKNOWN' || (req.ticket && req.ticket !== ticket)) {
+                reply({ summary: null, customerSummary: null, count: 0 });
+                return;
+            }
             // Freshest data: send anything pending and pull the team's entries first.
             if (connState === 'ONLINE') await syncTicket(ticket);
             const entries = loadEntries(ticket);
