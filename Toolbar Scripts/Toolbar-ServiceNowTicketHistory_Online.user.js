@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ServiceNowTicketHistory_Online.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.24.0
+// @version      1.25.0
 // @description  Structured per-ticket change audit log for ServiceNow / Netskope tickets — shared team-wide via Cloudflare Worker + D1, with auto-write to ticket worknotes/comments
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -25,8 +25,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.24.0';
-    const CHANGELOG = `Version 1.24.0:
+    const SCRIPT_VERSION = '1.25.0';
+    const CHANGELOG = `Version 1.25.0:
+- New "Work note" and "Comment" checks next to the "+ Add Entry" button. Untick one to skip writing that part to the ticket, or tick it to write it even when auto-write is off. They only apply to the entry you are adding and then go back to the auto-write setting. They are hidden during a batch session.
+
+Version 1.24.0:
 - Entries longer than 50 lines now show a short preview in the log instead of their full text. Click "Show full entry" to open the whole entry in a separate window, where you can scroll through it and copy it.
 
 Version 1.23.1:
@@ -2133,7 +2136,9 @@ Version 1.4.3:
          */
         // Shared write path: picks the visible journal field(s), writes the
         // worknote and/or comment text, then refreshes the short description.
-        async function writeToTicket(buildWorkNote, buildComments, status) {
+        // targets: which journals this write may fill (the quick-access checks
+        // next to "+ Add Entry" can switch one off for a single entry).
+        async function writeToTicket(buildWorkNote, buildComments, status, targets = { workNotes: true, comments: true }) {
             const vis = detectVisibility();
             if (vis.mode === 'none') {
                 console.warn('CT: no SNow worknote/comments field visible — skipping ticket write');
@@ -2143,24 +2148,23 @@ Version 1.4.3:
             const openedByName = await getOpenedByName().catch(() => null);
 
             try {
-                let wrote;
+                let wroteWn = false, wroteCm = false;
                 if (vis.mode === 'both') {
-                    const wnText = buildWorkNote();
-                    const cmText = buildComments(openedByName);
-                    if (wnText) appendText(vis.workNotes, wnText);
-                    if (cmText) await insertTextWithMention(vis.comments, cmText, 'comments');
-                    wrote = 'both';
+                    const wnText = targets.workNotes ? buildWorkNote() : null;
+                    const cmText = targets.comments ? buildComments(openedByName) : null;
+                    if (wnText) { appendText(vis.workNotes, wnText); wroteWn = true; }
+                    if (cmText) { await insertTextWithMention(vis.comments, cmText, 'comments'); wroteCm = true; }
 
                 } else if (vis.mode === 'workNotesOnly') {
-                    const text = buildWorkNote();
-                    if (text) appendText(vis.workNotes, text);
-                    wrote = 'workNotes';
+                    const text = targets.workNotes ? buildWorkNote() : null;
+                    if (text) { appendText(vis.workNotes, text); wroteWn = true; }
 
                 } else { // 'commentsOnly' or 'unknown' (assume comments-style)
-                    const text = buildComments(openedByName);
-                    if (text) await insertTextWithMention(vis.comments, text, 'comments');
-                    wrote = 'comments';
+                    const text = targets.comments ? buildComments(openedByName) : null;
+                    if (text) { await insertTextWithMention(vis.comments, text, 'comments'); wroteCm = true; }
                 }
+                if (!wroteWn && !wroteCm) return { ok: false, reason: 'skipped' };
+                const wrote = wroteWn && wroteCm ? 'both' : wroteWn ? 'workNotes' : 'comments';
                 if (getUpdateShortDescEnabled()) {
                     try { updateShortDescription(status); } catch (e) { console.warn('CT: short description update failed', e); }
                 }
@@ -2172,12 +2176,13 @@ Version 1.4.3:
             }
         }
 
-        async function writeEntry(entry) {
+        async function writeEntry(entry, targets) {
             if (!NOTE_TEMPLATES[entry.type]) return { ok: false, reason: 'no-template' };
             return writeToTicket(
                 () => buildWorkNoteText(entry),
                 name => buildCommentsText(entry, name),
-                statusForEntry(entry)
+                statusForEntry(entry),
+                targets
             );
         }
 
@@ -3753,16 +3758,33 @@ Version 1.4.3:
             renderInputLock();   // re-apply lock to freshly-rendered inputs
         });
 
-        // Add Entry button
+        // Add Entry button + quick-access write checks (this entry only)
+        const addRow = css(mk('div'), { display:'flex', alignItems:'stretch', gap:'8px', marginTop:'8px' });
         const addBtn = css(mk('button', { id:'ct-add-btn' }), {
-            width:'100%', marginTop:'8px', padding:'8px', background:'#28a745', color:'#fff',
+            flex:'1', padding:'8px', background:'#28a745', color:'#fff',
             border:'none', borderRadius:'4px', cursor:'pointer',
             fontWeight:'bold', fontSize:'13px', fontFamily:'Arial, sans-serif'
         });
         addBtn.textContent = '+ Add Entry';
         addBtn.title = 'Ctrl+Enter also works inside the detail field';
         addBtn.onclick = handleAddEntry;
-        inputArea.appendChild(addBtn);
+
+        const writeChecks = css(mk('div', { id:'ct-write-checks' }), {
+            display:'flex', flexDirection:'column', justifyContent:'center', gap:'2px', flexShrink:'0'
+        });
+        writeChecks.title = 'Write this entry to the ticket. Only applies to the entry you are adding now.';
+        [['ct-write-wn', 'Work note'], ['ct-write-cm', 'Comment']].forEach(([id, label]) => {
+            const lbl = css(mk('label', { htmlFor:id }), {
+                display:'flex', alignItems:'center', gap:'4px', fontSize:'11px', color:'#555',
+                cursor:'pointer', fontFamily:'Arial, sans-serif', whiteSpace:'nowrap'
+            });
+            const box = css(mk('input', { id, type:'checkbox' }), { margin:'0', cursor:'pointer' });
+            box.checked = getAutoWriteEnabled();
+            lbl.append(box, document.createTextNode(label));
+            writeChecks.appendChild(lbl);
+        });
+        addRow.append(addBtn, writeChecks);
+        inputArea.appendChild(addRow);
 
         // Batch session controls (filled by renderBatchBar)
         inputArea.appendChild(mk('div', { id:'ct-batch-bar' }));
@@ -4049,11 +4071,31 @@ Version 1.4.3:
         // Auto-write the equivalent text into the SNow worknote/comments
         // textareas based on which are visible. Custom entries (no template)
         // are skipped silently. Errors here must not block the entry save.
-        if (getAutoWriteEnabled() && ticketWriter.hasTemplate(type)) {
-            ticketWriter.writeEntry(lastEntry).catch(err => {
+        // The quick-access checks decide for this entry; they start from the
+        // auto-write setting and go back to it after every entry.
+        const targets = getWriteChecks();
+        resetWriteChecks();
+        if ((targets.workNotes || targets.comments) && ticketWriter.hasTemplate(type)) {
+            ticketWriter.writeEntry(lastEntry, targets).catch(err => {
                 console.warn('CT: ticket auto-write failed', err);
             });
         }
+    }
+
+    // Quick-access write checks next to "+ Add Entry"
+    function getWriteChecks() {
+        return {
+            workNotes: document.getElementById('ct-write-wn')?.checked ?? getAutoWriteEnabled(),
+            comments:  document.getElementById('ct-write-cm')?.checked ?? getAutoWriteEnabled(),
+        };
+    }
+
+    function resetWriteChecks() {
+        const on = getAutoWriteEnabled();
+        const wn = document.getElementById('ct-write-wn');
+        const cm = document.getElementById('ct-write-cm');
+        if (wn) wn.checked = on;
+        if (cm) cm.checked = on;
     }
 
     /* ==========================================================
@@ -4072,6 +4114,9 @@ Version 1.4.3:
             inputArea.style.borderColor = session ? '#f0ad4e' : '#ddd';
             inputArea.style.background  = session ? '#fffaf0' : '#fff';
         }
+        // Nothing is written per entry during a batch session
+        const writeChecks = document.getElementById('ct-write-checks');
+        if (writeChecks) writeChecks.style.display = session ? 'none' : 'flex';
 
         const btnStyle = {
             flex:'1', padding:'6px 4px', border:'none', borderRadius:'4px', cursor:'pointer',
@@ -4513,8 +4558,17 @@ Version 1.4.3:
                     p.appendChild(mockField('SSL Policy name'));
                     p.appendChild(mockField('Domains', { tall: true }));
                     const add = chip('+ Add Entry', '#28a745', { padding: '6px 8px', fontSize: '12px' });
-                    add.style.display = 'block'; add.style.textAlign = 'center';
-                    p.appendChild(add);
+                    add.style.flex = '1'; add.style.textAlign = 'center';
+                    const checks = document.createElement('div');
+                    Object.assign(checks.style, { display: 'flex', flexDirection: 'column', gap: '2px' });
+                    ['Work note', 'Comment'].forEach(label => {
+                        const box = span('✓', {
+                            width: '12px', height: '12px', borderRadius: '2px', background: '#667eea', color: '#fff',
+                            fontSize: '9px', lineHeight: '12px', textAlign: 'center', display: 'inline-block'
+                        });
+                        checks.appendChild(hrow([ box, span(label, { fontSize: '11px', color: '#555' }) ], { gap: '4px', margin: '0' }));
+                    });
+                    p.appendChild(hrow([ add, checks ], { gap: '8px', margin: '0', flexWrap: 'nowrap' }));
                     body.appendChild(p);
                     bullets(body, [
                         'Pick the change type, fill in its fields, then click "+ Add Entry" (Ctrl+Enter also works).',
@@ -4562,6 +4616,7 @@ Version 1.4.3:
                     caption(body, 'The short description gets today\'s date and the status Waiting Requester (Waiting Vendor for recategorization requests).');
                     bullets(body, [
                         'Only the fields visible on the ticket are filled: work notes, comments, or both.',
+                        'The "Work note" and "Comment" checks next to "+ Add Entry" switch either one on or off for the entry you are adding; they go back to the "Auto-write" setting afterwards.',
                         'Custom entries are never written to the ticket.'
                     ]);
                 }
@@ -5121,6 +5176,7 @@ Version 1.4.3:
             GM_setValue('changeTrackerWorkerUrl', url);
             GM_setValue('changeTrackerToken',     token);
             setAutoWriteEnabled(autoWriteInput.checked);
+            resetWriteChecks();
             setUpdateShortDescEnabled(shortDescInput.checked);
             setBatchPersistEnabled(batchInput.checked);
             setOfflineAddEnabled(offlineInput.checked);
