@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.21
+// @version      1.21.1
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -41,8 +41,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.21';
-    const CHANGELOG = `Version 1.21:
+    const SCRIPT_VERSION = '1.21.1';
+    const CHANGELOG = `Version 1.21.1:
+- The "+ Add Log Entry" and "View Log" buttons now also appear below the description field of the Destination Profile side panel.
+
+Version 1.21:
 - Bulk Constraint Tools (by Sameena K.) now also work in Netskope's new user constraint profile side panel, with the buttons shown beside Save in the panel header. The old modal is still supported.
 
 Version 1.20.1:
@@ -1332,7 +1335,7 @@ Version 1.16:
                 icon: '📝',
                 title: 'Description Log Buttons',
                 buildContent(body) {
-                    lead(body, 'Two buttons appear below the policy description textarea for structured change tracking.');
+                    lead(body, 'Two buttons appear below the description field of policies, custom categories, and destination profiles for structured change tracking.');
 
                     const btnRowEl = document.createElement('div');
                     Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
@@ -2234,6 +2237,7 @@ Version 1.16:
     const DESCRIPTION_TA_SELECTORS = [
         'textarea.policy-description-container.ns-form-textarea',
         'textarea#category-description',
+        'textarea#dest-description',            // Destination Profiles side panel (aria-label is just "textarea")
         'textarea[aria-label*="description" i]',
     ];
 
