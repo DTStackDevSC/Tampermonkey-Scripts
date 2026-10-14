@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.10.1
+// @version      1.11.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.10.1';
-    const CHANGELOG = `Version 1.10.1:
+   const SCRIPT_VERSION = '1.11.0';
+    const CHANGELOG = `Version 1.11.0:
+- Change Tracker: entries longer than 50 lines now show a short preview in the log. Click "Show full entry" to open the whole entry in a separate window, where you can scroll through it and copy it.
+
+Version 1.10.1:
 - Change Tracker: the change summary is now only shared with the Ticket Response Helper on ServiceNow pages, and only for the ticket open on that page.
 
 Version 1.10.0:
@@ -16247,8 +16250,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.23.1';
-    const CHANGELOG = `Version 1.23.1:
+    const SCRIPT_VERSION = '1.24.0';
+    const CHANGELOG = `Version 1.24.0:
+- Entries longer than 50 lines now show a short preview in the log instead of their full text. Click "Show full entry" to open the whole entry in a separate window, where you can scroll through it and copy it.
+
+Version 1.23.1:
 - The change summary is now only shared with the Ticket Response Helper on ServiceNow pages, and only for the ticket open on that page.
 
 Version 1.23.0:
@@ -17185,6 +17191,7 @@ Version 1.4.3:
          * Edit / Setup modal             : 1050000
          * Confirm modal                  : 1100000
          * Help modal (Feature Guide)     : 1060000/1060001
+         * Full entry modal               : 1055000/1055001
          * Changelog overlay/modal        : 20000/20001
          * ─────────────────────────────────────────────────────*/
 
@@ -17294,6 +17301,7 @@ Version 1.4.3:
         #ct-sidebar { background-color: #f9f9f9 !important; color: #333333 !important; }
         #ct-edit-modal { background-color: #f9f9f9 !important; color: #333333 !important; }
         #ct-setup-modal { background-color: #f9f9f9 !important; color: #333333 !important; }
+        #ct-entry-modal { background-color: #ffffff !important; color: #333333 !important; }
         #ct-sidebar input, #ct-sidebar select, #ct-sidebar textarea,
         #ct-edit-modal input, #ct-edit-modal select, #ct-edit-modal textarea,
         #ct-setup-modal input, #ct-setup-modal select, #ct-setup-modal textarea {
@@ -19340,6 +19348,142 @@ Version 1.4.3:
     }
 
     /* ==========================================================
+     *  LONG ENTRIES  (preview in the card, full text in a modal)
+     * ==========================================================*/
+
+    const LONG_ENTRY_LINES      = 50;      // above this, the card shows a preview
+    const LONG_ENTRY_PREVIEW_PX = '192px'; // about 10 lines at 12px / 1.6
+
+    // Field rows of an entry, as shown in its card and in the full view.
+    function buildEntryContentEl(entry) {
+        const contentEl = css(mk('div'), {
+            fontSize:'12px', color:'#333', lineHeight:'1.6',
+            wordBreak:'break-word', fontFamily:'Arial, sans-serif'
+        });
+        if (entry.fields && typeof entry.fields === 'object') {
+            const schema = getSchema(entry.type);
+            if (schema) {
+                const labelMap = {};
+                const orderedKeys = [];
+                schema.forEach(f => {
+                    labelMap[f.key] = f.label;
+                    orderedKeys.push(f.key);
+                    if (f.extraFields) f.extraFields.forEach(ef => {
+                        labelMap[ef.key] = ef.label;
+                        orderedKeys.push(ef.key);
+                    });
+                });
+                const visibleKeys = orderedKeys.filter(k => entry.fields[k]);
+                if (!visibleKeys.length && !entry.note) {
+                    contentEl.textContent = '(all fields empty)';
+                } else {
+                    visibleKeys.forEach(k => {
+                        const row = mk('div');
+                        const lbl = mk('strong');
+                        lbl.textContent = (labelMap[k] || k) + ':';
+                        const val = mk('span');
+                        val.style.whiteSpace = 'pre-wrap';
+                        val.textContent = ' ' + entry.fields[k];
+                        row.append(lbl, val);
+                        contentEl.appendChild(row);
+                    });
+                    if (entry.note) {
+                        const row = mk('div');
+                        const lbl = mk('strong');
+                        lbl.textContent = 'Additional Details:';
+                        const val = mk('span');
+                        val.style.whiteSpace = 'pre-wrap';
+                        val.textContent = ' ' + entry.note;
+                        row.append(lbl, val);
+                        contentEl.appendChild(row);
+                    }
+                }
+            } else {
+                contentEl.style.whiteSpace = 'pre-wrap';
+                contentEl.textContent = Object.entries(entry.fields)
+                    .filter(([, v]) => v)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join('\n') || '(all fields empty)';
+            }
+        } else {
+            contentEl.style.whiteSpace = 'pre-wrap';
+            contentEl.textContent = entry.note || '(no detail provided)';
+        }
+        return contentEl;
+    }
+
+    function openEntryModal(entry) {
+        document.getElementById('ct-entry-modal-overlay')?.remove();
+        document.getElementById('ct-entry-modal')?.remove();
+
+        const overlay = css(mk('div', { id:'ct-entry-modal-overlay' }), {
+            position:'fixed', inset:'0', background:'rgba(0,0,0,.45)', zIndex:'1055000'
+        });
+        const modal = css(mk('div', { id:'ct-entry-modal' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)',
+            zIndex:'1055001', background:'#fff', border:'1px solid #ccc', borderRadius:'10px',
+            width:'640px', maxWidth:'92vw', maxHeight:'82vh', display:'flex', flexDirection:'column',
+            boxShadow:'0 6px 24px rgba(0,0,0,.3)', fontFamily:'Arial, sans-serif', boxSizing:'border-box'
+        });
+
+        const header = css(mk('div'), {
+            display:'flex', alignItems:'center', gap:'8px', padding:'12px 16px',
+            borderBottom:'1px solid #e8e8e8', flexShrink:'0'
+        });
+        const badge = css(mk('span'), {
+            padding:'2px 8px', background: typeColor(entry.type), color:'#fff', borderRadius:'3px',
+            fontSize:'11px', fontWeight:'bold'
+        });
+        badge.textContent = entry.type;
+        const meta = css(mk('span'), { fontSize:'10px', color:'#999', fontFamily:'monospace', flex:'1' });
+        meta.textContent = `${entry.ts}  ·  by ${entry.author_label || entry.author_user_id || '(unknown)'}`;
+        const closeX = css(mk('button', { type:'button', title:'Close' }), {
+            background:'none', border:'none', fontSize:'18px', color:'#999', cursor:'pointer', lineHeight:'1'
+        });
+        closeX.textContent = '✕';
+        header.append(badge, meta, closeX);
+
+        const body = css(mk('div'), { padding:'12px 16px', overflowY:'auto', flex:'1' });
+        body.appendChild(buildEntryContentEl(entry));
+
+        const footer = css(mk('div'), {
+            display:'flex', justifyContent:'flex-end', gap:'8px', padding:'10px 16px',
+            borderTop:'1px solid #e8e8e8', flexShrink:'0'
+        });
+        const copyBtn = css(mk('button', { type:'button' }), {
+            background:'#667eea', color:'#fff', border:'none', borderRadius:'4px',
+            padding:'6px 14px', fontSize:'12px', fontWeight:'bold', cursor:'pointer'
+        });
+        copyBtn.textContent = '📋 Copy';
+        copyBtn.onclick = async () => {
+            const ok = await copyToClipboard(formatEntryContent(entry));
+            copyBtn.textContent = ok ? '✓ Copied' : '✗ Copy failed';
+            setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 1500);
+        };
+        const closeBtn = css(mk('button', { type:'button' }), {
+            background:'#e9ecef', color:'#333', border:'none', borderRadius:'4px',
+            padding:'6px 14px', fontSize:'12px', fontWeight:'bold', cursor:'pointer'
+        });
+        closeBtn.textContent = 'Close';
+        footer.append(copyBtn, closeBtn);
+
+        modal.append(header, body, footer);
+
+        const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+        function close() {
+            overlay.remove();
+            modal.remove();
+            document.removeEventListener('keydown', onKey);
+        }
+        closeX.onclick = close;
+        closeBtn.onclick = close;
+        overlay.onclick = close;
+        document.addEventListener('keydown', onKey);
+
+        document.body.append(overlay, modal);
+    }
+
+    /* ==========================================================
      *  ENTRY CARD RENDERER
      * ==========================================================*/
 
@@ -19431,61 +19575,26 @@ Version 1.4.3:
         topRow.append(badge, btnGroup);
         card.appendChild(topRow);
 
-        // Content
-        const contentEl = css(mk('div'), {
-            fontSize:'12px', color:'#333', lineHeight:'1.6',
-            wordBreak:'break-word', fontFamily:'Arial, sans-serif'
-        });
-        if (entry.fields && typeof entry.fields === 'object') {
-            const schema = getSchema(entry.type);
-            if (schema) {
-                const labelMap = {};
-                const orderedKeys = [];
-                schema.forEach(f => {
-                    labelMap[f.key] = f.label;
-                    orderedKeys.push(f.key);
-                    if (f.extraFields) f.extraFields.forEach(ef => {
-                        labelMap[ef.key] = ef.label;
-                        orderedKeys.push(ef.key);
-                    });
-                });
-                const visibleKeys = orderedKeys.filter(k => entry.fields[k]);
-                if (!visibleKeys.length && !entry.note) {
-                    contentEl.textContent = '(all fields empty)';
-                } else {
-                    visibleKeys.forEach(k => {
-                        const row = mk('div');
-                        const lbl = mk('strong');
-                        lbl.textContent = (labelMap[k] || k) + ':';
-                        const val = mk('span');
-                        val.style.whiteSpace = 'pre-wrap';
-                        val.textContent = ' ' + entry.fields[k];
-                        row.append(lbl, val);
-                        contentEl.appendChild(row);
-                    });
-                    if (entry.note) {
-                        const row = mk('div');
-                        const lbl = mk('strong');
-                        lbl.textContent = 'Additional Details:';
-                        const val = mk('span');
-                        val.style.whiteSpace = 'pre-wrap';
-                        val.textContent = ' ' + entry.note;
-                        row.append(lbl, val);
-                        contentEl.appendChild(row);
-                    }
-                }
-            } else {
-                contentEl.style.whiteSpace = 'pre-wrap';
-                contentEl.textContent = Object.entries(entry.fields)
-                    .filter(([, v]) => v)
-                    .map(([k, v]) => `${k}: ${v}`)
-                    .join('\n') || '(all fields empty)';
-            }
-        } else {
-            contentEl.style.whiteSpace = 'pre-wrap';
-            contentEl.textContent = entry.note || '(no detail provided)';
-        }
+        // Content: long entries show a preview; the full text opens in a modal
+        const contentEl = buildEntryContentEl(entry);
+        const lineCount = formatEntryContent(entry).split('\n').length;
         card.appendChild(contentEl);
+        if (lineCount > LONG_ENTRY_LINES) {
+            css(contentEl, { maxHeight: LONG_ENTRY_PREVIEW_PX, overflow:'hidden', position:'relative' });
+            contentEl.appendChild(css(mk('div'), {
+                position:'absolute', left:'0', right:'0', bottom:'0', height:'48px', pointerEvents:'none',
+                background:'linear-gradient(rgba(255,255,255,0), #ffffff)'
+            }));
+            const moreBtn = css(mk('button', { type:'button' }), {
+                marginTop:'6px', padding:'4px 10px', background:'#f3f4ff', color:'#4c5bd4',
+                border:'1px solid #c0c8f0', borderRadius:'4px', cursor:'pointer',
+                fontSize:'11px', fontWeight:'bold', fontFamily:'Arial, sans-serif'
+            });
+            moreBtn.textContent = `⤢ Show full entry (${lineCount} lines)`;
+            moreBtn.title = 'Open the whole entry in a separate window';
+            moreBtn.onclick = () => openEntryModal(entry);
+            card.appendChild(moreBtn);
+        }
 
         // Timestamp + author
         const author = entry.author_label || entry.author_user_id || '(unknown)';
@@ -20609,6 +20718,7 @@ Version 1.4.3:
                         '✎ Edit changes the type or any field of the entry.',
                         '↪ Write writes this entry into the ticket again. It only shows on types that have a ticket note.',
                         '× deletes the entry: click it twice to confirm.',
+                        'Entries longer than 50 lines show a short preview; click "⤢ Show full entry" to read the whole entry in a separate window.',
                         'Some types show "+ Add fields" in the form to record optional extra details.'
                     ]);
                 }
