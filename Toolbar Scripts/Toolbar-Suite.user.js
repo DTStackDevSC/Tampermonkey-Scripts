@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.9.0
+// @version      1.10.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.9.0';
-    const CHANGELOG = `Version 1.9.0:
+   const SCRIPT_VERSION = '1.10.0';
+    const CHANGELOG = `Version 1.10.0:
+- Change Tracker: the Ticket Response Helper can now include this ticket's change summary in its "Solved Closure" response when its new "Add Change Tracker summary to Solved Closure" setting is on. Handover Notes and Custom entries are left out of the customer comment.
+
+Version 1.9.0::
 - Change Tracker: you can now keep adding entries while the tracker is offline. They are saved on this computer with a "Not synced" tag and sent to the server automatically when the connection is back.
 - Change Tracker: new setting "Allow adding entries while offline", on by default. Turn it off to make the log read only while offline, as before.
 
@@ -16241,8 +16244,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.22.0';
-    const CHANGELOG = `Version 1.22.0:
+    const SCRIPT_VERSION = '1.23.0';
+    const CHANGELOG = `Version 1.23.0:
+- The Ticket Response Helper can now include this ticket's change summary in its "Solved Closure" response when its new "Add Change Tracker summary to Solved Closure" setting is on. The summary is the same one the "Worknote" button copies; Handover Notes and Custom entries are left out of the customer comment.
+
+Version 1.22.0:
 - You can now keep adding entries while the tracker is offline. They are saved on this computer with a "Not synced" tag and sent to the server automatically when the connection is back.
 - New setting "Allow adding entries while offline", on by default. Turn it off to make the log read only while offline, as before.
 
@@ -20212,6 +20218,44 @@ Version 1.4.3:
             close
         );
     }
+
+    /* ==========================================================
+     *  SUMMARY REQUESTS FROM OTHER SCRIPTS
+     *  The Ticket Response Helper asks for the grouped change summary
+     *  when inserting "Solved Closure". Scripts do not share GM storage,
+     *  so they talk through page events carrying JSON strings:
+     *    request : 'changeTracker:summaryRequest'  { requestId, ticket }
+     *    response: 'changeTracker:summaryResponse' { requestId, summary, customerSummary, count }
+     *  summary         = full grouped summary (worknote)
+     *  customerSummary = same, without internal entries (Handover Notes, Custom)
+     * ==========================================================*/
+
+    const INTERNAL_SUMMARY_TYPES = ['Handover Note', 'Custom'];
+
+    document.addEventListener('changeTracker:summaryRequest', async (e) => {
+        let req = {};
+        try { req = JSON.parse(e.detail || '{}'); } catch { return; }
+        const reply = (payload) => document.dispatchEvent(new CustomEvent('changeTracker:summaryResponse', {
+            detail: JSON.stringify({ requestId: req.requestId, ...payload })
+        }));
+        try {
+            if (!_ctx) _ctx = getTicketContext();
+            const ticket = req.ticket || getTicketNumber();
+            // Freshest data: send anything pending and pull the team's entries first.
+            if (connState === 'ONLINE') await syncTicket(ticket);
+            const entries = loadEntries(ticket);
+            if (!entries.length) { reply({ summary: null, customerSummary: null, count: 0 }); return; }
+            const customerEntries = entries.filter(en => !INTERNAL_SUMMARY_TYPES.includes(en.type));
+            reply({
+                summary:         buildGroupedSummary(ticket, entries),
+                customerSummary: customerEntries.length ? buildGroupedSummary(ticket, customerEntries) : null,
+                count:           entries.length,
+            });
+        } catch (err) {
+            console.warn('CT: summary request failed', err);
+            reply({ summary: null, customerSummary: null, count: 0, error: String(err) });
+        }
+    });
 
     /* ==========================================================
      *  ACTION HANDLERS

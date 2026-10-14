@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.19.0
+// @version      2.20.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.19.0';
-    const CHANGELOG = `Version 2.19.0:
+    const SCRIPT_VERSION = '2.20.0';
+    const CHANGELOG = `Version 2.20.0:
+- New setting "Add Change Tracker summary to Solved Closure", off by default. When it is on, inserting Solved Closure also writes the ticket's Change Tracker summary to the work notes and lists the same changes in the comment, in place of the empty actions line. It needs the Change Tracker script; if it has no entries for the ticket, Solved Closure is inserted as usual.
+
+Version 2.19.0:
 - Inserting a response now also updates the status in the short description to match it, the same way Solved Closure already set it to "Closed":
   Waiting Requester: initial contact, information requests, reminders, bypasses, Slack URL added, policy, DLP policy and steering changes, unknown requestor, troubleshooting steps and NPA access.
   WIP: "Working on the request" reminder and SOC Tier 2 task request.
@@ -1774,6 +1777,15 @@ Regards.`,
         GM_setValue('ticketResponseAutoUpdateDate', val);
     }
 
+    // Solved Closure + Change Tracker summary: off by default
+    function getSolvedChangeSummaryEnabled() {
+        return GM_getValue('ticketResponseSolvedChangeSummary', false) === true;
+    }
+
+    function setSolvedChangeSummaryEnabled(val) {
+        GM_setValue('ticketResponseSolvedChangeSummary', !!val);
+    }
+
     function getFooterEnabled() {
         return GM_getValue('ticketResponseFooterEnabled', false);
     }
@@ -1847,6 +1859,93 @@ Regards.`,
         if (!changed) return;
         input.value = parts.join(' | ');
         input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    /* ==========================================================
+     *  CHANGE TRACKER SUMMARY (Solved Closure)
+     *  Asks the Change Tracker script for this ticket's grouped change
+     *  summary through page events (scripts do not share GM storage).
+     *  The full summary goes to work notes; the comment gets the summary
+     *  without its header, in place of the ">" line of the template.
+     * ==========================================================*/
+
+    function getTicketNumberForSummary() {
+        for (const id of ['sc_req_item.number', 'incident.number', 'sc_task.number']) {
+            const el = document.getElementById(id);
+            if (el && el.value && el.value.trim()) return el.value.trim();
+        }
+        return null;
+    }
+
+    function requestChangeTrackerSummary(ticket, timeoutMs = 6000) {
+        return new Promise(resolve => {
+            const requestId = `trh-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const cleanup = () => {
+                document.removeEventListener('changeTracker:summaryResponse', onResponse);
+                clearTimeout(timer);
+            };
+            const onResponse = (e) => {
+                let data;
+                try { data = JSON.parse(e.detail || '{}'); } catch (err) { return; }
+                if (data.requestId !== requestId) return;
+                cleanup();
+                resolve(data);
+            };
+            const timer = setTimeout(() => { cleanup(); resolve(null); }, timeoutMs);
+            document.addEventListener('changeTracker:summaryResponse', onResponse);
+            document.dispatchEvent(new CustomEvent('changeTracker:summaryRequest', {
+                detail: JSON.stringify({ requestId, ticket })
+            }));
+        });
+    }
+
+    // Drops "CHANGE SUMMARY ...", "Generated: ..." and the ═══ bar.
+    function stripSummaryHeader(summary) {
+        const lines = summary.split('\n');
+        const bar = lines.findIndex(l => /^═{10,}$/.test(l.trim()));
+        return (bar === -1 ? lines : lines.slice(bar + 1)).join('\n').replace(/^\n+/, '').replace(/\s+$/, '');
+    }
+
+    function showSummaryNotice(text) {
+        document.getElementById('responseHelperSummaryNotice')?.remove();
+        const note = document.createElement('div');
+        note.id = 'responseHelperSummaryNotice';
+        note.textContent = text;
+        Object.assign(note.style, {
+            position: 'fixed', top: '18px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: '100000', background: '#fff3cd', color: '#856404', border: '1px solid #ffc107',
+            borderRadius: '6px', padding: '8px 14px', fontSize: '12px', fontFamily: 'Arial, sans-serif',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)', maxWidth: '520px'
+        });
+        document.body.appendChild(note);
+        setTimeout(() => note.remove(), 5000);
+    }
+
+    // Returns the comment text to insert. For "solved" with the setting on,
+    // also writes the full summary to work notes.
+    async function applySolvedChangeSummary(key, text) {
+        if (key !== 'solved' || !getSolvedChangeSummaryEnabled()) return text;
+        const res = await requestChangeTrackerSummary(getTicketNumberForSummary());
+        if (!res) {
+            showSummaryNotice('Change Tracker did not answer, so Solved Closure was inserted without the change summary.');
+            return text;
+        }
+        if (!res.summary) {
+            showSummaryNotice('No Change Tracker entries for this ticket, so Solved Closure was inserted without a change summary.');
+            return text;
+        }
+
+        // Work notes and comments only have separate boxes in dual input mode.
+        if (isDualInputMode()) {
+            const wn = document.getElementById('activity-stream-work_notes-textarea');
+            if (wn) await insertTextWithMention(wn, res.summary, 'work_notes');
+        } else {
+            showSummaryNotice('Work notes and comments share one box on this ticket, so only the comment was filled in.');
+        }
+
+        if (!res.customerSummary) return text;
+        const body = stripSummaryHeader(res.customerSummary);
+        return /^>[ \t]*$/m.test(text) ? text.replace(/^>[ \t]*$/m, body) : text;
     }
 
     /* ==========================================================
@@ -3200,6 +3299,7 @@ Regards.`,
 
                     const settingsItems = [
                         ['Auto-update date on insert', 'Updates the date at the start of the short description to today (DD-MM-YYYY) every time you insert a response.'],
+                        ['Add Change Tracker summary to Solved Closure', 'Off by default. When on, Solved Closure writes the Change Tracker summary of the ticket to the work notes and lists the same changes in the comment. Needs the Change Tracker script.'],
                         ['Switch Team',                'Changes your active team between EMEA, AME, and APAC. Each team has its own set of templates and section layout. Switching teams reloads the page.']
                     ];
                     const grid = document.createElement('div');
@@ -3552,6 +3652,52 @@ Regards.`,
         toggleRow.appendChild(labelCol);
         toggleRow.appendChild(toggleLabel);
         body.appendChild(toggleRow);
+
+        // Toggle row: Change Tracker summary in Solved Closure
+        const summaryRow = document.createElement('div');
+        Object.assign(summaryRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: '1px solid #f0f0f0' });
+
+        const summaryLabelCol = document.createElement('div');
+        const summaryLabelText = document.createElement('div');
+        summaryLabelText.textContent = 'Add Change Tracker summary to Solved Closure';
+        Object.assign(summaryLabelText.style, { fontSize: '13px', fontWeight: 'bold', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const summaryLabelDesc = document.createElement('div');
+        summaryLabelDesc.textContent = 'Solved Closure also writes the ticket\'s Change Tracker summary to the work notes and lists the changes in the comment. Needs the Change Tracker script.';
+        Object.assign(summaryLabelDesc.style, { fontSize: '11px', color: '#777', marginTop: '3px', fontFamily: 'Arial, sans-serif' });
+        summaryLabelCol.appendChild(summaryLabelText);
+        summaryLabelCol.appendChild(summaryLabelDesc);
+
+        const summaryToggleLabel = document.createElement('label');
+        Object.assign(summaryToggleLabel.style, { position: 'relative', display: 'inline-block', width: '40px', height: '22px', flexShrink: '0', marginLeft: '16px' });
+        const summaryToggleInput = document.createElement('input');
+        summaryToggleInput.type = 'checkbox';
+        summaryToggleInput.checked = getSolvedChangeSummaryEnabled();
+        Object.assign(summaryToggleInput.style, { opacity: '0', width: '0', height: '0', position: 'absolute' });
+        const summarySlider = document.createElement('span');
+        Object.assign(summarySlider.style, {
+            position: 'absolute', cursor: 'pointer', top: '0', left: '0', right: '0', bottom: '0',
+            backgroundColor: summaryToggleInput.checked ? '#667eea' : '#ccc',
+            borderRadius: '22px', transition: 'background-color 0.25s'
+        });
+        const summaryKnob = document.createElement('span');
+        Object.assign(summaryKnob.style, {
+            position: 'absolute', height: '16px', width: '16px', left: '3px', bottom: '3px',
+            backgroundColor: '#fff', borderRadius: '50%', transition: 'transform 0.25s',
+            transform: summaryToggleInput.checked ? 'translateX(18px)' : 'translateX(0)'
+        });
+        summarySlider.appendChild(summaryKnob);
+        summaryToggleInput.onchange = () => {
+            const on = summaryToggleInput.checked;
+            setSolvedChangeSummaryEnabled(on);
+            summarySlider.style.backgroundColor = on ? '#667eea' : '#ccc';
+            summaryKnob.style.transform = on ? 'translateX(18px)' : 'translateX(0)';
+        };
+        summaryToggleLabel.appendChild(summaryToggleInput);
+        summaryToggleLabel.appendChild(summarySlider);
+
+        summaryRow.appendChild(summaryLabelCol);
+        summaryRow.appendChild(summaryToggleLabel);
+        body.appendChild(summaryRow);
 
         // Separator
         const separator = document.createElement('div');
@@ -3932,7 +4078,7 @@ Regards.`,
                             const text = entry.isCustom
                                 ? resolveCustomResponseText(entry.customText, vars)
                                 : team.responses[entry.key](vars);
-                            await insertTextWithMention(textarea, text, ft);
+                            await insertTextWithMention(textarea, entry.isCustom ? text : await applySolvedChangeSummary(entry.key, text), ft);
                             flashTargetField(textarea);
                             maybeUpdateShortDescriptionDate();
                             if (!entry.isCustom) {
@@ -3980,7 +4126,7 @@ Regards.`,
                         const text = entry.isCustom
                             ? resolveCustomResponseText(entry.customText, vars)
                             : team.responses[entry.key](vars);
-                        await insertTextWithMention(textarea, text, ft);
+                        await insertTextWithMention(textarea, entry.isCustom ? text : await applySolvedChangeSummary(entry.key, text), ft);
                         flashTargetField(textarea);
                         maybeUpdateShortDescriptionDate();
                         if (!entry.isCustom) {
@@ -4062,7 +4208,7 @@ Regards.`,
                         const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
                         const textarea = getTargetTextarea(fieldType);
                         if (textarea) {
-                            await insertTextWithMention(textarea, team.responses[item.value](vars), fieldType);
+                            await insertTextWithMention(textarea, await applySolvedChangeSummary(item.value, team.responses[item.value](vars)), fieldType);
                             flashTargetField(textarea);
                             maybeUpdateShortDescriptionDate();
                             if (metadata && metadata.shortDescTransforms) applyShortDescTransforms(metadata.shortDescTransforms);
@@ -4349,6 +4495,7 @@ Regards.`,
         #teamSelector, #changelogModal,
         #responseHelperSettingsModal,
         #responseHelperFooterEditModal { color: #333333 !important; }
+        #responseHelperSummaryNotice { background-color: #fff3cd !important; color: #856404 !important; }
         #ticket-response-dropdown input, #ticket-response-dropdown select,
         #ticket-response-dropdown textarea,
         #customResponsesModal input, #customResponsesModal select,
