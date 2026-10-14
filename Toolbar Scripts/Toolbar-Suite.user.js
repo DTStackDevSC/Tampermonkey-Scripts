@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.13.0
+// @version      1.14.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.13.0';
-    const CHANGELOG = `Version 1.13.0:
+   const SCRIPT_VERSION = '1.14.0';
+    const CHANGELOG = `Version 1.14.0:
+- Domain Tools: new "IBM X-Force login" button in the header. IBM X-Force now requires a login, so click it to open the IBM X-Force home page and sign in before running your checks.
+
+Version 1.13.0:
 - Domain Tools: the Open SPM Request Form option is now also available in Multiple mode of the Security Check tab and in the Extract tab when you select domains to check. It opens a single SPM request form for the whole batch, not one per domain.
 
 Version 1.12.0:
@@ -21535,8 +21538,12 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
+    const SCRIPT_VERSION = '1.5.0';
+    const CHANGELOG = `Version 1.5.0:
+- New "IBM X-Force login" button in the header. IBM X-Force now requires a login, so click
+  it to open the IBM X-Force home page and sign in before running your checks.
+
+Version 1.4.0:
 - The Open SPM Request Form option is now also available in Multiple mode of the Security
   Check tab and in the Extract tab when you select domains to check. It opens a single SPM
   request form for the whole batch, not one per domain.
@@ -21753,6 +21760,8 @@ Version 1.0:
      * ==========================================================*/
 
     // Fixed SPM request catalog item. The current RITM number is appended to ritm_id.
+    const IBM_XFORCE_HOME_URL = 'https://exchange.xforce.ibmcloud.com/';
+
     const SPM_REQUEST_BASE_URL = 'https://deloitteglobal.service-now.com/mysupport?id=sc_cat_item&sys_id=809dca521bd015103c2fa64fad4bcb21&ritm_id=';
 
 
@@ -21878,6 +21887,21 @@ Version 1.0:
         helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
         helpBtn.onclick = () => showHelpModal();
 
+        // IBM X-Force now requires a login, so offer its home page to sign in before checking.
+        const ibmLoginBtn = document.createElement('span');
+        ibmLoginBtn.textContent = '🔑 IBM X-Force login';
+        Object.assign(ibmLoginBtn.style, {
+            color: '#555', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #ccc', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif',
+        });
+        ibmLoginBtn.title = 'Open IBM X-Force Exchange to log in before running checks';
+        ibmLoginBtn.onmouseover = () => { ibmLoginBtn.style.backgroundColor = '#f0f0f0'; };
+        ibmLoginBtn.onmouseout  = () => { ibmLoginBtn.style.backgroundColor = 'transparent'; };
+        ibmLoginBtn.onclick = () => GM_openInTab(IBM_XFORCE_HOME_URL, { active: true, insert: true });
+
         const closeBtn = document.createElement('button');
         closeBtn.textContent = 'X';
         Object.assign(closeBtn.style, {
@@ -21888,7 +21912,7 @@ Version 1.0:
 
         const headerRight = document.createElement('div');
         Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '8px' });
-        headerRight.append(helpBtn, closeBtn);
+        headerRight.append(ibmLoginBtn, helpBtn, closeBtn);
 
         header.append(headerLeft, headerRight);
 
@@ -22595,6 +22619,7 @@ Version 1.0:
                     body.appendChild(spmMock);
                     bullets(body, [
                         'Each domain opens its own background tabs so you can review them one by one.',
+                        'IBM X-Force requires a login. Click IBM X-Force login in the header first so its tabs open already signed in.',
                         'Tick Open SPM Request Form to also open the SPM request form when you run a check. The RITM number of the ticket you have open is added automatically.',
                         'In Multiple mode the SPM request form opens only once for the whole batch, not once per domain.'
                     ]);
@@ -22606,6 +22631,7 @@ Version 1.0:
                 buildContent(body) {
                     lead(body, 'Header controls and how the SPM request form opens.');
                     const controls = [
+                        { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '🔑 IBM X-Force login', desc: 'Opens the IBM X-Force Exchange home page so you can log in. IBM X-Force now requires a login, so do this before running checks or its tabs will ask you to sign in.' },
                         { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' },
                         { bg: 'transparent', color: '#667eea', border: 'none', label: "What's new", desc: 'Appears with a pulsing dot after an update. Opens the changelog.' },
                         { bg: '#e74c3c', color: '#fff', border: 'none', label: 'X', desc: 'Closes the modal. Your text and results stay until you reopen.' }
