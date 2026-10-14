@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.21.1
+// @version      1.21.2
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -41,8 +41,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.21.1';
-    const CHANGELOG = `Version 1.21.1:
+    const SCRIPT_VERSION = '1.21.2';
+    const CHANGELOG = `Version 1.21.2:
+- Fixed the "+ Add Log Entry" and "View Log" buttons not appearing when the Destination Profile side panel is opened after the page has loaded.
+
+Version 1.21.1:
 - The "+ Add Log Entry" and "View Log" buttons now also appear below the description field of the Destination Profile side panel.
 
 Version 1.21:
@@ -4606,7 +4609,7 @@ Version 1.16:
                     n.querySelector?.('a.trigger')    ||
                     n.querySelector?.('button.ns-btn-primary') ||
                     n.querySelector?.('textarea.ns-form-textarea') ||
-                    n.querySelector?.('textarea#category-description') ||
+                    DESCRIPTION_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel)) ||
                     n.querySelector?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
                     n.matches?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
                     URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel))
