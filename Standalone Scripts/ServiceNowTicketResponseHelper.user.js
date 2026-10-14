@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.20.0
+// @version      2.21.0
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.20.0';
-    const CHANGELOG = `Version 2.20.0:
+    const SCRIPT_VERSION = '2.21.0';
+    const CHANGELOG = `Version 2.21.0:
+- New setting "Paste clipboard into responses", off by default. When it is on, inserting a response fills its empty ">" line (for example the list of URLs in a bypass response) with what you have copied. Your browser may ask once for permission to read the clipboard. If the clipboard is empty or access is blocked, the ">" line stays so you can fill it in by hand.
+
+Version 2.20.0:
 - New setting "Add Change Tracker summary to Solved Closure", off by default. When it is on, inserting Solved Closure also writes the ticket's Change Tracker summary to the work notes and lists the same changes in the comment, in place of the empty actions line. It needs the Change Tracker script; if it has no entries for the ticket, Solved Closure is inserted as usual.
 
 Version 2.19.0:
@@ -1786,6 +1789,15 @@ Regards.`,
         GM_setValue('ticketResponseSolvedChangeSummary', !!val);
     }
 
+    // Paste clipboard into the ">" line of a template: off by default
+    function getClipboardPasteEnabled() {
+        return GM_getValue('ticketResponseClipboardPaste', false) === true;
+    }
+
+    function setClipboardPasteEnabled(val) {
+        GM_setValue('ticketResponseClipboardPaste', !!val);
+    }
+
     function getFooterEnabled() {
         return GM_getValue('ticketResponseFooterEnabled', false);
     }
@@ -1946,6 +1958,27 @@ Regards.`,
         if (!res.customerSummary) return text;
         const body = stripSummaryHeader(res.customerSummary);
         return /^>[ \t]*$/m.test(text) ? text.replace(/^>[ \t]*$/m, body) : text;
+    }
+
+    /* ==========================================================
+     *  CLIPBOARD PASTE
+     *  Replaces the first ">" line of a template with the clipboard
+     *  text. Leaves the template as is when the setting is off, the
+     *  template has no ">" line, or the clipboard is empty or blocked.
+     * ==========================================================*/
+
+    async function applyClipboardPaste(text) {
+        if (!getClipboardPasteEnabled() || !/^>[ \t]*$/m.test(text)) return text;
+        let clip = '';
+        try {
+            clip = await navigator.clipboard.readText();
+        } catch (e) {
+            showSummaryNotice('Could not read the clipboard. Allow clipboard access for this site to paste it into the response.');
+            return text;
+        }
+        clip = (clip || '').replace(/\r\n?/g, '\n').replace(/^\n+/, '').replace(/\s+$/, '');
+        if (!clip) return text;
+        return text.replace(/^>[ \t]*$/m, () => clip);
     }
 
     /* ==========================================================
@@ -3300,7 +3333,8 @@ Regards.`,
                     const settingsItems = [
                         ['Auto-update date on insert', 'Updates the date at the start of the short description to today (DD-MM-YYYY) every time you insert a response.'],
                         ['Add Change Tracker summary to Solved Closure', 'Off by default. When on, Solved Closure writes the Change Tracker summary of the ticket to the work notes and lists the same changes in the comment. Needs the Change Tracker script.'],
-                        ['Switch Team',                'Changes your active team between EMEA, AME, and APAC. Each team has its own set of templates and section layout. Switching teams reloads the page.']
+                        ['Paste clipboard into responses', 'Off by default. When on, the empty ">" line of a response is filled with what you have copied, for example the URLs of a bypass. If the clipboard is empty, the ">" line stays so you can fill it in by hand.'],
+                        ['Switch Team',               'Changes your active team between EMEA, AME, and APAC. Each team has its own set of templates and section layout. Switching teams reloads the page.']
                     ];
                     const grid = document.createElement('div');
                     Object.assign(grid.style, {
@@ -3699,6 +3733,52 @@ Regards.`,
         summaryRow.appendChild(summaryToggleLabel);
         body.appendChild(summaryRow);
 
+        // Toggle row: paste clipboard into the ">" line
+        const clipRow = document.createElement('div');
+        Object.assign(clipRow.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderTop: '1px solid #f0f0f0' });
+
+        const clipLabelCol = document.createElement('div');
+        const clipLabelText = document.createElement('div');
+        clipLabelText.textContent = 'Paste clipboard into responses';
+        Object.assign(clipLabelText.style, { fontSize: '13px', fontWeight: 'bold', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const clipLabelDesc = document.createElement('div');
+        clipLabelDesc.textContent = 'Fills the empty ">" line of a response (for example the list of bypassed URLs) with what you have copied. Your browser may ask once for clipboard access.';
+        Object.assign(clipLabelDesc.style, { fontSize: '11px', color: '#777', marginTop: '3px', fontFamily: 'Arial, sans-serif' });
+        clipLabelCol.appendChild(clipLabelText);
+        clipLabelCol.appendChild(clipLabelDesc);
+
+        const clipToggleLabel = document.createElement('label');
+        Object.assign(clipToggleLabel.style, { position: 'relative', display: 'inline-block', width: '40px', height: '22px', flexShrink: '0', marginLeft: '16px' });
+        const clipToggleInput = document.createElement('input');
+        clipToggleInput.type = 'checkbox';
+        clipToggleInput.checked = getClipboardPasteEnabled();
+        Object.assign(clipToggleInput.style, { opacity: '0', width: '0', height: '0', position: 'absolute' });
+        const clipSlider = document.createElement('span');
+        Object.assign(clipSlider.style, {
+            position: 'absolute', cursor: 'pointer', top: '0', left: '0', right: '0', bottom: '0',
+            backgroundColor: clipToggleInput.checked ? '#667eea' : '#ccc',
+            borderRadius: '22px', transition: 'background-color 0.25s'
+        });
+        const clipKnob = document.createElement('span');
+        Object.assign(clipKnob.style, {
+            position: 'absolute', height: '16px', width: '16px', left: '3px', bottom: '3px',
+            backgroundColor: '#fff', borderRadius: '50%', transition: 'transform 0.25s',
+            transform: clipToggleInput.checked ? 'translateX(18px)' : 'translateX(0)'
+        });
+        clipSlider.appendChild(clipKnob);
+        clipToggleInput.onchange = () => {
+            const on = clipToggleInput.checked;
+            setClipboardPasteEnabled(on);
+            clipSlider.style.backgroundColor = on ? '#667eea' : '#ccc';
+            clipKnob.style.transform = on ? 'translateX(18px)' : 'translateX(0)';
+        };
+        clipToggleLabel.appendChild(clipToggleInput);
+        clipToggleLabel.appendChild(clipSlider);
+
+        clipRow.appendChild(clipLabelCol);
+        clipRow.appendChild(clipToggleLabel);
+        body.appendChild(clipRow);
+
         // Separator
         const separator = document.createElement('div');
         Object.assign(separator.style, { borderTop: '1px solid #e0e0e0', margin: '10px 0' });
@@ -4078,7 +4158,7 @@ Regards.`,
                             const text = entry.isCustom
                                 ? resolveCustomResponseText(entry.customText, vars)
                                 : team.responses[entry.key](vars);
-                            await insertTextWithMention(textarea, entry.isCustom ? text : await applySolvedChangeSummary(entry.key, text), ft);
+                            await insertTextWithMention(textarea, await applyClipboardPaste(entry.isCustom ? text : await applySolvedChangeSummary(entry.key, text)), ft);
                             flashTargetField(textarea);
                             maybeUpdateShortDescriptionDate();
                             if (!entry.isCustom) {
@@ -4126,7 +4206,7 @@ Regards.`,
                         const text = entry.isCustom
                             ? resolveCustomResponseText(entry.customText, vars)
                             : team.responses[entry.key](vars);
-                        await insertTextWithMention(textarea, entry.isCustom ? text : await applySolvedChangeSummary(entry.key, text), ft);
+                        await insertTextWithMention(textarea, await applyClipboardPaste(entry.isCustom ? text : await applySolvedChangeSummary(entry.key, text)), ft);
                         flashTargetField(textarea);
                         maybeUpdateShortDescriptionDate();
                         if (!entry.isCustom) {
@@ -4185,7 +4265,7 @@ Regards.`,
                         const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
                         const textarea = getTargetTextarea(item.fieldType || 'comments');
                         if (textarea) {
-                            await insertTextWithMention(textarea, resolveCustomResponseText(item.customText, vars), item.fieldType || 'comments');
+                            await insertTextWithMention(textarea, await applyClipboardPaste(resolveCustomResponseText(item.customText, vars)), item.fieldType || 'comments');
                             flashTargetField(textarea);
                             maybeUpdateShortDescriptionDate();
                         }
@@ -4208,7 +4288,7 @@ Regards.`,
                         const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
                         const textarea = getTargetTextarea(fieldType);
                         if (textarea) {
-                            await insertTextWithMention(textarea, await applySolvedChangeSummary(item.value, team.responses[item.value](vars)), fieldType);
+                            await insertTextWithMention(textarea, await applyClipboardPaste(await applySolvedChangeSummary(item.value, team.responses[item.value](vars))), fieldType);
                             flashTargetField(textarea);
                             maybeUpdateShortDescriptionDate();
                             if (metadata && metadata.shortDescTransforms) applyShortDescTransforms(metadata.shortDescTransforms);
@@ -4374,7 +4454,7 @@ Regards.`,
                 const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
                 const textarea = getTargetTextarea(subItem.fieldType);
                 if (textarea) {
-                    await insertTextWithMention(textarea, team.responses[subItem.value](vars), subItem.fieldType);
+                    await insertTextWithMention(textarea, await applyClipboardPaste(team.responses[subItem.value](vars)), subItem.fieldType);
                     flashTargetField(textarea);
                     maybeUpdateShortDescriptionDate();
                     const subMeta = team.responseMetadata[subItem.value];
