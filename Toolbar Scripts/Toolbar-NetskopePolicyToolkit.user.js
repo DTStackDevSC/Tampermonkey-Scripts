@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.21.2
+// @version      1.21.3
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -41,8 +41,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.21.2';
-    const CHANGELOG = `Version 1.21.2:
+    const SCRIPT_VERSION = '1.21.3';
+    const CHANGELOG = `Version 1.21.3:
+- Fixed the copy button not showing on blue tags with long names. It now sits in front of the name, so it stays visible even when the name is cut short, and it still copies the full name.
+
+Version 1.21.2:
 - Fixed the "+ Add Log Entry" and "View Log" buttons not appearing when the Destination Profile side panel is opened after the page has loaded.
 
 Version 1.21.1:
@@ -1179,7 +1182,6 @@ Version 1.16:
                     const tagLabel = document.createElement('span');
                     tagLabel.textContent = 'DLP-Block-US-PII-v3';
                     tagLabel.style.color = '#fff';
-                    tag.appendChild(tagLabel);
                     const copyIcon = document.createElement('span');
                     copyIcon.textContent = '📋';
                     Object.assign(copyIcon.style, {
@@ -1187,11 +1189,13 @@ Version 1.16:
                         borderRadius: '3px', background: 'rgba(255,255,255,0.15)', fontSize: '11px',
                     });
                     tag.appendChild(copyIcon);
+                    tag.appendChild(tagLabel);
                     tagWrap.appendChild(tag);
                     body.appendChild(tagWrap);
-                    caption(body, 'The 📋 button is injected into each blue picker tag.');
+                    caption(body, 'The 📋 button sits in front of the name in each blue picker tag, so it stays visible even when a long name is cut short.');
 
                     bullets(body, [
+                        'The full name is copied even when the tag only shows part of it.',
                         'The (custom) and (predefined) label suffix is stripped automatically before copying.',
                         'The button turns green (✓) after a successful copy and red (✗) if the clipboard is unavailable.',
                     ]);
@@ -1784,7 +1788,8 @@ Version 1.16:
             const labelSpan = tag.querySelector('.ng-value-label');
             if (!labelSpan) return;
 
-            let profileName = labelSpan.textContent.trim();
+            // The title holds the full name when the visible text is cut short
+            let profileName = labelSpan.getAttribute('title') || labelSpan.textContent.trim();
             if (!profileName) return;
             profileName = profileName.replace(/\s*\((custom|predefined)\)\s*$/i, '').trim();
 
@@ -1793,11 +1798,12 @@ Version 1.16:
             copyBtn.innerHTML = '📋';
             copyBtn.title = 'Copy profile name';
             copyBtn.style.cssText = `
-                margin-left: 4px; padding: 1px 4px;
+                margin-right: 4px; padding: 1px 4px;
                 border: 1px solid #ccc; border-radius: 3px;
                 background: #f5f5f5; cursor: pointer;
                 font-size: 11px; display: inline-block;
                 vertical-align: middle; line-height: 1;
+                flex-shrink: 0;
             `;
 
             copyBtn.addEventListener('mouseenter', () => { copyBtn.style.background = '#e0e0e0'; });
@@ -1835,7 +1841,9 @@ Version 1.16:
                 });
             });
 
-            labelSpan.appendChild(copyBtn);
+            // In front of the name, outside it: long names are cut with "…"
+            // and anything inside or after the name would be cut with them.
+            labelSpan.insertAdjacentElement('beforebegin', copyBtn);
         });
     }
 
