@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.12.0
+// @version      1.13.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.12.0';
-    const CHANGELOG = `Version 1.12.0:
+   const SCRIPT_VERSION = '1.13.0';
+    const CHANGELOG = `Version 1.13.0:
+- Domain Tools: the Open SPM Request Form option is now also available in Multiple mode of the Security Check tab and in the Extract tab when you select domains to check. It opens a single SPM request form for the whole batch, not one per domain.
+
+Version 1.12.0:
 - Change Tracker: new "Work note" and "Comment" checks next to the "+ Add Entry" button. Untick one to skip writing that part to the ticket, or tick it to write it even when auto-write is off. They only apply to the entry you are adding and then go back to the auto-write setting.
 
 Version 1.11.0:
@@ -21532,8 +21535,13 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
+    const SCRIPT_VERSION = '1.4.0';
+    const CHANGELOG = `Version 1.4.0:
+- The Open SPM Request Form option is now also available in Multiple mode of the Security
+  Check tab and in the Extract tab when you select domains to check. It opens a single SPM
+  request form for the whole batch, not one per domain.
+
+Version 1.3.0:
 - The Open SPM Request Form option now opens a fixed SPM request link and automatically
   adds the RITM number of the ticket you have open. You no longer need to set or paste an
   SPM URL, so the URL setup prompt and the Set URL link have been removed.
@@ -22018,30 +22026,36 @@ Version 1.0:
             marginTop: '8px',
         });
 
-        const spmRow = document.createElement('div');
-        Object.assign(spmRow.style, {
-            display: 'flex', alignItems: 'center', gap: '10px',
-            padding: '10px', background: '#f0f0f0', borderRadius: '6px', marginTop: '12px',
-        });
+        // "Open SPM Request Form" checkbox row, used in Single, Multiple and Extract.
+        function makeSPMRow(id, labelText) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '10px', background: '#f0f0f0', borderRadius: '6px', marginTop: '12px',
+            });
 
-        const spmCheckbox = document.createElement('input');
-        spmCheckbox.type = 'checkbox';
-        spmCheckbox.id = 'dt-spm-checkbox';
-        Object.assign(spmCheckbox.style, { cursor: 'pointer', width: '16px', height: '16px', margin: '0', flexShrink: '0' });
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = id;
+            Object.assign(checkbox.style, { cursor: 'pointer', width: '16px', height: '16px', margin: '0', flexShrink: '0' });
 
-        const spmLabel = document.createElement('label');
-        spmLabel.htmlFor = 'dt-spm-checkbox';
-        spmLabel.textContent = 'Open SPM Request Form';
-        Object.assign(spmLabel.style, {
-            cursor: 'pointer', fontSize: '13px', color: '#555', flex: '1', margin: '0',
-        });
+            const label = document.createElement('label');
+            label.htmlFor = id;
+            label.textContent = labelText;
+            Object.assign(label.style, {
+                cursor: 'pointer', fontSize: '13px', color: '#555', flex: '1', margin: '0',
+            });
 
-        spmRow.addEventListener('click', e => {
-            if (e.target === spmCheckbox) return;
-            e.preventDefault();
-            spmCheckbox.checked = !spmCheckbox.checked;
-        });
-        spmRow.append(spmCheckbox, spmLabel);
+            row.addEventListener('click', e => {
+                if (e.target === checkbox) return;
+                e.preventDefault();
+                checkbox.checked = !checkbox.checked;
+            });
+            row.append(checkbox, label);
+            return { row, checkbox };
+        }
+
+        const { row: spmRow, checkbox: spmCheckbox } = makeSPMRow('dt-spm-checkbox', 'Open SPM Request Form');
 
         const checkBtn = document.createElement('button');
         checkBtn.textContent = '🔍 Check Domain Security';
@@ -22138,7 +22152,7 @@ Version 1.0:
                 .map(l => stripToDomain(l.trim())).filter(Boolean);
             if (!domains.length) { alert('Please enter at least one domain.'); multiTextarea.focus(); return; }
             multiCheckBtn.disabled = true;
-            runBulkCheck(domains,
+            runBulkCheck(domains, multiSpmCheckbox.checked,
                 (current, total) => {
                     bulkProgress.style.display = 'block';
                     bulkProgress.textContent = `Checking domain ${current} of ${total}...`;
@@ -22151,7 +22165,12 @@ Version 1.0:
             );
         });
 
-        multiContent.append(multiLabel, multiTextarea, multiCountLabel, multiCheckBtn, bulkProgress);
+        const { row: multiSpmRow, checkbox: multiSpmCheckbox } = makeSPMRow('dt-multi-spm-checkbox', 'Open SPM Request Form (one for the whole batch)');
+        multiContent.append(multiLabel, multiTextarea, multiCountLabel, multiSpmRow, multiCheckBtn, bulkProgress);
+
+        const { row: extractSpmRow, checkbox: extractSpmCheckbox } = makeSPMRow('dt-extract-spm-checkbox', 'Open SPM Request Form (one for the whole batch)');
+        extractSpmRow.style.display = 'none';
+        extractPanel.appendChild(extractSpmRow);
 
         function setCheckMode(isMulti) {
             singleContent.style.display = isMulti ? 'none' : 'block';
@@ -22207,6 +22226,7 @@ Version 1.0:
             const n = selectedDomains.size;
             checkSelectedBtn.textContent = `Check Selected (${n})`;
             checkSelectedBtn.style.display = n > 0 ? 'inline-block' : 'none';
+            extractSpmRow.style.display = n > 0 ? 'flex' : 'none';
         }
 
         function runExtract() {
@@ -22295,7 +22315,7 @@ Version 1.0:
         checkSelectedBtn.addEventListener('click', () => {
             const domains = Array.from(selectedDomains).map(d => stripToDomain(d)).filter(Boolean);
             if (!domains.length) return;
-            runBulkCheck(domains);
+            runBulkCheck(domains, extractSpmCheckbox.checked);
         });
 
         extractBtn.addEventListener('click', runExtract);
@@ -22337,7 +22357,9 @@ Version 1.0:
             }
         }
 
-        function runBulkCheck(domains, onProgress, onComplete) {
+        // Opens the reputation tabs for every domain, plus one SPM request tab for the batch.
+        function runBulkCheck(domains, openSPM, onProgress, onComplete) {
+            if (openSPM) GM_openInTab(buildSPMRequestURL(), { active: false, insert: true });
             const total = domains.length;
             let current = 0;
             function checkNext() {
@@ -22535,6 +22557,7 @@ Version 1.0:
                     bullets(body, [
                         'Check arrow on a single row sends that one domain to the Security Check tab.',
                         'Select all toggles every row, then Check Selected opens reputation tabs for all ticked domains.',
+                        'When at least one domain is ticked, an Open SPM Request Form box appears. Tick it to open one SPM request form for the whole batch.',
                         'Copy buttons put the full domain list on your clipboard, one per line or comma separated.'
                     ]);
                 }
@@ -22572,7 +22595,8 @@ Version 1.0:
                     body.appendChild(spmMock);
                     bullets(body, [
                         'Each domain opens its own background tabs so you can review them one by one.',
-                        'Tick Open SPM Request Form to also open the SPM request form when you run a check. The RITM number of the ticket you have open is added automatically.'
+                        'Tick Open SPM Request Form to also open the SPM request form when you run a check. The RITM number of the ticket you have open is added automatically.',
+                        'In Multiple mode the SPM request form opens only once for the whole batch, not once per domain.'
                     ]);
                 }
             },
@@ -22612,7 +22636,7 @@ Version 1.0:
                     infoMock.textContent = 'The SPM request form now uses a fixed link, so there is nothing to set up.';
                     body.appendChild(infoMock);
                     bullets(body, [
-                        'Tick Open SPM Request Form in the Security Check tab to open the form when you run a check.',
+                        'Tick Open SPM Request Form in Single or Multiple mode, or under Check Selected in the Extract tab, to open the form when you run a check. A batch opens it only once.',
                         'The RITM number of the ticket you have open is added to the request automatically.',
                         'Open the RITM in ServiceNow before you run the check so the number can be picked up.'
                     ]);
