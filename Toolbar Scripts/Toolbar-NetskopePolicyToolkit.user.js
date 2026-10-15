@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.21.3
+// @version      1.22
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -25,6 +25,7 @@
     const SETTING_KEYS = {
         copyButtons:     'toolkit_copyButtons',
         openButtons:     'toolkit_openButtons',
+        refOpenButtons:  'toolkit_refOpenButtons',
         smtpAutofill:    'toolkit_smtpAutofill',
         saveReminder:    'toolkit_saveReminder',
         descriptionLog:  'toolkit_descriptionLog',
@@ -41,8 +42,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.21.3';
-    const CHANGELOG = `Version 1.21.3:
+    const SCRIPT_VERSION = '1.22';
+    const CHANGELOG = `Version 1.22:
+- New "Profile Reference Open Buttons" feature. Inside a DLP Profile, an ↗ button now appears on each DLP Rule and Fingerprint Rule in the Content Rules step, and on each File Profile in the Overview panel. It opens the item in a new tab: that tab searches the list for the exact name and opens it for you. If the item cannot be found, the list stays filtered so you can pick it yourself. It can be turned off in the settings.
+
+Version 1.21.3:
 - Fixed the copy button not showing on blue tags with long names. It now sits in front of the name, so it stays visible even when the name is cut short, and it still copies the full name.
 
 Version 1.21.2:
@@ -520,6 +524,11 @@ Version 1.16:
             description: 'Adds an open-in-new-tab button to tags inside "DLP Profile =" criteria sections.',
         },
         {
+            key:         'refOpenButtons',
+            label:       '↗ Profile Reference Open Buttons',
+            description: 'Inside a DLP Profile, adds an open-in-new-tab button to its DLP Rules and Fingerprint Rules and to the File Profiles in the Overview panel. The new tab finds and opens the item for you.',
+        },
+        {
             key:         'smtpAutofill',
             label:       '✉ SMTP Header Auto-Fill',
             description: 'Injects a "Fill with Block Headers" button next to "Add SMTP Header" action triggers.',
@@ -775,6 +784,7 @@ Version 1.16:
                 if (!toggle.checked) {
                     if (key === 'copyButtons')    removeAll('.dlp-copy-btn');
                     if (key === 'openButtons')    removeAll('.dlp-open-btn');
+                    if (key === 'refOpenButtons') removeAll('.' + REF_OPEN_BTN_CLASS);
                     if (key === 'smtpAutofill')   removeAll('#' + SMTP_BTN_ID);
                     if (key === 'descriptionLog') {
                         removeAll('.' + LOG_BTN_CONTAINER_CLASS);
@@ -848,7 +858,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -1245,6 +1255,65 @@ Version 1.16:
                 },
             },
             {
+                icon: '🔗',
+                title: 'Profile Reference Open Buttons',
+                buildContent(body) {
+                    lead(body, 'Inside a DLP Profile, an ↗ button opens the DLP Rules, Fingerprint Rules and File Profiles it uses.');
+
+                    const btnStyle = {
+                        padding: '1px 5px', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '3px',
+                        background: 'rgba(255,255,255,0.15)', fontSize: '11px',
+                    };
+                    const wrap = document.createElement('div');
+                    Object.assign(wrap.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '10px 14px', marginBottom: '10px', fontFamily: 'Arial, sans-serif',
+                    });
+                    const stepLabel = document.createElement('div');
+                    stepLabel.textContent = 'Content Rules  ·  DLP Rules';
+                    Object.assign(stepLabel.style, { fontSize: '11px', color: '#888', marginBottom: '6px', fontWeight: 'bold' });
+                    wrap.appendChild(stepLabel);
+                    const chip = document.createElement('div');
+                    Object.assign(chip.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        background: '#1976d2', color: '#fff', borderRadius: '4px',
+                        padding: '4px 10px', fontSize: '12px', fontWeight: 'bold',
+                    });
+                    ['↗', '📋'].forEach(icon => {
+                        const b = document.createElement('span');
+                        b.textContent = icon;
+                        Object.assign(b.style, btnStyle);
+                        chip.appendChild(b);
+                    });
+                    const chipName = document.createElement('span');
+                    chipName.textContent = 'ES - Policy 8_1_1 - CKW 01 - DLPRULE';
+                    chipName.style.color = '#fff';
+                    chip.appendChild(chipName);
+                    wrap.appendChild(chip);
+
+                    const overviewLabel = document.createElement('div');
+                    overviewLabel.textContent = 'Overview  ·  File Profiles';
+                    Object.assign(overviewLabel.style, { fontSize: '11px', color: '#888', margin: '10px 0 4px 0', fontWeight: 'bold' });
+                    wrap.appendChild(overviewLabel);
+                    const overviewItem = document.createElement('div');
+                    Object.assign(overviewItem.style, { fontSize: '12px', color: '#333', display: 'flex', alignItems: 'center', gap: '6px' });
+                    const ovBtn = document.createElement('span');
+                    ovBtn.textContent = '↗';
+                    Object.assign(ovBtn.style, { padding: '1px 5px', border: '1px solid #ccc', borderRadius: '3px', background: '#f5f5f5', fontSize: '11px' });
+                    const ovName = document.createElement('span');
+                    ovName.textContent = 'ES - Policy 8_1_1 - FT - FILEPRO';
+                    overviewItem.append(ovBtn, ovName);
+                    wrap.appendChild(overviewItem);
+                    body.appendChild(wrap);
+
+                    bullets(body, [
+                        'Clicking ↗ opens the matching list (DLP Rules, Fingerprint Rules or File Profiles) in a new tab, searches for the exact name and opens it for you.',
+                        'If the item cannot be found, the new tab keeps the list filtered so you can pick it yourself.',
+                        'Entities and File Classifiers are not covered yet.',
+                    ]);
+                },
+            },
+            {
                 icon: '✉',
                 title: 'SMTP Header Auto-Fill',
                 buildContent(body) {
@@ -1530,6 +1599,7 @@ Version 1.16:
                     togglesWrap.style.marginTop = '10px';
                     togglesWrap.appendChild(toggle('📋 Chirp Copy Buttons',          true, 'Copy buttons on all blue picker tags.'));
                     togglesWrap.appendChild(toggle('↗ DLP Profile Open Buttons', true, 'Open-in-new-tab on DLP Profile = tags.'));
+                    togglesWrap.appendChild(toggle('↗ Profile Reference Open Buttons', true, 'Open the DLP Rules, Fingerprint Rules and File Profiles of a DLP Profile.'));
                     togglesWrap.appendChild(toggle('✉ SMTP Header Auto-Fill',    true, 'Fill with Block Headers button next to Add SMTP Header.'));
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
@@ -1905,6 +1975,181 @@ Version 1.16:
                 labelSpan.insertAdjacentElement('afterend', openBtn);
             });
         });
+    }
+
+
+    // ─────────────────────────────────────────────────────────────
+    // FEATURE — PROFILE REFERENCE OPEN BUTTONS
+    // Inside the Edit DLP Profile modal, adds ↗ to the DLP Rules and
+    // Fingerprint Rules chips and to the File Profiles listed in the
+    // Overview panel. None of these open by name from a URL, so the
+    // button stores a "pending open" in GM (shared by all tabs) and opens
+    // the list page in a new tab; that tab searches for the exact name and
+    // clicks it. DLP Rules could open by rule_id, but getting the id needs
+    // the console API, while the name is right there on screen.
+    // ─────────────────────────────────────────────────────────────
+
+    const REF_OPEN_BTN_CLASS = 'nstk-ref-open-btn';
+    const PENDING_OPEN_KEY   = 'toolkit_pendingRefOpen';
+    const PENDING_OPEN_TTL   = 30000;
+
+    // Search box and result cell of the DLP Rules / Fingerprint Rules lists
+    const RULE_LIST_SEARCH = 'input[placeholder="Search keywords"]';
+    const RULE_LIST_CELL   = 'td.ns__rule_name span.clickable';
+
+    const REF_KINDS = {
+        dlpRule: {
+            label: 'DLP Rule',
+            url:   () => '/ns#/inspection?view=dlp',
+            isListRoute: hash => /[?&]view=dlp(&|$)/.test(hash) && !/subview=/.test(hash),
+            searchSelector: RULE_LIST_SEARCH,
+            cellSelector:   RULE_LIST_CELL,
+        },
+        fingerprintRule: {
+            label: 'Fingerprint Rule',
+            url:   () => '/ns#/inspection?view=fingerprint',
+            isListRoute: hash => /[?&]view=fingerprint(&|$)/.test(hash) && !/subview=/.test(hash),
+            searchSelector: RULE_LIST_SEARCH,
+            cellSelector:   RULE_LIST_CELL,
+        },
+        fileProfile: {
+            label: 'File Profile',
+            // The list reads ?query=(file_filter_profile eq|like '<name>') on load.
+            // A quote would end the value early, so fall back to a partial match.
+            url: name => {
+                const q = name.includes("'")
+                    ? `(file_filter_profile like '${name.split("'")[0]}')`
+                    : `(file_filter_profile eq '${name}')`;
+                return '/ns#/file-filter-profile?query=' + encodeURIComponent(q);
+            },
+            isListRoute: hash => hash.startsWith('#/file-filter-profile'),
+            searchSelector: null,
+            cellSelector:   'td.scroll-table__td.clickable',
+        },
+    };
+
+    function openReference(kindKey, name) {
+        const kind = REF_KINDS[kindKey];
+        const clean = (name || '').trim();
+        if (!kind || !clean) return;
+        GM_setValue(PENDING_OPEN_KEY, JSON.stringify({ kind: kindKey, name: clean, ts: Date.now() }));
+        window.open(window.location.origin + kind.url(clean), '_blank');
+    }
+
+    function makeRefOpenButton(kindKey, name) {
+        const kind = REF_KINDS[kindKey];
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = REF_OPEN_BTN_CLASS;
+        btn.textContent = '↗';
+        btn.title = `Open this ${kind.label} in a new tab`;
+        btn.style.cssText = `
+            margin-right: 4px; padding: 1px 5px;
+            border: 1px solid #ccc; border-radius: 3px;
+            background: #f5f5f5; color: #333; cursor: pointer;
+            font-size: 11px; display: inline-block;
+            vertical-align: middle; line-height: 1; flex-shrink: 0;
+        `;
+        btn.addEventListener('mouseenter', () => { btn.style.background = '#e0e0e0'; });
+        btn.addEventListener('mouseleave', () => { btn.style.background = '#f5f5f5'; });
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            openReference(kindKey, name);
+            btn.textContent = '✓';
+            setTimeout(() => { btn.textContent = '↗'; }, 1000);
+        });
+        return btn;
+    }
+
+    function injectRefOpenButtons() {
+        if (!getSetting('refOpenButtons')) return;
+
+        // Content Rules step: chips in the rule pickers
+        [['ns-dlp-rule-picker', 'dlpRule'], ['ns-dlp-fingerprint-rule-picker', 'fingerprintRule']].forEach(([picker, kindKey]) => {
+            document.querySelectorAll(`${picker} .ns-picker-tag`).forEach(tag => {
+                if (tag.querySelector('.' + REF_OPEN_BTN_CLASS)) return;
+                const label = tag.querySelector('.ng-value-label');
+                if (!label) return;
+                const name = (label.getAttribute('title') || label.textContent).trim();
+                if (!name) return;
+                // In front of the name, like the copy button, so long names cannot hide it
+                label.insertAdjacentElement('beforebegin', makeRefOpenButton(kindKey, name));
+            });
+        });
+
+        // Overview panel (visible in every step): the File Profiles section
+        document.querySelectorAll('[data-test-id="ns-overview-section-title"]').forEach(title => {
+            if (title.textContent.trim() !== 'File Profiles') return;
+            const list = title.closest('.parent')?.nextElementSibling;
+            if (!list) return;
+            list.querySelectorAll('li[data-test-id="ns-overview-section-data-value"]').forEach(li => {
+                if (li.querySelector('.' + REF_OPEN_BTN_CLASS)) return;
+                const name = li.textContent.trim();
+                if (!name || /^(matches|does not match|none|all)$/i.test(name)) return;
+                li.insertBefore(makeRefOpenButton('fileProfile', name), li.firstChild);
+            });
+        });
+    }
+
+    function showRefNotice(text) {
+        document.getElementById('nstk-ref-notice')?.remove();
+        const note = document.createElement('div');
+        note.id = 'nstk-ref-notice';
+        note.textContent = text;
+        Object.assign(note.style, {
+            position: 'fixed', top: '18px', left: '50%', transform: 'translateX(-50%)',
+            zIndex: '1000002', background: '#fff3cd', color: '#856404', border: '1px solid #ffc107',
+            borderRadius: '6px', padding: '8px 14px', fontSize: '12px', fontFamily: 'Arial, sans-serif',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)', maxWidth: '560px'
+        });
+        document.body.appendChild(note);
+        setTimeout(() => note.remove(), 6000);
+    }
+
+    // New tab side: if a pending open was left for this list page, search
+    // for the exact name and click it.
+    function consumePendingRefOpen() {
+        let pending = null;
+        try { pending = JSON.parse(GM_getValue(PENDING_OPEN_KEY, 'null')); } catch (e) { pending = null; }
+        if (!pending) return;
+        if (Date.now() - pending.ts > PENDING_OPEN_TTL) { GM_deleteValue(PENDING_OPEN_KEY); return; }
+        const kind = REF_KINDS[pending.kind];
+        if (!kind || !kind.isListRoute(window.location.hash)) return;
+        GM_deleteValue(PENDING_OPEN_KEY);
+        runPendingRefOpen(kind, pending.name);
+    }
+
+    async function runPendingRefOpen(kind, name) {
+        const deadline = Date.now() + 25000;
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        const waitFor = async (find) => {
+            while (Date.now() < deadline) {
+                const found = find();
+                if (found) return found;
+                await sleep(300);
+            }
+            return null;
+        };
+
+        if (kind.searchSelector) {
+            const input = await waitFor(() => document.querySelector(kind.searchSelector));
+            if (!input) { showRefNotice(`Could not find the search box to open ${kind.label} "${name}".`); return; }
+            input.focus();
+            input.value = name;
+            // This list filters on input + keyup (input alone is not enough)
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        }
+
+        // Some names carry a leading space in Netskope, so compare trimmed text
+        const cell = await waitFor(() =>
+            [...document.querySelectorAll(kind.cellSelector)].find(el => el.textContent.trim() === name));
+        if (!cell) {
+            showRefNotice(`Could not find ${kind.label} "${name}". The list is filtered so you can pick it yourself.`);
+            return;
+        }
+        cell.click();
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -4582,6 +4827,7 @@ Version 1.16:
         interceptSaveButtons();
         injectDescriptionLogButtons();
         injectUrlListHistoryButtons();
+        injectRefOpenButtons();
         checkDlpCharCounters();
     }
 
@@ -4614,6 +4860,8 @@ Version 1.16:
                     n.classList?.contains('criteria-title') ||
                     n.querySelector?.('.ns-picker-tag')     ||
                     n.querySelector?.('.criteria-title')    ||
+                    n.matches?.('[data-test-id="ns-overview-section-data-value"]') ||
+                    n.querySelector?.('[data-test-id="ns-overview-section-data-value"]') ||
                     n.querySelector?.('a.trigger')    ||
                     n.querySelector?.('button.ns-btn-primary') ||
                     n.querySelector?.('textarea.ns-form-textarea') ||
@@ -4641,6 +4889,8 @@ Version 1.16:
         observer.observe(document.body, { childList: true, subtree: true });
         buildSettingsModal();
         initBulkConstraintTools();
+        // A ↗ reference button in another tab may have asked this tab to open an item
+        setTimeout(consumePendingRefOpen, 1500);
         setTimeout(attemptRegistration, 1000);
 
         if (!GM_getValue('toolkit_username', '')) {
