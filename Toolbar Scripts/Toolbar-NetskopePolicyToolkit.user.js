@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.22.1
+// @version      1.23
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -42,8 +42,13 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.22.1';
-    const CHANGELOG = `Version 1.22.1:
+    const SCRIPT_VERSION = '1.23';
+    const CHANGELOG = `Version 1.23:
+- The ↗ open buttons now also cover File Classifiers in a DLP Profile (they open the classifier directly) and, inside a DLP Rule, each Custom or Dictionary Identifier listed in the Overview panel (the new tab finds and opens the entity).
+- The buttons also show in DLP Profiles that use Advanced mode.
+- Fixed the fallback that searches the DLP Profiles list when a profile cannot be opened by its name.
+
+Version 1.22.1:
 - Fixed the DLP Profile ↗ button showing "Could not find the DLP profile" for some profiles. It now keeps the exact name, including leading spaces, and opens predefined profiles correctly. If Netskope still cannot find the profile, the new tab searches the profiles list and opens it from there.
 
 Version 1.22:
@@ -529,7 +534,7 @@ Version 1.16:
         {
             key:         'refOpenButtons',
             label:       '↗ Profile Reference Open Buttons',
-            description: 'Inside a DLP Profile, adds an open-in-new-tab button to its DLP Rules and Fingerprint Rules and to the File Profiles in the Overview panel. The new tab finds and opens the item for you.',
+            description: 'Adds open-in-new-tab buttons to what a DLP Profile or DLP Rule uses: DLP Rules, Fingerprint Rules and File Classifiers (Content Rules step), File Profiles and Entities (Overview panel). The new tab finds and opens the item for you.',
         },
         {
             key:         'smtpAutofill',
@@ -1261,7 +1266,7 @@ Version 1.16:
                 icon: '🔗',
                 title: 'Profile Reference Open Buttons',
                 buildContent(body) {
-                    lead(body, 'Inside a DLP Profile, an ↗ button opens the DLP Rules, Fingerprint Rules and File Profiles it uses.');
+                    lead(body, 'Inside a DLP Profile or DLP Rule, an ↗ button opens each rule, classifier, profile or entity it uses.');
 
                     const btnStyle = {
                         padding: '1px 5px', border: '1px solid rgba(255,255,255,0.5)', borderRadius: '3px',
@@ -1310,9 +1315,9 @@ Version 1.16:
                     body.appendChild(wrap);
 
                     bullets(body, [
-                        'Clicking ↗ opens the matching list (DLP Rules, Fingerprint Rules or File Profiles) in a new tab, searches for the exact name and opens it for you.',
-                        'If the item cannot be found, the new tab keeps the list filtered so you can pick it yourself.',
-                        'Entities and File Classifiers are not covered yet.',
+                        'In a DLP Profile: on DLP Rules, Fingerprint Rules and File Classifiers (Content Rules step, Advanced mode included) and on File Profiles (Overview panel).',
+                        'In a DLP Rule: on each Custom or Dictionary Identifier listed in the Overview panel.',
+                        'Clicking ↗ opens the matching page in a new tab, searches for the exact name and opens it for you. If it cannot be found, the list stays filtered so you can pick it yourself.',
                     ]);
                 },
             },
@@ -1602,7 +1607,7 @@ Version 1.16:
                     togglesWrap.style.marginTop = '10px';
                     togglesWrap.appendChild(toggle('📋 Chirp Copy Buttons',          true, 'Copy buttons on all blue picker tags.'));
                     togglesWrap.appendChild(toggle('↗ DLP Profile Open Buttons', true, 'Open-in-new-tab on DLP Profile = tags.'));
-                    togglesWrap.appendChild(toggle('↗ Profile Reference Open Buttons', true, 'Open the DLP Rules, Fingerprint Rules and File Profiles of a DLP Profile.'));
+                    togglesWrap.appendChild(toggle('↗ Profile Reference Open Buttons', true, 'Open what a DLP Profile or DLP Rule uses: rules, classifiers, file profiles and entities.'));
                     togglesWrap.appendChild(toggle('✉ SMTP Header Auto-Fill',    true, 'Fill with Block Headers button next to Add SMTP Header.'));
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
@@ -2028,8 +2033,24 @@ Version 1.16:
             isListRoute: hash => hash.startsWith('#/profiles'),
             // The URL usually opens it; only search the list if Netskope reports it missing
             onlyIfError: /Could not find the DLP profile/i,
-            searchSelector: RULE_LIST_SEARCH,
-            cellSelector:   'span.clickable',
+            searchSelector: 'section.dlp-profiles input[placeholder="Search keywords"]',
+            cellSelector:   'td.ns__profile_name a.clickable',
+        },
+        entity: {
+            label: 'Entity',
+            url:   () => '/ns#/inspection?view=dlp&subview=entities',
+            isListRoute: hash => /[?&]subview=entities(&|$)/.test(hash),
+            searchSelector: 'section.dlp-dictionary ns-search-input.search-query input',
+            cellSelector:   'td.ns__obj_name span.clickable',
+        },
+        fileClassifier: {
+            label: 'File Classifier',
+            // classifier=<exact name> opens its side panel. Chips do not say whether a
+            // classifier is predefined or custom, so try predefined first.
+            url:   name => '/ns#/inspection?view=fileClassifiers&subview=predefined&classifier=' + encodeURIComponent(name),
+            isListRoute: hash => /[?&]view=fileClassifiers(&|$)/.test(hash),
+            openedSelector: '[data-testid$="ClassifierPanel-sidepanel"]',
+            retryHash: name => '#/inspection?view=fileClassifiers&subview=custom&classifier=' + encodeURIComponent(name),
         },
         fileProfile: {
             label: 'File Profile',
@@ -2085,7 +2106,9 @@ Version 1.16:
         if (!getSetting('refOpenButtons')) return;
 
         // Content Rules step: chips in the rule pickers
-        [['ns-dlp-rule-picker', 'dlpRule'], ['ns-dlp-fingerprint-rule-picker', 'fingerprintRule']].forEach(([picker, kindKey]) => {
+        // (also inside "Advanced" mode condition blocks, which reuse these pickers)
+        [['ns-dlp-rule-picker', 'dlpRule'], ['ns-dlp-fingerprint-rule-picker', 'fingerprintRule'],
+         ['ns-dlp-file-classifier-picker', 'fileClassifier']].forEach(([picker, kindKey]) => {
             document.querySelectorAll(`${picker} .ns-picker-tag`).forEach(tag => {
                 if (tag.querySelector('.' + REF_OPEN_BTN_CLASS)) return;
                 const label = tag.querySelector('.ng-value-label');
@@ -2097,16 +2120,25 @@ Version 1.16:
             });
         });
 
-        // Overview panel (visible in every step): the File Profiles section
+        // Overview panels (visible in every step): File Profiles of a DLP Profile,
+        // and the entities of a DLP Rule, listed as "(C0) - name" / "(D0) - name"
+        const entityName = text => (text.match(/^\s*\((?:C|D)\d+\)\s*-\s*(.+?)\s*$/) || [])[1] || null;
+        const OVERVIEW_REFS = {
+            'File Profiles':          { kind: 'fileProfile', name: text => /^(matches|does not match|none|all)$/i.test(text) ? null : text },
+            'Custom Identifiers':     { kind: 'entity',      name: entityName },
+            'Dictionary Identifiers': { kind: 'entity',      name: entityName },
+        };
         document.querySelectorAll('[data-test-id="ns-overview-section-title"]').forEach(title => {
-            if (title.textContent.trim() !== 'File Profiles') return;
+            const ref = OVERVIEW_REFS[title.textContent.trim()];
+            if (!ref) return;
             const list = title.closest('.parent')?.nextElementSibling;
             if (!list) return;
             list.querySelectorAll('li[data-test-id="ns-overview-section-data-value"]').forEach(li => {
                 if (li.querySelector('.' + REF_OPEN_BTN_CLASS)) return;
-                const name = li.textContent.trim();
-                if (!name || /^(matches|does not match|none|all)$/i.test(name)) return;
-                li.insertBefore(makeRefOpenButton('fileProfile', name), li.firstChild);
+                const text = li.textContent.trim();
+                const name = text && ref.name(text);
+                if (!name) return;
+                li.insertBefore(makeRefOpenButton(ref.kind, name), li.firstChild);
             });
         });
     }
@@ -2150,6 +2182,19 @@ Version 1.16:
             }
             return null;
         };
+
+        if (kind.openedSelector) {
+            // Opened by the URL itself; only check it worked
+            deadline = Date.now() + 8000;
+            if (await waitFor(() => document.querySelector(kind.openedSelector))) return;
+            if (kind.retryHash) {
+                window.location.hash = kind.retryHash(name);   // this page reacts to hash changes
+                deadline = Date.now() + 8000;
+                if (await waitFor(() => document.querySelector(kind.openedSelector))) return;
+            }
+            showRefNotice(`Could not open ${kind.label} "${name}". Search for it in the list.`);
+            return;
+        }
 
         if (kind.onlyIfError) {
             // Give the direct URL time to work; act only if the error shows up
