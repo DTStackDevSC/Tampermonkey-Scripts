@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.22
+// @version      1.22.1
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -42,8 +42,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.22';
-    const CHANGELOG = `Version 1.22:
+    const SCRIPT_VERSION = '1.22.1';
+    const CHANGELOG = `Version 1.22.1:
+- Fixed the DLP Profile ↗ button showing "Could not find the DLP profile" for some profiles. It now keeps the exact name, including leading spaces, and opens predefined profiles correctly. If Netskope still cannot find the profile, the new tab searches the profiles list and opens it from there.
+
+Version 1.22:
 - New "Profile Reference Open Buttons" feature. Inside a DLP Profile, an ↗ button now appears on each DLP Rule and Fingerprint Rule in the Content Rules step, and on each File Profile in the Overview panel. It opens the item in a new tab: that tab searches the list for the exact name and opens it for you. If the item cannot be found, the list stays filtered so you can pick it yourself. It can be turned off in the settings.
 
 Version 1.21.3:
@@ -1936,9 +1939,12 @@ Version 1.16:
                 const labelSpan = tag.querySelector('.ng-value-label');
                 if (!labelSpan) return;
 
-                let profileName = labelSpan.getAttribute('title') || labelSpan.textContent.trim();
-                if (!profileName) return;
-                const cleanName = profileName.replace(/\s*\((custom|predefined)\)\s*$/i, '').trim();
+                // Netskope matches profile_name exactly, leading spaces included, so
+                // keep the title as is and only drop the "(custom)/(predefined)" tag.
+                const rawName = labelSpan.getAttribute('title') || labelSpan.textContent.trim();
+                if (!rawName.trim()) return;
+                const isPredefined = /\(predefined\)\s*$/i.test(rawName);
+                const exactName = rawName.replace(/\s*\((custom|predefined)\)\s*$/i, '');
 
                 const openBtn = document.createElement('button');
                 openBtn.className = 'dlp-open-btn';
@@ -1959,7 +1965,11 @@ Version 1.16:
                     e.stopPropagation();
                     e.preventDefault();
 
-                    const url = `${window.location.origin}/ns#/profiles?profile_name=${encodeURIComponent(cleanName)}`;
+                    // profile_type defaults to custom on Netskope's side
+                    const url = `${window.location.origin}/ns#/profiles?profile_name=${encodeURIComponent(exactName)}`
+                              + (isPredefined ? '&profile_type=predefined' : '');
+                    // If Netskope still cannot find it, the new tab falls back to searching the list
+                    GM_setValue(PENDING_OPEN_KEY, JSON.stringify({ kind: 'dlpProfile', name: exactName.trim(), ts: Date.now() }));
                     window.open(url, '_blank');
 
                     openBtn.innerHTML = '✓';
@@ -2011,6 +2021,15 @@ Version 1.16:
             isListRoute: hash => /[?&]view=fingerprint(&|$)/.test(hash) && !/subview=/.test(hash),
             searchSelector: RULE_LIST_SEARCH,
             cellSelector:   RULE_LIST_CELL,
+        },
+        dlpProfile: {
+            label: 'DLP Profile',
+            url:   name => '/ns#/profiles?profile_name=' + encodeURIComponent(name),
+            isListRoute: hash => hash.startsWith('#/profiles'),
+            // The URL usually opens it; only search the list if Netskope reports it missing
+            onlyIfError: /Could not find the DLP profile/i,
+            searchSelector: RULE_LIST_SEARCH,
+            cellSelector:   'span.clickable',
         },
         fileProfile: {
             label: 'File Profile',
@@ -2121,7 +2140,7 @@ Version 1.16:
     }
 
     async function runPendingRefOpen(kind, name) {
-        const deadline = Date.now() + 25000;
+        let deadline = Date.now() + 25000;
         const sleep = ms => new Promise(r => setTimeout(r, ms));
         const waitFor = async (find) => {
             while (Date.now() < deadline) {
@@ -2131,6 +2150,14 @@ Version 1.16:
             }
             return null;
         };
+
+        if (kind.onlyIfError) {
+            // Give the direct URL time to work; act only if the error shows up
+            deadline = Date.now() + 10000;
+            const failed = await waitFor(() => kind.onlyIfError.test(document.body.innerText));
+            if (!failed) return;
+            deadline = Date.now() + 25000;
+        }
 
         if (kind.searchSelector) {
             const input = await waitFor(() => document.querySelector(kind.searchSelector));
