@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.24.4
+// @version      1.25
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,14 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.24.4';
-    const CHANGELOG = `Version 1.24.4:
+    const SCRIPT_VERSION = '1.25';
+    const CHANGELOG = `Version 1.25:
+- Steering Exception Domain Remover: "Restore last backup" is now "↩ Backups". It lists your recent removals, the last 5 by default, and you can change how many are kept on that screen.
+- Click a backup to see its entries. Before you restore, the tool compares each one with Netskope now and warns you when an entry was changed or deleted after the removal, or when a domain is already in another entry, since restoring would undo those changes or list the domain twice.
+- Backups can be downloaded and imported again with "⤒ Import backup", so a downloaded file can now be restored. Restored backups stay in the list, marked with the date they were restored.
+- Your existing backup from the previous version is kept.
+
+Version 1.24.4:
 - On the Steering Configuration list, the "🧹 Bulk remove domains" button now sits below the search bar, lined up with the New Configuration button, and the search bar keeps its full width.
 
 Version 1.24.3:
@@ -1631,7 +1637,7 @@ Version 1.16:
                     const steps = [
                         { bg: '#005587', label: 'Check',  desc: 'Reads the exceptions and shows where each domain is listed. Nothing changes yet.' },
                         { bg: '#da291c', label: 'Remove', desc: 'Click twice to confirm. Netskope applies it straight away, there is no Save step.' },
-                        { bg: 'transparent', color: '#333', border: '1px solid #a7a8aa', label: '↩ Restore last backup', desc: 'Puts the entries back as they were before the last removal.' },
+                        { bg: 'transparent', color: '#333', border: '1px solid #a7a8aa', label: '↩ Backups', desc: 'Lists your recent removals so you can restore one.' },
                     ];
                     for (const s of steps) {
                         const srow = hrow([
@@ -1646,6 +1652,38 @@ Version 1.16:
                         'Only the requested domains are taken out of an entry. The entry is deleted only when it holds nothing else.',
                         'Configurations show in the list once you have opened them. Open the Steering Configuration list once so all of them appear. Inside a steering configuration, that one is ticked for you. From the list, nothing is ticked.',
                         'When it finishes, it checks again that the domains are gone and gives you a summary to copy into the ticket, plus a backup file to download.',
+                    ]);
+
+                    const bkHead = span('↩ Backups', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' });
+                    body.appendChild(bkHead);
+                    const bkCard = document.createElement('div');
+                    Object.assign(bkCard.style, { border: '1px solid #e0e0e0', borderRadius: '6px', padding: '8px 12px', fontFamily: 'Arial, sans-serif' });
+                    bkCard.appendChild(hrow([
+                        span('16/10/2026, 12:30', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
+                        chip('Restored 16/10/2026', '#26890d'), chip('Imported', '#005587'),
+                    ], { gap: '6px', margin: '0 0 2px 0' }));
+                    bkCard.appendChild(span('ES - Steering Config · 2 entries', { fontSize: '11px', color: '#777', display: 'block' }));
+                    bkCard.appendChild(span('Removed: logmein.eu, test.cat', { fontSize: '11px', color: '#777', display: 'block' }));
+                    body.appendChild(bkCard);
+                    caption(body, 'One card per removal, newest first. Click one to see its entries and restore it.');
+
+                    const states = [
+                        { bg: '#26890d', label: 'Unchanged',     desc: 'Not touched since the removal. The removed domains go back in.' },
+                        { bg: '#e08a00', label: 'Changed since', desc: 'Edited after the removal. Restoring replaces its domains, so those later edits are lost.' },
+                        { bg: '#005587', label: 'Recreate',      desc: 'Deleted by the removal. It is created again with the same domains and notes.' },
+                    ];
+                    for (const st of states) {
+                        body.appendChild(hrow([
+                            chip(st.label, st.bg),
+                            span(st.desc, { fontSize: '12px', color: '#555' }),
+                        ], { flexWrap: 'nowrap', margin: '8px 0 0 0' }));
+                    }
+
+                    bullets(body, [
+                        'The last 5 backups are kept by default. Change "Keep the last" on the Backups screen.',
+                        'An orange warning appears when an entry changed after the removal, or when a domain to restore is already in another entry and would be listed twice.',
+                        'Backups live in this browser only. "💾 Download" saves one as a file, and "⤒ Import backup" loads it back so it can be restored, on any machine.',
+                        'A backup can only be restored on the tenant it was taken on.',
                     ]);
                 },
             },
@@ -4908,7 +4946,9 @@ Version 1.16:
 
     const SE_API         = '/settings/steering_exception/';
     const SE_CONFIGS_KEY = 'toolkit_steeringConfigs';   // { [config_id]: { name, trafficType } }
-    const SE_BACKUP_KEY  = 'toolkit_steeringBackup';    // entries as they were before the last removal
+    const SE_BACKUPS_KEY      = 'toolkit_steeringBackups';      // removal backups, newest first
+    const SE_BACKUP_LIMIT_KEY = 'toolkit_steeringBackupLimit';  // how many backups to keep
+    const SE_OLD_BACKUP_KEY   = 'toolkit_steeringBackup';       // the single backup kept by 1.24.x
     const SE_HOST_ID     = 'ns-steering-remover-host';
     const SE_BUTTON_ID   = 'ns-steering-remover-btn';
     const SE_RESOURCE    = 'settings.steering-configuration';
@@ -5154,7 +5194,8 @@ Version 1.16:
 
     async function seApplyPlan(plan, domains, progress) {
         const wanted = new Set(domains);
-        const backup = { at: new Date().toISOString(), host: location.host, entries: [] };
+        const backup = { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source: 'removal', entries: [] };
+        se.lastBackupId = backup.id;
         const log = [];
 
         for (const cfg of plan) {
@@ -5175,8 +5216,12 @@ Version 1.16:
                     continue;
                 }
 
-                backup.entries.push({ configId: cfg.configId, configName: cfg.name, rowId: a.rowId, notes, domains: now });
-                GM_setValue(SE_BACKUP_KEY, JSON.stringify(backup));   // saved before every change
+                // kind and after record what the removal left, so a restore can tell later edits apart
+                backup.entries.push({
+                    configId: cfg.configId, configName: cfg.name, rowId: a.rowId, notes, domains: now,
+                    kind: keep.length ? 'edit' : 'delete', after: keep.length ? keep : null, removed,
+                });
+                seSaveBackup(backup);   // saved before every change
 
                 if (keep.length) {
                     progress(`Removing ${removed.length} domain${removed.length === 1 ? '' : 's'} from ${seEntryLabel(notes, a.rowId)}…`);
@@ -5211,20 +5256,122 @@ Version 1.16:
         return { log, stillThere, backup };
     }
 
-    function seGetBackup() {
-        try { return JSON.parse(GM_getValue(SE_BACKUP_KEY, 'null')); } catch (e) { return null; }
+    function seNewBackupId() {
+        return 'bk-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
     }
 
-    async function seRestoreBackup(backup, progress) {
-        const existing = {};
-        for (const entry of backup.entries) {
-            if (!existing[entry.configId]) {
-                const rows = await seListExceptions(entry.configId);
-                existing[entry.configId] = new Set((Array.isArray(rows) ? rows : []).map(r => r.settings_id));
+    function seBackupLimit() {
+        const n = parseInt(GM_getValue(SE_BACKUP_LIMIT_KEY, 5), 10);
+        return n >= 1 && n <= 50 ? n : 5;
+    }
+
+    // Accepts backups saved by any version (or imported from a file) and fills in what is missing
+    function seCleanBackup(b) {
+        if (!b || typeof b !== 'object' || !Array.isArray(b.entries) || typeof b.at !== 'string') return null;
+        const entries = b.entries.filter(e => e && e.configId != null && e.rowId != null && Array.isArray(e.domains))
+            .map(e => ({
+                configId:   String(e.configId),
+                configName: String(e.configName || `Configuration ${e.configId}`),
+                rowId:      Number(e.rowId),
+                notes:      String(e.notes || ''),
+                domains:    e.domains.map(String),
+                kind:       e.kind === 'edit' || e.kind === 'delete' ? e.kind : null,
+                after:      Array.isArray(e.after) ? e.after.map(String) : null,
+                removed:    Array.isArray(e.removed) ? e.removed.map(String) : [],
+            }));
+        if (!entries.length || isNaN(Date.parse(b.at))) return null;
+        return {
+            id: typeof b.id === 'string' && b.id ? b.id : 'bk-' + Date.parse(b.at).toString(36),
+            at: b.at, host: String(b.host || ''), source: b.source === 'import' ? 'import' : 'removal',
+            importedAt: b.importedAt || null, restoredAt: b.restoredAt || null, entries,
+        };
+    }
+
+    function seGetBackups() {
+        let list = [];
+        try { list = JSON.parse(GM_getValue(SE_BACKUPS_KEY, '[]')) || []; } catch (e) { list = []; }
+        list = list.map(seCleanBackup).filter(Boolean);
+        // Bring over the single backup kept by 1.24.x
+        const old = GM_getValue(SE_OLD_BACKUP_KEY, null);
+        if (old) {
+            let b = null;
+            try { b = seCleanBackup(JSON.parse(old)); } catch (e) { /* unreadable, drop it */ }
+            if (b && !list.some(x => x.id === b.id)) list.unshift(b);
+            GM_deleteValue(SE_OLD_BACKUP_KEY);
+            seStoreBackups(list);
+        }
+        return list;
+    }
+
+    function seStoreBackups(list) {
+        GM_setValue(SE_BACKUPS_KEY, JSON.stringify(list.slice(0, seBackupLimit())));
+    }
+
+    // New or updated backups go to the top; the oldest drop off past the limit
+    function seSaveBackup(backup) {
+        seStoreBackups([backup].concat(seGetBackups().filter(b => b.id !== backup.id)));
+    }
+
+    // Updates a backup where it is, without moving it to the top
+    function seReplaceBackup(backup) {
+        seStoreBackups(seGetBackups().map(b => (b.id === backup.id ? backup : b)));
+    }
+
+    function seBackupRemoved(backup) {
+        const out = [];
+        backup.entries.forEach(e => {
+            const list = e.removed.length ? e.removed : (e.after ? e.domains.filter(d => !e.after.includes(d)) : []);
+            list.forEach(d => { if (!out.includes(d)) out.push(d); });
+        });
+        return out;
+    }
+
+    // Compares each backed up entry with what Netskope has now
+    async function seInspectBackup(backup, progress) {
+        const rowsByConfig = {};
+        for (const id of new Set(backup.entries.map(e => e.configId))) {
+            progress(`Reading ${backup.entries.find(e => e.configId === id).configName}…`);
+            const rows = await seListExceptions(id);
+            rowsByConfig[id] = (Array.isArray(rows) ? rows : []).filter(r => r.type === 'domain' && Array.isArray(r.display_value));
+        }
+        const sameList = (a, b) => a.map(seNormalize).sort().join('\n') === b.map(seNormalize).sort().join('\n');
+
+        return backup.entries.map(e => {
+            const rows = rowsByConfig[e.configId];
+            // A recreated entry gets a new ID, so also accept one with the same domains and notes
+            const row  = rows.find(r => r.settings_id === e.rowId) ||
+                rows.find(r => sameList(r.display_value, e.domains) && String(r.notes || '').trim() === e.notes.trim());
+            let state;
+            if (row) {
+                if (sameList(row.display_value, e.domains))          state = 'same';
+                else if (e.after && sameList(row.display_value, e.after)) state = 'unchanged';
+                else if (e.kind)                                     state = 'changed';
+                else                                                 state = 'unknown';
+            } else {
+                state = e.kind === 'delete' ? 'deleted' : 'gone';
             }
-            const stillExists = existing[entry.configId].has(entry.rowId);
-            progress(`${stillExists ? 'Restoring' : 'Recreating'} ${seEntryLabel(entry.notes, entry.rowId)} in ${entry.configName}…`);
-            await seSaveDomains(entry.configId, stillExists ? entry.rowId : null, entry.domains, entry.notes);
+            // Domains the restore would add back that another entry already holds
+            const nowHere   = new Set(row ? row.display_value.map(seNormalize) : []);
+            const toAdd     = new Set(e.domains.map(seNormalize).filter(d => !nowHere.has(d)));
+            const elsewhere = [];
+            rows.filter(r => r !== row).forEach(r => r.display_value.map(seNormalize).forEach(d => {
+                if (toAdd.has(d) && !elsewhere.includes(d)) elsewhere.push(d);
+            }));
+            const current = row ? row.display_value : [];
+            return {
+                entry: e, state, exists: !!row, elsewhere,
+                addedSince:   current.filter(d => !e.domains.map(seNormalize).includes(seNormalize(d))),
+                droppedSince: e.after ? e.after.filter(d => !current.map(seNormalize).includes(seNormalize(d))) : [],
+            };
+        });
+    }
+
+    async function seRestoreFromInspection(inspection, progress) {
+        for (const item of inspection) {
+            if (item.state === 'same') continue;
+            const e = item.entry;
+            progress(`${item.exists ? 'Restoring' : 'Recreating'} ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
+            await seSaveDomains(e.configId, item.exists ? e.rowId : null, e.domains, e.notes);
         }
     }
 
@@ -5313,11 +5460,26 @@ Version 1.16:
             .footer .ghost { font-weight: 400; font-size: 12px; padding: 6px 10px; }
             button:disabled { cursor: not-allowed; opacity: .5; }
             .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+            .backdrop[hidden] { display: none; }
+            .bk-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+            .bk-bar input[type="number"] { width: 64px; padding: 6px; border: 1px solid #a7a8aa; border-radius: 4px;
+                font: 13px Arial, sans-serif; color: #282728; background: #fff; }
+            .bk-card { border: 1px solid #e0e0e0; border-radius: 6px; margin-top: 10px; padding: 10px 12px;
+                cursor: pointer; font-size: 13px; }
+            .bk-card:hover { border-color: #005587; background: #f7fafc; }
+            .bk-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-weight: 700; }
+            .chip.ok { background: #26890d; }
+            .chip.warn { background: #e08a00; }
+            .chip.gray { background: #75787b; }
+            .chip.info { background: #005587; }
+            .warnbox { margin: 12px 0 4px; padding: 10px 12px; border-radius: 6px; font-size: 13px; line-height: 1.45;
+                color: #6b4400; background: #fff6e0; border: 1px solid #f0c36d; }
+            .note.warn { color: #8a5a00; }
         `);
         shadow.adoptedStyleSheets = [sheet];
 
         shadow.innerHTML = `
-            <div class="backdrop">
+            <div class="backdrop" id="se-main-view">
                 <section class="panel" role="dialog" aria-modal="true" aria-labelledby="se-title">
                     <header class="header">
                         <h2 id="se-title">🧹 Remove domains from Steering Exceptions</h2>
@@ -5341,7 +5503,7 @@ Version 1.16:
                         <div class="status" id="se-status" role="status" aria-live="polite"></div>
                     </main>
                     <footer class="footer">
-                        <button type="button" class="ghost" data-action="restore" id="se-restore-btn">↩ Restore last backup</button>
+                        <button type="button" class="ghost" data-action="backups" id="se-backups-btn">↩ Backups</button>
                         <div class="spacer"></div>
                         <button type="button" data-action="close">Close</button>
                         <button type="button" class="primary" data-action="check" id="se-check-btn">Check</button>
@@ -5349,25 +5511,52 @@ Version 1.16:
                     </footer>
                 </section>
             </div>
+            <div class="backdrop" id="se-bk-view" hidden>
+                <section class="panel" role="dialog" aria-modal="true" aria-labelledby="se-bk-title">
+                    <header class="header">
+                        <h2 id="se-bk-title">↩ Backups</h2>
+                        <button type="button" class="close" data-action="close" aria-label="Close">×</button>
+                    </header>
+                    <main class="body">
+                        <div id="se-bk-body"></div>
+                        <div class="status" id="se-bk-status" role="status" aria-live="polite"></div>
+                    </main>
+                    <footer class="footer" id="se-bk-footer"></footer>
+                </section>
+                <input type="file" id="se-bk-file" accept=".json,application/json" hidden>
+            </div>
         `;
 
         ['pointerdown', 'mousedown', 'click'].forEach(name => shadow.addEventListener(name, e => e.stopPropagation()));
         shadow.addEventListener('click', (e) => {
             if (!(e.target instanceof Element)) return;
-            const action = e.target.closest('[data-action]')?.dataset.action;
+            const target = e.target.closest('[data-action]');
+            const action = target?.dataset.action;
             if (action === 'close' && !se.busy) seClose();
             if (action === 'check')    seRunCheck();
             if (action === 'remove')   seRunRemove();
-            if (action === 'restore')  seRunRestore();
             if (action === 'copy')     seCopySummary();
-            if (action === 'download') seDownloadBackup();
+            if (action === 'download') seDownloadBackup(seGetBackups().find(b => b.id === se.lastBackupId));
             if (action === 'reload')   location.reload();
+            if (se.busy) return;
+            if (action === 'backups')     seShowBackupList();
+            if (action === 'bk-main')     seShowView('main');
+            if (action === 'bk-list')     seShowBackupList();
+            if (action === 'bk-open')     seOpenBackup(target.dataset.bk);
+            if (action === 'bk-import')   seEl('se-bk-file').click();
+            if (action === 'bk-download') seDownloadBackup(seGetBackups().find(b => b.id === se.bkSelected));
+            if (action === 'bk-restore')  seRunBackupRestore();
         });
         shadow.addEventListener('input', (e) => {
             if (e.target.id === 'se-filter') seRenderConfigList();
             if (e.target.id === 'se-domains') seResetPlan();
         });
         shadow.addEventListener('change', (e) => {
+            if (e.target.id === 'se-bk-limit') seSetBackupLimit(e.target.value);
+            if (e.target.id === 'se-bk-file' && e.target.files[0]) {
+                seImportBackupFile(e.target.files[0]);
+                e.target.value = '';
+            }
             if (e.target.dataset.cfg !== undefined) seResetPlan();
             if (e.target.dataset.row !== undefined && se.plan) {
                 const [ci, ai] = e.target.dataset.row.split(':').map(Number);
@@ -5445,7 +5634,7 @@ Version 1.16:
         se.confirming = false;
         btn.textContent = count ? `Remove from ${count} entr${count === 1 ? 'y' : 'ies'}` : 'Remove selected';
         seEl('se-check-btn').disabled = se.busy;
-        seEl('se-restore-btn').disabled = se.busy || !seGetBackup();
+        seEl('se-backups-btn').disabled = se.busy;
     }
 
     function seSetBusy(busy) {
@@ -5499,7 +5688,7 @@ Version 1.16:
             <textarea id="se-summary" readonly></textarea>
             <div class="actions">
                 <button type="button" class="link-btn" data-action="copy">📋 Copy summary</button>
-                <button type="button" class="link-btn" data-action="download">💾 Download backup</button>
+                <button type="button" class="link-btn" data-action="download">💾 Download this backup</button>
                 <button type="button" class="link-btn" data-action="reload">⟳ Reload page to see changes</button>
             </div>`;
         seEl('se-summary').value = summary;
@@ -5556,29 +5745,7 @@ Version 1.16:
             console.error('[NS Toolkit] Steering removal:', err);
             se.plan = null;
             seEl('se-results').innerHTML = '';
-            seSetStatus(`Stopped: ${err.message}\nChanges made before this point were kept. Use "Restore last backup" to undo them, or click Check again to see the current state.`, true);
-        } finally {
-            seSetBusy(false);
-        }
-    }
-
-    async function seRunRestore() {
-        if (se.busy) return;
-        const backup = seGetBackup();
-        if (!backup || !backup.entries || !backup.entries.length) return seSetStatus('There is no backup to restore.', true);
-        if (backup.host !== location.host) return seSetStatus(`The last backup belongs to ${backup.host}. Open that tenant to restore it.`, true);
-        const when = new Date(backup.at).toLocaleString();
-        if (!confirm(`Restore ${backup.entries.length} exception entr${backup.entries.length === 1 ? 'y' : 'ies'} to how they were before the removal on ${when}?\n\nEdited entries get their old domain list back. Deleted entries are created again with the same domains and notes.`)) return;
-
-        seResetPlan();
-        seSetBusy(true);
-        try {
-            await seRestoreBackup(backup, msg => seSetStatus(msg));
-            GM_deleteValue(SE_BACKUP_KEY);
-            seSetStatus('Backup restored. Reload the page to see the exceptions table updated.');
-        } catch (err) {
-            console.error('[NS Toolkit] Steering restore:', err);
-            seSetStatus(`Restore stopped: ${err.message}`, true);
+            seSetStatus(`Stopped: ${err.message}\nChanges made before this point were kept. Open "↩ Backups" to undo them, or click Check again to see the current state.`, true);
         } finally {
             seSetBusy(false);
         }
@@ -5595,8 +5762,7 @@ Version 1.16:
         }
     }
 
-    function seDownloadBackup() {
-        const backup = seGetBackup();
+    function seDownloadBackup(backup) {
         if (!backup) return seSetStatus('There is no backup to download.', true);
         const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
@@ -5606,12 +5772,233 @@ Version 1.16:
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
 
+    /* ── Backups screen ── */
+
+    function seShowView(view) {
+        seEl('se-main-view').hidden = view !== 'main';
+        seEl('se-bk-view').hidden = view === 'main';
+    }
+
+    function seBkStatus(message, isError) {
+        const el = seEl('se-bk-status');
+        el.textContent = message || '';
+        el.classList.toggle('error', !!isError);
+    }
+
+    function seFormatDate(iso) {
+        const d = new Date(iso);
+        return isNaN(d) ? iso : d.toLocaleString();
+    }
+
+    function seBackupChips(backup) {
+        let html = '';
+        if (backup.restoredAt) html += `<span class="chip ok">Restored ${seEscape(seFormatDate(backup.restoredAt))}</span>`;
+        if (backup.source === 'import') html += '<span class="chip info">Imported</span>';
+        if (backup.host && backup.host !== location.host) html += `<span class="chip warn">Other tenant: ${seEscape(backup.host)}</span>`;
+        return html;
+    }
+
+    function seShowBackupList() {
+        se.bkSelected = null;
+        se.bkInspection = null;
+        se.bkConfirm = false;
+        seShowView('list');
+        const list = seGetBackups();
+        const body = seEl('se-bk-body');
+        body.innerHTML = `
+            <div class="bk-bar">
+                <label for="se-bk-limit">Keep the last</label>
+                <input type="number" id="se-bk-limit" min="1" max="50" value="${seBackupLimit()}">
+                <span>backups</span>
+                <div class="spacer"></div>
+                <button type="button" class="link-btn" data-action="bk-import">⤒ Import backup</button>
+            </div>
+            <div class="help">Each removal saves a backup of the entries it changed. They are kept in this browser only: download one to keep it elsewhere, then import it here to restore it.</div>`;
+        if (!list.length) {
+            body.insertAdjacentHTML('beforeend', '<div class="help" style="margin-top:16px">No backups yet.</div>');
+        }
+        list.forEach(b => {
+            const configs = [...new Set(b.entries.map(e => e.configName))];
+            const removed = seBackupRemoved(b);
+            const card = document.createElement('div');
+            card.className = 'bk-card';
+            card.dataset.action = 'bk-open';
+            card.dataset.bk = b.id;
+            card.innerHTML = `
+                <div class="bk-title">${seEscape(seFormatDate(b.at))} ${seBackupChips(b)}</div>
+                <div class="muted">${seEscape(configs.join(', '))} · ${b.entries.length} entr${b.entries.length === 1 ? 'y' : 'ies'}</div>
+                ${removed.length ? `<div class="muted">Removed: ${seEscape(removed.slice(0, 8).join(', '))}${removed.length > 8 ? ` and ${removed.length - 8} more` : ''}</div>` : ''}`;
+            body.appendChild(card);
+        });
+        seEl('se-bk-footer').innerHTML = `
+            <button type="button" data-action="bk-main">← Back</button>
+            <div class="spacer"></div>
+            <button type="button" data-action="close">Close</button>`;
+        seBkStatus('');
+    }
+
+    function seSetBackupLimit(value) {
+        const n = Math.min(50, Math.max(1, parseInt(value, 10) || 5));
+        const before = seGetBackups().length;
+        GM_setValue(SE_BACKUP_LIMIT_KEY, n);
+        seStoreBackups(seGetBackups());
+        const dropped = before - seGetBackups().length;
+        seShowBackupList();
+        seBkStatus(`Keeping the last ${n} backup${n === 1 ? '' : 's'}.` +
+            (dropped > 0 ? ` ${dropped} older backup${dropped === 1 ? ' was' : 's were'} deleted.` : ''));
+    }
+
+    async function seImportBackupFile(file) {
+        let data;
+        try { data = JSON.parse(await file.text()); } catch (e) {
+            return seBkStatus('That file is not a backup: it could not be read as JSON.', true);
+        }
+        const incoming = (Array.isArray(data) ? data : [data]).map(seCleanBackup).filter(Boolean);
+        if (!incoming.length) return seBkStatus('That file does not contain a steering exception backup.', true);
+
+        const existing = seGetBackups();
+        const fresh = incoming.filter(b => !existing.some(x => x.id === b.id));
+        if (!fresh.length) return seBkStatus('This backup is already in the list.', true);
+        fresh.forEach(b => { b.source = 'import'; b.importedAt = new Date().toISOString(); });
+        seStoreBackups(fresh.concat(existing));
+        if (fresh.length > seBackupLimit()) {
+            seShowBackupList();
+            return seBkStatus(`Imported ${seBackupLimit()} of ${fresh.length} backups. Raise "Keep the last" to import more.`, true);
+        }
+        seOpenBackup(fresh[0].id);
+    }
+
+    async function seOpenBackup(id) {
+        const backup = seGetBackups().find(b => b.id === id);
+        if (!backup) return seShowBackupList();
+        se.bkSelected = id;
+        se.bkInspection = null;
+        se.bkConfirm = false;
+        seRenderBackupDetail(backup);
+
+        if (backup.host && backup.host !== location.host) {
+            return seBkStatus(`This backup was taken on ${backup.host}. Open that tenant to check or restore it.`, true);
+        }
+        se.busy = true;
+        seBkStatus('Checking the current state in Netskope…');
+        try {
+            const inspection = await seInspectBackup(backup, msg => seBkStatus(msg));
+            if (se.bkSelected !== id) return;
+            se.bkInspection = inspection;
+            seRenderBackupDetail(backup);
+            seBkStatus(inspection.every(i => i.state === 'same')
+                ? 'Every entry is already as it was in this backup. Nothing to restore.'
+                : 'Nothing has changed yet. Review the entries, then click Restore.');
+        } catch (err) {
+            console.error('[NS Toolkit] Steering backup check:', err);
+            seBkStatus(err.message, true);
+        } finally {
+            se.busy = false;
+            seUpdateBackupFooter();
+        }
+    }
+
+    const SE_STATE_INFO = {
+        same:      { chip: 'gray', label: 'Matches backup',   text: 'It already matches the backup. Nothing to do.' },
+        unchanged: { chip: 'ok',   label: 'Unchanged',        text: 'Not changed since the removal. The removed domains go back in.' },
+        changed:   { chip: 'warn', label: 'Changed since',    text: 'Changed after the removal. Restoring replaces its current domains with the backed up list, so those later changes are lost.' },
+        unknown:   { chip: 'warn', label: 'May have changed', text: 'This backup is from an older version, so later changes cannot be detected. Restoring replaces its current domains with the backed up list.' },
+        deleted:   { chip: 'info', label: 'Recreate',         text: 'Deleted by the removal. It is created again with the same domains and notes.' },
+        gone:      { chip: 'warn', label: 'Deleted since',    text: 'Deleted after the removal. It is created again with the backed up domains and notes.' },
+    };
+
+    function seRenderBackupDetail(backup) {
+        const body = seEl('se-bk-body');
+        const insp = se.bkInspection;
+        const configs = [...new Set(backup.entries.map(e => e.configName))];
+        let html = `
+            <div class="bk-title" style="font-size:15px">Removal on ${seEscape(seFormatDate(backup.at))} ${seBackupChips(backup)}</div>
+            <div class="muted">${seEscape(configs.join(', '))} · ${seEscape(backup.host || 'unknown tenant')}</div>`;
+
+        if (insp) {
+            const risky = insp.filter(i => ['changed', 'unknown', 'gone'].includes(i.state) || i.elsewhere.length);
+            if (risky.length) {
+                html += `<div class="warnbox">⚠️ ${risky.length} entr${risky.length === 1 ? 'y has' : 'ies have'} changed since this removal or would clash with other entries.
+                    Restoring puts each entry back exactly as it was in the backup, so later edits to it are lost and domains already added elsewhere end up listed twice. Check the entries marked below before you restore.</div>`;
+            }
+        }
+
+        html += '<div class="card" style="margin-top:12px">';
+        backup.entries.forEach((e, i) => {
+            const item = insp && insp[i];
+            const info = item ? SE_STATE_INFO[item.state] : null;
+            const what = e.kind === 'delete' ? 'Deleted entry' : e.kind === 'edit' ? 'Edited entry' : 'Entry';
+            const removed = e.removed.length ? e.removed : (e.after ? e.domains.filter(d => !e.after.includes(d)) : []);
+            html += `<div class="row">
+                ${info ? `<span class="chip ${info.chip}">${info.label}</span>` : '<span class="chip gray">Checking…</span>'}
+                <div><div><b>${seEscape(seEntryLabel(e.notes, e.rowId))}</b> <span class="muted">in ${seEscape(e.configName)}</span></div>
+                <div class="muted">${what}. ${removed.length ? `Removed: ${seEscape(removed.join(', '))}.` : ''} Backed up with ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'}.</div>
+                ${info ? `<div class="muted">${info.text}</div>` : ''}
+                ${item && item.state === 'changed' && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(item.addedSince.join(', '))}. These would be removed.</div>` : ''}
+                ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(item.droppedSince.join(', '))}. These would come back.</div>` : ''}
+                ${item && item.elsewhere.length ? `<div class="note warn" style="padding:4px 0;border:0">Already in another entry: ${seEscape(item.elsewhere.join(', '))}. Restoring lists them twice.</div>` : ''}
+                </div></div>`;
+        });
+        html += '</div>';
+        body.innerHTML = html;
+
+        seEl('se-bk-footer').innerHTML = `
+            <button type="button" data-action="bk-list">← All backups</button>
+            <button type="button" class="ghost" data-action="bk-download">💾 Download</button>
+            <div class="spacer"></div>
+            <button type="button" data-action="close">Close</button>
+            <button type="button" class="danger" data-action="bk-restore" id="se-bk-restore">Restore this backup</button>`;
+        seUpdateBackupFooter();
+    }
+
+    function seUpdateBackupFooter() {
+        const btn = seEl('se-bk-restore');
+        if (!btn) return;
+        const insp = se.bkInspection;
+        const todo = insp ? insp.filter(i => i.state !== 'same').length : 0;
+        btn.disabled = se.busy || !todo;
+        btn.textContent = se.bkConfirm ? 'Click again to confirm' : (todo ? `Restore ${todo} entr${todo === 1 ? 'y' : 'ies'}` : 'Restore this backup');
+        se.shadow.querySelectorAll('#se-bk-footer button:not(#se-bk-restore)').forEach(b => {
+            if (b.dataset.action !== 'close') b.disabled = se.busy;
+        });
+    }
+
+    async function seRunBackupRestore() {
+        const backup = seGetBackups().find(b => b.id === se.bkSelected);
+        const insp = se.bkInspection;
+        if (!backup || !insp) return;
+        if (!se.bkConfirm) {
+            se.bkConfirm = true;
+            seUpdateBackupFooter();
+            seBkStatus('Netskope applies this straight away, with no Save step.');
+            return;
+        }
+        se.bkConfirm = false;
+        se.busy = true;
+        seUpdateBackupFooter();
+        try {
+            await seRestoreFromInspection(insp, msg => seBkStatus(msg));
+            backup.restoredAt = new Date().toISOString();
+            seReplaceBackup(backup);
+            se.busy = false;
+            await seOpenBackup(backup.id);
+            seBkStatus('Backup restored. Reload the page to see the exceptions table updated.');
+        } catch (err) {
+            console.error('[NS Toolkit] Steering restore:', err);
+            seBkStatus(`Restore stopped: ${err.message}\nEntries restored before this point were kept. Open the backup again to see where it stands.`, true);
+        } finally {
+            se.busy = false;
+            seUpdateBackupFooter();
+        }
+    }
+
     // insideConfig: opened from inside a steering configuration (the Add Filter button),
     // so that configuration starts ticked. From the list, nothing starts ticked.
     function seOpen(insideConfig) {
         if (!se.host) seCreateHost();
         se.host.dataset.open = 'true';
         if (!se.busy) {
+            seShowView('main');
             se.openConfig = insideConfig ? se.currentConfig : null;
             const box = seEl('se-configs');
             box.innerHTML = '';
