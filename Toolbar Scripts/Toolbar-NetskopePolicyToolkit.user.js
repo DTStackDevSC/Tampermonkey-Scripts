@@ -46,7 +46,10 @@
 
     const SCRIPT_VERSION = '1.26';
     const CHANGELOG = `Version 1.26:
-- New "➕ Bulk add domains" button next to "🧹 Bulk remove domains" on the Steering Configuration page. Paste domains, tick the steering configurations, and each one gets a new exception entry with your notes.
+- New "➕ Bulk add domains" button next to "🧹 Bulk remove domains" on the Steering Configuration page. Paste domains, tick the steering configurations, add your notes (for example the RITM), and each configuration gets one new exception entry with the domains it does not already have.
+- Check shows, per configuration, which domains will be added and which are already present and skipped. Nothing changes until you click Add twice.
+- Notes are required. Tick "No notes needed" when a ticket number does not apply.
+- Additions are saved in ↩ Backups like removals. Undoing one deletes the entry it created, with a warning if that entry was changed since.
 
 Version 1.25.1:
 - Each entry in a backup now lists the domains a restore adds back as exceptions, and you can expand it to see every domain it writes.
@@ -610,8 +613,8 @@ Version 1.16:
         },
         {
             key:         'steeringRemover',
-            label:       '🧹 Steering Exception Domain Remover',
-            description: 'On the Steering Configuration page, adds a "Bulk remove domains" button. Paste domains, pick the steering configurations, check where they are listed as exceptions, and remove them in one go.',
+            label:       '🧹 Steering Exception Domain Tools',
+            description: 'On the Steering Configuration page, adds "Bulk remove domains" and "Bulk add domains" buttons. Paste domains, pick the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
         },
     ];
 
@@ -1596,15 +1599,16 @@ Version 1.16:
             },
             {
                 icon: '🧹',
-                title: 'Steering Exception Domain Remover',
+                title: 'Steering Exception Domain Tools',
                 buildContent(body) {
-                    lead(body, 'On the Steering Configuration page, remove a list of domains from the exceptions of one or more steering configurations at once.');
+                    lead(body, 'On the Steering Configuration page, remove or add a list of domains across the exceptions of several steering configurations at once.');
 
                     body.appendChild(hrow([
                         chip('+ Add Filter', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
                         chip('🧹 Bulk remove domains', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
+                        chip('➕ Bulk add domains', '#fff', { color: '#26890d', border: '1px solid #26890d' }),
                     ], { marginBottom: '6px' }));
-                    caption(body, 'Inside a steering configuration the button sits after Add Filter. On the Steering Configuration list it sits below the search bar, lined up with New Configuration.');
+                    caption(body, 'Inside a steering configuration the buttons sit after Add Filter. On the Steering Configuration list they sit below the search bar, lined up with New Configuration.');
 
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0' });
@@ -1662,6 +1666,29 @@ Version 1.16:
                         'When it finishes, it checks again that the domains are gone and gives you a summary to copy into the ticket, plus a backup file to download.',
                     ]);
 
+                    body.appendChild(span('➕ Bulk add domains', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
+                    const addCard = document.createElement('div');
+                    Object.assign(addCard.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', fontFamily: 'Arial, sans-serif' });
+                    const addHead = document.createElement('div');
+                    Object.assign(addHead.style, { display: 'flex', justifyContent: 'space-between', padding: '7px 12px', background: '#f7f7f7', fontSize: '12px', fontWeight: 'bold', color: '#333' });
+                    addHead.appendChild(span('UK - Steering Config'));
+                    addHead.appendChild(span('2 to add, 1 already present', { fontWeight: 'normal', color: '#777' }));
+                    addCard.appendChild(addHead);
+                    const addRow = hrow([
+                        span('✓', { width: '14px', height: '14px', borderRadius: '3px', background: '#667eea', color: '#fff', fontSize: '10px', lineHeight: '14px', textAlign: 'center' }),
+                        chip('New entry', '#26890d'),
+                        span('Adds 2 domains: example.com, app.example.com', { fontSize: '12px', color: '#333' }),
+                    ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap' });
+                    addCard.appendChild(addRow);
+                    addCard.appendChild(span('Already present, skipped: api.example.com (in "RITM0123456")', { display: 'block', padding: '6px 12px', borderTop: '1px solid #f0f0f0', fontSize: '11px', color: '#555' }));
+                    body.appendChild(addCard);
+                    caption(body, 'After Check: each configuration gets one new entry with the domains it does not have yet.');
+                    bullets(body, [
+                        'Type the notes for the new entries, for example the RITM number. Notes are required unless you tick "No notes needed".',
+                        'Domains a configuration already has are skipped there. Wildcards that already cover a domain are pointed out, but the domain is still added.',
+                        'Click Add twice to confirm. Each configuration is read again right before adding, and checked afterwards.',
+                    ]);
+
                     const bkHead = span('↩ Backups', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' });
                     body.appendChild(bkHead);
                     const bkCard = document.createElement('div');
@@ -1673,12 +1700,13 @@ Version 1.16:
                     bkCard.appendChild(span('ES - Steering Config · 2 entries', { fontSize: '11px', color: '#777', display: 'block' }));
                     bkCard.appendChild(span('Removed: logmein.eu, test.cat', { fontSize: '11px', color: '#777', display: 'block' }));
                     body.appendChild(bkCard);
-                    caption(body, 'One card per removal, newest first. Click one to see its entries and restore it.');
+                    caption(body, 'One card per removal or addition, newest first. Click one to see its entries and restore it.');
 
                     const states = [
                         { bg: '#26890d', label: 'Unchanged',     desc: 'Not touched since the removal. The removed domains go back in.' },
                         { bg: '#e08a00', label: 'Changed since', desc: 'Edited after the removal. Restoring replaces its domains, so those later edits are lost.' },
                         { bg: '#005587', label: 'Recreate',      desc: 'Deleted by the removal. It is created again with the same domains and notes.' },
+                        { bg: '#005587', label: 'Delete entry',  desc: 'Created by an addition. Undoing the addition deletes it.' },
                     ];
                     for (const st of states) {
                         body.appendChild(hrow([
@@ -4959,6 +4987,7 @@ Version 1.16:
     const SE_OLD_BACKUP_KEY   = 'toolkit_steeringBackup';       // the single backup kept by 1.24.x
     const SE_HOST_ID     = 'ns-steering-remover-host';
     const SE_BUTTON_ID   = 'ns-steering-remover-btn';
+    const SE_ADD_BUTTON_ID = 'ns-steering-adder-btn';
     const SE_RESOURCE    = 'settings.steering-configuration';
     const SE_MODE        = 'on_prem';
 
@@ -4975,6 +5004,7 @@ Version 1.16:
         domains:        [],
         plan:           null,
         confirming:     false,
+        mode:           'remove',   // the panel either removes or adds domains
     };
 
     /* ── Learning from the page's own requests ── */
@@ -5360,6 +5390,12 @@ Version 1.16:
         seStoreBackups(seGetBackups().map(b => (b.id === backup.id ? backup : b)));
     }
 
+    function seBackupAdded(backup) {
+        const out = [];
+        backup.entries.filter(e => e.kind === 'create').forEach(e => (e.after || []).forEach(d => { if (!out.includes(d)) out.push(d); }));
+        return out;
+    }
+
     function seBackupRemoved(backup) {
         const out = [];
         backup.entries.forEach(e => {
@@ -5607,6 +5643,11 @@ Version 1.16:
                 font-size: 13px; color: #282728; background: #fff; border: 1px solid #a7a8aa; }
             .footer .primary { color: #fff; background: #005587; border-color: #005587; }
             .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
+            .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
+            .panel.add { border-top-color: #26890d; }
+            .notes-row { margin-top: 14px; }
+            .notes-row textarea { min-height: 54px; font-family: Arial, sans-serif; }
+            .notes-row .option { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; cursor: pointer; }
             .footer .ghost { font-weight: 400; font-size: 12px; padding: 6px 10px; }
             button:disabled { cursor: not-allowed; opacity: .5; }
             .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
@@ -5630,7 +5671,7 @@ Version 1.16:
 
         shadow.innerHTML = `
             <div class="backdrop" id="se-main-view">
-                <section class="panel" role="dialog" aria-modal="true" aria-labelledby="se-title">
+                <section class="panel" id="se-main-panel" role="dialog" aria-modal="true" aria-labelledby="se-title">
                     <header class="header">
                         <h2 id="se-title">🧹 Remove domains from Steering Exceptions</h2>
                         <button type="button" class="close" data-action="close" aria-label="Close">×</button>
@@ -5638,9 +5679,9 @@ Version 1.16:
                     <main class="body">
                         <div class="cols">
                             <div class="col">
-                                <label class="label" for="se-domains">Domains to remove</label>
+                                <label class="label" for="se-domains" id="se-domains-label">Domains to remove</label>
                                 <textarea id="se-domains" placeholder="example.com&#10;*.example.com&#10;another.org"></textarea>
-                                <div class="help">One per line. Matching is exact: example.com does not remove *.example.com.</div>
+                                <div class="help" id="se-domains-help">One per line. Matching is exact: example.com does not remove *.example.com.</div>
                             </div>
                             <div class="col">
                                 <label class="label" for="se-filter">Steering configurations</label>
@@ -5648,6 +5689,11 @@ Version 1.16:
                                 <div class="configs" id="se-configs"></div>
                                 <div class="help" id="se-config-help"></div>
                             </div>
+                        </div>
+                        <div class="notes-row" id="se-notes-row" hidden>
+                            <label class="label" for="se-notes">Notes for the new entries</label>
+                            <textarea id="se-notes" placeholder="RITM0000000: reason for the exception"></textarea>
+                            <label class="option"><input type="checkbox" id="se-no-notes"><span>No notes needed</span></label>
                         </div>
                         <div class="results" id="se-results"></div>
                         <div class="status" id="se-status" role="status" aria-live="polite"></div>
@@ -5700,12 +5746,18 @@ Version 1.16:
         shadow.addEventListener('input', (e) => {
             if (e.target.id === 'se-filter') seRenderConfigList();
             if (e.target.id === 'se-domains') seResetPlan();
+            if (e.target.id === 'se-notes') seUpdateRemoveButton();
         });
         shadow.addEventListener('change', (e) => {
             if (e.target.id === 'se-bk-limit') seSetBackupLimit(e.target.value);
             if (e.target.id === 'se-bk-file' && e.target.files[0]) {
                 seImportBackupFile(e.target.files[0]);
                 e.target.value = '';
+            }
+            if (e.target.id === 'se-no-notes') seUpdateRemoveButton();
+            if (e.target.dataset.addcfg !== undefined && se.plan) {
+                se.plan[Number(e.target.dataset.addcfg)].selected = e.target.checked;
+                seUpdateRemoveButton();
             }
             if (e.target.dataset.cfg !== undefined) seResetPlan();
             if (e.target.dataset.row !== undefined && se.plan) {
@@ -5777,11 +5829,29 @@ Version 1.16:
         seUpdateRemoveButton();
     }
 
+    function seNotesMissing() {
+        return se.mode === 'add' && !seEl('se-no-notes').checked && !seEl('se-notes').value.trim();
+    }
+
     function seUpdateRemoveButton() {
         const btn = seEl('se-remove-btn');
-        const count = se.plan ? se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0) : 0;
-        btn.disabled = se.busy || !count;
         se.confirming = false;
+        seEl('se-notes').disabled = se.busy || seEl('se-no-notes').checked;
+        seEl('se-no-notes').disabled = se.busy;
+        if (se.mode === 'add') {
+            const count = se.plan ? se.plan.filter(c => c.selected && c.toAdd.length).length : 0;
+            btn.className = 'success';
+            btn.disabled = se.busy || !count || seNotesMissing();
+            btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : 'Add domains';
+            btn.title = seNotesMissing() ? 'Fill in the notes, or tick "No notes needed"' : '';
+            seEl('se-check-btn').disabled = se.busy;
+            seEl('se-backups-btn').disabled = se.busy;
+            return;
+        }
+        const count = se.plan ? se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0) : 0;
+        btn.className = 'danger';
+        btn.title = '';
+        btn.disabled = se.busy || !count;
         btn.textContent = count ? `Remove from ${count} entr${count === 1 ? 'y' : 'ies'}` : 'Remove selected';
         seEl('se-check-btn').disabled = se.busy;
         seEl('se-backups-btn').disabled = se.busy;
@@ -5831,10 +5901,45 @@ Version 1.16:
         });
     }
 
-    function seRenderResult(summary, stillThere) {
+    function seRenderAddPlan() {
         const out = seEl('se-results');
+        out.innerHTML = '';
+        se.plan.forEach((cfg, ci) => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `<div class="card-head">${seEscape(cfg.name)}
+                <span>${cfg.toAdd.length} to add, ${cfg.present.length} already present</span></div>`;
+            const row = document.createElement('label');
+            row.className = 'row';
+            row.innerHTML = cfg.toAdd.length
+                ? `<input type="checkbox" data-addcfg="${ci}"${cfg.selected ? ' checked' : ''}>
+                    <span class="chip ok">New entry</span>
+                    <div><div><b>Adds ${cfg.toAdd.length} domain${cfg.toAdd.length === 1 ? '' : 's'}</b></div>
+                    <div class="muted">${seEscape(cfg.toAdd.join(', '))}</div></div>`
+                : '<span class="chip gray">Nothing to add</span><div class="muted">Every domain is already an exception here.</div>';
+            card.appendChild(row);
+            if (cfg.present.length) {
+                const n = document.createElement('div');
+                n.className = 'note';
+                n.textContent = 'Already present, skipped: ' + cfg.present.map(p => `${p.domain} (in ${p.label})`).join(', ');
+                card.appendChild(n);
+            }
+            if (cfg.related.length) {
+                const n = document.createElement('div');
+                n.className = 'note related';
+                n.textContent = 'Already covered by a wildcard, still added: ' +
+                    cfg.related.map(r => `${r.requested} by ${r.existing} in ${r.label}`).join('; ');
+                card.appendChild(n);
+            }
+            out.appendChild(card);
+        });
+    }
+
+    function seRenderResult(summary, problems, mode) {
+        const out = seEl('se-results');
+        const warn = mode === 'add' ? '⚠️ Finished, but some domains were not found afterwards' : '⚠️ Finished, but some domains are still present';
         out.innerHTML = `
-            <label class="label" for="se-summary">${stillThere.length ? '⚠️ Finished, but some domains are still present' : '✅ Done. Summary for the ticket'}</label>
+            <label class="label" for="se-summary">${problems.length ? warn : '✅ Done. Summary for the ticket'}</label>
             <textarea id="se-summary" readonly></textarea>
             <div class="actions">
                 <button type="button" class="link-btn" data-action="copy">📋 Copy summary</button>
@@ -5856,6 +5961,16 @@ Version 1.16:
         seSetStatus('Reading exceptions…');
         try {
             se.domains = domains;
+            if (se.mode === 'add') {
+                se.plan = await seBuildAddPlan(configIds, domains);
+                seRenderAddPlan();
+                const total = se.plan.filter(c => c.toAdd.length).length;
+                seSetStatus(total
+                    ? (seNotesMissing() ? 'Nothing has changed yet. Fill in the notes (or tick "No notes needed"), then click Add.'
+                                        : 'Nothing has changed yet. Untick any configuration you want to leave out, then click Add.')
+                    : 'Every domain is already an exception in the selected configurations. Nothing to add.');
+                return;
+            }
             se.plan = await seBuildPlan(configIds, domains);
             seRenderPlan();
             const total = se.plan.reduce((n, c) => n + c.actions.length, 0);
@@ -5870,7 +5985,38 @@ Version 1.16:
         }
     }
 
+    async function seRunAdd() {
+        if (se.busy || !se.plan || seNotesMissing()) return;
+        const count = se.plan.filter(c => c.selected && c.toAdd.length).length;
+        if (!count) return;
+        if (!se.confirming) {
+            se.confirming = true;
+            seEl('se-remove-btn').textContent = 'Click again to confirm';
+            seSetStatus('Netskope applies this straight away, with no Save step. A backup is kept so you can undo it from ↩ Backups.');
+            return;
+        }
+        const notes = seEl('se-no-notes').checked ? '' : seEl('se-notes').value.trim();
+        seSetBusy(true);
+        const plan = se.plan;
+        try {
+            const result = await seApplyAddPlan(plan, notes, msg => seSetStatus(msg));
+            se.plan = null;
+            seRenderResult(seBuildAddSummary(plan, result, notes), result.missing, 'add');
+            seSetStatus(result.missing.length
+                ? 'Not found after adding: ' + result.missing.join(', ')
+                : 'All domains were added and checked.', !!result.missing.length);
+        } catch (err) {
+            console.error('[NS Toolkit] Steering addition:', err);
+            se.plan = null;
+            seEl('se-results').innerHTML = '';
+            seSetStatus(`Stopped: ${err.message}\nEntries added before this point were kept. Open "↩ Backups" to undo them, or click Check again to see the current state.`, true);
+        } finally {
+            seSetBusy(false);
+        }
+    }
+
     async function seRunRemove() {
+        if (se.mode === 'add') return seRunAdd();
         if (se.busy || !se.plan) return;
         const count = se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0);
         if (!count) return;
@@ -5943,6 +6089,7 @@ Version 1.16:
     function seBackupChips(backup) {
         let html = '';
         if (backup.restoredAt) html += `<span class="chip ok">Restored ${seEscape(seFormatDate(backup.restoredAt))}</span>`;
+        if (backup.action === 'addition') html += '<span class="chip ok">Addition</span>';
         if (backup.source === 'import') html += '<span class="chip info">Imported</span>';
         if (backup.host && backup.host !== location.host) html += `<span class="chip warn">Other tenant: ${seEscape(backup.host)}</span>`;
         return html;
@@ -5963,13 +6110,14 @@ Version 1.16:
                 <div class="spacer"></div>
                 <button type="button" class="link-btn" data-action="bk-import">⤒ Import backup</button>
             </div>
-            <div class="help">Each removal saves a backup of the entries it changed. They are kept in this browser only: download one to keep it elsewhere, then import it here to restore it.</div>`;
+            <div class="help">Each removal or addition saves a backup of the entries it changed. They are kept in this browser only: download one to keep it elsewhere, then import it here to restore it.</div>`;
         if (!list.length) {
             body.insertAdjacentHTML('beforeend', '<div class="help" style="margin-top:16px">No backups yet.</div>');
         }
         list.forEach(b => {
             const configs = [...new Set(b.entries.map(e => e.configName))];
             const removed = seBackupRemoved(b);
+            const added = seBackupAdded(b);
             const card = document.createElement('div');
             card.className = 'bk-card';
             card.dataset.action = 'bk-open';
@@ -5977,7 +6125,8 @@ Version 1.16:
             card.innerHTML = `
                 <div class="bk-title">${seEscape(seFormatDate(b.at))} ${seBackupChips(b)}</div>
                 <div class="muted">${seEscape(configs.join(', '))} · ${b.entries.length} entr${b.entries.length === 1 ? 'y' : 'ies'}</div>
-                ${removed.length ? `<div class="muted">Removed: ${seEscape(removed.slice(0, 8).join(', '))}${removed.length > 8 ? ` and ${removed.length - 8} more` : ''}</div>` : ''}`;
+                ${removed.length ? `<div class="muted">Removed: ${seEscape(removed.slice(0, 8).join(', '))}${removed.length > 8 ? ` and ${removed.length - 8} more` : ''}</div>` : ''}
+                ${added.length ? `<div class="muted">Added: ${seEscape(added.slice(0, 8).join(', '))}${added.length > 8 ? ` and ${added.length - 8} more` : ''}</div>` : ''}`;
             body.appendChild(card);
         });
         seEl('se-bk-footer').innerHTML = `
@@ -6009,7 +6158,7 @@ Version 1.16:
         const existing = seGetBackups();
         const fresh = incoming.filter(b => !existing.some(x => x.id === b.id));
         if (!fresh.length) return seBkStatus('This backup is already in the list.', true);
-        fresh.forEach(b => { b.source = 'import'; b.importedAt = new Date().toISOString(); });
+        fresh.forEach(b => { b.source = 'import'; b.importedAt = new Date().toISOString(); });   // action stays as it was
         seStoreBackups(fresh.concat(existing));
         if (fresh.length > seBackupLimit()) {
             seShowBackupList();
@@ -6036,7 +6185,7 @@ Version 1.16:
             se.bkInspection = inspection;
             seRenderBackupDetail(backup);
             seBkStatus(inspection.every(i => i.state === 'same')
-                ? 'Every entry is already as it was in this backup. Nothing to restore.'
+                ? (backup.action === 'addition' ? 'The added entries are already gone. Nothing to undo.' : 'Every entry is already as it was in this backup. Nothing to restore.')
                 : 'Nothing has changed yet. Review the entries, then click Restore.');
         } catch (err) {
             console.error('[NS Toolkit] Steering backup check:', err);
@@ -6048,7 +6197,7 @@ Version 1.16:
     }
 
     const SE_STATE_INFO = {
-        same:      { chip: 'gray', label: 'Matches backup',   text: 'It already matches the backup. Nothing to do.' },
+        same:      { chip: 'gray', label: 'Nothing to do',    text: 'It already matches the backup, or the added entry is already gone.' },
         unchanged: { chip: 'ok',   label: 'Unchanged',        text: 'Not changed since the removal. The removed domains go back in.' },
         changed:   { chip: 'warn', label: 'Changed since',    text: 'Changed after the removal. Restoring replaces its current domains with the backed up list, so those later changes are lost.' },
         unknown:   { chip: 'warn', label: 'May have changed', text: 'This backup is from an older version, so later changes cannot be detected. Restoring replaces its current domains with the backed up list.' },
@@ -6063,7 +6212,7 @@ Version 1.16:
         const insp = se.bkInspection;
         const configs = [...new Set(backup.entries.map(e => e.configName))];
         let html = `
-            <div class="bk-title" style="font-size:15px">Removal on ${seEscape(seFormatDate(backup.at))} ${seBackupChips(backup)}</div>
+            <div class="bk-title" style="font-size:15px">${backup.action === 'addition' ? 'Addition' : 'Removal'} on ${seEscape(seFormatDate(backup.at))} ${seBackupChips(backup)}</div>
             <div class="muted">${seEscape(configs.join(', '))} · ${seEscape(backup.host || 'unknown tenant')}</div>`;
 
         if (backup.problems.length) {
@@ -6076,7 +6225,7 @@ Version 1.16:
         }
 
         if (insp) {
-            const risky = insp.filter(i => ['changed', 'unknown', 'gone'].includes(i.state) || i.elsewhere.length);
+            const risky = insp.filter(i => ['changed', 'unknown', 'gone', 'createdChanged'].includes(i.state) || i.elsewhere.length);
             if (risky.length) {
                 html += `<div class="warnbox">⚠️ ${risky.length} entr${risky.length === 1 ? 'y has' : 'ies have'} changed since this removal or would clash with other entries.
                     Restoring puts each entry back exactly as it was in the backup, so later edits to it are lost and domains already added elsewhere end up listed twice. Check the entries marked below before you restore.</div>`;
@@ -6087,18 +6236,22 @@ Version 1.16:
         backup.entries.forEach((e, i) => {
             const item = insp && insp[i];
             const info = item ? SE_STATE_INFO[item.state] : null;
-            const what = e.kind === 'delete' ? 'Deleted entry' : e.kind === 'edit' ? 'Edited entry' : 'Entry';
-            const removed = e.removed.length ? e.removed : (e.after ? e.domains.filter(d => !e.after.includes(d)) : []);
+            const what = e.kind === 'delete' ? 'Deleted entry' : e.kind === 'edit' ? 'Edited entry' : e.kind === 'create' ? 'Created entry' : 'Entry';
+            const removed = e.removed.length ? e.removed : (e.after && e.kind !== 'create' ? e.domains.filter(d => !e.after.includes(d)) : []);
+            const facts = e.kind === 'create'
+                ? `Added: ${seEscape((e.after || []).join(', '))}.`
+                : `${removed.length ? `Removed: ${seEscape(removed.join(', '))}.` : ''} Backed up with ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'}.`;
             html += `<div class="row">
                 ${info ? `<span class="chip ${info.chip}">${info.label}</span>` : '<span class="chip gray">Checking…</span>'}
                 <div><div><b>${seEscape(seEntryLabel(e.notes, e.rowId))}</b> <span class="muted">in ${seEscape(e.configName)}</span></div>
-                <div class="muted">${what}. ${removed.length ? `Removed: ${seEscape(removed.join(', '))}.` : ''} Backed up with ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'}.</div>
+                <div class="muted">${what}. ${facts}</div>
                 ${info ? `<div class="muted">${info.text}</div>` : ''}
-                ${item && item.state === 'changed' && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(item.addedSince.join(', '))}. These would be removed.</div>` : ''}
+                ${item && ['changed', 'createdChanged'].includes(item.state) && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(item.addedSince.join(', '))}. These would be removed.</div>` : ''}
                 ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(item.droppedSince.join(', '))}. These would come back.</div>` : ''}
+                ${item && item.state === 'createdChanged' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed from it since: ${seEscape(item.droppedSince.join(', '))}.</div>` : ''}
                 ${item && item.elsewhere.length ? `<div class="note warn" style="padding:4px 0;border:0">Already in another entry: ${seEscape(item.elsewhere.join(', '))}. Restoring lists them twice.</div>` : ''}
                 ${item && item.state !== 'same' && item.willAdd.length ? `<div class="muted"><b>Adds back as exceptions:</b> ${seEscape(item.willAdd.join(', '))}</div>` : ''}
-                <details class="muted"><summary style="cursor:pointer">All ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'} a restore writes to this entry</summary>${seEscape(e.domains.join(', '))}</details>
+                ${e.kind === 'create' ? '' : `<details class="muted"><summary style="cursor:pointer">All ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'} a restore writes to this entry</summary>${seEscape(e.domains.join(', '))}</details>`}
                 </div></div>`;
         });
         html += '</div>';
@@ -6120,7 +6273,10 @@ Version 1.16:
         const todo = insp ? insp.filter(i => i.state !== 'same').length : 0;
         const backup = seGetBackups().find(b => b.id === se.bkSelected);
         btn.disabled = se.busy || !todo || !backup || !!seRestoreBlocker(backup);
-        btn.textContent = se.bkConfirm ? 'Click again to confirm' : (todo ? `Restore ${todo} entr${todo === 1 ? 'y' : 'ies'}` : 'Restore this backup');
+        const undo = backup && backup.action === 'addition';
+        btn.textContent = se.bkConfirm ? 'Click again to confirm'
+            : !todo ? (undo ? 'Undo this addition' : 'Restore this backup')
+            : undo ? `Undo: delete ${todo} entr${todo === 1 ? 'y' : 'ies'}` : `Restore ${todo} entr${todo === 1 ? 'y' : 'ies'}`;
         se.shadow.querySelectorAll('#se-bk-footer button:not(#se-bk-restore)').forEach(b => {
             if (b.dataset.action !== 'close') b.disabled = se.busy;
         });
@@ -6153,7 +6309,9 @@ Version 1.16:
             seReplaceBackup(backup);
             se.busy = false;
             await seOpenBackup(backup.id);
-            seBkStatus('Backup restored. Reload the page to see the exceptions table updated.');
+            seBkStatus(backup.action === 'addition'
+                ? 'Addition undone: the entries it created were deleted. Reload the page to see the exceptions table updated.'
+                : 'Backup restored. Reload the page to see the exceptions table updated.');
         } catch (err) {
             console.error('[NS Toolkit] Steering restore:', err);
             seBkStatus(`Restore stopped: ${err.message}\nEntries restored before this point were kept. Open the backup again to see where it stands.`, true);
@@ -6165,10 +6323,23 @@ Version 1.16:
 
     // insideConfig: opened from inside a steering configuration (the Add Filter button),
     // so that configuration starts ticked. From the list, nothing starts ticked.
-    function seOpen(insideConfig) {
+    function seApplyMode(mode) {
+        se.mode = mode;
+        const add = mode === 'add';
+        seEl('se-main-panel').classList.toggle('add', add);
+        seEl('se-title').textContent = add ? '➕ Add domains to Steering Exceptions' : '🧹 Remove domains from Steering Exceptions';
+        seEl('se-domains-label').textContent = add ? 'Domains to add' : 'Domains to remove';
+        seEl('se-domains-help').textContent = add
+            ? 'One per line. A domain a configuration already has is skipped there.'
+            : 'One per line. Matching is exact: example.com does not remove *.example.com.';
+        seEl('se-notes-row').hidden = !add;
+    }
+
+    function seOpen(insideConfig, mode) {
         if (!se.host) seCreateHost();
         se.host.dataset.open = 'true';
         if (!se.busy) {
+            seApplyMode(mode === 'add' ? 'add' : 'remove');
             seShowView('main');
             se.openConfig = insideConfig ? se.currentConfig : null;
             const box = seEl('se-configs');
@@ -6178,6 +6349,7 @@ Version 1.16:
             seSetStatus('');
         }
         seRenderConfigList();
+        seUpdateRemoveButton();
         seUpdateRemoveButton();
         if (!se.token) seSetStatus('Waiting for the page to send its session token. This takes a few seconds after the page loads.');
         setTimeout(() => seEl('se-domains').focus(), 50);
@@ -6201,7 +6373,7 @@ Version 1.16:
     // The button goes after the dropdown wrapper so the filter menu keeps its position.
     function seFindAddFilter() {
         const btn = [...document.querySelectorAll('button')].find(b =>
-            b.id !== SE_BUTTON_ID && seIsVisible(b) && /^\+?\s*add filters?$/i.test(b.textContent.trim()));
+            b.id !== SE_BUTTON_ID && b.id !== SE_ADD_BUTTON_ID && seIsVisible(b) && /^\+?\s*add filters?$/i.test(b.textContent.trim()));
         return btn ? (btn.closest('.dropdown-select') || btn) : null;
     }
 
@@ -6214,30 +6386,44 @@ Version 1.16:
         return input ? (input.closest('.ns-icon-input-container') || input) : null;
     }
 
+    function seMakePageButton(id, label, tooltip, colorClass, place, mode) {
+        const btn = document.createElement('button');
+        btn.id = id;
+        btn.type = 'button';
+        btn.dataset.mode = place;
+        // On the list it matches the New Configuration button below it
+        btn.className = `ns-btn ns-btn-secondary ${colorClass}` + (place === 'search' ? ' ns-margin-bottom' : '');
+        btn.textContent = label;
+        btn.title = tooltip;
+        Object.assign(btn.style, { whiteSpace: 'nowrap', verticalAlign: 'middle', flexShrink: '0' });
+        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(btn.dataset.mode === 'filter', mode); });
+        return btn;
+    }
+
     function seSyncButton() {
         let btn = document.getElementById(SE_BUTTON_ID);
-        let anchor = null, mode = null;
+        let addBtn = document.getElementById(SE_ADD_BUTTON_ID);
+        let anchor = null, place = null;
         if (seOnSteeringPage()) {
             anchor = seFindAddFilter();
-            if (anchor) mode = 'filter';
-            else if ((anchor = seFindSearchBox())) mode = 'search';
+            if (anchor) place = 'filter';
+            else if ((anchor = seFindSearchBox())) place = 'search';
         }
-        if (btn && anchor && btn.previousElementSibling === anchor && btn.dataset.mode === mode) return;
+        if (btn && addBtn && anchor && btn.previousElementSibling === anchor && btn.nextElementSibling === addBtn &&
+            btn.dataset.mode === place) return;
         btn?.remove();
+        addBtn?.remove();
         if (!anchor) return;
 
-        btn = document.createElement('button');
-        btn.id = SE_BUTTON_ID;
-        btn.type = 'button';
-        btn.dataset.mode = mode;
-        // On the list it matches the New Configuration button below it
-        btn.className = 'ns-btn ns-btn-secondary ns-color-red' + (mode === 'search' ? ' ns-margin-bottom' : '');
-        btn.textContent = '🧹 Bulk remove domains';
-        btn.title = 'Find domains in steering exceptions and remove them (NS Policies Toolkit)';
-        Object.assign(btn.style, { whiteSpace: 'nowrap', verticalAlign: 'middle', flexShrink: '0' });
-        if (mode === 'filter') btn.style.marginLeft = '8px';
-        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(btn.dataset.mode === 'filter'); });
+        btn = seMakePageButton(SE_BUTTON_ID, '🧹 Bulk remove domains',
+            'Find domains in steering exceptions and remove them (NS Policies Toolkit)', 'ns-color-red', place, 'remove');
+        addBtn = seMakePageButton(SE_ADD_BUTTON_ID, '➕ Bulk add domains',
+            'Add domains as exceptions to several steering configurations (NS Policies Toolkit)', 'ns-color-green', place, 'add');
+        addBtn.style.marginLeft = '8px';
+        addBtn.style.color = '#26890d';
+        if (place === 'filter') btn.style.marginLeft = '8px';
         anchor.insertAdjacentElement('afterend', btn);
+        btn.insertAdjacentElement('afterend', addBtn);
     }
 
     function initSteeringRemover() {
@@ -6249,7 +6435,7 @@ Version 1.16:
     function cleanupSteeringRemover() {
         clearInterval(se.timer);
         se.timer = null;
-        removeAll('#' + SE_BUTTON_ID);
+        removeAll(`#${SE_BUTTON_ID}, #${SE_ADD_BUTTON_ID}`);
         se.host?.remove();
         se.host = se.shadow = null;
     }
