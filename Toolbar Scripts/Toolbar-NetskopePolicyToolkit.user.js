@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.24.2
+// @version      1.24.3
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,12 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.24.2';
-    const CHANGELOG = `Version 1.24.2:
+    const SCRIPT_VERSION = '1.24.3';
+    const CHANGELOG = `Version 1.24.3:
+- The "Remove domains from Steering Exceptions" panel no longer closes when you click outside it. Use Close or ✕.
+- Opening the panel from the Steering Configuration list no longer leaves a configuration ticked from before. Only when you open it from inside a steering configuration is that configuration ticked for you.
+
+Version 1.24.2:
 - The "🧹 Bulk remove domains" button now uses Netskope's own button style.
 - Fixed the button overlapping the search bar on the Steering Configuration list. It now sits beside the search bar instead of inside it.
 
@@ -1637,7 +1641,7 @@ Version 1.16:
                     bullets(body, [
                         'Matching is exact. A domain only removes the same value, so example.com leaves *.example.com alone. Wildcard entries that cover a domain are listed as similar entries but never removed.',
                         'Only the requested domains are taken out of an entry. The entry is deleted only when it holds nothing else.',
-                        'Configurations show in the list once you have opened them. Open the Steering Configuration list once so all of them appear. The one open now is ticked for you.',
+                        'Configurations show in the list once you have opened them. Open the Steering Configuration list once so all of them appear. Inside a steering configuration, that one is ticked for you. From the list, nothing is ticked.',
                         'When it finishes, it checks again that the domains are gone and gives you a summary to copy into the ticket, plus a backup file to download.',
                     ]);
                 },
@@ -4912,6 +4916,7 @@ Version 1.16:
         resource:       null,   // "resource" header of the page's latest request: tells us which page is open
         clientIdPrefix: null,
         currentConfig:  null,   // config_id the open page last asked about
+        openConfig:     null,   // the configuration being viewed when the panel was opened, if any
         host:           null,
         shadow:         null,
         timer:          null,
@@ -5346,7 +5351,6 @@ Version 1.16:
         ['pointerdown', 'mousedown', 'click'].forEach(name => shadow.addEventListener(name, e => e.stopPropagation()));
         shadow.addEventListener('click', (e) => {
             if (!(e.target instanceof Element)) return;
-            if (e.target.classList.contains('backdrop') && !se.busy) { seClose(); return; }
             const action = e.target.closest('[data-action]')?.dataset.action;
             if (action === 'close' && !se.busy) seClose();
             if (action === 'check')    seRunCheck();
@@ -5397,7 +5401,7 @@ Version 1.16:
     function seRenderConfigList() {
         const box = seEl('se-configs');
         const ticked = new Set([...box.querySelectorAll('input[data-cfg]:checked')].map(i => i.dataset.cfg));
-        if (!box.dataset.init && se.currentConfig) ticked.add(se.currentConfig);
+        if (!box.dataset.init && se.openConfig) ticked.add(se.openConfig);
         box.dataset.init = '1';
 
         const filter  = seEl('se-filter').value.trim().toLowerCase();
@@ -5409,7 +5413,7 @@ Version 1.16:
             const row = document.createElement('label');
             row.className = 'cfg';
             row.innerHTML = `<input type="checkbox" data-cfg="${seEscape(id)}"${ticked.has(id) ? ' checked' : ''}>
-                <span>${seEscape(configs[id].name)}</span>${id === se.currentConfig ? '<span class="tag">open now</span>' : ''}`;
+                <span>${seEscape(configs[id].name)}</span>${id === se.openConfig ? '<span class="tag">open now</span>' : ''}`;
             box.appendChild(row);
         });
         if (!ids.length) box.innerHTML = '<div class="help" style="padding:6px 10px">No configurations known yet.</div>';
@@ -5599,9 +5603,19 @@ Version 1.16:
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     }
 
-    function seOpen() {
+    // insideConfig: opened from inside a steering configuration (the Add Filter button),
+    // so that configuration starts ticked. From the list, nothing starts ticked.
+    function seOpen(insideConfig) {
         if (!se.host) seCreateHost();
         se.host.dataset.open = 'true';
+        if (!se.busy) {
+            se.openConfig = insideConfig ? se.currentConfig : null;
+            const box = seEl('se-configs');
+            box.innerHTML = '';
+            delete box.dataset.init;
+            seResetPlan();
+            seSetStatus('');
+        }
         seRenderConfigList();
         seUpdateRemoveButton();
         if (!se.token) seSetStatus('Waiting for the page to send its session token. This takes a few seconds after the page loads.');
@@ -5683,7 +5697,7 @@ Version 1.16:
         btn.textContent = '🧹 Bulk remove domains';
         btn.title = 'Find domains in steering exceptions and remove them (NS Policies Toolkit)';
         Object.assign(btn.style, { marginLeft: '8px', whiteSpace: 'nowrap', verticalAlign: 'middle', flexShrink: '0' });
-        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(); });
+        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(btn.dataset.mode === 'filter'); });
         anchor.insertAdjacentElement('afterend', btn);
         if (mode === 'search') seFitBesideSearch(anchor, btn);
     }
