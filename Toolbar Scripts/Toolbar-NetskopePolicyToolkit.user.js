@@ -3,13 +3,14 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.23
-// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.). Integrated with Toolbar v2.
+// @version      1.24
+// @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_deleteValue
+// @grant        unsafeWindow
 // @run-at       document-start
 // ==/UserScript==
 
@@ -33,6 +34,7 @@
         sslDomainLog:    'toolkit_sslDomainLog',
         dlpCharCounter:  'toolkit_dlpCharCounter',
         bulkConstraints: 'toolkit_bulkConstraints',
+        steeringRemover: 'toolkit_steeringRemover',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -42,8 +44,14 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.23';
-    const CHANGELOG = `Version 1.23:
+    const SCRIPT_VERSION = '1.24';
+    const CHANGELOG = `Version 1.24:
+- New "Steering Exception Domain Remover" feature. On the Steering Configuration page, a "🧹 Bulk remove domains" button now appears next to New Exception. Paste the domains, tick the steering configurations to search, and click Check to see where each domain is listed as an exception.
+- Remove takes only the requested domains out of each exception entry and keeps the others. An entry is deleted only when every domain in it was requested.
+- Nothing changes until you confirm. Afterwards the tool checks again that the domains are gone and gives you a summary to copy into the ticket.
+- The entries are backed up before each change. "Restore last backup" puts them back, and the backup can be downloaded as a file.
+
+Version 1.23:
 - The ↗ open buttons now also cover File Classifiers in a DLP Profile (they open the classifier directly) and, inside a DLP Rule, each Custom or Dictionary Identifier listed in the Overview panel (the new tab finds and opens the entity).
 - The buttons also show in DLP Profiles that use Advanced mode.
 - Fixed the fallback that searches the DLP Profiles list when a profile cannot be opened by its name.
@@ -453,6 +461,10 @@ Version 1.16:
             background-color: #ffffff !important;
             color: #333333 !important;
         }
+        #ns-steering-remover-btn {
+            background-color: #ffffff !important;
+            color: #da291c !important;
+        }
     `;
     // At document-start neither head nor even documentElement is guaranteed to exist yet
     (function appendDarkModeStyle() {
@@ -571,6 +583,11 @@ Version 1.16:
             label:       '📥 Bulk Constraint Tools',
             description: 'In the user constraint profile editor, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel (old modal) or Save (new side panel).',
             credit:      'Contributed by Sameena K.',
+        },
+        {
+            key:         'steeringRemover',
+            label:       '🧹 Steering Exception Domain Remover',
+            description: 'On the Steering Configuration page, adds a "Bulk remove domains" button. Paste domains, pick the steering configurations, check where they are listed as exceptions, and remove them in one go.',
         },
     ];
 
@@ -815,6 +832,7 @@ Version 1.16:
                         injectDescriptionLogButtons();
                     }
                     if (key === 'bulkConstraints') cleanupBulkConstraintTools();
+                    if (key === 'steeringRemover') cleanupSteeringRemover();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -866,7 +884,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -1549,6 +1567,75 @@ Version 1.16:
                         '"Copy constraints": copies every value in the profile to the clipboard, optionally with the Matches / Does not match operator and with duplicates removed.',
                         'Changes are made in the form only. Click Save in the profile modal to keep them.',
                         'Contributed by Sameena K.',
+                    ]);
+                },
+            },
+            {
+                icon: '🧹',
+                title: 'Steering Exception Domain Remover',
+                buildContent(body) {
+                    lead(body, 'On the Steering Configuration page, remove a list of domains from the exceptions of one or more steering configurations at once.');
+
+                    body.appendChild(hrow([
+                        chip('🧹 Bulk remove domains', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
+                        chip('+ New Exception', '#0073e6'),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits next to New Exception. If that button cannot be found, it floats in the bottom right corner instead.');
+
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0' });
+                    const head = document.createElement('div');
+                    Object.assign(head.style, {
+                        display: 'flex', justifyContent: 'space-between', padding: '7px 12px',
+                        background: '#f7f7f7', fontSize: '12px', fontWeight: 'bold', color: '#333',
+                        fontFamily: 'Arial, sans-serif',
+                    });
+                    head.appendChild(span('ES - Steering Config'));
+                    head.appendChild(span('2 of 3 found in 2 entries', { fontWeight: 'normal', color: '#777' }));
+                    card.appendChild(head);
+                    [
+                        { kind: 'Edit entry',   bg: '#e08a00', name: '"RITM0847844"', note: 'Removes logmein.eu. Keeps its other 16 domains.' },
+                        { kind: 'Delete entry', bg: '#da291c', name: '"TEST"',        note: 'Removes test.cat. Every domain in this entry was requested, so the whole entry is deleted.' },
+                    ].forEach(r => {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, { display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '7px 12px', borderTop: '1px solid #f0f0f0' });
+                        const box = span('✓', {
+                            width: '14px', height: '14px', borderRadius: '3px', background: '#667eea', color: '#fff',
+                            fontSize: '10px', lineHeight: '14px', textAlign: 'center', flexShrink: '0', marginTop: '2px',
+                        });
+                        const text = document.createElement('div');
+                        text.appendChild(span(r.name, { fontSize: '12px', fontWeight: 'bold', color: '#333', display: 'block' }));
+                        text.appendChild(span(r.note, { fontSize: '11px', color: '#777', display: 'block' }));
+                        row.appendChild(box);
+                        row.appendChild(chip(r.kind, r.bg));
+                        row.appendChild(text);
+                        card.appendChild(row);
+                    });
+                    const nf = span('Not present: example.org', {
+                        display: 'block', padding: '6px 12px', borderTop: '1px solid #f0f0f0', fontSize: '11px', color: '#555',
+                    });
+                    card.appendChild(nf);
+                    body.appendChild(card);
+                    caption(body, 'After Check: one card per configuration. Untick any entry you want to leave as it is.');
+
+                    const steps = [
+                        { bg: '#005587', label: 'Check',  desc: 'Reads the exceptions and shows where each domain is listed. Nothing changes yet.' },
+                        { bg: '#da291c', label: 'Remove', desc: 'Click twice to confirm. Netskope applies it straight away, there is no Save step.' },
+                        { bg: 'transparent', color: '#333', border: '1px solid #a7a8aa', label: '↩ Restore last backup', desc: 'Puts the entries back as they were before the last removal.' },
+                    ];
+                    for (const s of steps) {
+                        const srow = hrow([
+                            chip(s.label, s.bg, { color: s.color, border: s.border }),
+                            span(s.desc, { fontSize: '12px', color: '#555' }),
+                        ], { flexWrap: 'nowrap', margin: '10px 0 0 0' });
+                        body.appendChild(srow);
+                    }
+
+                    bullets(body, [
+                        'Matching is exact. A domain only removes the same value, so example.com leaves *.example.com alone. Wildcard entries that cover a domain are listed as similar entries but never removed.',
+                        'Only the requested domains are taken out of an entry. The entry is deleted only when it holds nothing else.',
+                        'Configurations show in the list once you have opened them. Open the Steering Configuration list once so all of them appear. The one open now is ticked for you.',
+                        'When it finishes, it checks again that the domains are gone and gives you a summary to copy into the ticket, plus a backup file to download.',
                     ]);
                 },
             },
@@ -4801,6 +4888,786 @@ Version 1.16:
     }
 
     // ─────────────────────────────────────────────────────────────
+    // STEERING EXCEPTION DOMAIN REMOVER
+    // ─────────────────────────────────────────────────────────────
+    //
+    // Talks to the admin console's own steering exception endpoints with the
+    // session the page is logged in with. Every call needs the page's request
+    // token, which is not stored anywhere readable, so it is picked up from the
+    // page's own outgoing requests (the console pings every few seconds).
+
+    const SE_API         = '/settings/steering_exception/';
+    const SE_CONFIGS_KEY = 'toolkit_steeringConfigs';   // { [config_id]: { name, trafficType } }
+    const SE_BACKUP_KEY  = 'toolkit_steeringBackup';    // entries as they were before the last removal
+    const SE_HOST_ID     = 'ns-steering-remover-host';
+    const SE_BUTTON_ID   = 'ns-steering-remover-btn';
+    const SE_RESOURCE    = 'settings.steering-configuration';
+    const SE_MODE        = 'on_prem';
+
+    const se = {
+        token:          null,
+        resource:       null,   // "resource" header of the page's latest request: tells us which page is open
+        clientIdPrefix: null,
+        currentConfig:  null,   // config_id the open page last asked about
+        host:           null,
+        shadow:         null,
+        timer:          null,
+        busy:           false,
+        domains:        [],
+        plan:           null,
+        confirming:     false,
+    };
+
+    /* ── Learning from the page's own requests ── */
+
+    function seGetConfigs() {
+        try { return JSON.parse(GM_getValue(SE_CONFIGS_KEY, '{}')) || {}; } catch (e) { return {}; }
+    }
+
+    function seRememberConfigs(json) {
+        const found = {};
+        (function walk(v, depth) {
+            if (!v || typeof v !== 'object' || depth > 6) return;
+            if (Array.isArray(v)) { v.forEach(x => walk(x, depth + 1)); return; }
+            if (v.config_id != null && typeof v.config_name === 'string') {
+                found[String(v.config_id)] = { name: v.config_name, trafficType: v.traffic_type || 'web' };
+            }
+            Object.values(v).forEach(x => walk(x, depth + 1));
+        })(json, 0);
+        if (!Object.keys(found).length) return;
+        GM_setValue(SE_CONFIGS_KEY, JSON.stringify(Object.assign(seGetConfigs(), found)));
+        if (se.shadow && !se.busy) seRenderConfigList();
+    }
+
+    function seLearnFromRequest(url, body) {
+        if (typeof body !== 'string' || body.indexOf('"token"') === -1) return;
+        try {
+            const json = JSON.parse(body);
+            if (json.token) se.token = json.token;
+            if (/steering/i.test(url) && json.config_id != null) se.currentConfig = String(json.config_id);
+        } catch (e) { /* not JSON */ }
+    }
+
+    function seInstallSniffer() {
+        const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const proto = w.XMLHttpRequest && w.XMLHttpRequest.prototype;
+        if (!proto || proto.__nstkSteering) return;
+        proto.__nstkSteering = true;
+
+        const origOpen = proto.open, origSend = proto.send, origHeader = proto.setRequestHeader;
+        proto.open = function (method, url) {
+            this.__nstkUrl = String(url || '');
+            return origOpen.apply(this, arguments);
+        };
+        proto.setRequestHeader = function (name, value) {
+            const n = String(name).toLowerCase();
+            if (n === 'resource') se.resource = String(value);
+            if (n === 'x-netskope-client-request-id' && /steering/i.test(this.__nstkUrl || '')) {
+                se.clientIdPrefix = String(value).split('.')[0];
+            }
+            return origHeader.apply(this, arguments);
+        };
+        proto.send = function (body) {
+            const url = this.__nstkUrl || '';
+            seLearnFromRequest(url, body);
+            if (/steering/i.test(url)) {
+                this.addEventListener('load', () => {
+                    try {
+                        seRememberConfigs(this.responseType === 'json' ? this.response : JSON.parse(this.responseText));
+                    } catch (e) { /* not JSON */ }
+                });
+            }
+            return origSend.apply(this, arguments);
+        };
+
+        if (typeof w.fetch === 'function') {
+            const origFetch = w.fetch;
+            w.fetch = function (input, init) {
+                try {
+                    const url = typeof input === 'string' ? input : (input && input.url) || '';
+                    seLearnFromRequest(url, init && init.body);
+                } catch (e) { /* never block the page's request */ }
+                return origFetch.apply(this, arguments);
+            };
+        }
+    }
+
+    // Must run before the console app starts so its first requests are seen
+    if (getSetting('steeringRemover')) seInstallSniffer();
+
+    /* ── API calls ── */
+
+    function seRandomId() {
+        return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    }
+
+    async function sePost(endpoint, payload) {
+        if (!se.token) {
+            throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
+        }
+        const reqId  = seRandomId();
+        const prefix = se.clientIdPrefix || btoa('/settings+steering_config+traffic');
+        const res = await fetch(SE_API + endpoint, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'resource': SE_RESOURCE,
+                'Netskope-req-id': reqId,
+                'X-Netskope-Client-Request-Id': prefix + '.' + reqId,
+            },
+            body: JSON.stringify(Object.assign({}, payload, { token: se.token })),
+        });
+        if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${endpoint}. Your session may have expired: reload the page.`);
+
+        let json;
+        try { json = await res.json(); } catch (e) { throw new Error(`Netskope sent an unexpected answer to ${endpoint}.`); }
+        if (!json || json.status !== 'success') throw new Error(`Netskope refused ${endpoint}: ${(json && json.msg) || 'no reason given'}`);
+
+        // Write calls wrap the backend's own result in a JSON string
+        if (typeof json.data === 'string' && json.data.trim().startsWith('{')) {
+            let inner = null;
+            try { inner = JSON.parse(json.data); } catch (e) { /* plain text */ }
+            if (inner && inner.status && inner.status !== 'success') {
+                throw new Error(`Netskope refused ${endpoint}: ${inner.message || inner.status}`);
+            }
+        }
+        return json.data;
+    }
+
+    function seListExceptions(configId) {
+        const cfg = seGetConfigs()[configId] || {};
+        return sePost('getBypassSettingsForConfig', {
+            splitQueries: [], config_id: String(configId),
+            dynamic_steering_mode: SE_MODE, traffic_type: cfg.trafficType || 'web',
+        });
+    }
+
+    function seGetException(configId, rowId) {
+        return sePost('getExceptionById', { config_id: String(configId), rowId: Number(rowId) });
+    }
+
+    // rowId null creates a new entry, otherwise the entry's domain list is replaced
+    function seSaveDomains(configId, rowId, domains, notes) {
+        const payload = { domains, config_id: String(configId), editRow: rowId != null, notes: notes || '' };
+        if (rowId != null) payload.rowSelectionId = Number(rowId);
+        return sePost('addNewDomainsToConfig', payload);
+    }
+
+    function seDeleteEntries(configId, rowIds) {
+        const selectedRows = {};
+        rowIds.forEach(id => { selectedRows[id] = true; });
+        return sePost('deleteSelectedExceptions', {
+            selectedRows, selectedAll: false, config_id: String(configId), dynamic_steering_mode: SE_MODE,
+        });
+    }
+
+    /* ── Matching ── */
+
+    function seNormalize(raw) {
+        return String(raw || '').trim().toLowerCase()
+            .replace(/^[a-z][a-z0-9+.-]*:\/\//, '')
+            .split(/[/?#]/)[0]
+            .replace(/:\d+$/, '')
+            .replace(/\.+$/, '');
+    }
+
+    function seParseDomains(text) {
+        const out = [];
+        String(text || '').split(/[\s,;]+/).forEach(part => {
+            const d = seNormalize(part);
+            if (d && !out.includes(d)) out.push(d);
+        });
+        return out;
+    }
+
+    // Wildcard entries that cover a requested domain (or the reverse). Shown, never removed.
+    function seIsRelated(requested, existing) {
+        if (requested === existing) return false;
+        const base = requested.replace(/^\*\./, '');
+        if (existing.startsWith('*.')) {
+            const eBase = existing.slice(2);
+            return base === eBase || base.endsWith('.' + eBase);
+        }
+        return requested.startsWith('*.') && existing === base;
+    }
+
+    function seFirstLine(text, max) {
+        const line = (String(text || '').split('\n').map(s => s.trim()).find(Boolean) || '').replace(/[\s,;:]+$/, '');
+        return line.length > max ? line.slice(0, max - 1) + '…' : line;
+    }
+
+    function seEntryLabel(notes, rowId) {
+        const n = seFirstLine(notes, 70);
+        return n ? `"${n}"` : `entry #${rowId}`;
+    }
+
+    async function seBuildPlan(configIds, domains) {
+        const configs = seGetConfigs();
+        const wanted  = new Set(domains);
+        const plan = [];
+        for (const id of configIds) {
+            const rows    = await seListExceptions(id);
+            const entries = (Array.isArray(rows) ? rows : [])
+                .filter(r => r.type === 'domain' && Array.isArray(r.display_value));
+            const actions = [], related = [];
+            for (const e of entries) {
+                const values = e.display_value.map(seNormalize);
+                const hits   = domains.filter(d => values.includes(d));
+                if (hits.length) {
+                    const keeps = values.filter(v => !wanted.has(v)).length;
+                    actions.push({
+                        rowId: e.settings_id, notes: e.notes || '', hits, keeps,
+                        kind: keeps ? 'edit' : 'delete', selected: true,
+                    });
+                }
+                for (const d of domains) {
+                    values.filter(v => seIsRelated(d, v)).forEach(v => {
+                        related.push({ requested: d, existing: v, label: seEntryLabel(e.notes, e.settings_id) });
+                    });
+                }
+            }
+            plan.push({
+                configId: id,
+                name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                actions, related,
+                notFound: domains.filter(d => !actions.some(a => a.hits.includes(d))),
+            });
+        }
+        return plan;
+    }
+
+    /* ── Removal, backup and restore ── */
+
+    async function seApplyPlan(plan, domains, progress) {
+        const wanted = new Set(domains);
+        const backup = { at: new Date().toISOString(), host: location.host, entries: [] };
+        const log = [];
+
+        for (const cfg of plan) {
+            const chosen = cfg.actions.filter(a => a.selected);
+            if (!chosen.length) continue;
+            const toDelete = [];
+
+            for (const a of chosen) {
+                progress(`Reading ${seEntryLabel(a.notes, a.rowId)} in ${cfg.name}…`);
+                // Re-read the entry so the edit is based on its exact current domains and notes
+                const current = await seGetException(cfg.configId, a.rowId);
+                const now     = (current && current.data && Array.isArray(current.data.domains)) ? current.data.domains : [];
+                const notes   = current && current.notes != null ? current.notes : a.notes;
+                const removed = now.filter(v => wanted.has(seNormalize(v)));
+                const keep    = now.filter(v => !wanted.has(seNormalize(v)));
+                if (!removed.length) {
+                    log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'skipped', removed: [] });
+                    continue;
+                }
+
+                backup.entries.push({ configId: cfg.configId, configName: cfg.name, rowId: a.rowId, notes, domains: now });
+                GM_setValue(SE_BACKUP_KEY, JSON.stringify(backup));   // saved before every change
+
+                if (keep.length) {
+                    progress(`Removing ${removed.length} domain${removed.length === 1 ? '' : 's'} from ${seEntryLabel(notes, a.rowId)}…`);
+                    await seSaveDomains(cfg.configId, a.rowId, keep, notes);
+                    log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'edit', removed, keeps: keep.length });
+                } else {
+                    toDelete.push({ a, notes, removed });
+                }
+            }
+
+            if (toDelete.length) {
+                progress(`Deleting ${toDelete.length} entr${toDelete.length === 1 ? 'y' : 'ies'} in ${cfg.name}…`);
+                await seDeleteEntries(cfg.configId, toDelete.map(t => t.a.rowId));
+                toDelete.forEach(t => log.push({ config: cfg.name, label: seEntryLabel(t.notes, t.a.rowId), kind: 'delete', removed: t.removed }));
+            }
+        }
+
+        // Read every touched configuration again to confirm the domains are gone
+        const stillThere = [];
+        for (const cfg of plan.filter(c => c.actions.some(a => a.selected))) {
+            progress(`Checking ${cfg.name}…`);
+            const rows = await seListExceptions(cfg.configId);
+            (Array.isArray(rows) ? rows : []).filter(r => r.type === 'domain' && Array.isArray(r.display_value)).forEach(r => {
+                const selectedHere = cfg.actions.some(a => a.selected && a.rowId === r.settings_id);
+                r.display_value.map(seNormalize).filter(v => wanted.has(v)).forEach(v => {
+                    if (selectedHere || cfg.actions.every(a => a.rowId !== r.settings_id)) {
+                        stillThere.push(`${v} (${cfg.name})`);
+                    }
+                });
+            });
+        }
+        return { log, stillThere, backup };
+    }
+
+    function seGetBackup() {
+        try { return JSON.parse(GM_getValue(SE_BACKUP_KEY, 'null')); } catch (e) { return null; }
+    }
+
+    async function seRestoreBackup(backup, progress) {
+        const existing = {};
+        for (const entry of backup.entries) {
+            if (!existing[entry.configId]) {
+                const rows = await seListExceptions(entry.configId);
+                existing[entry.configId] = new Set((Array.isArray(rows) ? rows : []).map(r => r.settings_id));
+            }
+            const stillExists = existing[entry.configId].has(entry.rowId);
+            progress(`${stillExists ? 'Restoring' : 'Recreating'} ${seEntryLabel(entry.notes, entry.rowId)} in ${entry.configName}…`);
+            await seSaveDomains(entry.configId, stillExists ? entry.rowId : null, entry.domains, entry.notes);
+        }
+    }
+
+    function seBuildSummary(plan, result) {
+        const lines = [`Steering exception domain removal (${new Date().toISOString().slice(0, 10)})`];
+        const byConfig = {};
+        result.log.forEach(l => { (byConfig[l.config] = byConfig[l.config] || []).push(l); });
+        plan.forEach(cfg => {
+            lines.push('', cfg.name + ':');
+            (byConfig[cfg.name] || []).forEach(l => {
+                if (l.kind === 'edit')   lines.push(`  Removed ${l.removed.join(', ')} from ${l.label} (${l.keeps} other domain${l.keeps === 1 ? '' : 's'} kept)`);
+                if (l.kind === 'delete') lines.push(`  Deleted ${l.label} (it only held ${l.removed.join(', ')})`);
+            });
+            if (cfg.notFound.length) lines.push(`  Not present: ${cfg.notFound.join(', ')}`);
+            if (!(byConfig[cfg.name] || []).some(l => l.kind !== 'skipped') && !cfg.notFound.length) lines.push('  No changes');
+        });
+        if (result.stillThere.length) lines.push('', 'Still present after removal: ' + result.stillThere.join(', '));
+        return lines.join('\n');
+    }
+
+    /* ── Overlay (shadow DOM keeps Netskope styles out) ── */
+
+    function seCreateHost() {
+        const host   = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet  = new CSSStyleSheet();
+        host.id = SE_HOST_ID;
+        host.dataset.open = 'false';
+
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; inset: 0 !important;
+                z-index: 2147483647 !important; display: block !important; font-family: Arial, sans-serif; }
+            :host([data-open="false"]) { display: none !important; }
+            .backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+                padding: 24px; box-sizing: border-box; background: rgba(0, 0, 0, .48); }
+            .panel { display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px));
+                max-height: calc(100vh - 48px); overflow: hidden; box-sizing: border-box;
+                color: #282728; background: #fff; border: 1px solid #d5d5d5; border-top: 5px solid #da291c;
+                border-radius: 6px; box-shadow: 0 8px 28px rgba(0, 0, 0, .3); }
+            .header, .footer { display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+                padding: 14px 20px; box-sizing: border-box; }
+            .header { justify-content: space-between; border-bottom: 1px solid #e6e6e6; }
+            .header h2 { margin: 0; color: #1a1a1a; font-size: 18px; font-weight: 700; }
+            .close { padding: 2px 8px; color: #53565a; background: transparent; border: 0;
+                font-size: 24px; line-height: 1; cursor: pointer; }
+            .body { overflow: auto; padding: 16px 20px; box-sizing: border-box; }
+            .cols { display: flex; gap: 16px; flex-wrap: wrap; }
+            .col { flex: 1 1 300px; min-width: 0; }
+            .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+            textarea, input[type="text"] { display: block; width: 100%; box-sizing: border-box; padding: 8px;
+                border: 1px solid #a7a8aa; border-radius: 4px; color: #282728; background: #fff;
+                font: 13px Arial, sans-serif; }
+            textarea { min-height: 190px; resize: vertical; font-family: Consolas, "Courier New", monospace; }
+            textarea[readonly] { background: #f6f6f6; min-height: 140px; white-space: pre; }
+            .configs { height: 152px; overflow: auto; margin-top: 6px; border: 1px solid #a7a8aa;
+                border-radius: 4px; padding: 4px 0; }
+            .cfg { display: flex; align-items: center; gap: 8px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+            .cfg:hover { background: #f4f6fb; }
+            .tag { font-size: 10px; font-weight: 700; color: #005587; background: #e3f0f8;
+                border-radius: 3px; padding: 1px 5px; white-space: nowrap; }
+            .help { margin-top: 6px; color: #63666a; font-size: 12px; line-height: 1.4; }
+            .results { margin-top: 14px; }
+            .card { border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 10px; overflow: hidden; }
+            .card-head { padding: 8px 12px; background: #f7f7f7; font-weight: 700; font-size: 13px;
+                display: flex; justify-content: space-between; gap: 8px; }
+            .card-head span { font-weight: 400; color: #63666a; }
+            .row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px;
+                border-top: 1px solid #f0f0f0; font-size: 13px; }
+            .row input { margin-top: 3px; }
+            .chip { font-size: 11px; font-weight: 700; color: #fff; border-radius: 3px; padding: 2px 7px;
+                white-space: nowrap; flex-shrink: 0; }
+            .chip.delete { background: #da291c; }
+            .chip.edit { background: #e08a00; }
+            .chip.done { background: #26890d; }
+            .muted { color: #63666a; font-size: 12px; margin-top: 2px; }
+            .note { padding: 6px 12px; border-top: 1px solid #f0f0f0; font-size: 12px; color: #53565a; }
+            .note.related { color: #8a5a00; }
+            .status { min-height: 18px; margin-top: 10px; color: #005587; font-size: 13px; white-space: pre-wrap; }
+            .status.error { color: #da291c; }
+            .footer { border-top: 1px solid #e6e6e6; }
+            .spacer { flex: 1; }
+            .footer button, .link-btn { padding: 8px 16px; border-radius: 4px; font-weight: 600; cursor: pointer;
+                font-size: 13px; color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .footer .primary { color: #fff; background: #005587; border-color: #005587; }
+            .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
+            .footer .ghost { font-weight: 400; font-size: 12px; padding: 6px 10px; }
+            button:disabled { cursor: not-allowed; opacity: .5; }
+            .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+
+        shadow.innerHTML = `
+            <div class="backdrop">
+                <section class="panel" role="dialog" aria-modal="true" aria-labelledby="se-title">
+                    <header class="header">
+                        <h2 id="se-title">🧹 Remove domains from Steering Exceptions</h2>
+                        <button type="button" class="close" data-action="close" aria-label="Close">×</button>
+                    </header>
+                    <main class="body">
+                        <div class="cols">
+                            <div class="col">
+                                <label class="label" for="se-domains">Domains to remove</label>
+                                <textarea id="se-domains" placeholder="example.com&#10;*.example.com&#10;another.org"></textarea>
+                                <div class="help">One per line. Matching is exact: example.com does not remove *.example.com.</div>
+                            </div>
+                            <div class="col">
+                                <label class="label" for="se-filter">Steering configurations</label>
+                                <input type="text" id="se-filter" placeholder="Filter by name">
+                                <div class="configs" id="se-configs"></div>
+                                <div class="help" id="se-config-help"></div>
+                            </div>
+                        </div>
+                        <div class="results" id="se-results"></div>
+                        <div class="status" id="se-status" role="status" aria-live="polite"></div>
+                    </main>
+                    <footer class="footer">
+                        <button type="button" class="ghost" data-action="restore" id="se-restore-btn">↩ Restore last backup</button>
+                        <div class="spacer"></div>
+                        <button type="button" data-action="close">Close</button>
+                        <button type="button" class="primary" data-action="check" id="se-check-btn">Check</button>
+                        <button type="button" class="danger" data-action="remove" id="se-remove-btn" disabled>Remove selected</button>
+                    </footer>
+                </section>
+            </div>
+        `;
+
+        ['pointerdown', 'mousedown', 'click'].forEach(name => shadow.addEventListener(name, e => e.stopPropagation()));
+        shadow.addEventListener('click', (e) => {
+            if (!(e.target instanceof Element)) return;
+            if (e.target.classList.contains('backdrop') && !se.busy) { seClose(); return; }
+            const action = e.target.closest('[data-action]')?.dataset.action;
+            if (action === 'close' && !se.busy) seClose();
+            if (action === 'check')    seRunCheck();
+            if (action === 'remove')   seRunRemove();
+            if (action === 'restore')  seRunRestore();
+            if (action === 'copy')     seCopySummary();
+            if (action === 'download') seDownloadBackup();
+            if (action === 'reload')   location.reload();
+        });
+        shadow.addEventListener('input', (e) => {
+            if (e.target.id === 'se-filter') seRenderConfigList();
+            if (e.target.id === 'se-domains') seResetPlan();
+        });
+        shadow.addEventListener('change', (e) => {
+            if (e.target.dataset.cfg !== undefined) seResetPlan();
+            if (e.target.dataset.row !== undefined && se.plan) {
+                const [ci, ai] = e.target.dataset.row.split(':').map(Number);
+                se.plan[ci].actions[ai].selected = e.target.checked;
+                seUpdateRemoveButton();
+            }
+        });
+        shadow.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (!se.busy) seClose();
+        });
+
+        document.body.appendChild(host);
+        se.host = host;
+        se.shadow = shadow;
+    }
+
+    const seEl = id => se.shadow.getElementById(id);
+
+    function seEscape(text) {
+        const d = document.createElement('div');
+        d.textContent = String(text);
+        return d.innerHTML;
+    }
+
+    function seSetStatus(message, isError) {
+        const el = seEl('se-status');
+        el.textContent = message || '';
+        el.classList.toggle('error', !!isError);
+    }
+
+    function seRenderConfigList() {
+        const box = seEl('se-configs');
+        const ticked = new Set([...box.querySelectorAll('input[data-cfg]:checked')].map(i => i.dataset.cfg));
+        if (!box.dataset.init && se.currentConfig) ticked.add(se.currentConfig);
+        box.dataset.init = '1';
+
+        const filter  = seEl('se-filter').value.trim().toLowerCase();
+        const configs = seGetConfigs();
+        const ids = Object.keys(configs).sort((a, b) => configs[a].name.localeCompare(configs[b].name));
+
+        box.innerHTML = '';
+        ids.filter(id => ticked.has(id) || !filter || configs[id].name.toLowerCase().includes(filter)).forEach(id => {
+            const row = document.createElement('label');
+            row.className = 'cfg';
+            row.innerHTML = `<input type="checkbox" data-cfg="${seEscape(id)}"${ticked.has(id) ? ' checked' : ''}>
+                <span>${seEscape(configs[id].name)}</span>${id === se.currentConfig ? '<span class="tag">open now</span>' : ''}`;
+            box.appendChild(row);
+        });
+        if (!ids.length) box.innerHTML = '<div class="help" style="padding:6px 10px">No configurations known yet.</div>';
+
+        seEl('se-config-help').textContent = ids.length < 2
+            ? 'Configurations appear here once you open them. Open Settings > Steering Configuration once so the full list loads.'
+            : `${ids.length} configurations known. Open the Steering Configuration list again if one is missing.`;
+    }
+
+    function seSelectedConfigs() {
+        return [...seEl('se-configs').querySelectorAll('input[data-cfg]:checked')].map(i => i.dataset.cfg);
+    }
+
+    function seResetPlan() {
+        if (se.busy) return;
+        se.plan = null;
+        se.confirming = false;
+        seEl('se-results').innerHTML = '';
+        seUpdateRemoveButton();
+    }
+
+    function seUpdateRemoveButton() {
+        const btn = seEl('se-remove-btn');
+        const count = se.plan ? se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0) : 0;
+        btn.disabled = se.busy || !count;
+        se.confirming = false;
+        btn.textContent = count ? `Remove from ${count} entr${count === 1 ? 'y' : 'ies'}` : 'Remove selected';
+        seEl('se-check-btn').disabled = se.busy;
+        seEl('se-restore-btn').disabled = se.busy || !seGetBackup();
+    }
+
+    function seSetBusy(busy) {
+        se.busy = busy;
+        seEl('se-domains').disabled = busy;
+        seUpdateRemoveButton();
+    }
+
+    function seRenderPlan() {
+        const out = seEl('se-results');
+        out.innerHTML = '';
+        se.plan.forEach((cfg, ci) => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            const found = se.domains.length - cfg.notFound.length;
+            card.innerHTML = `<div class="card-head">${seEscape(cfg.name)}
+                <span>${found} of ${se.domains.length} found in ${cfg.actions.length} entr${cfg.actions.length === 1 ? 'y' : 'ies'}</span></div>`;
+            cfg.actions.forEach((a, ai) => {
+                const row = document.createElement('label');
+                row.className = 'row';
+                const what = a.kind === 'delete'
+                    ? 'Every domain in this entry was requested, so the whole entry is deleted.'
+                    : `Keeps its other ${a.keeps} domain${a.keeps === 1 ? '' : 's'}.`;
+                row.innerHTML = `<input type="checkbox" data-row="${ci}:${ai}"${a.selected ? ' checked' : ''}>
+                    <span class="chip ${a.kind}">${a.kind === 'delete' ? 'Delete entry' : 'Edit entry'}</span>
+                    <div><div><b>${seEscape(seEntryLabel(a.notes, a.rowId))}</b></div>
+                    <div class="muted">Removes ${seEscape(a.hits.join(', '))}. ${what}</div></div>`;
+                card.appendChild(row);
+            });
+            if (cfg.notFound.length) {
+                const n = document.createElement('div');
+                n.className = 'note';
+                n.textContent = `Not present: ${cfg.notFound.join(', ')}`;
+                card.appendChild(n);
+            }
+            if (cfg.related.length) {
+                const n = document.createElement('div');
+                n.className = 'note related';
+                n.textContent = 'Similar entries, left alone: ' +
+                    cfg.related.map(r => `${r.existing} in ${r.label} (covers ${r.requested})`).join('; ');
+                card.appendChild(n);
+            }
+            out.appendChild(card);
+        });
+    }
+
+    function seRenderResult(summary, stillThere) {
+        const out = seEl('se-results');
+        out.innerHTML = `
+            <label class="label" for="se-summary">${stillThere.length ? '⚠️ Finished, but some domains are still present' : '✅ Done. Summary for the ticket'}</label>
+            <textarea id="se-summary" readonly></textarea>
+            <div class="actions">
+                <button type="button" class="link-btn" data-action="copy">📋 Copy summary</button>
+                <button type="button" class="link-btn" data-action="download">💾 Download backup</button>
+                <button type="button" class="link-btn" data-action="reload">⟳ Reload page to see changes</button>
+            </div>`;
+        seEl('se-summary').value = summary;
+    }
+
+    async function seRunCheck() {
+        if (se.busy) return;
+        const domains = seParseDomains(seEl('se-domains').value);
+        const configIds = seSelectedConfigs();
+        if (!domains.length)   return seSetStatus('Paste at least one domain.', true);
+        if (!configIds.length) return seSetStatus('Tick at least one steering configuration.', true);
+
+        seResetPlan();
+        seSetBusy(true);
+        seSetStatus('Reading exceptions…');
+        try {
+            se.domains = domains;
+            se.plan = await seBuildPlan(configIds, domains);
+            seRenderPlan();
+            const total = se.plan.reduce((n, c) => n + c.actions.length, 0);
+            seSetStatus(total
+                ? 'Nothing has changed yet. Untick any entry you want to keep as it is, then click Remove.'
+                : 'None of these domains are in the selected configurations. Nothing to remove.');
+        } catch (err) {
+            console.error('[NS Toolkit] Steering check:', err);
+            seSetStatus(err.message, true);
+        } finally {
+            seSetBusy(false);
+        }
+    }
+
+    async function seRunRemove() {
+        if (se.busy || !se.plan) return;
+        const count = se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0);
+        if (!count) return;
+        const btn = seEl('se-remove-btn');
+        if (!se.confirming) {
+            se.confirming = true;
+            btn.textContent = 'Click again to confirm';
+            seSetStatus('Netskope applies these changes straight away, with no Save step. A backup is kept so you can restore it.');
+            return;
+        }
+
+        seSetBusy(true);
+        const plan = se.plan;
+        try {
+            const result = await seApplyPlan(plan, se.domains, msg => seSetStatus(msg));
+            se.plan = null;
+            seRenderResult(seBuildSummary(plan, result), result.stillThere);
+            seSetStatus(result.stillThere.length
+                ? 'Still present: ' + result.stillThere.join(', ')
+                : 'All selected domains were removed and checked.', !!result.stillThere.length);
+        } catch (err) {
+            console.error('[NS Toolkit] Steering removal:', err);
+            se.plan = null;
+            seEl('se-results').innerHTML = '';
+            seSetStatus(`Stopped: ${err.message}\nChanges made before this point were kept. Use "Restore last backup" to undo them, or click Check again to see the current state.`, true);
+        } finally {
+            seSetBusy(false);
+        }
+    }
+
+    async function seRunRestore() {
+        if (se.busy) return;
+        const backup = seGetBackup();
+        if (!backup || !backup.entries || !backup.entries.length) return seSetStatus('There is no backup to restore.', true);
+        if (backup.host !== location.host) return seSetStatus(`The last backup belongs to ${backup.host}. Open that tenant to restore it.`, true);
+        const when = new Date(backup.at).toLocaleString();
+        if (!confirm(`Restore ${backup.entries.length} exception entr${backup.entries.length === 1 ? 'y' : 'ies'} to how they were before the removal on ${when}?\n\nEdited entries get their old domain list back. Deleted entries are created again with the same domains and notes.`)) return;
+
+        seResetPlan();
+        seSetBusy(true);
+        try {
+            await seRestoreBackup(backup, msg => seSetStatus(msg));
+            GM_deleteValue(SE_BACKUP_KEY);
+            seSetStatus('Backup restored. Reload the page to see the exceptions table updated.');
+        } catch (err) {
+            console.error('[NS Toolkit] Steering restore:', err);
+            seSetStatus(`Restore stopped: ${err.message}`, true);
+        } finally {
+            seSetBusy(false);
+        }
+    }
+
+    async function seCopySummary() {
+        const text = seEl('se-summary')?.value || '';
+        try {
+            await navigator.clipboard.writeText(text);
+            seSetStatus('Summary copied to the clipboard.');
+        } catch (e) {
+            seEl('se-summary').select();
+            seSetStatus('Copy failed. The summary is selected, press Ctrl+C.', true);
+        }
+    }
+
+    function seDownloadBackup() {
+        const backup = seGetBackup();
+        if (!backup) return seSetStatus('There is no backup to download.', true);
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `steering-exceptions-backup-${backup.at.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    function seOpen() {
+        if (!se.host) seCreateHost();
+        se.host.dataset.open = 'true';
+        seRenderConfigList();
+        seUpdateRemoveButton();
+        if (!se.token) seSetStatus('Waiting for the page to send its session token. This takes a few seconds after the page loads.');
+        setTimeout(() => seEl('se-domains').focus(), 50);
+    }
+
+    function seClose() {
+        if (se.host) se.host.dataset.open = 'false';
+    }
+
+    /* ── Button on the Steering Configuration page ── */
+
+    function seOnSteeringPage() {
+        return se.resource === SE_RESOURCE || /steering/i.test(window.location.hash || '');
+    }
+
+    function seFindAnchor() {
+        return [...document.querySelectorAll('button')].find(b =>
+            b.id !== SE_BUTTON_ID && b.offsetParent !== null && /^\+?\s*new exception$/i.test(b.textContent.trim()));
+    }
+
+    function seSyncButton() {
+        let btn = document.getElementById(SE_BUTTON_ID);
+        if (!seOnSteeringPage()) { btn?.remove(); return; }
+
+        const anchor = seFindAnchor();
+        if (btn && (anchor ? btn.nextElementSibling === anchor : btn.dataset.floating === '1')) return;
+        btn?.remove();
+
+        btn = document.createElement('button');
+        btn.id = SE_BUTTON_ID;
+        btn.type = 'button';
+        btn.textContent = '🧹 Bulk remove domains';
+        btn.title = 'Find domains in steering exceptions and remove them (NS Policies Toolkit)';
+        Object.assign(btn.style, {
+            padding: '6px 12px', fontSize: '13px', fontWeight: '600', borderRadius: '4px',
+            cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif',
+            background: '#fff', color: '#da291c', border: '1px solid #da291c',
+        });
+        btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(); });
+
+        if (anchor) {
+            btn.style.marginRight = '8px';
+            anchor.insertAdjacentElement('beforebegin', btn);
+        } else {
+            btn.dataset.floating = '1';
+            Object.assign(btn.style, {
+                position: 'fixed', right: '24px', bottom: '24px', zIndex: '2147483000',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.2)', padding: '9px 14px',
+            });
+            document.body.appendChild(btn);
+        }
+    }
+
+    function initSteeringRemover() {
+        if (!getSetting('steeringRemover') || se.timer) return;
+        se.timer = setInterval(seSyncButton, 1000);
+        seSyncButton();
+    }
+
+    function cleanupSteeringRemover() {
+        clearInterval(se.timer);
+        se.timer = null;
+        removeAll('#' + SE_BUTTON_ID);
+        se.host?.remove();
+        se.host = se.shadow = null;
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // FIRST-BOOT USERNAME PROMPT
     // ─────────────────────────────────────────────────────────────
 
@@ -4961,6 +5828,7 @@ Version 1.16:
         observer.observe(document.body, { childList: true, subtree: true });
         buildSettingsModal();
         initBulkConstraintTools();
+        initSteeringRemover();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
         setTimeout(attemptRegistration, 1000);
