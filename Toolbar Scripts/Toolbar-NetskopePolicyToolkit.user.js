@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.25.1
+// @version      1.26
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.25.1';
-    const CHANGELOG = `Version 1.25.1:
+    const SCRIPT_VERSION = '1.26';
+    const CHANGELOG = `Version 1.26:
+- New "➕ Bulk add domains" button next to "🧹 Bulk remove domains" on the Steering Configuration page. Paste domains, tick the steering configurations, and each one gets a new exception entry with your notes.
+
+Version 1.25.1:
 - Each entry in a backup now lists the domains a restore adds back as exceptions, and you can expand it to see every domain it writes.
 - Backups are checked before they can be restored. One that was edited by hand, has invalid domains or does not say which tenant it is from is blocked, and the reason is shown.
 - A warning appears when a backup refers to a steering configuration this browser has not seen.
@@ -5280,14 +5283,16 @@ Version 1.16:
                 rowId:      Number(e.rowId),
                 notes:      String(e.notes || ''),
                 domains:    e.domains.map(String),
-                kind:       e.kind === 'edit' || e.kind === 'delete' ? e.kind : null,
+                kind:       ['edit', 'delete', 'create'].includes(e.kind) ? e.kind : null,
                 after:      Array.isArray(e.after) ? e.after.map(String) : null,
                 removed:    Array.isArray(e.removed) ? e.removed.map(String) : [],
             }));
         if (!entries.length || isNaN(Date.parse(b.at))) return null;
         return {
             id: typeof b.id === 'string' && b.id ? b.id : 'bk-' + Date.parse(b.at).toString(36),
-            at: b.at, host: String(b.host || ''), source: b.source === 'import' ? 'import' : 'removal',
+            at: b.at, host: String(b.host || ''),
+            source: b.source === 'import' || b.source === 'addition' ? b.source : 'removal',
+            action: b.action === 'addition' || b.source === 'addition' ? 'addition' : 'removal',
             importedAt: b.importedAt || null, restoredAt: b.restoredAt || null, entries,
             problems: seBackupProblems(entries),
         };
@@ -5304,6 +5309,13 @@ Version 1.16:
             const label = `${seEntryLabel(e.notes, e.rowId)} in ${e.configName}`;
             const bad = e.domains.filter(d => !SE_DOMAIN_RE.test(d.trim()));
             if (bad.length) problems.push(`${label}: not valid domains: ${bad.slice(0, 5).join(', ')}`);
+            if (e.kind === 'create') {
+                // An addition backs up an entry that did not exist: undoing it only ever deletes
+                const badAfter = (e.after || []).filter(d => !SE_DOMAIN_RE.test(d.trim()));
+                if (e.domains.length || !e.after || !e.after.length) problems.push(`${label}: the added entry is not recorded correctly`);
+                if (badAfter.length) problems.push(`${label}: not valid domains: ${badAfter.slice(0, 5).join(', ')}`);
+                return;
+            }
             if (!e.kind) return;   // older backups did not record what the removal left
             const all = new Set(e.domains.map(seNormalize));
             const removed = e.removed.map(seNormalize);
@@ -5369,6 +5381,18 @@ Version 1.16:
 
         return backup.entries.map(e => {
             const rows = rowsByConfig[e.configId];
+            if (e.kind === 'create') {
+                // Find the entry the addition created: by its ID, or by its domains and notes
+                const row = rows.find(r => r.settings_id === e.rowId) ||
+                    rows.find(r => sameList(r.display_value, e.after) && String(r.notes || '').trim() === e.notes.trim());
+                const current = row ? row.display_value : [];
+                return {
+                    entry: e, exists: !!row, rowId: row ? row.settings_id : null, elsewhere: [], willAdd: [],
+                    state: !row ? 'same' : sameList(current, e.after) ? 'created' : 'createdChanged',
+                    addedSince:   current.filter(d => !e.after.map(seNormalize).includes(seNormalize(d))),
+                    droppedSince: e.after.filter(d => !current.map(seNormalize).includes(seNormalize(d))),
+                };
+            }
             // A recreated entry gets a new ID, so also accept one with the same domains and notes
             const row  = rows.find(r => r.settings_id === e.rowId) ||
                 rows.find(r => sameList(r.display_value, e.domains) && String(r.notes || '').trim() === e.notes.trim());
@@ -5402,9 +5426,103 @@ Version 1.16:
         for (const item of inspection) {
             if (item.state === 'same') continue;
             const e = item.entry;
+            if (e.kind === 'create') {
+                progress(`Deleting the added entry ${seEntryLabel(e.notes, item.rowId)} in ${e.configName}…`);
+                await seDeleteEntries(e.configId, [item.rowId]);
+                continue;
+            }
             progress(`${item.exists ? 'Restoring' : 'Recreating'} ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
             await seSaveDomains(e.configId, item.exists ? e.rowId : null, e.domains, e.notes);
         }
+    }
+
+    /* ── Additions ── */
+
+    function seDomainEntries(rows) {
+        return (Array.isArray(rows) ? rows : []).filter(r => r.type === 'domain' && Array.isArray(r.display_value));
+    }
+
+    // For each configuration: which domains it already has (skipped) and which get added
+    async function seBuildAddPlan(configIds, domains) {
+        const configs = seGetConfigs();
+        const plan = [];
+        for (const id of configIds) {
+            const entries = seDomainEntries(await seListExceptions(id));
+            const present = [], related = [];
+            for (const d of domains) {
+                const holder = entries.find(e => e.display_value.map(seNormalize).includes(d));
+                if (holder) present.push({ domain: d, label: seEntryLabel(holder.notes, holder.settings_id) });
+                entries.forEach(e => e.display_value.map(seNormalize).filter(v => seIsRelated(d, v)).forEach(v => {
+                    related.push({ requested: d, existing: v, label: seEntryLabel(e.notes, e.settings_id) });
+                }));
+            }
+            const toAdd = domains.filter(d => !present.some(p => p.domain === d));
+            plan.push({
+                configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                toAdd, present, related, selected: toAdd.length > 0,
+            });
+        }
+        return plan;
+    }
+
+    async function seApplyAddPlan(plan, notes, progress) {
+        const backup = { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source: 'addition', action: 'addition', entries: [] };
+        se.lastBackupId = backup.id;
+        const log = [];
+        const sameList = (a, b) => a.map(seNormalize).sort().join('\n') === b.map(seNormalize).sort().join('\n');
+
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Reading ${cfg.name}…`);
+            // Check again just before adding, in case the configuration changed since the Check
+            const before = seDomainEntries(await seListExceptions(cfg.configId));
+            const nowPresent = new Set(before.flatMap(e => e.display_value.map(seNormalize)));
+            const toAdd = cfg.toAdd.filter(d => !nowPresent.has(d));
+            if (!toAdd.length) {
+                log.push({ config: cfg.name, kind: 'skipped', added: [] });
+                continue;
+            }
+
+            // Saved before the change so an interrupted run can still be undone
+            const entry = { configId: cfg.configId, configName: cfg.name, rowId: -1, notes, domains: [], kind: 'create', after: toAdd, removed: [] };
+            backup.entries.push(entry);
+            seSaveBackup(backup);
+
+            progress(`Adding ${toAdd.length} domain${toAdd.length === 1 ? '' : 's'} to ${cfg.name}…`);
+            await seSaveDomains(cfg.configId, null, toAdd, notes);
+
+            // Netskope does not return the new entry's ID, so find it among the entries that are new
+            const oldIds = new Set(before.map(e => e.settings_id));
+            const created = seDomainEntries(await seListExceptions(cfg.configId))
+                .filter(e => !oldIds.has(e.settings_id) && sameList(e.display_value, toAdd));
+            if (created.length) {
+                entry.rowId = created[created.length - 1].settings_id;
+                seSaveBackup(backup);
+            }
+            log.push({ config: cfg.name, kind: 'add', added: toAdd, rowId: entry.rowId });
+        }
+
+        // Confirm every requested domain is now an exception in each configuration
+        const missing = [];
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Checking ${cfg.name}…`);
+            const have = new Set(seDomainEntries(await seListExceptions(cfg.configId)).flatMap(e => e.display_value.map(seNormalize)));
+            cfg.toAdd.filter(d => !have.has(d)).forEach(d => missing.push(`${d} (${cfg.name})`));
+        }
+        return { log, missing, backup };
+    }
+
+    function seBuildAddSummary(plan, result, notes) {
+        const lines = [`Steering exception domain addition (${new Date().toISOString().slice(0, 10)})`];
+        if (notes) lines.push(`Notes: ${seFirstLine(notes, 120)}`);
+        plan.forEach(cfg => {
+            const done = result.log.find(l => l.config === cfg.name && l.kind === 'add');
+            lines.push('', cfg.name + ':');
+            if (done) lines.push(`  Added ${done.added.join(', ')} as a new exception entry`);
+            if (cfg.present.length) lines.push(`  Already present: ${cfg.present.map(p => `${p.domain} (in ${p.label})`).join(', ')}`);
+            if (!done && !cfg.present.length) lines.push(cfg.selected ? '  No changes' : '  Skipped');
+        });
+        if (result.missing.length) lines.push('', 'Not found after adding: ' + result.missing.join(', '));
+        return lines.join('\n');
     }
 
     function seBuildSummary(plan, result) {
@@ -5936,6 +6054,8 @@ Version 1.16:
         unknown:   { chip: 'warn', label: 'May have changed', text: 'This backup is from an older version, so later changes cannot be detected. Restoring replaces its current domains with the backed up list.' },
         deleted:   { chip: 'info', label: 'Recreate',         text: 'Deleted by the removal. It is created again with the same domains and notes.' },
         gone:      { chip: 'warn', label: 'Deleted since',    text: 'Deleted after the removal. It is created again with the backed up domains and notes.' },
+        created:   { chip: 'info', label: 'Delete entry',     text: 'Created by this addition and not changed since. Restoring deletes it.' },
+        createdChanged: { chip: 'warn', label: 'Changed since', text: 'Changed after it was added. Restoring deletes the whole entry, including those later changes.' },
     };
 
     function seRenderBackupDetail(backup) {
