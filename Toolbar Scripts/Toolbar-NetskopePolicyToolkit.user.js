@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.25
+// @version      1.25.1
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,13 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.25';
-    const CHANGELOG = `Version 1.25:
+    const SCRIPT_VERSION = '1.25.1';
+    const CHANGELOG = `Version 1.25.1:
+- Each entry in a backup now lists the domains a restore adds back as exceptions, and you can expand it to see every domain it writes.
+- Backups are checked before they can be restored. One that was edited by hand, has invalid domains or does not say which tenant it is from is blocked, and the reason is shown.
+- A warning appears when a backup refers to a steering configuration this browser has not seen.
+
+Version 1.25:
 - Steering Exception Domain Remover: "Restore last backup" is now "↩ Backups". It lists your recent removals, the last 5 by default, and you can change how many are kept on that screen.
 - Click a backup to see its entries. Before you restore, the tool compares each one with Netskope now and warns you when an entry was changed or deleted after the removal, or when a domain is already in another entry, since restoring would undo those changes or list the domain twice.
 - Backups can be downloaded and imported again with "⤒ Import backup", so a downloaded file can now be restored. Restored backups stay in the list, marked with the date they were restored.
@@ -1683,7 +1688,7 @@ Version 1.16:
                         'The last 5 backups are kept by default. Change "Keep the last" on the Backups screen.',
                         'An orange warning appears when an entry changed after the removal, or when a domain to restore is already in another entry and would be listed twice.',
                         'Backups live in this browser only. "💾 Download" saves one as a file, and "⤒ Import backup" loads it back so it can be restored, on any machine.',
-                        'A backup can only be restored on the tenant it was taken on.',
+                        'A backup can only be restored on the tenant it was taken on. Each entry lists the domains a restore adds back, and a backup that was edited by hand or has invalid domains is blocked.',
                     ]);
                 },
             },
@@ -5284,7 +5289,33 @@ Version 1.16:
             id: typeof b.id === 'string' && b.id ? b.id : 'bk-' + Date.parse(b.at).toString(36),
             at: b.at, host: String(b.host || ''), source: b.source === 'import' ? 'import' : 'removal',
             importedAt: b.importedAt || null, restoredAt: b.restoredAt || null, entries,
+            problems: seBackupProblems(entries),
         };
+    }
+
+    const SE_DOMAIN_RE = /^(\*\.)?[a-z0-9_-]+(\.[a-z0-9_-]+)*$/i;
+
+    // A restore writes each entry's full domain list as steering exceptions, so a backup
+    // file that was edited by hand must not be able to slip in extra domains.
+    // Backups made by this tool always pass these checks.
+    function seBackupProblems(entries) {
+        const problems = [];
+        entries.forEach(e => {
+            const label = `${seEntryLabel(e.notes, e.rowId)} in ${e.configName}`;
+            const bad = e.domains.filter(d => !SE_DOMAIN_RE.test(d.trim()));
+            if (bad.length) problems.push(`${label}: not valid domains: ${bad.slice(0, 5).join(', ')}`);
+            if (!e.kind) return;   // older backups did not record what the removal left
+            const all = new Set(e.domains.map(seNormalize));
+            const removed = e.removed.map(seNormalize);
+            const after = (e.after || []).map(seNormalize);
+            const expected = [...all].filter(d => !removed.includes(d)).sort().join('\n');
+            if (!removed.length || removed.some(d => !all.has(d)) ||
+                expected !== [...new Set(after)].sort().join('\n') ||
+                (e.kind === 'delete') !== !e.after) {
+                problems.push(`${label}: its domain lists do not add up (removed, kept and backed up domains disagree)`);
+            }
+        });
+        return problems;
     }
 
     function seGetBackups() {
@@ -5360,6 +5391,7 @@ Version 1.16:
             const current = row ? row.display_value : [];
             return {
                 entry: e, state, exists: !!row, elsewhere,
+                willAdd:      e.domains.filter(d => toAdd.has(seNormalize(d))),
                 addedSince:   current.filter(d => !e.domains.map(seNormalize).includes(seNormalize(d))),
                 droppedSince: e.after ? e.after.filter(d => !current.map(seNormalize).includes(seNormalize(d))) : [],
             };
@@ -5876,9 +5908,8 @@ Version 1.16:
         se.bkConfirm = false;
         seRenderBackupDetail(backup);
 
-        if (backup.host && backup.host !== location.host) {
-            return seBkStatus(`This backup was taken on ${backup.host}. Open that tenant to check or restore it.`, true);
-        }
+        const blocker = seRestoreBlocker(backup);
+        if (blocker) return seBkStatus(blocker, true);
         se.busy = true;
         seBkStatus('Checking the current state in Netskope…');
         try {
@@ -5915,6 +5946,15 @@ Version 1.16:
             <div class="bk-title" style="font-size:15px">Removal on ${seEscape(seFormatDate(backup.at))} ${seBackupChips(backup)}</div>
             <div class="muted">${seEscape(configs.join(', '))} · ${seEscape(backup.host || 'unknown tenant')}</div>`;
 
+        if (backup.problems.length) {
+            html += `<div class="warnbox" style="color:#8a1c12;background:#fdecea;border-color:#f3a59d">⛔ This backup failed its safety checks and cannot be restored. It may have been edited by hand.<br>${backup.problems.map(seEscape).join('<br>')}</div>`;
+        }
+        const known = seGetConfigs();
+        const unknownCfgs = configs.filter((n, i) => !known[backup.entries.find(e => e.configName === n).configId]);
+        if (unknownCfgs.length) {
+            html += `<div class="warnbox">⚠️ Not a configuration this browser has seen: ${seEscape(unknownCfgs.join(', '))}. Make sure it is the right one before you restore.</div>`;
+        }
+
         if (insp) {
             const risky = insp.filter(i => ['changed', 'unknown', 'gone'].includes(i.state) || i.elsewhere.length);
             if (risky.length) {
@@ -5937,6 +5977,8 @@ Version 1.16:
                 ${item && item.state === 'changed' && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(item.addedSince.join(', '))}. These would be removed.</div>` : ''}
                 ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(item.droppedSince.join(', '))}. These would come back.</div>` : ''}
                 ${item && item.elsewhere.length ? `<div class="note warn" style="padding:4px 0;border:0">Already in another entry: ${seEscape(item.elsewhere.join(', '))}. Restoring lists them twice.</div>` : ''}
+                ${item && item.state !== 'same' && item.willAdd.length ? `<div class="muted"><b>Adds back as exceptions:</b> ${seEscape(item.willAdd.join(', '))}</div>` : ''}
+                <details class="muted"><summary style="cursor:pointer">All ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'} a restore writes to this entry</summary>${seEscape(e.domains.join(', '))}</details>
                 </div></div>`;
         });
         html += '</div>';
@@ -5956,17 +5998,26 @@ Version 1.16:
         if (!btn) return;
         const insp = se.bkInspection;
         const todo = insp ? insp.filter(i => i.state !== 'same').length : 0;
-        btn.disabled = se.busy || !todo;
+        const backup = seGetBackups().find(b => b.id === se.bkSelected);
+        btn.disabled = se.busy || !todo || !backup || !!seRestoreBlocker(backup);
         btn.textContent = se.bkConfirm ? 'Click again to confirm' : (todo ? `Restore ${todo} entr${todo === 1 ? 'y' : 'ies'}` : 'Restore this backup');
         se.shadow.querySelectorAll('#se-bk-footer button:not(#se-bk-restore)').forEach(b => {
             if (b.dataset.action !== 'close') b.disabled = se.busy;
         });
     }
 
+    // Why a backup must not be restored here, or null when it can be
+    function seRestoreBlocker(backup) {
+        if (!backup.host) return 'This backup does not say which tenant it belongs to, so it cannot be restored.';
+        if (backup.host !== location.host) return `This backup was taken on ${backup.host}. Open that tenant to check or restore it.`;
+        if (backup.problems.length) return 'This backup failed its safety checks, so it cannot be restored: ' + backup.problems.join('; ');
+        return null;
+    }
+
     async function seRunBackupRestore() {
         const backup = seGetBackups().find(b => b.id === se.bkSelected);
         const insp = se.bkInspection;
-        if (!backup || !insp) return;
+        if (!backup || !insp || seRestoreBlocker(backup)) return;
         if (!se.bkConfirm) {
             se.bkConfirm = true;
             seUpdateBackupFooter();
