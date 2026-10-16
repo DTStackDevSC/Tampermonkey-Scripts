@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.24.1
+// @version      1.24.2
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,12 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.24.1';
-    const CHANGELOG = `Version 1.24.1:
+    const SCRIPT_VERSION = '1.24.2';
+    const CHANGELOG = `Version 1.24.2:
+- The "🧹 Bulk remove domains" button now uses Netskope's own button style.
+- Fixed the button overlapping the search bar on the Steering Configuration list. It now sits beside the search bar instead of inside it.
+
+Version 1.24.1:
 - The "🧹 Bulk remove domains" button now sits inside the Netskope page: to the right of the search bar on the Steering Configuration list, and after the Add Filter button inside a steering configuration. It no longer floats in the corner of the screen.
 
 Version 1.24:
@@ -463,10 +467,6 @@ Version 1.16:
         #ns-remove-older-confirm input {
             background-color: #ffffff !important;
             color: #333333 !important;
-        }
-        #ns-steering-remover-btn {
-            background-color: #ffffff !important;
-            color: #da291c !important;
         }
     `;
     // At document-start neither head nor even documentElement is guaranteed to exist yet
@@ -5622,45 +5622,70 @@ Version 1.16:
         return !!el && el.offsetParent !== null;
     }
 
-    // Inside a steering configuration: the "Add Filter" button above the exceptions table
+    // Inside a steering configuration: the "Add Filter" dropdown above the exceptions table.
+    // The button goes after the dropdown wrapper so the filter menu keeps its position.
     function seFindAddFilter() {
-        return [...document.querySelectorAll('button, a, [role="button"]')].find(b =>
+        const btn = [...document.querySelectorAll('button')].find(b =>
             b.id !== SE_BUTTON_ID && seIsVisible(b) && /^\+?\s*add filters?$/i.test(b.textContent.trim()));
+        return btn ? (btn.closest('.dropdown-select') || btn) : null;
     }
 
-    // Steering Configuration list: the search box, widened to the outermost
-    // element that only wraps it so the button lands beside it, not inside it
+    // Steering Configuration list: the search box. Its input shares a bordered
+    // container with the magnifier and clear icons, so the button goes after that container.
     function seFindSearchBox() {
-        const input = [...document.querySelectorAll('input')].find(i => seIsVisible(i) &&
-            (i.type === 'search' || /search/i.test(i.placeholder || '') || i.closest('ns-search-input, .search-query')));
-        if (!input) return null;
-        let el = input.closest('ns-search-input') || input;
-        while (el.parentElement && el.parentElement !== document.body && el.parentElement.children.length === 1) {
-            el = el.parentElement;
-        }
-        return el;
+        const input = [...document.querySelectorAll('input.search-query, input[placeholder]')].find(i =>
+            seIsVisible(i) && /search configuration/i.test(i.placeholder || ''));
+        return input ? (input.closest('.ns-icon-input-container') || input) : null;
+    }
+
+    // The search container is a full width flex row. Shrink it to sit inline so the
+    // button fits on the same line, and remember its style to undo that later.
+    function seFitBesideSearch(box, btn) {
+        if (box.dataset.nstkSteeringFit) return;
+        const parentWidth = box.parentElement ? box.parentElement.clientWidth : box.offsetWidth;
+        const room = parentWidth - btn.offsetWidth - 8 - 6;   // button margin plus a little slack
+        box.dataset.nstkSteeringFit = JSON.stringify({
+            display: box.style.display, width: box.style.width,
+            verticalAlign: box.style.verticalAlign, boxSizing: box.style.boxSizing,
+        });
+        Object.assign(box.style, {
+            display: 'inline-flex', verticalAlign: 'middle', boxSizing: 'border-box',
+            width: Math.max(220, Math.min(box.offsetWidth, room)) + 'px',
+        });
+        btn.style.marginBottom = getComputedStyle(box).marginBottom;
+    }
+
+    function seUnfitSearch() {
+        document.querySelectorAll('[data-nstk-steering-fit]').forEach(box => {
+            try { Object.assign(box.style, JSON.parse(box.dataset.nstkSteeringFit)); } catch (e) { /* leave as is */ }
+            delete box.dataset.nstkSteeringFit;
+        });
     }
 
     function seSyncButton() {
         let btn = document.getElementById(SE_BUTTON_ID);
-        const anchor = seOnSteeringPage() ? (seFindAddFilter() || seFindSearchBox()) : null;
-        if (!anchor) { btn?.remove(); return; }
-        if (btn && btn.previousElementSibling === anchor) return;
+        let anchor = null, mode = null;
+        if (seOnSteeringPage()) {
+            anchor = seFindAddFilter();
+            if (anchor) mode = 'filter';
+            else if ((anchor = seFindSearchBox())) mode = 'search';
+        }
+        if (btn && anchor && btn.previousElementSibling === anchor && btn.dataset.mode === mode) return;
         btn?.remove();
+        seUnfitSearch();
+        if (!anchor) return;
 
         btn = document.createElement('button');
         btn.id = SE_BUTTON_ID;
         btn.type = 'button';
+        btn.dataset.mode = mode;
+        btn.className = 'ns-btn ns-btn-secondary ns-color-red';
         btn.textContent = '🧹 Bulk remove domains';
         btn.title = 'Find domains in steering exceptions and remove them (NS Policies Toolkit)';
-        Object.assign(btn.style, {
-            display: 'inline-flex', alignItems: 'center', alignSelf: 'center', flexShrink: '0',
-            marginLeft: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600',
-            borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif',
-            background: '#fff', color: '#da291c', border: '1px solid #da291c', verticalAlign: 'middle',
-        });
+        Object.assign(btn.style, { marginLeft: '8px', whiteSpace: 'nowrap', verticalAlign: 'middle', flexShrink: '0' });
         btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(); });
         anchor.insertAdjacentElement('afterend', btn);
+        if (mode === 'search') seFitBesideSearch(anchor, btn);
     }
 
     function initSteeringRemover() {
@@ -5673,6 +5698,7 @@ Version 1.16:
         clearInterval(se.timer);
         se.timer = null;
         removeAll('#' + SE_BUTTON_ID);
+        seUnfitSearch();
         se.host?.remove();
         se.host = se.shadow = null;
     }
