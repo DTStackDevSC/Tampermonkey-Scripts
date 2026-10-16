@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.24.3
+// @version      1.24.4
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.24.3';
-    const CHANGELOG = `Version 1.24.3:
+    const SCRIPT_VERSION = '1.24.4';
+    const CHANGELOG = `Version 1.24.4:
+- On the Steering Configuration list, the "🧹 Bulk remove domains" button now sits below the search bar, lined up with the New Configuration button, and the search bar keeps its full width.
+
+Version 1.24.3:
 - The "Remove domains from Steering Exceptions" panel no longer closes when you click outside it. Use Close or ✕.
 - Opening the panel from the Steering Configuration list no longer leaves a configuration ticked from before. Only when you open it from inside a steering configuration is that configuration ticked for you.
 
@@ -1587,7 +1590,7 @@ Version 1.16:
                         chip('+ Add Filter', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
                         chip('🧹 Bulk remove domains', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
                     ], { marginBottom: '6px' }));
-                    caption(body, 'Inside a steering configuration the button sits after Add Filter. On the Steering Configuration list it sits to the right of the search bar.');
+                    caption(body, 'Inside a steering configuration the button sits after Add Filter. On the Steering Configuration list it sits below the search bar, lined up with New Configuration.');
 
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0' });
@@ -5645,35 +5648,12 @@ Version 1.16:
     }
 
     // Steering Configuration list: the search box. Its input shares a bordered
-    // container with the magnifier and clear icons, so the button goes after that container.
+    // container with the magnifier and clear icons, so the button goes on its own
+    // line after that container, lined up with the New Configuration button.
     function seFindSearchBox() {
         const input = [...document.querySelectorAll('input.search-query, input[placeholder]')].find(i =>
             seIsVisible(i) && /search configuration/i.test(i.placeholder || ''));
         return input ? (input.closest('.ns-icon-input-container') || input) : null;
-    }
-
-    // The search container is a full width flex row. Shrink it to sit inline so the
-    // button fits on the same line, and remember its style to undo that later.
-    function seFitBesideSearch(box, btn) {
-        if (box.dataset.nstkSteeringFit) return;
-        const parentWidth = box.parentElement ? box.parentElement.clientWidth : box.offsetWidth;
-        const room = parentWidth - btn.offsetWidth - 8 - 6;   // button margin plus a little slack
-        box.dataset.nstkSteeringFit = JSON.stringify({
-            display: box.style.display, width: box.style.width,
-            verticalAlign: box.style.verticalAlign, boxSizing: box.style.boxSizing,
-        });
-        Object.assign(box.style, {
-            display: 'inline-flex', verticalAlign: 'middle', boxSizing: 'border-box',
-            width: Math.max(220, Math.min(box.offsetWidth, room)) + 'px',
-        });
-        btn.style.marginBottom = getComputedStyle(box).marginBottom;
-    }
-
-    function seUnfitSearch() {
-        document.querySelectorAll('[data-nstk-steering-fit]').forEach(box => {
-            try { Object.assign(box.style, JSON.parse(box.dataset.nstkSteeringFit)); } catch (e) { /* leave as is */ }
-            delete box.dataset.nstkSteeringFit;
-        });
     }
 
     function seSyncButton() {
@@ -5686,20 +5666,20 @@ Version 1.16:
         }
         if (btn && anchor && btn.previousElementSibling === anchor && btn.dataset.mode === mode) return;
         btn?.remove();
-        seUnfitSearch();
         if (!anchor) return;
 
         btn = document.createElement('button');
         btn.id = SE_BUTTON_ID;
         btn.type = 'button';
         btn.dataset.mode = mode;
-        btn.className = 'ns-btn ns-btn-secondary ns-color-red';
+        // On the list it matches the New Configuration button below it
+        btn.className = 'ns-btn ns-btn-secondary ns-color-red' + (mode === 'search' ? ' ns-margin-bottom' : '');
         btn.textContent = '🧹 Bulk remove domains';
         btn.title = 'Find domains in steering exceptions and remove them (NS Policies Toolkit)';
-        Object.assign(btn.style, { marginLeft: '8px', whiteSpace: 'nowrap', verticalAlign: 'middle', flexShrink: '0' });
+        Object.assign(btn.style, { whiteSpace: 'nowrap', verticalAlign: 'middle', flexShrink: '0' });
+        if (mode === 'filter') btn.style.marginLeft = '8px';
         btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(btn.dataset.mode === 'filter'); });
         anchor.insertAdjacentElement('afterend', btn);
-        if (mode === 'search') seFitBesideSearch(anchor, btn);
     }
 
     function initSteeringRemover() {
@@ -5712,7 +5692,6 @@ Version 1.16:
         clearInterval(se.timer);
         se.timer = null;
         removeAll('#' + SE_BUTTON_ID);
-        seUnfitSearch();
         se.host?.remove();
         se.host = se.shadow = null;
     }
