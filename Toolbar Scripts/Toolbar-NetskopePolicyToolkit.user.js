@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.24
+// @version      1.24.1
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.24';
-    const CHANGELOG = `Version 1.24:
+    const SCRIPT_VERSION = '1.24.1';
+    const CHANGELOG = `Version 1.24.1:
+- The "🧹 Bulk remove domains" button now sits inside the Netskope page: to the right of the search bar on the Steering Configuration list, and after the Add Filter button inside a steering configuration. It no longer floats in the corner of the screen.
+
+Version 1.24:
 - New "Steering Exception Domain Remover" feature. On the Steering Configuration page, a "🧹 Bulk remove domains" button now appears next to New Exception. Paste the domains, tick the steering configurations to search, and click Check to see where each domain is listed as an exception.
 - Remove takes only the requested domains out of each exception entry and keeps the others. An entry is deleted only when every domain in it was requested.
 - Nothing changes until you confirm. Afterwards the tool checks again that the domains are gone and gives you a summary to copy into the ticket.
@@ -1577,10 +1580,10 @@ Version 1.16:
                     lead(body, 'On the Steering Configuration page, remove a list of domains from the exceptions of one or more steering configurations at once.');
 
                     body.appendChild(hrow([
+                        chip('+ Add Filter', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
                         chip('🧹 Bulk remove domains', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
-                        chip('+ New Exception', '#0073e6'),
                     ], { marginBottom: '6px' }));
-                    caption(body, 'The button sits next to New Exception. If that button cannot be found, it floats in the bottom right corner instead.');
+                    caption(body, 'Inside a steering configuration the button sits after Add Filter. On the Steering Configuration list it sits to the right of the search bar.');
 
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0' });
@@ -5615,17 +5618,34 @@ Version 1.16:
         return se.resource === SE_RESOURCE || /steering/i.test(window.location.hash || '');
     }
 
-    function seFindAnchor() {
-        return [...document.querySelectorAll('button')].find(b =>
-            b.id !== SE_BUTTON_ID && b.offsetParent !== null && /^\+?\s*new exception$/i.test(b.textContent.trim()));
+    function seIsVisible(el) {
+        return !!el && el.offsetParent !== null;
+    }
+
+    // Inside a steering configuration: the "Add Filter" button above the exceptions table
+    function seFindAddFilter() {
+        return [...document.querySelectorAll('button, a, [role="button"]')].find(b =>
+            b.id !== SE_BUTTON_ID && seIsVisible(b) && /^\+?\s*add filters?$/i.test(b.textContent.trim()));
+    }
+
+    // Steering Configuration list: the search box, widened to the outermost
+    // element that only wraps it so the button lands beside it, not inside it
+    function seFindSearchBox() {
+        const input = [...document.querySelectorAll('input')].find(i => seIsVisible(i) &&
+            (i.type === 'search' || /search/i.test(i.placeholder || '') || i.closest('ns-search-input, .search-query')));
+        if (!input) return null;
+        let el = input.closest('ns-search-input') || input;
+        while (el.parentElement && el.parentElement !== document.body && el.parentElement.children.length === 1) {
+            el = el.parentElement;
+        }
+        return el;
     }
 
     function seSyncButton() {
         let btn = document.getElementById(SE_BUTTON_ID);
-        if (!seOnSteeringPage()) { btn?.remove(); return; }
-
-        const anchor = seFindAnchor();
-        if (btn && (anchor ? btn.nextElementSibling === anchor : btn.dataset.floating === '1')) return;
+        const anchor = seOnSteeringPage() ? (seFindAddFilter() || seFindSearchBox()) : null;
+        if (!anchor) { btn?.remove(); return; }
+        if (btn && btn.previousElementSibling === anchor) return;
         btn?.remove();
 
         btn = document.createElement('button');
@@ -5634,23 +5654,13 @@ Version 1.16:
         btn.textContent = '🧹 Bulk remove domains';
         btn.title = 'Find domains in steering exceptions and remove them (NS Policies Toolkit)';
         Object.assign(btn.style, {
-            padding: '6px 12px', fontSize: '13px', fontWeight: '600', borderRadius: '4px',
-            cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif',
-            background: '#fff', color: '#da291c', border: '1px solid #da291c',
+            display: 'inline-flex', alignItems: 'center', alignSelf: 'center', flexShrink: '0',
+            marginLeft: '8px', padding: '6px 12px', fontSize: '13px', fontWeight: '600',
+            borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif',
+            background: '#fff', color: '#da291c', border: '1px solid #da291c', verticalAlign: 'middle',
         });
         btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); seOpen(); });
-
-        if (anchor) {
-            btn.style.marginRight = '8px';
-            anchor.insertAdjacentElement('beforebegin', btn);
-        } else {
-            btn.dataset.floating = '1';
-            Object.assign(btn.style, {
-                position: 'fixed', right: '24px', bottom: '24px', zIndex: '2147483000',
-                boxShadow: '0 4px 14px rgba(0,0,0,0.2)', padding: '9px 14px',
-            });
-            document.body.appendChild(btn);
-        }
+        anchor.insertAdjacentElement('afterend', btn);
     }
 
     function initSteeringRemover() {
