@@ -3,3 +3,6 @@ docs/
 
 # Scratch file
 temp_text.txt
+
+# Local secrets (activation codes), never published
+.local-secrets/

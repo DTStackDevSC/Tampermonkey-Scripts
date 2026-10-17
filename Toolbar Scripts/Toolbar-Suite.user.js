@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.17.2
+// @version      1.18.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.17.2';
-    const CHANGELOG = `Version 1.17.2:
+   const SCRIPT_VERSION = '1.18.0';
+    const CHANGELOG = `Version 1.18.0:
+- Choose your tools: the first time you use the toolbar, a window asks which tools you want, and nothing else appears before that. If you are moving from the old scripts, the tools you already had are ticked for you.
+- New Tools section in Settings to turn any tool on or off at any time. Turning a tool off keeps its data.
+- Change Tracker: now marked as Beta. To turn it on, tick it in the tool list and enter the activation code from your administrator. If you already use it with your server and token, nothing changes for you.
+
+Version 1.17.2:
 - Ticket Assignment: team member names are always shown as plain text, even when they come from an imported file.
 - Importing data now checks it first: the Change Tracker server must be a secure https address, tenant hosts must be valid host names and the team list must be in the right format. A tool whose data does not pass is skipped and the reason is shown.
 
@@ -1176,8 +1181,11 @@ Version 1.0.0:
         if (!container) return;
         const ids = DATA_REGISTRY.filter(t => t.id !== 'toolbar').map(t => t.id);
         dtSettingsToolList = dtBuildToolList(ids, new Set(ids.filter(isToolEnabled)));
+        // Drawn in a closed shadow root, so page scripts cannot read the code or change the boxes.
+        const host = document.createElement('div');
+        dtAttachShadow.call(host, { mode: 'closed' }).appendChild(dtSettingsToolList.element);
         container.innerHTML = '';
-        container.appendChild(dtSettingsToolList.element);
+        container.appendChild(host);
     }
 
     // Called by Save in Settings. False keeps Settings open (wrong code).
@@ -3191,7 +3199,8 @@ Version 1.0.0:
         cancelBtn.addEventListener('click', () => modal.classList.remove('visible'));
         overlay.addEventListener('click', () => modal.classList.remove('visible'));
 
-        saveBtn.addEventListener('click', async () => {
+        saveBtn.addEventListener('click', async (e) => {
+            if (!e.isTrusted) return;   // only a real click saves Settings
             if (!(await dtSaveSettingsTools())) return;   // wrong activation code: stay in Settings
             saveSettings();
             modal.classList.remove('visible');
