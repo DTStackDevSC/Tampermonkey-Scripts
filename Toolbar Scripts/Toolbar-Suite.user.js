@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         || Tools Toolbar Suite ||
+// @name         || Tools Toolbar ||
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.16.1
+// @version      1.17.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,16 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.16.1';
-    const CHANGELOG = `Version 1.16.1:
+   const SCRIPT_VERSION = '1.17.0';
+    const CHANGELOG = `Version 1.17.0:
+- If you used the separate toolbar scripts before, the toolbar now offers to bring their data in: your team list, Change Tracker connection, URL List Editor hosts and tokens, NS Policies Toolkit name and steering backups, and every tool setting. Click Import when asked. Nothing is imported without your confirmation, and settings you already made in the toolbar are kept.
+- This also applies to the NS Policies Toolkit: its settings, logs and steering backups from the separate script appear in the toolbar once you import them.
+- New buttons in Settings, under Data: Export everything saves the toolbar and all tools into one backup file, Import everything restores it, and Import from old scripts brings in the data of your previous scripts at any time.
+- The first setup of Ticket Assignment, Change Tracker, URL List Editor, Row Highlighter and NS Policies Toolkit now offers Import from a backup file, so a new install can be restored in one step.
+- Row Highlighter: fixed an error that could stop rows from being highlighted again after changing page in a list.
+- The script is now listed in Tampermonkey as Tools Toolbar.
+
+Version 1.16.1:
 - Policy Deletion Reminder: no longer shows in the toolbar on the Netskope support portal. It only appears on Netskope tenant pages, where it is needed.
 
 Version 1.16.0:
@@ -405,11 +413,8 @@ Version 1.0.0:
             color: #333333 !important;
         }
     
-        /* Data transfer dialog */
-        #toolbarSuiteDataModal { background-color: #ffffff !important; color: #333333 !important; }
-        #toolbarSuiteDataModal input, #toolbarSuiteDataModal select, #toolbarSuiteDataModal textarea {
-            background-color: #ffffff !important; color: #333333 !important;
-        }
+        /* Data transfer dialog: drawn in a closed shadow root (#toolbarSuiteDataHost), page styles cannot reach it */
+        #toolbarSuiteDataHost { color: #333333 !important; }
         /* tool modal IDs appended below */
     `;
     appendStyleWhenReady(darkModeStyle);
@@ -603,11 +608,17 @@ Version 1.0.0:
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    // A small dialog above every other window. Lines are shown as plain text.
-    // Every button closes the dialog, then runs its onClick.
+    // Kept from the moment the suite loads, before any page script can replace it.
+    const dtAttachShadow = Element.prototype.attachShadow;
+
+    // A small dialog above every other window. Lines are shown as plain text. It lives in a
+    // closed shadow root and only reacts to real clicks, so page scripts can neither read,
+    // change nor press it. Every button closes the dialog, then runs its onClick.
     function dtDialog(title, lines, buttons) {
-        document.getElementById('toolbarSuiteDataModalOverlay')?.remove();
-        document.getElementById('toolbarSuiteDataModal')?.remove();
+        document.getElementById('toolbarSuiteDataHost')?.remove();
+        const host = document.createElement('div');
+        host.id = 'toolbarSuiteDataHost';
+        const root = dtAttachShadow.call(host, { mode: 'closed' });
 
         const overlay = document.createElement('div');
         overlay.id = 'toolbarSuiteDataModalOverlay';
@@ -641,7 +652,7 @@ Version 1.0.0:
             modal.appendChild(p);
         }
 
-        const close = () => { overlay.remove(); modal.remove(); };
+        const close = () => host.remove();
         const row = document.createElement('div');
         Object.assign(row.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '14px' });
         for (const b of buttons) {
@@ -655,14 +666,15 @@ Version 1.0.0:
                 border: b.primary ? 'none' : '1px solid #ccc',
                 background: b.primary ? '#667eea' : '#fff', color: b.primary ? '#fff' : '#333'
             });
-            btn.onclick = () => { close(); if (b.onClick) b.onClick(); };
+            btn.onclick = (e) => { if (!e.isTrusted) return; close(); if (b.onClick) b.onClick(); };
             row.appendChild(btn);
         }
         modal.appendChild(row);
 
-        overlay.onclick = close;
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        overlay.onclick = (e) => { if (e.isTrusted) close(); };
+        root.appendChild(overlay);
+        root.appendChild(modal);
+        document.body.appendChild(host);
         return close;
     }
 
@@ -807,11 +819,20 @@ Version 1.0.0:
     function dtRequestOldData(done) {
         const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
         const answers = new Map();
+        const payloads = new Map();
+        // Each old script answers once. Two different answers for one tool mean something
+        // else on the page is answering too, so that tool is not trusted.
+        const conflicts = new Set();
         const onAnswer = (e) => {
             const d = e.detail;
             if (!d || d.requestId !== requestId || d.protocol !== 1 || typeof d.payload !== 'string') return;
             const tool = dtTool(d.toolId);
-            if (!tool || tool.id === 'toolbar' || answers.has(tool.id)) return;
+            if (!tool || tool.id === 'toolbar') return;
+            if (payloads.has(tool.id)) {
+                if (payloads.get(tool.id) !== d.payload) conflicts.add(tool.id);
+                return;
+            }
+            payloads.set(tool.id, d.payload);
             let values;
             try { values = JSON.parse(d.payload); } catch (err) { return; }
             if (!dtIsPlainObject(values)) return;
@@ -821,7 +842,7 @@ Version 1.0.0:
         document.dispatchEvent(new CustomEvent('toolbarSuiteDataRequest', { detail: { requestId } }));
         setTimeout(() => {
             document.removeEventListener('toolbarSuiteDataResponse', onAnswer);
-            done([...answers.values()]);
+            done([...answers.values()].filter(a => !conflicts.has(a.tool.id)), [...conflicts].map(id => dtTool(id).name));
         }, DT_WAIT_MS);
     }
 
@@ -834,7 +855,7 @@ Version 1.0.0:
     // ignores the "Not now" date and reports even when there is nothing to import.
     function dtRunMigration(manual) {
         if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) return;
-        dtRequestOldData(answers => {
+        dtRequestOldData((answers, conflicts) => {
             const migrated = dtMigrated();
             const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
             const hasValues = a => Object.keys(a.values).length > 0;
@@ -844,7 +865,10 @@ Version 1.0.0:
             dtMarkMigrated([...empty, ...kept].map(a => a.tool.id));
 
             if (!todo.length) {
-                if (manual) {
+                if (conflicts.length) {
+                    dtDialog('Import from old scripts', ['Not imported, because the page sent conflicting data for: ' +
+                        conflicts.join(', ') + '. Use a backup file instead.'], [{ label: 'Close', primary: true }]);
+                } else if (manual) {
                     dtDialog('Import from old scripts', [
                         fresh.length
                             ? 'Nothing to import: the old scripts on this page have no new data for the toolbar.'
@@ -856,6 +880,8 @@ Version 1.0.0:
 
             const lines = ['Data found from your previous toolbar scripts:'];
             for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a));
+            if (todo.some(a => dtServerNote(a))) lines.push('Only import if you recognise this server.');
+            if (conflicts.length) lines.push('Not imported, because the page sent conflicting data: ' + conflicts.join(', ') + '.');
             if (kept.length) lines.push('Already set up in the toolbar, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
             lines.push('Import it into the toolbar?');
             dtDialog('Bring your data into the toolbar', lines, [
