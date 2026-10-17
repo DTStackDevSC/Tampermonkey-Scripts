@@ -405,6 +405,11 @@ Version 1.0.0:
             color: #333333 !important;
         }
     
+        /* Data transfer dialog */
+        #toolbarSuiteDataModal { background-color: #ffffff !important; color: #333333 !important; }
+        #toolbarSuiteDataModal input, #toolbarSuiteDataModal select, #toolbarSuiteDataModal textarea {
+            background-color: #ffffff !important; color: #333333 !important;
+        }
         /* tool modal IDs appended below */
     `;
     appendStyleWhenReady(darkModeStyle);
@@ -503,6 +508,185 @@ Version 1.0.0:
         }
     }
     // Angular model mapping: activity_field_0 = work_notes, activity_field_1 = comments
+
+    /* ==========================================================
+     *  DATA TRANSFER
+     *  Moves tool data between the suite, the old separate tool
+     *  scripts and backup files.
+     * ==========================================================*/
+
+    // Which tool owns each stored key: a key belongs to a tool when it equals one of its
+    // exact keys or starts with one of its prefixes. setupKeys mark a tool as "set up".
+    const DATA_REGISTRY = [
+        { id: 'toolbar', name: 'Toolbar', site: 'all', script: '|| Tools Toolbar ||',
+          exact: ['compact-mode', 'auto-close', 'show-tooltips', 'button-size', 'tool-size',
+                  'animation-speed', 'menu-gap', 'show-labels', 'label-position'],
+          prefixes: ['toolbar-', 'toolbarSuite'] },
+        { id: 'ticketQuickOpen', name: 'General Toolkit', site: 'all', script: '|Toolbar| General Toolkit',
+          exact: [], prefixes: ['tqo_'] },
+        { id: 'domainTools', name: 'Domain Tools', site: 'servicenow', script: '|Toolbar| Domain Tools',
+          exact: [], prefixes: ['domainTools'] },
+        { id: 'enhancementRequestLogger', name: 'Enhancement Request Logger', site: 'servicenow',
+          script: '|Toolbar| Enhancement Request Logger', exact: [], prefixes: ['erl'] },
+        { id: 'miniSummary', name: 'Mini Summary Sidebar', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
+          exact: [], prefixes: ['miniSummarySidebar'] },
+        { id: 'rowHighlighter', name: 'Row Highlighter', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
+          exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
+        { id: 'changeTracker', name: 'Change Tracker', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
+          exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerWorkerUrl', 'changeTrackerToken'] },
+        { id: 'serviceNowToolkit', name: 'ServiceNow Toolkit', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
+          exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
+        { id: 'ticketAssignment', name: 'Ticket Assignment', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
+          exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
+        { id: 'netskopeUrlListManager', name: 'URL List Editor', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+          exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
+        { id: 'policyDeletionReminder', name: 'Policy Deletion Reminder', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
+          exact: [], prefixes: ['pdr'] },
+        { id: 'nsDlpToolkit', name: 'NS Policies Toolkit', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
+          exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
+    ];
+
+    const DT_MIGRATED_KEY = 'toolbarSuiteMigratedTools';
+    const DT_DECLINED_KEY = 'toolbarSuiteMigrationDeclined';
+    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY];
+    // Version and "changelog seen" keys are written on every load, so they never count as data.
+    const DT_META_RE = /(version|changelog[-_]?seen)$/i;
+
+    function dtTool(id) { return DATA_REGISTRY.find(t => t.id === id) || null; }
+    function dtOwns(tool, key) { return tool.exact.includes(key) || tool.prefixes.some(p => key.startsWith(p)); }
+    function dtOwnerOf(key) { return DATA_REGISTRY.find(t => dtOwns(t, key)) || null; }
+    function dtIsPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+
+    // Keeps only the keys the tool owns. Bookkeeping keys of the migration are never accepted.
+    function dtFilterValues(tool, values) {
+        const kept = {}, dropped = [];
+        for (const [key, value] of Object.entries(values)) {
+            if (dtOwns(tool, key) && !DT_PRIVATE_KEYS.includes(key)) kept[key] = value;
+            else dropped.push(key);
+        }
+        return { values: kept, dropped };
+    }
+
+    // True when the user already set this tool up inside the suite.
+    function dtSuiteHasData(tool) {
+        return GM_listValues().some(key => {
+            if (!dtOwns(tool, key) || DT_PRIVATE_KEYS.includes(key) || DT_META_RE.test(key)) return false;
+            return !tool.setupKeys || tool.setupKeys.some(s => key === s || key.startsWith(s));
+        });
+    }
+
+    // Everything the suite stores, grouped by owning tool.
+    function dtCollectAll() {
+        const tools = {};
+        for (const key of GM_listValues()) {
+            if (DT_PRIVATE_KEYS.includes(key)) continue;
+            const tool = dtOwnerOf(key);
+            if (!tool) continue;
+            if (!tools[tool.id]) tools[tool.id] = { name: tool.name, values: {} };
+            tools[tool.id].values[key] = GM_getValue(key);
+        }
+        return tools;
+    }
+
+    function dtBuildBackup() {
+        return {
+            format: 'toolbar-suite-backup',
+            formatVersion: 1,
+            exportedAt: new Date().toISOString(),
+            suiteVersion: SCRIPT_VERSION,
+            tools: dtCollectAll()
+        };
+    }
+
+    function dtToday() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // A small dialog above every other window. Lines are shown as plain text.
+    // Every button closes the dialog, then runs its onClick.
+    function dtDialog(title, lines, buttons) {
+        document.getElementById('toolbarSuiteDataModalOverlay')?.remove();
+        document.getElementById('toolbarSuiteDataModal')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'toolbarSuiteDataModalOverlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)', zIndex: '2147483600'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'toolbarSuiteDataModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: '2147483601', background: '#fff', border: '2px solid #333', borderRadius: '10px',
+            padding: '20px', width: '460px', maxWidth: '92vw', maxHeight: '82vh', overflowY: 'auto',
+            boxSizing: 'border-box', fontFamily: 'Arial, sans-serif', color: '#333',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', textAlign: 'left'
+        });
+
+        const heading = document.createElement('div');
+        heading.textContent = title;
+        Object.assign(heading.style, {
+            fontWeight: 'bold', fontSize: '16px', marginBottom: '12px',
+            paddingBottom: '10px', borderBottom: '2px solid #667eea'
+        });
+        modal.appendChild(heading);
+
+        for (const line of lines) {
+            const p = document.createElement('div');
+            p.textContent = line;
+            Object.assign(p.style, { fontSize: '13px', lineHeight: '1.5', margin: '0 0 8px 0' });
+            modal.appendChild(p);
+        }
+
+        const close = () => { overlay.remove(); modal.remove(); };
+        const row = document.createElement('div');
+        Object.assign(row.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '14px' });
+        for (const b of buttons) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = b.label;
+            btn.dataset.dtButton = b.label;
+            Object.assign(btn.style, {
+                padding: '8px 16px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif',
+                border: b.primary ? 'none' : '1px solid #ccc',
+                background: b.primary ? '#667eea' : '#fff', color: b.primary ? '#fff' : '#333'
+            });
+            btn.onclick = () => { close(); if (b.onClick) b.onClick(); };
+            row.appendChild(btn);
+        }
+        modal.appendChild(row);
+
+        overlay.onclick = close;
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        return close;
+    }
+
+    function dtDownload(fileName, data) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function dtExportEverything() {
+        dtDialog('Export everything', [
+            'This saves the settings and data of the toolbar and every tool into one file.',
+            'This file contains your saved tokens. Keep it somewhere safe and do not share it.'
+        ], [
+            { label: 'Export', primary: true, onClick: () => dtDownload(`toolbar-suite-backup-${dtToday()}.json`, dtBuildBackup()) },
+            { label: 'Cancel' }
+        ]);
+    }
 
     /* ==========================================================
      *  TOOLBAR CORE
@@ -2404,6 +2588,11 @@ Version 1.0.0:
                                 <button id="import-settings" class="btn-secondary">Import Settings</button>
                                 <button id="reset-settings" class="btn-danger">Reset to Default</button>
                             </div>
+                            <div class="setting-item">
+                                <button id="export-everything" class="btn-secondary">Export everything</button>
+                                <button id="import-everything" class="btn-secondary">Import everything</button>
+                                <button id="import-old-scripts" class="btn-secondary">Import from old scripts</button>
+                            </div>
                         </div>
                     </div>
 
@@ -2484,6 +2673,7 @@ Version 1.0.0:
         document.getElementById('export-settings').addEventListener('click', exportSettings);
         document.getElementById('import-settings').addEventListener('click', importSettings);
         document.getElementById('reset-settings').addEventListener('click', resetSettings);
+        document.getElementById('export-everything').addEventListener('click', dtExportEverything);
 
         const showLabelsEl   = document.getElementById('show-labels');
         const labelPosRow    = document.getElementById('label-position-row');
