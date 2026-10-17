@@ -535,33 +535,33 @@ Version 1.0.0:
           exact: ['compact-mode', 'auto-close', 'show-tooltips', 'button-size', 'tool-size',
                   'animation-speed', 'menu-gap', 'show-labels', 'label-position'],
           prefixes: ['toolbar-', 'toolbarSuite'] },
-        { id: 'ticketQuickOpen', name: 'General Toolkit', site: 'all', script: '|Toolbar| General Toolkit',
+        { id: 'ticketQuickOpen', name: 'General Toolkit', description: 'Open any ticket or case number you select', site: 'all', script: '|Toolbar| General Toolkit',
           exact: [], prefixes: ['tqo_'] },
-        { id: 'domainTools', name: 'Domain Tools', site: 'servicenow', script: '|Toolbar| Domain Tools',
+        { id: 'domainTools', name: 'Domain Tools', description: 'Extract domains from tickets and check their reputation', site: 'servicenow', script: '|Toolbar| Domain Tools',
           exact: [], prefixes: ['domainTools'] },
-        { id: 'enhancementRequestLogger', name: 'Enhancement Request Logger', site: 'servicenow',
+        { id: 'enhancementRequestLogger', name: 'Enhancement Request Logger', description: 'Open a pre filled enhancement request form', site: 'servicenow',
           script: '|Toolbar| Enhancement Request Logger', exact: [], prefixes: ['erl'] },
-        { id: 'miniSummary', name: 'Mini Summary Sidebar', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
+        { id: 'miniSummary', name: 'Mini Summary Sidebar', description: 'Key ticket fields at a glance', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
           exact: [], prefixes: ['miniSummarySidebar'] },
-        { id: 'rowHighlighter', name: 'Row Highlighter', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
+        { id: 'rowHighlighter', name: 'Row Highlighter', description: 'Highlight list rows updated by you, with SLA colors', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
           exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
-        { id: 'changeTracker', name: 'Change Tracker', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
+        { id: 'changeTracker', name: 'Change Tracker', description: 'Shared change log per ticket, written to the ticket', beta: true, locked: true, site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
           exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerWorkerUrl', 'changeTrackerToken'] },
-        { id: 'serviceNowToolkit', name: 'ServiceNow Toolkit', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
+        { id: 'serviceNowToolkit', name: 'ServiceNow Toolkit', description: 'Draft autosave and SCTASK auto open', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
-        { id: 'ticketAssignment', name: 'Ticket Assignment', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
+        { id: 'ticketAssignment', name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
-        { id: 'netskopeUrlListManager', name: 'URL List Editor', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+        { id: 'netskopeUrlListManager', name: 'URL List Editor', description: 'Create and update Netskope URL lists from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
-        { id: 'policyDeletionReminder', name: 'Policy Deletion Reminder', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
+        { id: 'policyDeletionReminder', name: 'Policy Deletion Reminder', description: 'Register a reminder to delete a temporary policy', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
           exact: [], prefixes: ['pdr'] },
-        { id: 'nsDlpToolkit', name: 'NS Policies Toolkit', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
+        { id: 'nsDlpToolkit', name: 'NS Policies Toolkit', description: 'Copy and open buttons, logs and steering exception tools', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
           exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
     ];
 
     const DT_MIGRATED_KEY = 'toolbarSuiteMigratedTools';
     const DT_DECLINED_KEY = 'toolbarSuiteMigrationDeclined';
-    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY];
+    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'toolbarSuiteDetectedTools', 'toolbarSuitePickerLater'];
     // Version and "changelog seen" keys are written on every load, so they never count as data.
     const DT_META_RE = /(version|changelog[-_]?seen)$/i;
 
@@ -638,6 +638,57 @@ Version 1.0.0:
     function dtToday() {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    /* Tool activation: which tools run, and the Change Tracker beta code. */
+    const DT_CHOICES_KEY      = 'toolbarSuiteToolChoices';
+    const DT_INSTALL_KIND_KEY = 'toolbarSuiteInstallKind';
+    const DT_DETECTED_KEY     = 'toolbarSuiteDetectedTools';
+    const DT_CT_UNLOCKED_KEY  = 'toolbarSuiteCtUnlocked';
+    const DT_PICKER_LATER_KEY = 'toolbarSuitePickerLater';
+    // SHA-256 of "toolbar-suite-ct:" followed by the activation code without "CT", dashes or spaces.
+    const DT_CT_CODE_HASH = 'cce5579e99b0991105c18c7a2b932e4f3d2799259ef789fad583a27a484bd4fd';
+
+    // Decided once, the first time the suite runs: 'upgrade' when it found saved data, 'new' when storage was empty.
+    const DT_INSTALL_KIND = (() => {
+        const saved = GM_getValue(DT_INSTALL_KIND_KEY, null);
+        if (saved === 'upgrade' || saved === 'new') return saved;
+        const kind = GM_listValues().length ? 'upgrade' : 'new';
+        GM_setValue(DT_INSTALL_KIND_KEY, kind);
+        return kind;
+    })();
+
+    function dtChoices() {
+        const v = GM_getValue(DT_CHOICES_KEY, {});
+        return dtIsPlainObject(v) ? v : {};
+    }
+    function dtSaveChoices(update) { GM_setValue(DT_CHOICES_KEY, Object.assign(dtChoices(), update)); }
+
+    // Change Tracker is unlocked by the code, or for people who already set it up.
+    function dtCtUnlocked() {
+        if (GM_getValue(DT_CT_UNLOCKED_KEY, false) === true) return true;
+        if (GM_getValue('changeTrackerWorkerUrl', '') && GM_getValue('changeTrackerToken', '')) {
+            GM_setValue(DT_CT_UNLOCKED_KEY, true);
+            return true;
+        }
+        return false;
+    }
+
+    // Does a tool run? Each tool section asks this before doing anything.
+    function isToolEnabled(id) {
+        const tool = dtTool(id);
+        if (tool && tool.locked && !dtCtUnlocked()) return false;
+        const choices = dtChoices();
+        if (Object.prototype.hasOwnProperty.call(choices, id)) return choices[id] === true;
+        return DT_INSTALL_KIND === 'upgrade';
+    }
+
+    async function dtCheckCtCode(input) {
+        const rest = String(input || '').toUpperCase().replace(/[\s-]/g, '').replace(/^CT/, '');
+        if (!rest) return false;
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('toolbar-suite-ct:' + rest));
+        const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+        return hex === DT_CT_CODE_HASH;
     }
 
     // Kept from the moment the suite loads, before any page script can replace it.
@@ -3250,6 +3301,9 @@ Version 1.0.0:
     const registerGeneralToolkit = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('ticketQuickOpen')) return function register() {};
+
     // ─────────────────────────────────────────────────────────────
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
@@ -4439,6 +4493,9 @@ Version 1.2:
 
     const registerServiceNowToolkit = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('serviceNowToolkit')) return function register() {};
 
     console.log('🛠️ ServiceNow Toolkit loading...');
 
@@ -6117,6 +6174,9 @@ Version 1.1.4:
     const registerMiniSummarySidebar = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('miniSummary')) return function register() {};
+
     console.log('📊 Mini Summary Sidebar loading...');
 
     /* ==========================================================
@@ -7572,6 +7632,9 @@ Version 1.0.2:
     const registerEnhancementRequestLogger = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('enhancementRequestLogger')) return function register() {};
+
     console.log('📋 Enhancement Request Logger loading...');
 
     /* ==========================================================
@@ -8587,6 +8650,9 @@ Version 1.1.1:
 
     const registerTicketAssignmentTool = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('ticketAssignment')) return function register() {};
 
 
     console.log('🎫 ServiceNow Ticket Assignment Tool loading...');
@@ -11107,6 +11173,9 @@ Thank you for your cooperation.` : '';
 
     const registerURLListEditor = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('netskopeUrlListManager')) return function register() {};
 
     console.log('🔧 Netskope URL List Manager v1.6.1 loading...');
 
@@ -14788,6 +14857,9 @@ Version 1.4.1:
     const registerServiceNowRowHighlighter = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('rowHighlighter')) return function register() {};
+
     console.log('🎨 ServiceNow Row Highlighter loading...');
 
     /* ==========================================================
@@ -17250,6 +17322,9 @@ Version 2.3.1:
 
     const registerServiceNowTicketHistory = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('changeTracker')) return function register() {};
 
     console.log('📝 Change Tracker loading...');
 
@@ -20839,11 +20914,14 @@ Version 1.4.3:
         sidebar.appendChild(closeBtn);
 
         // ── Title ────────────────────────────────────────────────
-        sidebar.appendChild(
-            css(Object.assign(mk('div'), { textContent:'✏️ Change Tracker' }), {
-                fontSize:'16px', fontWeight:'bold', color:'#333', marginBottom:'4px', paddingRight:'30px'
-            })
-        );
+        const ctTitle = css(Object.assign(mk('div'), { textContent:'✏️ Change Tracker' }), {
+            fontSize:'16px', fontWeight:'bold', color:'#333', marginBottom:'4px', paddingRight:'30px'
+        });
+        ctTitle.appendChild(css(Object.assign(mk('span'), { textContent:'BETA', title:'Change Tracker is in testing' }), {
+            display:'inline-block', marginLeft:'8px', padding:'1px 7px', borderRadius:'8px', background:'#ff8c00',
+            color:'#fff', fontSize:'10px', fontWeight:'bold', letterSpacing:'.5px', verticalAlign:'middle'
+        }));
+        sidebar.appendChild(ctTitle);
 
         // ── Version row ──────────────────────────────────────────
         const verRow = css(mk('div'), { display:'flex', alignItems:'center', fontSize:'11px', color:'#999', marginBottom:'8px', paddingRight:'30px', flexWrap:'wrap' });
@@ -21752,7 +21830,8 @@ Version 1.4.3:
                     body.appendChild(p);
                     bullets(body, [
                         'Pick the change type, fill in its fields, then click "+ Add Entry" (Ctrl+Enter also works).',
-                        'Every entry is saved to the shared team log, so anyone opening this ticket sees the same history.'
+                        'Every entry is saved to the shared team log, so anyone opening this ticket sees the same history.',
+                        'Change Tracker is in beta. It is turned on in the toolbar Settings, under Tools, with an activation code from your administrator.'
                     ]);
                 }
             },
@@ -22523,7 +22602,7 @@ Version 1.4.3:
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Change Tracker', position: 7 }
+                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Change Tracker (Beta)', position: 7 }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
@@ -22533,6 +22612,9 @@ Version 1.4.3:
 
     const registerDomainTools = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('domainTools')) return function register() {};
 
     /* ==========================================================
      *  VERSION CONTROL
@@ -23852,6 +23934,9 @@ Version 1.0:
     const registerNetskopePolicyDeletionScheduler = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('policyDeletionReminder')) return function register() {};
+
     console.log('🗑️ Policy Deletion Reminder loading...');
 
     /* ==========================================================
@@ -24855,6 +24940,9 @@ Version 0.9.1:
 
     const registerNetskopePolicyToolkit = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('nsDlpToolkit')) return function register() {};
 
     // This body runs as soon as the suite loads (document start), because the steering
     // request sniffer must be in place before the Netskope console makes its first calls.
