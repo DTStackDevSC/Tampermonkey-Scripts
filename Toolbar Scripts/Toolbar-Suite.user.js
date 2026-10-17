@@ -790,6 +790,97 @@ Version 1.0.0:
         return link;
     }
 
+    const DT_WAIT_MS = 2000;
+    const DT_START_DELAY_MS = 2000;
+
+    function dtMigrated() {
+        const v = GM_getValue(DT_MIGRATED_KEY, []);
+        return Array.isArray(v) ? v : [];
+    }
+    function dtMarkMigrated(ids) {
+        if (ids.length) GM_setValue(DT_MIGRATED_KEY, [...new Set([...dtMigrated(), ...ids])]);
+    }
+
+    // Asks the old separate scripts on this page for their data and calls done(answers)
+    // after DT_WAIT_MS. Only answers to this request, from known tools, are kept, and only
+    // with the keys that tool owns.
+    function dtRequestOldData(done) {
+        const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        const answers = new Map();
+        const onAnswer = (e) => {
+            const d = e.detail;
+            if (!d || d.requestId !== requestId || d.protocol !== 1 || typeof d.payload !== 'string') return;
+            const tool = dtTool(d.toolId);
+            if (!tool || tool.id === 'toolbar' || answers.has(tool.id)) return;
+            let values;
+            try { values = JSON.parse(d.payload); } catch (err) { return; }
+            if (!dtIsPlainObject(values)) return;
+            answers.set(tool.id, { tool, ...dtFilterValues(tool, values) });
+        };
+        document.addEventListener('toolbarSuiteDataResponse', onAnswer);
+        document.dispatchEvent(new CustomEvent('toolbarSuiteDataRequest', { detail: { requestId } }));
+        setTimeout(() => {
+            document.removeEventListener('toolbarSuiteDataResponse', onAnswer);
+            done([...answers.values()]);
+        }, DT_WAIT_MS);
+    }
+
+    function dtServerNote(answer) {
+        if (answer.tool.id !== 'changeTracker') return '';
+        try { return ` (server: ${new URL(answer.values.changeTrackerWorkerUrl).host})`; } catch (e) { return ''; }
+    }
+
+    // Runs the migration on this page. manual is true when started from Settings: it then
+    // ignores the "Not now" date and reports even when there is nothing to import.
+    function dtRunMigration(manual) {
+        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) return;
+        dtRequestOldData(answers => {
+            const migrated = dtMigrated();
+            const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
+            const hasValues = a => Object.keys(a.values).length > 0;
+            const empty = fresh.filter(a => !hasValues(a));
+            const kept  = fresh.filter(a => hasValues(a) && dtSuiteHasData(a.tool));
+            const todo  = fresh.filter(a => hasValues(a) && !dtSuiteHasData(a.tool));
+            dtMarkMigrated([...empty, ...kept].map(a => a.tool.id));
+
+            if (!todo.length) {
+                if (manual) {
+                    dtDialog('Import from old scripts', [
+                        fresh.length
+                            ? 'Nothing to import: the old scripts on this page have no new data for the toolbar.'
+                            : 'No old scripts answered on this page. Open a ServiceNow ticket or a Netskope tenant page where they ran, then try again.'
+                    ], [{ label: 'Close', primary: true }]);
+                }
+                return;
+            }
+
+            const lines = ['Data found from your previous toolbar scripts:'];
+            for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a));
+            if (kept.length) lines.push('Already set up in the toolbar, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
+            lines.push('Import it into the toolbar?');
+            dtDialog('Bring your data into the toolbar', lines, [
+                { label: 'Import', primary: true, onClick: () => {
+                    const result = dtApply(todo, 'Bring your data into the toolbar', { uninstallHint: true });
+                    dtMarkMigrated(result.done);
+                } },
+                { label: 'Not now', onClick: () => GM_setValue(DT_DECLINED_KEY, dtToday()) }
+            ]);
+        });
+    }
+
+    // Started once per page load on ServiceNow and Netskope tenant pages, while some tool
+    // of that site is not migrated yet.
+    function dtAutoMigrate() {
+        const host = location.hostname;
+        const site = /\.service-now\.com$|\.servicenow\.com$/.test(host) ? 'servicenow'
+                   : /\.goskope\.com$/.test(host) ? 'netskope' : null;
+        if (!site) return;
+        const migrated = dtMigrated();
+        const pending = DATA_REGISTRY.some(t => t.id !== 'toolbar' && (t.site === site || t.site === 'all') && !migrated.includes(t.id));
+        if (!pending) return;
+        setTimeout(() => dtRunMigration(false), DT_START_DELAY_MS);
+    }
+
     function dtExportEverything() {
         dtDialog('Export everything', [
             'This saves the settings and data of the toolbar and every tool into one file.',
@@ -1259,6 +1350,17 @@ Version 1.0.0:
                         chip('Reset to Default', '#ef4444')
                     ], { margin: '10px 0 0 0' }));
                     caption(body, 'Export and Import move your settings between browsers. Reset restores the defaults.');
+
+                    body.appendChild(hrow([
+                        chip('Export everything', '#f3f4f6', { color: '#374151' }),
+                        chip('Import everything', '#f3f4f6', { color: '#374151' }),
+                        chip('Import from old scripts', '#f3f4f6', { color: '#374151' })
+                    ], { margin: '10px 0 0 0' }));
+                    bullets(body, [
+                        'Export everything saves the toolbar and every tool into one backup file. It includes your tokens, so keep it safe.',
+                        'Import everything restores that file, for example on a new computer. Each tool\'s first setup can also import it.',
+                        'Import from old scripts brings in the data of the separate toolbar scripts you used before. The toolbar also offers it by itself once a day until it is done.'
+                    ]);
 
                     const dot = document.createElement('span');
                     Object.assign(dot.style, { width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', display: 'inline-block' });
@@ -2787,6 +2889,7 @@ Version 1.0.0:
         document.getElementById('reset-settings').addEventListener('click', resetSettings);
         document.getElementById('export-everything').addEventListener('click', dtExportEverything);
         document.getElementById('import-everything').addEventListener('click', dtImportEverything);
+        document.getElementById('import-old-scripts').addEventListener('click', () => dtRunMigration(true));
 
         const showLabelsEl   = document.getElementById('show-labels');
         const labelPosRow    = document.getElementById('label-position-row');
@@ -31189,6 +31292,7 @@ Version 1.16:
             registerNetskopePolicyDeletionScheduler();
             registerNetskopePolicyToolkit();
         }
+        dtAutoMigrate();
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() { initToolbar(); doRegisterAllTools(); });
