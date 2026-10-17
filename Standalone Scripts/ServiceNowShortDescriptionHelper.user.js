@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      3.3.5
+// @version      3.3.6
 // @description  Show a button to select several options and be able to change the short description
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -20,8 +20,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '3.3.5';
-    const CHANGELOG = `Version 3.3.5:
+    const SCRIPT_VERSION = '3.3.6';
+    const CHANGELOG = `Version 3.3.6:
+- The Feature Guide now explains the Detected Req. MF and Detected Territory lines shown in the panel.
+
+Version 3.3.5:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 3.3.4:
@@ -2022,6 +2025,24 @@ Version 3.0.8.1:
                     }
                     body.appendChild(grid);
                     addParagraph(body, 'The detected tenant appears in the "MF NS Tenant" row as a clickable link. The Netskope icon button uses the same detection to open the tenant portal directly.');
+
+                    addParagraph(body, 'Below the Requesting MF field the panel also shows what it read from the ticket:');
+                    const detectBox = document.createElement('div');
+                    Object.assign(detectBox.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '8px 14px', marginBottom: '8px', fontSize: '12px', color: '#555',
+                        fontFamily: 'Arial, sans-serif', lineHeight: '1.6'
+                    });
+                    for (const line of ['Detected Req. MF: Spain', 'Detected Territory: Portugal']) {
+                        const l = document.createElement('div');
+                        l.textContent = line;
+                        detectBox.appendChild(l);
+                    }
+                    body.appendChild(detectBox);
+                    addBulletList(body, [
+                        'Detected Req. MF is the member firm read from the ticket, used to pick the tenant.',
+                        'Detected Territory reads the Territory field of the ticket. The line is hidden when the ticket has no territory.'
+                    ]);
                 }
             },
             {

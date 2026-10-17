@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.26
+// @version      1.26.1
 // @description  Copy buttons, DLP profile open buttons, SMTP auto-fill, Save reminder checklist, description log entry tools, URL list history, DLP entity character counter, and bulk constraint entry/delete/copy (by Sameena K.), and bulk removal of domains from steering exceptions. Integrated with Toolbar v2.
 // @author       J.R., Sameena K. (Bulk Constraint Tools)
 // @match        https://*.goskope.com/*
@@ -44,8 +44,11 @@
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.26';
-    const CHANGELOG = `Version 1.26:
+    const SCRIPT_VERSION = '1.26.1';
+    const CHANGELOG = `Version 1.26.1:
+- The Feature Guide now lists the Steering Exception Domain Tools switch among the settings.
+
+Version 1.26:
 - New "➕ Bulk add domains" button next to "🧹 Bulk remove domains" on the Steering Configuration page. Paste domains, tick the steering configurations, add your notes (for example the RITM), and each configuration gets one new exception entry with the domains it does not already have.
 - Check shows, per configuration, which domains will be added and which are already present and skipped. Nothing changes until you click Add twice.
 - Notes are required. Tick "No notes needed" when a ticket number does not apply.
@@ -1783,6 +1786,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
+                    togglesWrap.appendChild(toggle('🧹 Steering Exception Domain Tools', true, 'Bulk remove and bulk add domains across steering exceptions, with backups to undo.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {

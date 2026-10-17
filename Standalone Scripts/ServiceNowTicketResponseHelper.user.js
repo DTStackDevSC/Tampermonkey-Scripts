@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.21.0
+// @version      2.21.1
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.0';
-    const CHANGELOG = `Version 2.21.0:
+    const SCRIPT_VERSION = '2.21.1';
+    const CHANGELOG = `Version 2.21.1:
+- The Feature Guide now also explains pinned and recently used responses, the @mention banner shown while names are added, and the Footer Signature setting.
+
+Version 2.21.0:
 - New setting "Paste clipboard into responses", off by default. When it is on, inserting a response fills its empty ">" line (for example the list of URLs in a bypass response) with what you have copied. Your browser may ask once for permission to read the clipboard. If the clipboard is empty or access is blocked, the ">" line stays so you can fill it in by hand.
 
 Version 2.20.0:
@@ -3185,6 +3188,59 @@ Regards.`,
                 }
             },
             {
+                icon: '📌',
+                title: 'Pinned and Recently Used',
+                buildContent: (body) => {
+                    addParagraph(body, 'Two extra sections can appear at the top of the dropdown so your most used templates are always one click away:');
+
+                    const mockList = document.createElement('div');
+                    Object.assign(mockList.style, {
+                        border: '1px solid #d4d8de', borderRadius: '6px', overflow: 'hidden',
+                        marginBottom: '10px', maxWidth: '340px', background: '#fff'
+                    });
+                    const mockRows = [
+                        { header: true, text: '📌 Pinned', bg: '#eef0ff' },
+                        { text: 'SSL Bypass', pin: true },
+                        { header: true, text: '⏱ Recently Used', bg: '#fff8e1' },
+                        { text: 'Initial Contact', pin: false },
+                        { text: 'First Reminder', pin: false }
+                    ];
+                    for (const r of mockRows) {
+                        const row = document.createElement('div');
+                        if (r.header) {
+                            row.textContent = r.text;
+                            Object.assign(row.style, {
+                                padding: '6px 12px', fontSize: '10px', fontWeight: 'bold', color: '#555',
+                                background: r.bg, textTransform: 'uppercase', letterSpacing: '0.7px',
+                                borderTop: '1px solid #d4d8de', borderBottom: '2px solid #d4d8de',
+                                fontFamily: 'Arial, sans-serif'
+                            });
+                        } else {
+                            Object.assign(row.style, {
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                padding: '6px 12px', fontSize: '12px', color: '#333',
+                                borderBottom: '1px solid #f0f0f0', fontFamily: 'Arial, sans-serif'
+                            });
+                            const label = document.createElement('span');
+                            label.textContent = r.text;
+                            const pin = document.createElement('span');
+                            pin.textContent = '📌';
+                            pin.style.opacity = r.pin ? '1' : '0.25';
+                            row.appendChild(label);
+                            row.appendChild(pin);
+                        }
+                        mockList.appendChild(row);
+                    }
+                    body.appendChild(mockList);
+
+                    addBulletList(body, [
+                        'Click the faded 📌 next to any template to pin it. Click it again to unpin.',
+                        'Pinned templates still appear in their own section too. Pinned parents keep their flyout of variants.',
+                        'Recently Used always shows the last 3 templates you inserted.'
+                    ]);
+                }
+            },
+            {
                 icon: '👤',
                 title: 'Name Detection',
                 buildContent: (body) => {
@@ -3222,7 +3278,30 @@ Regards.`,
                     }
                     body.appendChild(exampleWrap);
 
+                    addParagraph(body, 'Where a template mentions the requester, the name is turned into a real ServiceNow @mention. While the mentions are added, a dark banner is shown at the top of the page:');
+
+                    const mentionBar = document.createElement('div');
+                    Object.assign(mentionBar.style, {
+                        display: 'inline-flex', alignItems: 'center', gap: '8px',
+                        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)', color: '#fff', borderRadius: '8px',
+                        border: '1px solid rgba(102,126,234,0.55)', padding: '8px 14px', fontSize: '12px', marginBottom: '10px',
+                        fontFamily: 'Arial, sans-serif'
+                    });
+                    const mText = document.createElement('span');
+                    mText.textContent = 'Inserting @mention (1 of 2)';
+                    const mField = document.createElement('span');
+                    mField.textContent = '→ Comments';
+                    mField.style.color = '#67e8f9';
+                    const mStop = document.createElement('span');
+                    mStop.textContent = '⛔ do not click';
+                    Object.assign(mStop.style, { color: '#fca5a5', fontSize: '11px' });
+                    mentionBar.appendChild(mText);
+                    mentionBar.appendChild(mField);
+                    mentionBar.appendChild(mStop);
+                    body.appendChild(mentionBar);
+
                     addBulletList(body, [
+                        'Do not click or type while the banner is shown. It disappears on its own when every mention is in place.',
                         'Name detection works in both the classic (new tab) and Polaris (dashboard) ticket views.',
                         'If the name cannot be read from the ticket, the placeholder "[Name]" stays in the inserted text so you can fill it in before saving.'
                     ]);
@@ -3287,13 +3366,60 @@ Regards.`,
                 }
             },
             {
+                icon: '📝',
+                title: 'Footer Signature',
+                buildContent: (body) => {
+                    addParagraph(body, 'Turn on "Append footer on insert" in Settings to add your own signature under every response you insert:');
+
+                    const wrap = document.createElement('div');
+                    Object.assign(wrap.style, { marginBottom: '10px', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+                    const rows = [
+                        { label: 'Before', bg: '#f8f8ff', labelColor: '#888',    lines: ['Hi Jane,', 'The bypass is now in place.'] },
+                        { label: 'After',  bg: '#f2fff7', labelColor: '#2a7d4f', lines: ['Hi Jane,', 'The bypass is now in place.', '──────────────', 'Kind regards, EMEA Netskope Team'] }
+                    ];
+                    for (const r of rows) {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, {
+                            display: 'flex', alignItems: 'flex-start', gap: '10px',
+                            padding: '7px 12px', background: r.bg,
+                            borderBottom: r.label === 'Before' ? '1px solid #e8e8f0' : 'none'
+                        });
+                        const labelEl = document.createElement('span');
+                        labelEl.textContent = r.label;
+                        Object.assign(labelEl.style, {
+                            fontSize: '10px', fontWeight: 'bold', color: r.labelColor,
+                            textTransform: 'uppercase', whiteSpace: 'nowrap',
+                            width: '42px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
+                        });
+                        const textEl = document.createElement('div');
+                        Object.assign(textEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#333', lineHeight: '1.5' });
+                        for (const line of r.lines) {
+                            const l = document.createElement('div');
+                            l.textContent = line;
+                            if (line.startsWith('──')) l.style.color = '#aaa';
+                            textEl.appendChild(l);
+                        }
+                        row.appendChild(labelEl);
+                        row.appendChild(textEl);
+                        wrap.appendChild(row);
+                    }
+                    body.appendChild(wrap);
+
+                    addBulletList(body, [
+                        'Click "Edit" next to the toggle in Settings to write or change your footer text.',
+                        'The separator shows as a horizontal line on the ticket.',
+                        'When the comment field is empty, the footer is already filled in when the ticket opens. Inserting a response never adds it twice.'
+                    ]);
+                }
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent: (body) => {
                     const headerButtons = [
                         {
                             bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Settings',
-                            desc: 'Opens the Settings modal where you can toggle auto-date update and switch your active team.'
+                            desc: 'Opens the Settings modal with the insert options, the footer signature and the team switcher.'
                         },
                         {
                             bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help',
@@ -3334,6 +3460,7 @@ Regards.`,
                         ['Auto-update date on insert', 'Updates the date at the start of the short description to today (DD-MM-YYYY) every time you insert a response.'],
                         ['Add Change Tracker summary to Solved Closure', 'Off by default. When on, Solved Closure writes the Change Tracker summary of the ticket to the work notes and lists the same changes in the comment. Needs the Change Tracker script.'],
                         ['Paste clipboard into responses', 'Off by default. When on, the empty ">" line of a response is filled with what you have copied, for example the URLs of a bypass. If the clipboard is empty, the ">" line stays so you can fill it in by hand.'],
+                        ['Append footer on insert', 'Off by default. Adds a separator and your footer text to every inserted response. Use the Edit button beside it to change the text.'],
                         ['Switch Team',               'Changes your active team between EMEA, AME, and APAC. Each team has its own set of templates and section layout. Switching teams reloads the page.']
                     ];
                     const grid = document.createElement('div');

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyDeletionScheduler.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-NetskopePolicyDeletionScheduler.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.2
+// @version      1.1.0
 // @description  Registers a policy deletion reminder by opening a pre-filled form with the policy URL, name, and expiry date - Integrated with Toolbar
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -22,8 +22,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.0.2';
-    const CHANGELOG = `Version 1.0.2:
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Added a "? Help" button next to the version number at the bottom of the window. It opens a visual Feature Guide that explains what is filled in and how the reminder form opens.
+- The window and its changelog now stay readable on dark themed pages.
+
+Version 1.0.2:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.0.1:
@@ -354,6 +358,367 @@ Version 0.9.1:
      *  MODAL
      * ==========================================================*/
 
+    /* ==========================================================
+     *  FEATURE GUIDE  (? Help modal)
+     * ==========================================================*/
+
+    function showHelpModal() {
+        if (document.getElementById('pdrHelpModal')) return;
+
+        /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
+         *      span/hrow/chip return an element you place yourself. ---- */
+
+        // lead: the single orienting sentence at the very top of a section.
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: a small italic note placed directly under a visual to explain it.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(c);
+        }
+
+        // span: an inline text node with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: a small colored rounded label. Use for categories and button previews.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block'
+            });
+            return c;
+        }
+
+        // badgeRow: a button preview on the left with a one line description on the right.
+        function badgeRow(body, item) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+            });
+            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px' });
+            badge.style.flexShrink = '0';
+            const descEl = span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' });
+            row.appendChild(badge);
+            row.appendChild(descEl);
+            body.appendChild(row);
+        }
+
+        // kvGrid: a two column key:value grid for field references and named settings.
+        function kvGrid(body, pairs) {
+            const grid = document.createElement('div');
+            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
+            for (const [key, val] of pairs) {
+                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
+                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
+            }
+            body.appendChild(grid);
+        }
+
+        // mockField: a labelled input or dropdown as it appears in the real form.
+        function mockField(label, value, opts) {
+            opts = opts || {};
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            wrap.appendChild(span(label, { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '3px' }));
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '6px 10px', border: '1px solid #ddd', borderRadius: '6px',
+                background: opts.readOnly ? '#efefef' : '#fff', maxWidth: opts.width || '320px',
+                minHeight: opts.tall ? '34px' : 'auto', boxSizing: 'border-box'
+            });
+            box.appendChild(span(value, { fontSize: '12px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
+            if (opts.caret) box.appendChild(span('▾', { fontSize: '11px', color: '#999' }));
+            wrap.appendChild(box);
+            return wrap;
+        }
+
+        // toolSquare: one rounded icon tile, like a real toolbar button.
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px',
+                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, {
+                    position: 'absolute', top: '-3px', right: '-3px',
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: '#ff8c00', border: '1px solid #fff'
+                });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+
+        // menuSep: the thin vertical divider used between groups in a menu mock.
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+
+        // menuMock: a white rounded card that holds tool tiles, like the open toolbar menu.
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px',
+                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+
+        const sections = [
+            {
+                icon: '🚀', title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Open the Netskope policy you want removed later, then click the deletion reminder icon in the floating toolbar.');
+                    const pin = { bg: '#e8f0fe', border: '2px solid #667eea' };
+                    body.appendChild(hrow([ menuMock([ toolSquare('🗑️', pin), menuSep(), toolSquare('🛡️'), toolSquare('⚙️') ]) ], { margin: '0 0 10px 0' }));
+                    caption(body, 'The 🗑️ icon is the Policy Deletion Reminder button in the toolbar.');
+                    bullets(body, [
+                        'The window reads the policy page you are on and fills everything in for you.',
+                        'Click Register Deletion Reminder to open the reminder form with those values.',
+                        'Use it for temporary policies, so the team is reminded to delete them when they expire.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋', title: 'What Gets Filled In',
+                buildContent(body) {
+                    lead(body, 'All three fields are read only. They come from the page and today\'s date.');
+                    body.appendChild(mockField('Policy Page URL', 'https://tenant.goskope.com/ns#/policy/...', { readOnly: true, width: '380px' }));
+                    body.appendChild(mockField('Policy Name', 'EU - Web Allow - Temporary Access', { readOnly: true, width: '380px' }));
+                    body.appendChild(mockField('Deletion Reminder Date (+30 days)', '2026-11-16', { readOnly: true, width: '380px' }));
+                    kvGrid(body, [
+                        ['Policy Page URL', 'The address of the policy page you have open.'],
+                        ['Policy Name',     'Read from the Policy Name field of the policy.'],
+                        ['Reminder Date',   'Today plus 30 days, in YYYY-MM-DD format.']
+                    ]);
+                }
+            },
+            {
+                icon: '🗓️', title: 'Registering the Reminder',
+                buildContent(body) {
+                    lead(body, 'Click the button to open the Office Forms reminder in a new tab with every answer already filled in.');
+                    body.appendChild(hrow([ chip('🗓️ Register Deletion Reminder', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', { padding: '8px 16px', fontSize: '12px', radius: '6px' }) ]));
+                    body.appendChild(hrow([ span('⚠️ Policy Name not found, the field may be empty.', { fontSize: '12px', color: '#c0392b' }) ], { margin: '8px 0 0 0' }));
+                    caption(body, 'This message shows, and the button stays greyed out, when the policy has no name yet or you are not on a policy page.');
+                    bullets(body, [
+                        'Check the answers in Office Forms and submit them there.',
+                        'The window closes once the new tab is open.'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️', title: 'Controls',
+                buildContent(body) {
+                    lead(body, 'The window has no settings. These controls frame it.');
+                    badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Sits beside the version number at the bottom. Opens this Feature Guide.' });
+                    badgeRow(body, { bg: 'transparent', color: '#0066cc', border: 'none', label: "🔵 What's new", desc: 'Appears with a pulsing dot after an update. Opens the changelog.' });
+                    badgeRow(body, { bg: 'red', color: '#fff', border: 'none', label: 'X', desc: 'Closes the window without opening the form.' });
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'pdrHelpModalOverlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)', zIndex: '1000002'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'pdrHelpModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: '1000003', background: '#fff', border: '2px solid #333', padding: '20px',
+            borderRadius: '10px', width: '640px', maxWidth: '92vw', maxHeight: '82vh',
+            overflowY: 'auto', color: '#333', boxSizing: 'border-box',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif', textAlign: 'left'
+        });
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Policy Deletion Reminder • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards, all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
+    /* ==========================================================
+     *  DARK MODE ISOLATION
+     * ==========================================================*/
+
+    function injectDarkModeStyles() {
+        if (document.getElementById('pdr-dark-mode-style')) return;
+        const darkModeStyle = document.createElement('style');
+        darkModeStyle.id = 'pdr-dark-mode-style';
+        darkModeStyle.textContent = `
+            #policy-form-opener-modal, #pdr-changelog-modal, #pdrHelpModal { color: #333333 !important; }
+            #policy-form-opener-modal { background-color: #f9f9f9 !important; }
+            #pdr-changelog-modal, #pdrHelpModal { background-color: #ffffff !important; }
+            #policy-form-opener-modal input, #policy-form-opener-modal select, #policy-form-opener-modal textarea,
+            #pdrHelpModal input, #pdrHelpModal select, #pdrHelpModal textarea {
+                background-color: #ffffff !important;
+                color: #333333 !important;
+            }
+        `;
+        document.head.appendChild(darkModeStyle);
+    }
+
     function initializeModal() {
         if (document.getElementById('policy-form-opener-modal')) return;
 
@@ -493,7 +858,26 @@ Version 0.9.1:
         const versionLabel = document.createElement('span');
         Object.assign(versionLabel.style, { fontSize: '11px', color: '#999', fontFamily: 'Arial, sans-serif' });
         versionLabel.textContent = `v${SCRIPT_VERSION}`;
-        footer.appendChild(versionLabel);
+
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif'
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+
+        const footerLeft = document.createElement('span');
+        Object.assign(footerLeft.style, { display: 'inline-flex', alignItems: 'center', gap: '8px' });
+        footerLeft.appendChild(versionLabel);
+        footerLeft.appendChild(helpBtn);
+        footer.appendChild(footerLeft);
 
         if (isNewVersion() && !hasSeenChangelog()) {
             const notif = document.createElement('span');
@@ -723,6 +1107,7 @@ Version 0.9.1:
 
         console.log('Initializing Policy Deletion Reminder...');
         isInitialized = true;
+        injectDarkModeStyles();
         initializeModal();
         console.log('✅ Policy Deletion Reminder modal ready!');
 

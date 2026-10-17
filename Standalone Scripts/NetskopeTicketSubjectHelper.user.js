@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopeTicketSubjectHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0.7
+// @version      1.1.0
 // @description  Adds a helper button to the Netskope support ticket form to quickly build a formatted Subject line
 // @author       J.R.
 // @match        https://support.netskope.com/*
@@ -19,8 +19,11 @@
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.0.7';
-    const CHANGELOG = `Version 1.0.7:
+    const SCRIPT_VERSION = '1.1.0';
+    const CHANGELOG = `Version 1.1.0:
+- Added a "? Help" button next to Tenant URLs in the panel header. It opens a visual Feature Guide that explains the subject format, the tenant URL auto fill and every button of the panel.
+
+Version 1.0.7:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.0.6:
@@ -575,6 +578,11 @@ Version 1.0.0:
             background: rgba(0,0,0,0.5) !important;
             z-index: 20000 !important;
         }
+        #nsTicketSubjectHelpModal { background-color: #ffffff !important; color: #333333 !important; }
+        #nsTicketSubjectHelpModal input, #nsTicketSubjectHelpModal select, #nsTicketSubjectHelpModal textarea {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+        }
     `;
     document.head.appendChild(style);
 
@@ -705,6 +713,314 @@ Version 1.0.0:
         overlay.onclick = () => closeBtn.click();
     }
 
+    /* ==========================================================
+     *  FEATURE GUIDE  (? Help modal)
+     * ========================================================== */
+
+    function showHelpModal() {
+        if (document.getElementById('nsTicketSubjectHelpModal')) return;
+
+        /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
+         *      span/hrow/chip return an element you place yourself. ---- */
+
+        // lead: the single orienting sentence at the very top of a section.
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, {
+                fontSize: '12px', color: '#555', lineHeight: '1.5',
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(p);
+        }
+
+        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, {
+                    display: 'flex', gap: '8px', padding: '2px 0',
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
+                });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.appendChild(dot);
+                row.appendChild(t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+
+        // caption: a small italic note placed directly under a visual to explain it.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(c);
+        }
+
+        // span: an inline text node with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: a small colored rounded label. Use for categories and button previews.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block'
+            });
+            return c;
+        }
+
+        // badgeRow: a button preview on the left with a one line description on the right.
+        function badgeRow(body, item) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
+            });
+            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px' });
+            badge.style.flexShrink = '0';
+            const descEl = span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' });
+            row.appendChild(badge);
+            row.appendChild(descEl);
+            body.appendChild(row);
+        }
+
+        // kvGrid: a two column key:value grid for field references and named settings.
+        function kvGrid(body, pairs) {
+            const grid = document.createElement('div');
+            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
+            for (const [key, val] of pairs) {
+                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
+                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
+            }
+            body.appendChild(grid);
+        }
+
+        const sections = [
+            {
+                icon: '🚀', title: 'Getting Started',
+                buildContent(body) {
+                    lead(body, 'Open a new case on the Netskope support portal. A 📝 button appears next to the Subject label.');
+                    const row = hrow([
+                        span('Subject', { fontSize: '13px', color: '#333', fontWeight: 'bold' }),
+                        chip('📝', '#667eea', { radius: '4px', padding: '2px 6px', fontSize: '12px' })
+                    ], { gap: '6px', margin: '0 0 6px 0' });
+                    body.appendChild(row);
+                    const subj = document.createElement('div');
+                    Object.assign(subj.style, { border: '1px solid #ccc', borderRadius: '4px', height: '26px', maxWidth: '320px', background: '#fff', marginBottom: '6px' });
+                    body.appendChild(subj);
+                    caption(body, 'Click 📝 to open the Subject Helper panel.');
+                    bullets(body, [
+                        'The first time, a setup window asks for your Netskope tenant URLs.',
+                        'Fill in the panel, check the preview and click Insert Subject.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋', title: 'Building the Subject',
+                buildContent(body) {
+                    lead(body, 'The subject always follows the same four part format.');
+                    const fmt = document.createElement('div');
+                    Object.assign(fmt.style, {
+                        background: '#f0f4ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                        padding: '8px 12px', fontFamily: 'monospace', fontSize: '12px', color: '#444',
+                        marginBottom: '10px'
+                    });
+                    fmt.textContent = 'MF | RITM | SWG / DLP / CASB | Issue Summary';
+                    body.appendChild(fmt);
+                    kvGrid(body, [
+                        ['MF',      'Your member firm, picked from the list (for example ES or UK).'],
+                        ['RITM',    'The ServiceNow ticket number, for example RITM1234567.'],
+                        ['Product', 'SWG, DLP or CASB.'],
+                        ['Summary', 'A short description of the issue.']
+                    ]);
+                    const wrap = document.createElement('div');
+                    Object.assign(wrap.style, { margin: '4px 0 0 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+                    [['Preview', '#f8f8ff', '#888', 'ES | RITM | DLP | Issue Summary'], ['Inserted', '#f2fff7', '#2a7d4f', 'ES | RITM1234567 | DLP | Blocked upload to SharePoint']].forEach(([label, bg, color, text], i) => {
+                        const r = hrow([
+                            span(label, { fontSize: '10px', fontWeight: 'bold', color, textTransform: 'uppercase', width: '58px', flexShrink: '0' }),
+                            span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333' })
+                        ], { padding: '7px 12px', background: bg, margin: '0', flexWrap: 'nowrap', borderBottom: i === 0 ? '1px solid #e8e8f0' : 'none' });
+                        wrap.appendChild(r);
+                    });
+                    body.appendChild(wrap);
+                    caption(body, 'The preview at the top of the panel updates as you type. Empty parts show their placeholder.');
+                }
+            },
+            {
+                icon: '🔗', title: 'Tenant URL Auto Fill',
+                buildContent(body) {
+                    lead(body, 'Picking an MF also fills the Tenant URL field of the case with the matching tenant.');
+                    kvGrid(body, [
+                        ['EMA',  'Africa, DKU, Global, Spain, SLATAM'],
+                        ['EU',   'Austria, Belgium, Cyprus, Nordics, Ireland, Netherlands, Switzerland, UK and more'],
+                        ['CE',   'Central Europe, France, Germany, Portugal, Turkey'],
+                        ['APAC', 'Australia, Japan, Korea, New Zealand, South Asia, South East Asia, Taiwan'],
+                        ['AME',  'Brazil, Canada, US and more']
+                    ]);
+                    bullets(body, [
+                        'The five tenant URLs are saved in your browser the first time you set them up.',
+                        'Enter them exactly as they appear in the General Scripts User Guide, under "Required information & variables".'
+                    ]);
+                }
+            },
+            {
+                icon: '⚙️', title: 'Controls',
+                buildContent(body) {
+                    lead(body, 'The panel header and the bottom row hold these controls.');
+                    badgeRow(body, { bg: '#f0f0f0', color: '#444', border: '1px solid #ccc', label: '⚙️ Tenant URLs', desc: 'Opens the Tenant URL Setup window to view or change the five tenant URLs.' });
+                    badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' });
+                    badgeRow(body, { bg: 'transparent', color: '#0066cc', border: 'none', label: "🔵 What's New", desc: 'Appears beside the version number after an update. Opens the changelog.' });
+                    badgeRow(body, { bg: '#667eea', color: '#fff', border: 'none', label: '✔ Insert Subject', desc: 'Writes the subject into the Subject field of the case and closes the panel.' });
+                    badgeRow(body, { bg: '#f0f0f0', color: '#444', border: '1px solid #ccc', label: 'Clear Fields', desc: 'Empties every field of the panel so you can start again.' });
+                    badgeRow(body, { bg: '#e53935', color: '#fff', border: 'none', label: '✕', desc: 'Closes the panel. Clicking outside it does the same.' });
+                }
+            }
+        ];
+
+        const overlay = document.createElement('div');
+        overlay.id = 'nsTicketSubjectHelpModalOverlay';
+        Object.assign(overlay.style, {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            background: 'rgba(0,0,0,0.5)', zIndex: '20002'
+        });
+
+        const modal = document.createElement('div');
+        modal.id = 'nsTicketSubjectHelpModal';
+        Object.assign(modal.style, {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: '20003', background: '#fff', border: '2px solid #333', padding: '20px',
+            borderRadius: '10px', width: '640px', maxWidth: '92vw', maxHeight: '82vh',
+            overflowY: 'auto', color: '#333', boxSizing: 'border-box',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif', textAlign: 'left'
+        });
+
+        // Header
+        const modalHeader = document.createElement('div');
+        Object.assign(modalHeader.style, {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: '14px', borderBottom: '2px solid #667eea', paddingBottom: '12px'
+        });
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'display:flex;align-items:center;gap:10px;';
+        const titleIcon = document.createElement('span');
+        titleIcon.textContent = '📖';
+        titleIcon.style.fontSize = '22px';
+        const titleText = document.createElement('div');
+        const titleMain = document.createElement('div');
+        titleMain.textContent = 'Feature Guide';
+        Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
+        const titleSub = document.createElement('div');
+        titleSub.textContent = `Ticket Subject Helper • v${SCRIPT_VERSION}`;
+        Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
+        titleText.appendChild(titleMain);
+        titleText.appendChild(titleSub);
+        titleEl.appendChild(titleIcon);
+        titleEl.appendChild(titleText);
+        const closeX = document.createElement('button');
+        closeX.textContent = '✕';
+        Object.assign(closeX.style, {
+            background: 'none', border: 'none', fontSize: '18px',
+            color: '#999', cursor: 'pointer', padding: '2px 6px',
+            borderRadius: '4px', lineHeight: '1', fontFamily: 'Arial, sans-serif'
+        });
+        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
+        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
+        modalHeader.appendChild(titleEl);
+        modalHeader.appendChild(closeX);
+        modal.appendChild(modalHeader);
+
+        // Section cards, all start expanded
+        const contentWrap = document.createElement('div');
+        for (const section of sections) {
+            const card = document.createElement('div');
+            Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', marginBottom: '8px', overflow: 'hidden' });
+            const cardHeader = document.createElement('div');
+            Object.assign(cardHeader.style, {
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '9px 12px', background: '#f8f8ff',
+                cursor: 'pointer', userSelect: 'none', borderBottom: '1px solid #e8e8f0'
+            });
+            const headerLeft = document.createElement('span');
+            headerLeft.style.cssText = 'display:inline-flex;align-items:center;gap:8px;';
+            const iconEl = document.createElement('span');
+            iconEl.textContent = section.icon;
+            iconEl.style.fontSize = '14px';
+            const titleLabel = document.createElement('span');
+            titleLabel.textContent = section.title;
+            Object.assign(titleLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#444', fontFamily: 'Arial, sans-serif' });
+            headerLeft.appendChild(iconEl);
+            headerLeft.appendChild(titleLabel);
+            const chevron = document.createElement('span');
+            chevron.textContent = '▾';
+            Object.assign(chevron.style, { fontSize: '12px', color: '#999', transition: 'transform 0.2s', display: 'inline-block' });
+            cardHeader.appendChild(headerLeft);
+            cardHeader.appendChild(chevron);
+            const cardBody = document.createElement('div');
+            Object.assign(cardBody.style, { padding: '12px 14px', background: '#fff' });
+            section.buildContent(cardBody);
+            card.appendChild(cardHeader);
+            card.appendChild(cardBody);
+            let expanded = true;
+            cardHeader.addEventListener('click', () => {
+                expanded = !expanded;
+                cardBody.style.display = expanded ? 'block' : 'none';
+                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
+            });
+            contentWrap.appendChild(card);
+        }
+        modal.appendChild(contentWrap);
+
+        // Close button
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close';
+        Object.assign(closeBtn.style, {
+            marginTop: '12px', padding: '10px 20px',
+            background: '#667eea', color: 'white', border: 'none',
+            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
+            width: '100%', fontSize: '14px', fontFamily: 'Arial, sans-serif'
+        });
+        closeBtn.onmouseover = () => { closeBtn.style.background = '#5568d3'; };
+        closeBtn.onmouseout  = () => { closeBtn.style.background = '#667eea'; };
+        closeBtn.onclick = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick   = () => closeBtn.click();
+        overlay.onclick  = () => closeBtn.click();
+        modal.appendChild(closeBtn);
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+    }
+
     function closePanel() {
         const p = document.getElementById('nsTktPanel');
         const o = document.getElementById('nsTktOverlay');
@@ -803,6 +1119,21 @@ Version 1.0.0:
         leftSpan.style.cssText = 'display:inline-flex;align-items:center;gap:5px;';
         leftSpan.appendChild(titleSpan);
         leftSpan.appendChild(cfgBtn);
+
+        const helpBtn = document.createElement('span');
+        helpBtn.textContent = '? Help';
+        Object.assign(helpBtn.style, {
+            color: '#667eea', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #c0c8f0', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif'
+        });
+        helpBtn.title = 'View feature guide and documentation';
+        helpBtn.onmouseover = () => { helpBtn.style.backgroundColor = '#eef0ff'; };
+        helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
+        helpBtn.onclick = () => showHelpModal();
+        leftSpan.appendChild(helpBtn);
         header.appendChild(leftSpan);
 
         const rightSpan = document.createElement('span');

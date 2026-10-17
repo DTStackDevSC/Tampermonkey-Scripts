@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.5.1
+// @version      1.5.2
 // @description  Assign tickets with automated field population, SCTASK opening, etc
 // @author       J.R.
 // @match        https://*.service-now.com/sc_req_item.do*
@@ -27,8 +27,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.1';
-    const CHANGELOG = `Version 1.5.1:
+    const SCRIPT_VERSION = '1.5.2';
+    const CHANGELOG = `Version 1.5.2:
+- The Feature Guide now has a Response Type section that explains the Default, SPM Request and Reassignment/Handover comments.
+
+Version 1.5.1:
 - Added "Reassignment/Handover" as a new Response Type option. It inserts a message informing the requester of the PTO reassignment and @mentions the newly assigned team member.
 - Fixed SPM Request response to include a blank line between the greeting and the body text.
 
@@ -1445,6 +1448,22 @@ Version 1.2.1:
                         'Adds an initial comment that @mentions the assignee.',
                         'Opens the related SCTASK in a background tab.'
                     ]);
+                }
+            },
+            {
+                icon: '💬', title: 'Response Type',
+                buildContent(body) {
+                    lead(body, 'Pick which comment is added to the ticket when you assign it.');
+                    body.appendChild(mockField('Default (Standard Assignment Text)', { caret: true }));
+                    const types = [
+                        { bg: '#667eea', label: 'Default',     desc: 'The standard ownership message that @mentions the assignee. Missing Information and the freeze reminder are added to this one.' },
+                        { bg: '#0066cc', label: 'SPM Request', desc: 'Points the requester to the SCC/SPM exception form and tells them the request will be closed.' },
+                        { bg: '#5a6672', label: 'Handover',    desc: 'Tells the requester you are on PTO and the request has been reassigned to the new assignee, with an @mention.' }
+                    ];
+                    for (const t of types) {
+                        badgeRow(body, { bg: t.bg, color: '#fff', label: t.label, desc: t.desc });
+                    }
+                    caption(body, 'The choice only applies to this assignment. The form opens on Default every time.');
                 }
             },
             {
