@@ -678,6 +678,83 @@ Version 1.0.0:
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
+    function dtPickFile(onText) {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json,application/json';
+        input.onchange = () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => onText(String(reader.result));
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+
+    // Reads a backup file. Throws an Error with a message for the user when it is not one.
+    function dtParseBackup(text) {
+        let data;
+        try { data = JSON.parse(text); } catch (e) { throw new Error('This file is not a valid backup file.'); }
+        if (!dtIsPlainObject(data) || data.format !== 'toolbar-suite-backup' || data.formatVersion !== 1 || !dtIsPlainObject(data.tools)) {
+            throw new Error('This file is not a Toolbar Suite backup.');
+        }
+        const tools = [], skipped = [];
+        for (const [id, entry] of Object.entries(data.tools)) {
+            const tool = dtTool(id);
+            if (!tool || !dtIsPlainObject(entry) || !dtIsPlainObject(entry.values)) { skipped.push(id); continue; }
+            const { values, dropped } = dtFilterValues(tool, entry.values);
+            tools.push({ tool, values, dropped });
+        }
+        return { tools, skipped };
+    }
+
+    // Writes each entry and reports the result. Returns the ids that were written and that failed.
+    function dtApply(entries, title, options) {
+        const doneIds = [], failedIds = [];
+        for (const entry of entries) {
+            try {
+                for (const [key, value] of Object.entries(entry.values)) GM_setValue(key, value);
+                doneIds.push(entry.tool.id);
+            } catch (e) {
+                failedIds.push(entry.tool.id);
+            }
+        }
+        const names = ids => ids.map(id => dtTool(id).name).join(', ');
+        const lines = [];
+        if (doneIds.length) lines.push('Imported: ' + names(doneIds) + '.');
+        if (failedIds.length) lines.push('Could not import: ' + names(failedIds) + '. Try again later.');
+        if (doneIds.length) lines.push('Reload the page to apply it.');
+        if (doneIds.length && options && options.uninstallHint) {
+            lines.push('You can now uninstall these old scripts in Tampermonkey: ' +
+                doneIds.map(id => dtTool(id).script).join(', ') + '.');
+        }
+        dtDialog(title, lines, doneIds.length
+            ? [{ label: 'Reload now', primary: true, onClick: () => location.reload() }, { label: 'Close' }]
+            : [{ label: 'Close', primary: true }]);
+        return { done: doneIds, failed: failedIds };
+    }
+
+    function dtImportEverything() {
+        dtPickFile(text => {
+            let parsed;
+            try { parsed = dtParseBackup(text); }
+            catch (e) { dtDialog('Import everything', [e.message], [{ label: 'Close', primary: true }]); return; }
+            const usable = parsed.tools.filter(e => Object.keys(e.values).length);
+            if (!usable.length) {
+                dtDialog('Import everything', ['This backup has no data for the toolbar or its tools.'], [{ label: 'Close', primary: true }]);
+                return;
+            }
+            const lines = ['This backup contains:'];
+            for (const e of usable) lines.push(e.tool.name + (dtSuiteHasData(e.tool) ? ' (will be replaced)' : ''));
+            if (parsed.skipped.length) lines.push('Skipped, not part of the toolbar: ' + parsed.skipped.join(', '));
+            dtDialog('Import everything', lines, [
+                { label: 'Import', primary: true, onClick: () => dtApply(usable, 'Import everything') },
+                { label: 'Cancel' }
+            ]);
+        });
+    }
+
     function dtExportEverything() {
         dtDialog('Export everything', [
             'This saves the settings and data of the toolbar and every tool into one file.',
@@ -2674,6 +2751,7 @@ Version 1.0.0:
         document.getElementById('import-settings').addEventListener('click', importSettings);
         document.getElementById('reset-settings').addEventListener('click', resetSettings);
         document.getElementById('export-everything').addEventListener('click', dtExportEverything);
+        document.getElementById('import-everything').addEventListener('click', dtImportEverything);
 
         const showLabelsEl   = document.getElementById('show-labels');
         const labelPosRow    = document.getElementById('label-position-row');
@@ -16583,6 +16661,60 @@ Version 2.3.1:
      *  INITIALIZATION
      * ==========================================================*/
 
+    // Hooks the list pagination buttons so rows are highlighted again after a page change.
+    function attachPaginationListeners() {
+        const allElements = findAllShadowRoots();
+        const paginationControls = allElements.filter(el =>
+            el.tagName && el.tagName.toLowerCase() === 'now-pagination-control'
+        );
+
+        console.log(`🔍 Found ${paginationControls.length} pagination controls`);
+
+        let buttonCount = 0;
+        paginationControls.forEach(control => {
+            if (control.shadowRoot) {
+                const buttons = control.shadowRoot.querySelectorAll('button, now-button-iconic, .now-pagination-control-button');
+                buttons.forEach(button => {
+                    if (!button.hasAttribute('data-highlight-listener')) {
+                        button.setAttribute('data-highlight-listener', 'true');
+                        button.addEventListener('click', function() {
+                            if (targetUsername) {
+                                setTimeout(() => highlightRowsWithClasses(), 500);
+                                setTimeout(() => highlightRowsWithClasses(), 1000);
+                                setTimeout(() => highlightRowsWithClasses(), 1500);
+                            }
+                        }, true);
+                        buttonCount++;
+                    }
+                });
+
+                const iconicButtons = control.shadowRoot.querySelectorAll('now-button-iconic');
+                iconicButtons.forEach(iconic => {
+                    if (iconic.shadowRoot) {
+                        const innerButtons = iconic.shadowRoot.querySelectorAll('button');
+                        innerButtons.forEach(button => {
+                            if (!button.hasAttribute('data-highlight-listener')) {
+                                button.setAttribute('data-highlight-listener', 'true');
+                                button.addEventListener('click', function() {
+                                    if (targetUsername) {
+                                        setTimeout(() => highlightRowsWithClasses(), 500);
+                                        setTimeout(() => highlightRowsWithClasses(), 1000);
+                                        setTimeout(() => highlightRowsWithClasses(), 1500);
+                                    }
+                                }, true);
+                                buttonCount++;
+                            }
+                        });
+                    }
+                });
+            }
+        });
+
+        if (buttonCount > 0) {
+            console.log(`✅ Attached listeners to ${buttonCount} pagination buttons`);
+        }
+    }
+
     function initialize() {
         if (!document.body) {
             setTimeout(initialize, 50);
@@ -16793,58 +16925,6 @@ Version 2.3.1:
             }
         }, true);
 
-        function attachPaginationListeners() {
-            const allElements = findAllShadowRoots();
-            const paginationControls = allElements.filter(el =>
-                el.tagName && el.tagName.toLowerCase() === 'now-pagination-control'
-            );
-
-            console.log(`🔍 Found ${paginationControls.length} pagination controls`);
-
-            let buttonCount = 0;
-            paginationControls.forEach(control => {
-                if (control.shadowRoot) {
-                    const buttons = control.shadowRoot.querySelectorAll('button, now-button-iconic, .now-pagination-control-button');
-                    buttons.forEach(button => {
-                        if (!button.hasAttribute('data-highlight-listener')) {
-                            button.setAttribute('data-highlight-listener', 'true');
-                            button.addEventListener('click', function() {
-                                if (targetUsername) {
-                                    setTimeout(() => highlightRowsWithClasses(), 500);
-                                    setTimeout(() => highlightRowsWithClasses(), 1000);
-                                    setTimeout(() => highlightRowsWithClasses(), 1500);
-                                }
-                            }, true);
-                            buttonCount++;
-                        }
-                    });
-
-                    const iconicButtons = control.shadowRoot.querySelectorAll('now-button-iconic');
-                    iconicButtons.forEach(iconic => {
-                        if (iconic.shadowRoot) {
-                            const innerButtons = iconic.shadowRoot.querySelectorAll('button');
-                            innerButtons.forEach(button => {
-                                if (!button.hasAttribute('data-highlight-listener')) {
-                                    button.setAttribute('data-highlight-listener', 'true');
-                                    button.addEventListener('click', function() {
-                                        if (targetUsername) {
-                                            setTimeout(() => highlightRowsWithClasses(), 500);
-                                            setTimeout(() => highlightRowsWithClasses(), 1000);
-                                            setTimeout(() => highlightRowsWithClasses(), 1500);
-                                        }
-                                    }, true);
-                                    buttonCount++;
-                                }
-                            });
-                        }
-                    });
-                }
-            });
-
-            if (buttonCount > 0) {
-                console.log(`✅ Attached listeners to ${buttonCount} pagination buttons`);
-            }
-        }
 
         setTimeout(attachPaginationListeners, 3000);
         setTimeout(attachPaginationListeners, 5000);
