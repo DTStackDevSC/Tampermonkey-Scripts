@@ -1168,6 +1168,26 @@ Version 1.0.0:
         dtShowToolPicker(undecided.map(t => t.id), ticked);
     }
 
+    let dtSettingsToolList = null;
+
+    // Fills Settings > Tools with every tool, ticked when it runs now.
+    function dtRenderSettingsTools() {
+        const container = document.getElementById('toolbar-tools-list');
+        if (!container) return;
+        const ids = DATA_REGISTRY.filter(t => t.id !== 'toolbar').map(t => t.id);
+        dtSettingsToolList = dtBuildToolList(ids, new Set(ids.filter(isToolEnabled)));
+        container.innerHTML = '';
+        container.appendChild(dtSettingsToolList.element);
+    }
+
+    // Called by Save in Settings. False keeps Settings open (wrong code).
+    async function dtSaveSettingsTools() {
+        if (!dtSettingsToolList) return true;
+        if (!(await dtSettingsToolList.verifyCode())) return false;
+        dtSaveChoices(dtSettingsToolList.choices());
+        return true;
+    }
+
     function dtExportEverything() {
         dtDialog('Export everything', [
             'This saves the settings and data of the toolbar and every tool into one file.',
@@ -1469,6 +1489,34 @@ Version 1.0.0:
                         'Hover an icon to see the tool name.',
                         'Tools only appear on the pages they support.',
                         'If the menu only shows the gear, no tools match the current page.'
+                    ]);
+                }
+            },
+            {
+                icon: '🧩',
+                title: 'Tools',
+                buildContent: (body) => {
+                    lead(body, 'Choose which tools run. Tools you turn off leave the menu and keep their data.');
+                    const list = document.createElement('div');
+                    Object.assign(list.style, {
+                        border: '1px solid #e8e8f0', borderRadius: '6px', padding: '8px 12px',
+                        maxWidth: '380px', background: '#fff', margin: '0 0 8px 0'
+                    });
+                    [['Ticket Assignment', true, false], ['Change Tracker', false, true], ['General Toolkit', true, false]].forEach(([name, on, beta]) => {
+                        const box = span(on ? '✓' : '', {
+                            width: '15px', height: '15px', borderRadius: '3px', display: 'inline-block', textAlign: 'center',
+                            lineHeight: '15px', fontSize: '11px', color: '#fff', background: on ? '#667eea' : '#fff',
+                            border: on ? 'none' : '1px solid #b0b0b0', flexShrink: '0', boxSizing: 'border-box'
+                        });
+                        const items = [box, span(name, { fontSize: '12px', fontWeight: 'bold', color: '#333' })];
+                        if (beta) items.push(span('BETA', { background: '#ff8c00', color: '#fff', fontSize: '10px', fontWeight: 'bold', borderRadius: '8px', padding: '0 6px' }));
+                        list.appendChild(hrow(items, { margin: '3px 0', gap: '8px', flexWrap: 'nowrap' }));
+                    });
+                    body.appendChild(list);
+                    bullets(body, [
+                        'The first time, a "Choose your tools" window asks which tools you want. No tool runs before that.',
+                        'Change it any time in Settings, under Tools. The page reloads to apply the change.',
+                        'Change Tracker is in beta: tick it and enter the activation code from your administrator.'
                     ]);
                 }
             },
@@ -2912,6 +2960,7 @@ Version 1.0.0:
                 }
             }
             populatePinnedToolsList();
+            dtRenderSettingsTools();
             return;
         }
 
@@ -3055,6 +3104,13 @@ Version 1.0.0:
                             </div>
                         </div>
 
+                        <!-- Tools -->
+                        <div class="settings-section">
+                            <h3>Tools</h3>
+                            <p class="setting-help-text">Choose which tools run. Turning a tool off keeps its data. The page reloads when you save a change.</p>
+                            <div id="toolbar-tools-list"></div>
+                        </div>
+
                         <!-- Pinned Tools -->
                         <div class="settings-section">
                             <h3>Pinned Tools</h3>
@@ -3121,6 +3177,7 @@ Version 1.0.0:
         }
 
         populatePinnedToolsList();
+        dtRenderSettingsTools();
     }
 
     function setupSettingsEventListeners() {
@@ -3134,7 +3191,8 @@ Version 1.0.0:
         cancelBtn.addEventListener('click', () => modal.classList.remove('visible'));
         overlay.addEventListener('click', () => modal.classList.remove('visible'));
 
-        saveBtn.addEventListener('click', () => {
+        saveBtn.addEventListener('click', async () => {
+            if (!(await dtSaveSettingsTools())) return;   // wrong activation code: stay in Settings
             saveSettings();
             modal.classList.remove('visible');
             location.reload();
