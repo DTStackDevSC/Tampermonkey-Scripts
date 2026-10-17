@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.17.0
+// @version      1.17.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.17.0';
-    const CHANGELOG = `Version 1.17.0:
+   const SCRIPT_VERSION = '1.17.1';
+    const CHANGELOG = `Version 1.17.1:
+- The window that offers to import data from your old scripts now also lists the URL List Editor hosts it brings in, next to the Change Tracker server, so you can check every address before importing.
+- Import from old scripts now only runs on ServiceNow and Netskope tenant pages, where the old scripts are.
+
+Version 1.17.0:
 - If you used the separate toolbar scripts before, the toolbar now offers to bring their data in: your team list, Change Tracker connection, URL List Editor hosts and tokens, NS Policies Toolkit name and steering backups, and every tool setting. Click Import when asked. Nothing is imported without your confirmation, and settings you already made in the toolbar are kept.
 - This also applies to the NS Policies Toolkit: its settings, logs and steering backups from the separate script appear in the toolbar once you import them.
 - New buttons in Settings, under Data: Export everything saves the toolbar and all tools into one backup file, Import everything restores it, and Import from old scripts brings in the data of your previous scripts at any time.
@@ -618,7 +622,17 @@ Version 1.0.0:
         document.getElementById('toolbarSuiteDataHost')?.remove();
         const host = document.createElement('div');
         host.id = 'toolbarSuiteDataHost';
+        // Inline !important styles win over any page stylesheet, so the page cannot hide,
+        // fade or move the dialog to trick the user into clicking it.
+        const hostStyle = {
+            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+            'z-index': '2147483600', display: 'block', visibility: 'visible', opacity: '1',
+            transform: 'none', filter: 'none', 'clip-path': 'none', 'pointer-events': 'auto', margin: '0'
+        };
+        for (const [prop, value] of Object.entries(hostStyle)) host.style.setProperty(prop, value, 'important');
         const root = dtAttachShadow.call(host, { mode: 'closed' });
+        // Buttons only work after a short moment, so a click aimed at something else cannot land on them.
+        const readyAt = Date.now() + 600;
 
         const overlay = document.createElement('div');
         overlay.id = 'toolbarSuiteDataModalOverlay';
@@ -666,7 +680,7 @@ Version 1.0.0:
                 border: b.primary ? 'none' : '1px solid #ccc',
                 background: b.primary ? '#667eea' : '#fff', color: b.primary ? '#fff' : '#333'
             });
-            btn.onclick = (e) => { if (!e.isTrusted) return; close(); if (b.onClick) b.onClick(); };
+            btn.onclick = (e) => { if (!e.isTrusted || Date.now() < readyAt) return; close(); if (b.onClick) b.onClick(); };
             row.appendChild(btn);
         }
         modal.appendChild(row);
@@ -846,14 +860,33 @@ Version 1.0.0:
         }, DT_WAIT_MS);
     }
 
+    // The addresses a tool will talk to after the import, shown so the user can check them.
     function dtServerNote(answer) {
-        if (answer.tool.id !== 'changeTracker') return '';
-        try { return ` (server: ${new URL(answer.values.changeTrackerWorkerUrl).host})`; } catch (e) { return ''; }
+        if (answer.tool.id === 'changeTracker') {
+            try { return ` (server: ${new URL(answer.values.changeTrackerWorkerUrl).host})`; } catch (e) { return ''; }
+        }
+        if (answer.tool.id === 'netskopeUrlListManager') {
+            const hosts = Object.entries(answer.values)
+                .filter(([key, value]) => key.startsWith('netskopeHost_') && typeof value === 'string' && value)
+                .map(([, value]) => value);
+            return hosts.length ? ` (hosts: ${[...new Set(hosts)].join(', ')})` : '';
+        }
+        return '';
     }
 
     // Runs the migration on this page. manual is true when started from Settings: it then
     // ignores the "Not now" date and reports even when there is nothing to import.
+    function dtMigrationSite() {
+        const host = location.hostname;
+        return /\.service-now\.com$|\.servicenow\.com$/.test(host) ? 'servicenow'
+             : /\.goskope\.com$/.test(host) ? 'netskope' : null;
+    }
+
     function dtRunMigration(manual) {
+        if (!dtMigrationSite()) {
+            if (manual) dtDialog('Import from old scripts', ['Open a ServiceNow page or a Netskope tenant page, then try again from there.'], [{ label: 'Close', primary: true }]);
+            return;
+        }
         if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) return;
         dtRequestOldData((answers, conflicts) => {
             const migrated = dtMigrated();
@@ -880,7 +913,7 @@ Version 1.0.0:
 
             const lines = ['Data found from your previous toolbar scripts:'];
             for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a));
-            if (todo.some(a => dtServerNote(a))) lines.push('Only import if you recognise this server.');
+            if (todo.some(a => dtServerNote(a))) lines.push('Only import if you recognise these addresses.');
             if (conflicts.length) lines.push('Not imported, because the page sent conflicting data: ' + conflicts.join(', ') + '.');
             if (kept.length) lines.push('Already set up in the toolbar, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
             lines.push('Import it into the toolbar?');
@@ -897,9 +930,7 @@ Version 1.0.0:
     // Started once per page load on ServiceNow and Netskope tenant pages, while some tool
     // of that site is not migrated yet.
     function dtAutoMigrate() {
-        const host = location.hostname;
-        const site = /\.service-now\.com$|\.servicenow\.com$/.test(host) ? 'servicenow'
-                   : /\.goskope\.com$/.test(host) ? 'netskope' : null;
+        const site = dtMigrationSite();
         if (!site) return;
         const migrated = dtMigrated();
         const pending = DATA_REGISTRY.some(t => t.id !== 'toolbar' && (t.site === site || t.site === 'all') && !migrated.includes(t.id));
