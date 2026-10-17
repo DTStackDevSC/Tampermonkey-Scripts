@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.16.0
+// @version      1.16.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.16.0';
-    const CHANGELOG = `Version 1.16.0:
+   const SCRIPT_VERSION = '1.16.1';
+    const CHANGELOG = `Version 1.16.1:
+- Policy Deletion Reminder: no longer shows in the toolbar on the Netskope support portal. It only appears on Netskope tenant pages, where it is needed.
+
+Version 1.16.0:
 - NS Policies Toolkit is now part of the suite. All its features work as before on Netskope pages and your saved settings, logs and steering backups are kept. If you still have the separate NS Policies Toolkit script installed, turn it off in Tampermonkey so its buttons do not show twice.
 - Fixed an issue where the whole toolbar could fail to load when a page was still very early in loading.
 
@@ -30865,7 +30868,8 @@ Version 1.16:
             registerTicketAssignmentTool();
             registerURLListEditor();
         }
-        if (/\.goskope\.com|\.netskope\.com/.test(location.hostname)) {
+        // Netskope tenant pages only, as in the standalone scripts. The support portal does not need these tools.
+        if (/\.goskope\.com$/.test(location.hostname)) {
             registerNetskopePolicyDeletionScheduler();
             registerNetskopePolicyToolkit();
         }
