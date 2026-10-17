@@ -755,6 +755,41 @@ Version 1.0.0:
         });
     }
 
+    // Link for a tool's first setup: restores only this tool from a backup file.
+    function createBackupImportLink(toolId) {
+        const tool = dtTool(toolId);
+        const link = document.createElement('button');
+        link.type = 'button';
+        link.className = 'dt-backup-import-link';
+        link.dataset.toolId = toolId;
+        link.textContent = '⤒ Import from a backup file';
+        link.title = 'Restore this tool from a Toolbar Suite backup file';
+        Object.assign(link.style, {
+            display: 'block', width: '100%', margin: '0 0 12px 0', padding: '7px 14px',
+            background: 'none', border: '1px dashed #aaa', borderRadius: '6px', color: '#555',
+            fontSize: '12px', fontFamily: 'Arial, sans-serif', cursor: 'pointer',
+            textAlign: 'center', boxSizing: 'border-box'
+        });
+        link.onmouseover = () => { link.style.borderColor = '#667eea'; link.style.color = '#667eea'; };
+        link.onmouseout  = () => { link.style.borderColor = '#aaa'; link.style.color = '#555'; };
+        link.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dtPickFile(text => {
+                let parsed;
+                try { parsed = dtParseBackup(text); }
+                catch (err) { dtDialog('Import ' + tool.name, [err.message], [{ label: 'Close', primary: true }]); return; }
+                const entry = parsed.tools.find(x => x.tool.id === toolId && Object.keys(x.values).length);
+                if (!entry) {
+                    dtDialog('Import ' + tool.name, [`This backup has no ${tool.name} data.`], [{ label: 'Close', primary: true }]);
+                    return;
+                }
+                dtApply([entry], 'Import ' + tool.name);
+            });
+        };
+        return link;
+    }
+
     function dtExportEverything() {
         dtDialog('Export everything', [
             'This saves the settings and data of the toolbar and every tool into one file.',
@@ -8726,12 +8761,14 @@ Version 1.2.1:
             <div class="sn-setup-import-row">
                 <button class="sn-setup-import-btn" id="sn-setup-import-btn">⬆ Import from JSON file</button>
             </div>
+            <div class="sn-setup-backup-row"></div>
             <div class="sn-setup-footer">
                 <button class="sn-setup-done-btn" id="sn-setup-done-btn" disabled>Save & Continue →</button>
             </div>
         `;
 
         overlay.appendChild(modal);
+        modal.querySelector('.sn-setup-backup-row').appendChild(createBackupImportLink('ticketAssignment'));
         document.body.appendChild(overlay);
 
         const list = document.getElementById('sn-setup-member-list');
@@ -9808,6 +9845,7 @@ Version 1.2.1:
 
                     bullets(body, [
                         'A setup wizard runs the first time you open the tool.',
+                        'In the wizard, "Import from a backup file" restores your team list from a toolbar backup.',
                         'Manage Members in the footer reopens the editor later.',
                         'Import or export the list as a JSON file to share it with teammates.'
                     ]);
@@ -11115,6 +11153,7 @@ Version 1.4.1:
             fontSize: '12px', fontStyle: 'italic'
         });
         modal.appendChild(subtitle);
+        modal.appendChild(createBackupImportLink('netskopeUrlListManager'));
 
         // Info note
         const note = document.createElement('div');
@@ -12145,6 +12184,7 @@ Version 1.4.1:
                     caption(body, 'The ≡ URL List Manager button in the toolbar opens the main panel.');
                     bullets(body, [
                         'First run: a setup prompt asks you to enter the Netskope tenant hostnames for each region (EMA, EU, CE, APAC, AME). These are saved in script storage and only need to be entered once.',
+                        'In the setup prompt, "Import from a backup file" restores your hosts and tokens from a toolbar backup.',
                         'If a saved API token exists for the detected tenant, you will be prompted for your passphrase to unlock the session before the panel opens.',
                         'The toolbar button shows a pulsing dot when a new version has been installed and the changelog has not been viewed yet.',
                     ]);
@@ -14913,6 +14953,7 @@ Version 2.3.1:
             lineHeight: '1.6'
         });
         card.appendChild(desc);
+        card.appendChild(createBackupImportLink('rowHighlighter'));
 
         // Input
         const input = document.createElement('input');
@@ -15730,6 +15771,7 @@ Version 2.3.1:
                     bullets(body, [
                         'Click the Row Highlighter icon to open the settings panel.',
                         'On first use, a prompt asks for your ServiceNow username.',
+                        'In that prompt, "Import from a backup file" restores your settings from a toolbar backup.',
                         'Open any ticket list and the colors apply automatically.'
                     ]);
                 }
@@ -21638,7 +21680,8 @@ Version 1.4.3:
                         'Changes that cannot reach the server are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
                         'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
                         'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
-                        'Token invalid: open the setup panel and enter a new API token.'
+                        'Token invalid: open the setup panel and enter a new API token.',
+                        'First setup: "Import from a backup file" restores your connection and settings from a toolbar backup.'
                     ]);
                 }
             },
@@ -21817,6 +21860,7 @@ Version 1.4.3:
 
         hdr.append(hTitle, closeX);
         modal.appendChild(hdr);
+        modal.appendChild(createBackupImportLink('changeTracker'));
 
         // URL field
         modal.appendChild(css(Object.assign(mk('label'), { textContent:'Worker URL', htmlFor:'ct-setup-url' }), {
@@ -25723,6 +25767,7 @@ Version 1.16:
                     bullets(body, [
                         'A pulsing dot on the shield icon means a new version is available. Open settings to see what is new.',
                         'The first time you use the toolkit you will be prompted to enter your name. It is saved and auto-filled in all log entry modals.',
+                        'In that prompt, "Import from a backup file" restores your name, settings and steering backups from a toolbar backup.',
                         'Toggle each feature on or off in the settings panel. Changes take effect after reloading the page.',
                     ]);
                 },
@@ -31021,6 +31066,7 @@ Version 1.16:
 
         modal.appendChild(title);
         modal.appendChild(subtitle);
+        modal.appendChild(createBackupImportLink('nsDlpToolkit'));
         modal.appendChild(nameInput);
         modal.appendChild(saveBtn);
 
