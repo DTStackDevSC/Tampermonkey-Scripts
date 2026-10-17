@@ -29,20 +29,38 @@ The `Helpers/` subfolder contains PyQt5-based GUI editors for modifying the team
 
 ## Toolbar Scripts
 
-`Toolbar.js` is the core script that renders a floating toolbar on ServiceNow and Netskope pages. Each of the following scripts registers a tool button into that toolbar:
+`Toolbar-Suite.user.js` is the **Tools Toolbar**: one script with the floating toolbar and every toolbar tool. Each tool only appears on the pages it supports.
 
-| Script | Description |
-|---|---|
-| `Toolbar-MiniSummarySidebar.js` | Sidebar that extracts and displays key ticket field values in a compact view. |
-| `Toolbar-ServiceNowToolkit.js` | Collection of common ServiceNow actions accessible from the toolbar. |
-| `Toolbar-ServiceNowRowHighlighter.js` | Highlights ticket list rows based on configurable criteria. |
-| `Toolbar-ServiceNowTicketHistory_Online.js` | Displays a change audit log for the current ticket. |
-| `Toolbar-TicketAssignmentTool.js` | Streamlines ticket assignment with quick-select options. |
-| `Toolbar-EnhancementRequestLogger.js` | Logs enhancement requests directly from the ticket view. |
-| `Toolbar-NetskopePolicyToolkit.js` | Toolkit for common Netskope policy actions. |
-| `Toolbar-NetskopePolicyDeletionScheduler.js` | Schedules Netskope policy deletions with configurable timing. |
-| `Toolbar-DomainExtractor.js` | Extracts domain names from ticket fields for quick reference. |
-| `Toolbar-DomainSecurityCheck.js` | Runs a security lookup on domains found in the current ticket. |
-| `Toolbar-DomainTools.js` | General domain lookup and utility tools. |
-| `Toolbar-URLListEditor.js` | Editor for managing lists of URLs stored in script configuration. |
-| `Toolbar-GeneralToolkit.js` | Miscellaneous utility tools for general ticket workflow tasks. |
+| Tool | Pages | Description |
+|---|---|---|
+| General Toolkit | All pages | Highlight a RITM, PER or Netskope case number to open it in a new tab. |
+| Domain Tools | ServiceNow | Extract domains from ticket text and check their reputation. |
+| Enhancement Request Logger | ServiceNow | Opens a pre filled enhancement request form for the current RITM. |
+| Mini Summary Sidebar | ServiceNow | Shows the key fields of the current ticket at a glance. |
+| Row Highlighter | ServiceNow | Highlights list rows by who updated them, with SLA heat mapping. |
+| Change Tracker | ServiceNow | Shared change log per ticket, written to work notes and comments. |
+| ServiceNow Toolkit | ServiceNow | Draft autosave for work notes and comments, SCTASK auto open. |
+| Ticket Assignment | ServiceNow | Assigns tickets and fills the related fields in one step. |
+| URL List Editor | ServiceNow | Creates and updates Netskope URL lists through the API. |
+| Policy Deletion Reminder | Netskope tenant | Registers a reminder to delete a temporary policy. |
+| NS Policies Toolkit | Netskope tenant | Copy and open buttons, log entries, steering exception tools and more. |
+
+The old `Toolbar-*.user.js` files are kept only so existing installs can hand their saved data to the Tools Toolbar.
+
+## Moving to the Tools Toolbar
+
+All toolbar tools now live inside one script, the **Tools Toolbar**. Your old toolbar scripts update by themselves and hand their saved data to it.
+
+**If you have the Toolbar and some toolbar tools installed**
+1. Do nothing: Tampermonkey updates the scripts by itself (or use "Check for userscript updates" in the Tampermonkey menu).
+2. Open ServiceNow. When asked "Bring your data into the toolbar", click **Import**, then **Reload now**.
+3. Open a Netskope tenant page and do the same.
+4. When the toolbar lists old scripts you can uninstall, uninstall them in Tampermonkey.
+
+Do not uninstall the old scripts before importing: their saved data is deleted with them.
+
+**If you only have some toolbar tools, without the Toolbar:** a message tells you to install the Tools Toolbar. Install it from the script installer page, then follow steps 2 to 4.
+
+**New users:** install only the Tools Toolbar. Each tool's first setup offers **Import from a backup file** if you have one.
+
+**Moving to another computer:** open the toolbar Settings, under Data click **Export everything**. On the new computer install the Tools Toolbar and use **Import everything**. The backup file contains your tokens, so keep it safe.
