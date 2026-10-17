@@ -694,7 +694,7 @@ Version 1.0.0:
     // Kept from the moment the suite loads, before any page script can replace it.
     const dtAttachShadow = Element.prototype.attachShadow;
 
-    // A small dialog above every other window. Lines are shown as plain text. It lives in a
+    // A small dialog above every other window. Lines are plain text or elements. It lives in a
     // closed shadow root and only reacts to real clicks, so page scripts can neither read,
     // change nor press it. Every button closes the dialog, then runs its onClick.
     function dtDialog(title, lines, buttons) {
@@ -739,6 +739,7 @@ Version 1.0.0:
         modal.appendChild(heading);
 
         for (const line of lines) {
+            if (line instanceof Node) { modal.appendChild(line); continue; }
             const p = document.createElement('div');
             p.textContent = line;
             Object.assign(p.style, { fontSize: '13px', lineHeight: '1.5', margin: '0 0 8px 0' });
@@ -759,7 +760,12 @@ Version 1.0.0:
                 border: b.primary ? 'none' : '1px solid #ccc',
                 background: b.primary ? '#667eea' : '#fff', color: b.primary ? '#fff' : '#333'
             });
-            btn.onclick = (e) => { if (!e.isTrusted || Date.now() < readyAt) return; close(); if (b.onClick) b.onClick(); };
+            btn.onclick = async (e) => {
+                if (!e.isTrusted || Date.now() < readyAt) return;
+                if (b.check && !(await b.check())) return;   // stays open, the check shows why
+                close();
+                if (b.onClick) b.onClick();
+            };
             row.appendChild(btn);
         }
         modal.appendChild(row);
@@ -971,8 +977,9 @@ Version 1.0.0:
             if (manual) dtDialog('Import from old scripts', ['Open a ServiceNow page or a Netskope tenant page, then try again from there.'], [{ label: 'Close', primary: true }]);
             return;
         }
-        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) return;
+        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) { dtMaybeShowPicker(); return; }
         dtRequestOldData((answers, conflicts) => {
+            dtMarkDetected(answers.map(a => a.tool.id));
             const migrated = dtMigrated();
             const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
             const hasValues = a => Object.keys(a.values).length > 0;
@@ -985,7 +992,9 @@ Version 1.0.0:
                 if (conflicts.length) {
                     dtDialog('Import from old scripts', ['Not imported, because the data received did not look right: ' +
                         conflicts.join(', ') + '. Use a backup file instead.'], [{ label: 'Close', primary: true }]);
-                } else if (manual) {
+                } else if (!manual) {
+                    dtMaybeShowPicker();
+                } else {
                     dtDialog('Import from old scripts', [
                         fresh.length
                             ? 'Nothing to import: the old scripts on this page have no new data for the toolbar.'
@@ -1006,7 +1015,7 @@ Version 1.0.0:
                     const result = dtApply(todo, 'Bring your data into the toolbar', { uninstallHint: true });
                     dtMarkMigrated(result.done);
                 } },
-                { label: 'Not now', onClick: () => GM_setValue(DT_DECLINED_KEY, dtToday()) }
+                { label: 'Not now', onClick: () => { GM_setValue(DT_DECLINED_KEY, dtToday()); dtMaybeShowPicker(); } }
             ]);
         });
     }
@@ -1018,8 +1027,145 @@ Version 1.0.0:
         if (!site) return;
         const migrated = dtMigrated();
         const pending = DATA_REGISTRY.some(t => t.id !== 'toolbar' && (t.site === site || t.site === 'all') && !migrated.includes(t.id));
-        if (!pending) return;
+        if (!pending) { setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS); return; }
         setTimeout(() => dtRunMigration(false), DT_START_DELAY_MS);
+    }
+
+    const DT_SITE_LABELS = { servicenow: 'ServiceNow', netskope: 'Netskope tenant', all: 'All pages' };
+
+    function dtBetaPill() {
+        const pill = document.createElement('span');
+        pill.textContent = 'BETA';
+        Object.assign(pill.style, {
+            display: 'inline-block', marginLeft: '6px', padding: '0 6px', borderRadius: '8px',
+            background: '#ff8c00', color: '#fff', fontSize: '10px', fontWeight: 'bold', letterSpacing: '.5px'
+        });
+        return pill;
+    }
+
+    // A checkbox list of tools grouped by site. Used by the picker and by Settings > Tools.
+    function dtBuildToolList(ids, ticked) {
+        const wrap = document.createElement('div');
+        const boxes = new Map();
+        let codeInput = null, codeError = null;
+        for (const site of ['servicenow', 'netskope', 'all']) {
+            const group = DATA_REGISTRY.filter(t => ids.includes(t.id) && t.site === site);
+            if (!group.length) continue;
+            const head = document.createElement('div');
+            head.textContent = DT_SITE_LABELS[site];
+            Object.assign(head.style, {
+                fontSize: '10px', fontWeight: 'bold', color: '#888', letterSpacing: '.6px',
+                textTransform: 'uppercase', margin: '10px 0 4px 0'
+            });
+            wrap.appendChild(head);
+            for (const tool of group) {
+                const row = document.createElement('label');
+                Object.assign(row.style, {
+                    display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '4px 0',
+                    cursor: 'pointer', fontSize: '13px', lineHeight: '1.4', color: '#333'
+                });
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = ticked.has(tool.id);
+                cb.dataset.toolId = tool.id;
+                cb.style.marginTop = '2px';
+                const text = document.createElement('span');
+                const name = document.createElement('strong');
+                name.textContent = tool.name;
+                text.appendChild(name);
+                if (tool.beta) text.appendChild(dtBetaPill());
+                const desc = document.createElement('span');
+                desc.textContent = ' ' + tool.description;
+                desc.style.color = '#666';
+                text.appendChild(desc);
+                row.append(cb, text);
+                wrap.appendChild(row);
+                boxes.set(tool.id, cb);
+
+                if (tool.locked && !dtCtUnlocked()) {
+                    const codeRow = document.createElement('div');
+                    Object.assign(codeRow.style, { margin: '2px 0 6px 24px', fontSize: '12px', color: '#555' });
+                    const label = document.createElement('span');
+                    label.textContent = 'Activation code: ';
+                    codeInput = document.createElement('input');
+                    codeInput.type = 'text';
+                    codeInput.className = 'dt-ct-code';
+                    codeInput.autocomplete = 'off';
+                    codeInput.placeholder = 'From your administrator';
+                    Object.assign(codeInput.style, {
+                        padding: '4px 8px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '12px',
+                        background: '#fff', color: '#333', width: '200px'
+                    });
+                    codeError = document.createElement('div');
+                    codeError.className = 'dt-ct-error';
+                    Object.assign(codeError.style, { color: '#c0392b', fontSize: '12px', marginTop: '3px' });
+                    codeRow.append(label, codeInput, codeError);
+                    const sync = () => { codeRow.style.display = cb.checked ? 'block' : 'none'; };
+                    cb.addEventListener('change', sync);
+                    sync();
+                    wrap.appendChild(codeRow);
+                }
+            }
+        }
+        return {
+            element: wrap,
+            choices: () => {
+                const c = {};
+                boxes.forEach((cb, id) => { c[id] = cb.checked; });
+                return c;
+            },
+            // True when no code is needed or the code is right. Otherwise shows why and returns false.
+            verifyCode: async () => {
+                const locked = DATA_REGISTRY.find(t => t.locked);
+                const cb = locked && boxes.get(locked.id);
+                if (!cb || !cb.checked || !codeInput) return true;
+                if (await dtCheckCtCode(codeInput.value)) {
+                    GM_setValue(DT_CT_UNLOCKED_KEY, true);
+                    return true;
+                }
+                codeError.textContent = 'That code is not valid.';
+                return false;
+            }
+        };
+    }
+
+    function dtShowToolPicker(ids, ticked) {
+        const list = dtBuildToolList(ids, ticked);
+        dtDialog('Choose your tools', [
+            'Pick the tools you want. You can change this any time in the toolbar Settings, under Tools.',
+            list.element
+        ], [
+            { label: 'Later', onClick: () => { if (DT_INSTALL_KIND === 'upgrade') GM_setValue(DT_PICKER_LATER_KEY, dtToday()); } },
+            { label: 'Save', primary: true, check: () => list.verifyCode(),
+              onClick: () => { dtSaveChoices(list.choices()); location.reload(); } }
+        ]);
+    }
+
+    function dtMarkDetected(ids) {
+        if (!ids.length) return;
+        const current = GM_getValue(DT_DETECTED_KEY, []);
+        GM_setValue(DT_DETECTED_KEY, [...new Set([...(Array.isArray(current) ? current : []), ...ids])]);
+    }
+
+    // Shows the picker on ServiceNow and Netskope tenant pages while tools of this site are undecided.
+    function dtMaybeShowPicker() {
+        const site = dtMigrationSite();
+        if (!site || document.getElementById('toolbarSuiteDataHost')) return;
+        const choices = dtChoices();
+        const all = DATA_REGISTRY.filter(t => t.id !== 'toolbar');
+        if (DT_INSTALL_KIND === 'new') {
+            if (Object.keys(choices).length) return;
+            dtShowToolPicker(all.map(t => t.id), new Set(['ticketQuickOpen']));
+            return;
+        }
+        if (GM_getValue(DT_PICKER_LATER_KEY, '') === dtToday()) return;
+        const undecided = all.filter(t => (t.site === site || t.site === 'all') && !Object.prototype.hasOwnProperty.call(choices, t.id));
+        if (!undecided.length) return;
+        const detected = GM_getValue(DT_DETECTED_KEY, []);
+        const ticked = new Set(undecided
+            .filter(t => ((Array.isArray(detected) && detected.includes(t.id)) || dtSuiteHasData(t)) && (!t.locked || dtCtUnlocked()))
+            .map(t => t.id));
+        dtShowToolPicker(undecided.map(t => t.id), ticked);
     }
 
     function dtExportEverything() {
