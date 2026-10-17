@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.17.1
+// @version      1.17.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.17.1';
-    const CHANGELOG = `Version 1.17.1:
+   const SCRIPT_VERSION = '1.17.2';
+    const CHANGELOG = `Version 1.17.2:
+- Ticket Assignment: team member names are always shown as plain text, even when they come from an imported file.
+- Importing data now checks it first: the Change Tracker server must be a secure https address, tenant hosts must be valid host names and the team list must be in the right format. A tool whose data does not pass is skipped and the reason is shown.
+
+Version 1.17.1:
 - The window that offers to import data from your old scripts now also lists the URL List Editor hosts it brings in, next to the Change Tracker server, so you can check every address before importing.
 - Import from old scripts now only runs on ServiceNow and Netskope tenant pages, where the old scripts are.
 
@@ -576,6 +580,30 @@ Version 1.0.0:
         return { values: kept, dropped };
     }
 
+    // Checks that imported values have the shape the tool expects. Returns a problem, or ''.
+    function dtCheckValues(tool, values) {
+        if (tool.id === 'changeTracker' && values.changeTrackerWorkerUrl) {
+            let url = null;
+            try { url = new URL(values.changeTrackerWorkerUrl); } catch (e) { /* not a URL */ }
+            if (!url || url.protocol !== 'https:') return 'the server address is not a valid https address';
+        }
+        if (tool.id === 'netskopeUrlListManager') {
+            for (const [key, value] of Object.entries(values)) {
+                if (key.startsWith('netskopeHost_') && value && (typeof value !== 'string' || !/^[a-z0-9.-]+$/i.test(value))) {
+                    return 'a tenant host is not a valid host name';
+                }
+            }
+        }
+        if (tool.id === 'ticketAssignment' && values.ticketAssignmentMembers !== undefined) {
+            let members = null;
+            try { members = JSON.parse(values.ticketAssignmentMembers); } catch (e) { /* not JSON */ }
+            const ok = Array.isArray(members) && members.every(m => dtIsPlainObject(m) && typeof m.name === 'string' &&
+                (m.value === undefined || typeof m.value === 'string'));
+            if (!ok) return 'the team list is not in the expected format';
+        }
+        return '';
+    }
+
     // True when the user already set this tool up inside the suite.
     function dtSuiteHasData(tool) {
         return GM_listValues().some(key => {
@@ -730,6 +758,8 @@ Version 1.0.0:
             const tool = dtTool(id);
             if (!tool || !dtIsPlainObject(entry) || !dtIsPlainObject(entry.values)) { skipped.push(id); continue; }
             const { values, dropped } = dtFilterValues(tool, entry.values);
+            const problem = dtCheckValues(tool, values);
+            if (problem) { skipped.push(`${tool.name} (${problem})`); continue; }
             tools.push({ tool, values, dropped });
         }
         return { tools, skipped };
@@ -835,7 +865,8 @@ Version 1.0.0:
         const answers = new Map();
         const payloads = new Map();
         // Each old script answers once. Two different answers for one tool mean something
-        // else on the page is answering too, so that tool is not trusted.
+        // else on the page is answering too, so that tool is not trusted. Answers whose data
+        // does not have the expected shape are not trusted either.
         const conflicts = new Set();
         const onAnswer = (e) => {
             const d = e.detail;
@@ -850,7 +881,9 @@ Version 1.0.0:
             let values;
             try { values = JSON.parse(d.payload); } catch (err) { return; }
             if (!dtIsPlainObject(values)) return;
-            answers.set(tool.id, { tool, ...dtFilterValues(tool, values) });
+            const filtered = dtFilterValues(tool, values);
+            if (dtCheckValues(tool, filtered.values)) { conflicts.add(tool.id); return; }
+            answers.set(tool.id, { tool, ...filtered });
         };
         document.addEventListener('toolbarSuiteDataResponse', onAnswer);
         document.dispatchEvent(new CustomEvent('toolbarSuiteDataRequest', { detail: { requestId } }));
@@ -899,7 +932,7 @@ Version 1.0.0:
 
             if (!todo.length) {
                 if (conflicts.length) {
-                    dtDialog('Import from old scripts', ['Not imported, because the page sent conflicting data for: ' +
+                    dtDialog('Import from old scripts', ['Not imported, because the data received did not look right: ' +
                         conflicts.join(', ') + '. Use a backup file instead.'], [{ label: 'Close', primary: true }]);
                 } else if (manual) {
                     dtDialog('Import from old scripts', [
@@ -914,7 +947,7 @@ Version 1.0.0:
             const lines = ['Data found from your previous toolbar scripts:'];
             for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a));
             if (todo.some(a => dtServerNote(a))) lines.push('Only import if you recognise these addresses.');
-            if (conflicts.length) lines.push('Not imported, because the page sent conflicting data: ' + conflicts.join(', ') + '.');
+            if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflicts.join(', ') + '.');
             if (kept.length) lines.push('Already set up in the toolbar, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
             lines.push('Import it into the toolbar?');
             dtDialog('Bring your data into the toolbar', lines, [
@@ -8945,7 +8978,9 @@ Version 1.2.1:
                 members.forEach((m, i) => {
                     const item = document.createElement('div');
                     item.className = 'sn-setup-member-item';
-                    item.innerHTML = `<span>${m.name}</span>`;
+                    const nameEl = document.createElement('span');
+                    nameEl.textContent = m.name;
+                    item.appendChild(nameEl);
                     const removeBtn = document.createElement('button');
                     removeBtn.className = 'sn-setup-member-remove';
                     removeBtn.textContent = '×';
@@ -9143,7 +9178,9 @@ Version 1.2.1:
                 members.forEach((m, i) => {
                     const item = document.createElement('div');
                     item.className = 'sn-manage-item';
-                    item.innerHTML = `<span>${m.name}</span>`;
+                    const nameEl = document.createElement('span');
+                    nameEl.textContent = m.name;
+                    item.appendChild(nameEl);
                     const rm = document.createElement('button');
                     rm.className = 'sn-manage-remove';
                     rm.textContent = '×';
