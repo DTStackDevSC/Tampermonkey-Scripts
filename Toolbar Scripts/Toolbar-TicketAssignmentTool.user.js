@@ -3,12 +3,11 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-TicketAssignmentTool.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      99.0.0
+// @version      99.0.1
 // @description  Now part of the Tools Toolbar. Keeps your saved data until the toolbar imports it.
 // @author       J.R.
-// @match        https://*.service-now.com/sc_req_item.do*
-// @match        https://*.service-now.com/incident.do*
-// @match        https://*.service-now.com/now/nav/*
+// @match        https://*.service-now.com/*
+// @match        https://*.servicenow.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_listValues
@@ -28,6 +27,7 @@
     document.addEventListener('toolbarSuiteDataRequest', (e) => {
         const requestId = e.detail && e.detail.requestId;
         if (typeof requestId !== 'string' || !requestId) return;
+        if (!/\.service-now\.com$|\.servicenow\.com$/.test(location.hostname)) return;
         const values = {};
         for (const key of GM_listValues()) {
             if (key !== SEEN_KEY) values[key] = GM_getValue(key);

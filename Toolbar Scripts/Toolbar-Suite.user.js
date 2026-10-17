@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.18.0
+// @version      1.18.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.18.0';
-    const CHANGELOG = `Version 1.18.0:
+   const SCRIPT_VERSION = '1.18.1';
+    const CHANGELOG = `Version 1.18.1:
+- Importing from your old scripts now finds every tool you had on any ServiceNow page, not only on ticket pages. Ticket Assignment, URL List Editor, Change Tracker, Mini Summary and Domain Tools were missed before.
+- First setups that open by themselves (Ticket Assignment team members, URL List Editor tenant hosts, Row Highlighter username, NS Policies Toolkit name) now wait until your data could be imported, so they no longer ask for things you already set up.
+- Import from old scripts in Settings can now replace a setup you typed by hand in the toolbar, and says so before importing.
+- Updating from the old Toolbar now goes straight to the latest version, in one update instead of two.
+
+Version 1.18.0:
 - Choose your tools: the first time you use the toolbar, a window asks which tools you want, and nothing else appears before that. If you are moving from the old scripts, the tools you already had are ticked for you.
 - New Tools section in Settings to turn any tool on or off at any time. Turning a tool off keeps its data.
 - Change Tracker: now marked as Beta. To turn it on, tick it in the tool list and enter the activation code from your administrator. If you already use it with your server and token, nothing changes for you.
@@ -702,7 +708,7 @@ Version 1.0.0:
     // A small dialog above every other window. Lines are plain text or elements. It lives in a
     // closed shadow root and only reacts to real clicks, so page scripts can neither read,
     // change nor press it. Every button closes the dialog, then runs its onClick.
-    function dtDialog(title, lines, buttons) {
+    function dtDialog(title, lines, buttons, onClosed) {
         document.getElementById('toolbarSuiteDataHost')?.remove();
         const host = document.createElement('div');
         host.id = 'toolbarSuiteDataHost';
@@ -770,12 +776,13 @@ Version 1.0.0:
                 if (b.check && !(await b.check())) return;   // stays open, the check shows why
                 close();
                 if (b.onClick) b.onClick();
+                if (onClosed) onClosed();
             };
             row.appendChild(btn);
         }
         modal.appendChild(row);
 
-        overlay.onclick = (e) => { if (e.isTrusted) close(); };
+        overlay.onclick = (e) => { if (!e.isTrusted) return; close(); if (onClosed) onClosed(); };
         root.appendChild(overlay);
         root.appendChild(modal);
         document.body.appendChild(host);
@@ -982,18 +989,21 @@ Version 1.0.0:
             if (manual) dtDialog('Import from old scripts', ['Open a ServiceNow page or a Netskope tenant page, then try again from there.'], [{ label: 'Close', primary: true }]);
             return;
         }
-        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) { dtMaybeShowPicker(); return; }
+        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) { dtSettle(); dtMaybeShowPicker(); return; }
         dtRequestOldData((answers, conflicts) => {
             dtMarkDetected(answers.map(a => a.tool.id));
             const migrated = dtMigrated();
             const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
             const hasValues = a => Object.keys(a.values).length > 0;
             const empty = fresh.filter(a => !hasValues(a));
-            const kept  = fresh.filter(a => hasValues(a) && dtSuiteHasData(a.tool));
-            const todo  = fresh.filter(a => hasValues(a) && !dtSuiteHasData(a.tool));
+            // Automatic runs never replace what the user set up in the toolbar. From Settings,
+            // the user may choose to replace it, and the prompt says so.
+            const kept  = manual ? [] : fresh.filter(a => hasValues(a) && dtSuiteHasData(a.tool));
+            const todo  = fresh.filter(a => hasValues(a) && (manual || !dtSuiteHasData(a.tool)));
             dtMarkMigrated([...empty, ...kept].map(a => a.tool.id));
 
             if (!todo.length) {
+                dtSettle();
                 if (conflicts.length) {
                     dtDialog('Import from old scripts', ['Not imported, because the data received did not look right: ' +
                         conflicts.join(', ') + '. Use a backup file instead.'], [{ label: 'Close', primary: true }]);
@@ -1010,7 +1020,8 @@ Version 1.0.0:
             }
 
             const lines = ['Data found from your previous toolbar scripts:'];
-            for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a));
+            for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a) +
+                (manual && dtSuiteHasData(a.tool) ? ' (replaces what you set up in the toolbar)' : ''));
             if (todo.some(a => dtServerNote(a))) lines.push('Only import if you recognise these addresses.');
             if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflicts.join(', ') + '.');
             if (kept.length) lines.push('Already set up in the toolbar, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
@@ -1021,18 +1032,33 @@ Version 1.0.0:
                     dtMarkMigrated(result.done);
                 } },
                 { label: 'Not now', onClick: () => { GM_setValue(DT_DECLINED_KEY, dtToday()); dtMaybeShowPicker(); } }
-            ]);
+            ], dtSettle);
         });
+    }
+
+    // First setups that open by themselves wait until the old scripts had their chance to
+    // hand over data on this page, then check again whether they are still needed.
+    let dtSettled = false;
+    const dtSettleWaiters = [];
+    function dtSettle() {
+        if (dtSettled) return;
+        dtSettled = true;
+        for (const fn of dtSettleWaiters.splice(0)) {
+            try { fn(); } catch (e) { console.error('Toolbar first setup:', e); }
+        }
+    }
+    function dtWhenMigrationSettled(fn) {
+        if (dtSettled) fn(); else dtSettleWaiters.push(fn);
     }
 
     // Started once per page load on ServiceNow and Netskope tenant pages, while some tool
     // of that site is not migrated yet.
     function dtAutoMigrate() {
         const site = dtMigrationSite();
-        if (!site) return;
+        if (!site) { dtSettle(); return; }
         const migrated = dtMigrated();
         const pending = DATA_REGISTRY.some(t => t.id !== 'toolbar' && (t.site === site || t.site === 'all') && !migrated.includes(t.id));
-        if (!pending) { setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS); return; }
+        if (!pending) { dtSettle(); setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS); return; }
         setTimeout(() => dtRunMigration(false), DT_START_DELAY_MS);
     }
 
@@ -11363,8 +11389,13 @@ Thank you for your cooperation.` : '';
         const members = getStoredMembers();
 
         if (!members || members.length === 0) {
-            showMemberSetupWizard((newMembers) => {
-                initializeModal(newMembers);
+            // Wait until the toolbar had the chance to import a saved team list.
+            dtWhenMigrationSettled(() => {
+                const imported = getStoredMembers();
+                if (imported && imported.length) { initializeModal(imported); return; }
+                showMemberSetupWizard((newMembers) => {
+                    initializeModal(newMembers);
+                });
             });
         } else {
             initializeModal(members);
@@ -15048,9 +15079,12 @@ Version 1.4.1:
         isInitialized = true;
 
         // Show host setup on first run (non-blocking — modal triggers on toolbar click too)
-        if (!areTenantHostsConfigured()) {
-            showTenantHostSetup(() => console.log('✅ Tenant hosts configured.'));
-        }
+        // Waits until the toolbar had the chance to import saved hosts.
+        dtWhenMigrationSettled(() => {
+            if (!areTenantHostsConfigured()) {
+                showTenantHostSetup(() => console.log('✅ Tenant hosts configured.'));
+            }
+        });
 
         initializeModal();
         console.log('✅ Netskope URL List Manager initialized!');
@@ -17288,8 +17322,10 @@ Version 2.3.1:
 
         // Show first-run prompt if no username is stored
         if (!targetUsername) {
-            // Small delay so the page has started rendering
-            setTimeout(() => showFirstRunPrompt(), 800);
+            // Waits until the toolbar had the chance to import a saved username.
+            dtWhenMigrationSettled(() => {
+                if (!getStoredUsername()) setTimeout(() => showFirstRunPrompt(), 800);
+            });
         } else {
             // Start highlighting if username is set
             setTimeout(() => {
@@ -31650,9 +31686,10 @@ Version 1.16:
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
-        if (!GM_getValue('toolkit_username', '')) {
-            setTimeout(() => showUsernamePromptModal(), 800);
-        }
+        // Waits until the toolbar had the chance to import a saved name.
+        dtWhenMigrationSettled(() => {
+            if (!GM_getValue('toolkit_username', '')) setTimeout(() => showUsernamePromptModal(), 800);
+        });
 
         console.log('✅ NS Policies Toolkit v' + SCRIPT_VERSION + ' ready');
     }

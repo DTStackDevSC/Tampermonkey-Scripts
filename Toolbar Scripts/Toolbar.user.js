@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.17.1
+// @version      1.18.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,23 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.17.1';
-    const CHANGELOG = `Version 1.17.1:
+   const SCRIPT_VERSION = '1.18.1';
+    const CHANGELOG = `Version 1.18.1:
+- Importing from your old scripts now finds every tool you had on any ServiceNow page, not only on ticket pages. Ticket Assignment, URL List Editor, Change Tracker, Mini Summary and Domain Tools were missed before.
+- First setups that open by themselves (Ticket Assignment team members, URL List Editor tenant hosts, Row Highlighter username, NS Policies Toolkit name) now wait until your data could be imported, so they no longer ask for things you already set up.
+- Import from old scripts in Settings can now replace a setup you typed by hand in the toolbar, and says so before importing.
+- Updating from the old Toolbar now goes straight to the latest version, in one update instead of two.
+
+Version 1.18.0:
+- Choose your tools: the first time you use the toolbar, a window asks which tools you want, and nothing else appears before that. If you are moving from the old scripts, the tools you already had are ticked for you.
+- New Tools section in Settings to turn any tool on or off at any time. Turning a tool off keeps its data.
+- Change Tracker: now marked as Beta. To turn it on, tick it in the tool list and enter the activation code from your administrator. If you already use it with your server and token, nothing changes for you.
+
+Version 1.17.2:
+- Ticket Assignment: team member names are always shown as plain text, even when they come from an imported file.
+- Importing data now checks it first: the Change Tracker server must be a secure https address, tenant hosts must be valid host names and the team list must be in the right format. A tool whose data does not pass is skipped and the reason is shown.
+
+Version 1.17.1:
 - The window that offers to import data from your old scripts now also lists the URL List Editor hosts it brings in, next to the Change Tracker server, so you can check every address before importing.
 - Import from old scripts now only runs on ServiceNow and Netskope tenant pages, where the old scripts are.
 
@@ -531,33 +546,33 @@ Version 1.0.0:
           exact: ['compact-mode', 'auto-close', 'show-tooltips', 'button-size', 'tool-size',
                   'animation-speed', 'menu-gap', 'show-labels', 'label-position'],
           prefixes: ['toolbar-', 'toolbarSuite'] },
-        { id: 'ticketQuickOpen', name: 'General Toolkit', site: 'all', script: '|Toolbar| General Toolkit',
+        { id: 'ticketQuickOpen', name: 'General Toolkit', description: 'Open any ticket or case number you select', site: 'all', script: '|Toolbar| General Toolkit',
           exact: [], prefixes: ['tqo_'] },
-        { id: 'domainTools', name: 'Domain Tools', site: 'servicenow', script: '|Toolbar| Domain Tools',
+        { id: 'domainTools', name: 'Domain Tools', description: 'Extract domains from tickets and check their reputation', site: 'servicenow', script: '|Toolbar| Domain Tools',
           exact: [], prefixes: ['domainTools'] },
-        { id: 'enhancementRequestLogger', name: 'Enhancement Request Logger', site: 'servicenow',
+        { id: 'enhancementRequestLogger', name: 'Enhancement Request Logger', description: 'Open a pre filled enhancement request form', site: 'servicenow',
           script: '|Toolbar| Enhancement Request Logger', exact: [], prefixes: ['erl'] },
-        { id: 'miniSummary', name: 'Mini Summary Sidebar', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
+        { id: 'miniSummary', name: 'Mini Summary Sidebar', description: 'Key ticket fields at a glance', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
           exact: [], prefixes: ['miniSummarySidebar'] },
-        { id: 'rowHighlighter', name: 'Row Highlighter', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
+        { id: 'rowHighlighter', name: 'Row Highlighter', description: 'Highlight list rows updated by you, with SLA colors', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
           exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
-        { id: 'changeTracker', name: 'Change Tracker', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
+        { id: 'changeTracker', name: 'Change Tracker', description: 'Shared change log per ticket, written to the ticket', beta: true, locked: true, site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
           exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerWorkerUrl', 'changeTrackerToken'] },
-        { id: 'serviceNowToolkit', name: 'ServiceNow Toolkit', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
+        { id: 'serviceNowToolkit', name: 'ServiceNow Toolkit', description: 'Draft autosave and SCTASK auto open', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
-        { id: 'ticketAssignment', name: 'Ticket Assignment', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
+        { id: 'ticketAssignment', name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
-        { id: 'netskopeUrlListManager', name: 'URL List Editor', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+        { id: 'netskopeUrlListManager', name: 'URL List Editor', description: 'Create and update Netskope URL lists from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
-        { id: 'policyDeletionReminder', name: 'Policy Deletion Reminder', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
+        { id: 'policyDeletionReminder', name: 'Policy Deletion Reminder', description: 'Register a reminder to delete a temporary policy', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
           exact: [], prefixes: ['pdr'] },
-        { id: 'nsDlpToolkit', name: 'NS Policies Toolkit', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
+        { id: 'nsDlpToolkit', name: 'NS Policies Toolkit', description: 'Copy and open buttons, logs and steering exception tools', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
           exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
     ];
 
     const DT_MIGRATED_KEY = 'toolbarSuiteMigratedTools';
     const DT_DECLINED_KEY = 'toolbarSuiteMigrationDeclined';
-    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY];
+    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'toolbarSuiteDetectedTools', 'toolbarSuitePickerLater'];
     // Version and "changelog seen" keys are written on every load, so they never count as data.
     const DT_META_RE = /(version|changelog[-_]?seen)$/i;
 
@@ -574,6 +589,30 @@ Version 1.0.0:
             else dropped.push(key);
         }
         return { values: kept, dropped };
+    }
+
+    // Checks that imported values have the shape the tool expects. Returns a problem, or ''.
+    function dtCheckValues(tool, values) {
+        if (tool.id === 'changeTracker' && values.changeTrackerWorkerUrl) {
+            let url = null;
+            try { url = new URL(values.changeTrackerWorkerUrl); } catch (e) { /* not a URL */ }
+            if (!url || url.protocol !== 'https:') return 'the server address is not a valid https address';
+        }
+        if (tool.id === 'netskopeUrlListManager') {
+            for (const [key, value] of Object.entries(values)) {
+                if (key.startsWith('netskopeHost_') && value && (typeof value !== 'string' || !/^[a-z0-9.-]+$/i.test(value))) {
+                    return 'a tenant host is not a valid host name';
+                }
+            }
+        }
+        if (tool.id === 'ticketAssignment' && values.ticketAssignmentMembers !== undefined) {
+            let members = null;
+            try { members = JSON.parse(values.ticketAssignmentMembers); } catch (e) { /* not JSON */ }
+            const ok = Array.isArray(members) && members.every(m => dtIsPlainObject(m) && typeof m.name === 'string' &&
+                (m.value === undefined || typeof m.value === 'string'));
+            if (!ok) return 'the team list is not in the expected format';
+        }
+        return '';
     }
 
     // True when the user already set this tool up inside the suite.
@@ -612,13 +651,64 @@ Version 1.0.0:
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
+    /* Tool activation: which tools run, and the Change Tracker beta code. */
+    const DT_CHOICES_KEY      = 'toolbarSuiteToolChoices';
+    const DT_INSTALL_KIND_KEY = 'toolbarSuiteInstallKind';
+    const DT_DETECTED_KEY     = 'toolbarSuiteDetectedTools';
+    const DT_CT_UNLOCKED_KEY  = 'toolbarSuiteCtUnlocked';
+    const DT_PICKER_LATER_KEY = 'toolbarSuitePickerLater';
+    // SHA-256 of "toolbar-suite-ct:" followed by the activation code without "CT", dashes or spaces.
+    const DT_CT_CODE_HASH = 'cce5579e99b0991105c18c7a2b932e4f3d2799259ef789fad583a27a484bd4fd';
+
+    // Decided once, the first time the suite runs: 'upgrade' when it found saved data, 'new' when storage was empty.
+    const DT_INSTALL_KIND = (() => {
+        const saved = GM_getValue(DT_INSTALL_KIND_KEY, null);
+        if (saved === 'upgrade' || saved === 'new') return saved;
+        const kind = GM_listValues().length ? 'upgrade' : 'new';
+        GM_setValue(DT_INSTALL_KIND_KEY, kind);
+        return kind;
+    })();
+
+    function dtChoices() {
+        const v = GM_getValue(DT_CHOICES_KEY, {});
+        return dtIsPlainObject(v) ? v : {};
+    }
+    function dtSaveChoices(update) { GM_setValue(DT_CHOICES_KEY, Object.assign(dtChoices(), update)); }
+
+    // Change Tracker is unlocked by the code, or for people who already set it up.
+    function dtCtUnlocked() {
+        if (GM_getValue(DT_CT_UNLOCKED_KEY, false) === true) return true;
+        if (GM_getValue('changeTrackerWorkerUrl', '') && GM_getValue('changeTrackerToken', '')) {
+            GM_setValue(DT_CT_UNLOCKED_KEY, true);
+            return true;
+        }
+        return false;
+    }
+
+    // Does a tool run? Each tool section asks this before doing anything.
+    function isToolEnabled(id) {
+        const tool = dtTool(id);
+        if (tool && tool.locked && !dtCtUnlocked()) return false;
+        const choices = dtChoices();
+        if (Object.prototype.hasOwnProperty.call(choices, id)) return choices[id] === true;
+        return DT_INSTALL_KIND === 'upgrade';
+    }
+
+    async function dtCheckCtCode(input) {
+        const rest = String(input || '').toUpperCase().replace(/[\s-]/g, '').replace(/^CT/, '');
+        if (!rest) return false;
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('toolbar-suite-ct:' + rest));
+        const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+        return hex === DT_CT_CODE_HASH;
+    }
+
     // Kept from the moment the suite loads, before any page script can replace it.
     const dtAttachShadow = Element.prototype.attachShadow;
 
-    // A small dialog above every other window. Lines are shown as plain text. It lives in a
+    // A small dialog above every other window. Lines are plain text or elements. It lives in a
     // closed shadow root and only reacts to real clicks, so page scripts can neither read,
     // change nor press it. Every button closes the dialog, then runs its onClick.
-    function dtDialog(title, lines, buttons) {
+    function dtDialog(title, lines, buttons, onClosed) {
         document.getElementById('toolbarSuiteDataHost')?.remove();
         const host = document.createElement('div');
         host.id = 'toolbarSuiteDataHost';
@@ -660,6 +750,7 @@ Version 1.0.0:
         modal.appendChild(heading);
 
         for (const line of lines) {
+            if (line instanceof Node) { modal.appendChild(line); continue; }
             const p = document.createElement('div');
             p.textContent = line;
             Object.assign(p.style, { fontSize: '13px', lineHeight: '1.5', margin: '0 0 8px 0' });
@@ -680,12 +771,18 @@ Version 1.0.0:
                 border: b.primary ? 'none' : '1px solid #ccc',
                 background: b.primary ? '#667eea' : '#fff', color: b.primary ? '#fff' : '#333'
             });
-            btn.onclick = (e) => { if (!e.isTrusted || Date.now() < readyAt) return; close(); if (b.onClick) b.onClick(); };
+            btn.onclick = async (e) => {
+                if (!e.isTrusted || Date.now() < readyAt) return;
+                if (b.check && !(await b.check())) return;   // stays open, the check shows why
+                close();
+                if (b.onClick) b.onClick();
+                if (onClosed) onClosed();
+            };
             row.appendChild(btn);
         }
         modal.appendChild(row);
 
-        overlay.onclick = (e) => { if (e.isTrusted) close(); };
+        overlay.onclick = (e) => { if (!e.isTrusted) return; close(); if (onClosed) onClosed(); };
         root.appendChild(overlay);
         root.appendChild(modal);
         document.body.appendChild(host);
@@ -730,6 +827,8 @@ Version 1.0.0:
             const tool = dtTool(id);
             if (!tool || !dtIsPlainObject(entry) || !dtIsPlainObject(entry.values)) { skipped.push(id); continue; }
             const { values, dropped } = dtFilterValues(tool, entry.values);
+            const problem = dtCheckValues(tool, values);
+            if (problem) { skipped.push(`${tool.name} (${problem})`); continue; }
             tools.push({ tool, values, dropped });
         }
         return { tools, skipped };
@@ -835,7 +934,8 @@ Version 1.0.0:
         const answers = new Map();
         const payloads = new Map();
         // Each old script answers once. Two different answers for one tool mean something
-        // else on the page is answering too, so that tool is not trusted.
+        // else on the page is answering too, so that tool is not trusted. Answers whose data
+        // does not have the expected shape are not trusted either.
         const conflicts = new Set();
         const onAnswer = (e) => {
             const d = e.detail;
@@ -850,7 +950,9 @@ Version 1.0.0:
             let values;
             try { values = JSON.parse(d.payload); } catch (err) { return; }
             if (!dtIsPlainObject(values)) return;
-            answers.set(tool.id, { tool, ...dtFilterValues(tool, values) });
+            const filtered = dtFilterValues(tool, values);
+            if (dtCheckValues(tool, filtered.values)) { conflicts.add(tool.id); return; }
+            answers.set(tool.id, { tool, ...filtered });
         };
         document.addEventListener('toolbarSuiteDataResponse', onAnswer);
         document.dispatchEvent(new CustomEvent('toolbarSuiteDataRequest', { detail: { requestId } }));
@@ -887,21 +989,27 @@ Version 1.0.0:
             if (manual) dtDialog('Import from old scripts', ['Open a ServiceNow page or a Netskope tenant page, then try again from there.'], [{ label: 'Close', primary: true }]);
             return;
         }
-        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) return;
+        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) { dtSettle(); dtMaybeShowPicker(); return; }
         dtRequestOldData((answers, conflicts) => {
+            dtMarkDetected(answers.map(a => a.tool.id));
             const migrated = dtMigrated();
             const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
             const hasValues = a => Object.keys(a.values).length > 0;
             const empty = fresh.filter(a => !hasValues(a));
-            const kept  = fresh.filter(a => hasValues(a) && dtSuiteHasData(a.tool));
-            const todo  = fresh.filter(a => hasValues(a) && !dtSuiteHasData(a.tool));
+            // Automatic runs never replace what the user set up in the toolbar. From Settings,
+            // the user may choose to replace it, and the prompt says so.
+            const kept  = manual ? [] : fresh.filter(a => hasValues(a) && dtSuiteHasData(a.tool));
+            const todo  = fresh.filter(a => hasValues(a) && (manual || !dtSuiteHasData(a.tool)));
             dtMarkMigrated([...empty, ...kept].map(a => a.tool.id));
 
             if (!todo.length) {
+                dtSettle();
                 if (conflicts.length) {
-                    dtDialog('Import from old scripts', ['Not imported, because the page sent conflicting data for: ' +
+                    dtDialog('Import from old scripts', ['Not imported, because the data received did not look right: ' +
                         conflicts.join(', ') + '. Use a backup file instead.'], [{ label: 'Close', primary: true }]);
-                } else if (manual) {
+                } else if (!manual) {
+                    dtMaybeShowPicker();
+                } else {
                     dtDialog('Import from old scripts', [
                         fresh.length
                             ? 'Nothing to import: the old scripts on this page have no new data for the toolbar.'
@@ -912,9 +1020,10 @@ Version 1.0.0:
             }
 
             const lines = ['Data found from your previous toolbar scripts:'];
-            for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a));
+            for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a) +
+                (manual && dtSuiteHasData(a.tool) ? ' (replaces what you set up in the toolbar)' : ''));
             if (todo.some(a => dtServerNote(a))) lines.push('Only import if you recognise these addresses.');
-            if (conflicts.length) lines.push('Not imported, because the page sent conflicting data: ' + conflicts.join(', ') + '.');
+            if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflicts.join(', ') + '.');
             if (kept.length) lines.push('Already set up in the toolbar, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
             lines.push('Import it into the toolbar?');
             dtDialog('Bring your data into the toolbar', lines, [
@@ -922,20 +1031,195 @@ Version 1.0.0:
                     const result = dtApply(todo, 'Bring your data into the toolbar', { uninstallHint: true });
                     dtMarkMigrated(result.done);
                 } },
-                { label: 'Not now', onClick: () => GM_setValue(DT_DECLINED_KEY, dtToday()) }
-            ]);
+                { label: 'Not now', onClick: () => { GM_setValue(DT_DECLINED_KEY, dtToday()); dtMaybeShowPicker(); } }
+            ], dtSettle);
         });
+    }
+
+    // First setups that open by themselves wait until the old scripts had their chance to
+    // hand over data on this page, then check again whether they are still needed.
+    let dtSettled = false;
+    const dtSettleWaiters = [];
+    function dtSettle() {
+        if (dtSettled) return;
+        dtSettled = true;
+        for (const fn of dtSettleWaiters.splice(0)) {
+            try { fn(); } catch (e) { console.error('Toolbar first setup:', e); }
+        }
+    }
+    function dtWhenMigrationSettled(fn) {
+        if (dtSettled) fn(); else dtSettleWaiters.push(fn);
     }
 
     // Started once per page load on ServiceNow and Netskope tenant pages, while some tool
     // of that site is not migrated yet.
     function dtAutoMigrate() {
         const site = dtMigrationSite();
-        if (!site) return;
+        if (!site) { dtSettle(); return; }
         const migrated = dtMigrated();
         const pending = DATA_REGISTRY.some(t => t.id !== 'toolbar' && (t.site === site || t.site === 'all') && !migrated.includes(t.id));
-        if (!pending) return;
+        if (!pending) { dtSettle(); setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS); return; }
         setTimeout(() => dtRunMigration(false), DT_START_DELAY_MS);
+    }
+
+    const DT_SITE_LABELS = { servicenow: 'ServiceNow', netskope: 'Netskope tenant', all: 'All pages' };
+
+    function dtBetaPill() {
+        const pill = document.createElement('span');
+        pill.textContent = 'BETA';
+        Object.assign(pill.style, {
+            display: 'inline-block', marginLeft: '6px', padding: '0 6px', borderRadius: '8px',
+            background: '#ff8c00', color: '#fff', fontSize: '10px', fontWeight: 'bold', letterSpacing: '.5px'
+        });
+        return pill;
+    }
+
+    // A checkbox list of tools grouped by site. Used by the picker and by Settings > Tools.
+    function dtBuildToolList(ids, ticked) {
+        const wrap = document.createElement('div');
+        const boxes = new Map();
+        let codeInput = null, codeError = null;
+        for (const site of ['servicenow', 'netskope', 'all']) {
+            const group = DATA_REGISTRY.filter(t => ids.includes(t.id) && t.site === site);
+            if (!group.length) continue;
+            const head = document.createElement('div');
+            head.textContent = DT_SITE_LABELS[site];
+            Object.assign(head.style, {
+                fontSize: '10px', fontWeight: 'bold', color: '#888', letterSpacing: '.6px',
+                textTransform: 'uppercase', margin: '10px 0 4px 0'
+            });
+            wrap.appendChild(head);
+            for (const tool of group) {
+                const row = document.createElement('label');
+                Object.assign(row.style, {
+                    display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '4px 0',
+                    cursor: 'pointer', fontSize: '13px', lineHeight: '1.4', color: '#333'
+                });
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = ticked.has(tool.id);
+                cb.dataset.toolId = tool.id;
+                cb.style.marginTop = '2px';
+                const text = document.createElement('span');
+                const name = document.createElement('strong');
+                name.textContent = tool.name;
+                text.appendChild(name);
+                if (tool.beta) text.appendChild(dtBetaPill());
+                const desc = document.createElement('span');
+                desc.textContent = ' ' + tool.description;
+                desc.style.color = '#666';
+                text.appendChild(desc);
+                row.append(cb, text);
+                wrap.appendChild(row);
+                boxes.set(tool.id, cb);
+
+                if (tool.locked && !dtCtUnlocked()) {
+                    const codeRow = document.createElement('div');
+                    Object.assign(codeRow.style, { margin: '2px 0 6px 24px', fontSize: '12px', color: '#555' });
+                    const label = document.createElement('span');
+                    label.textContent = 'Activation code: ';
+                    codeInput = document.createElement('input');
+                    codeInput.type = 'text';
+                    codeInput.className = 'dt-ct-code';
+                    codeInput.autocomplete = 'off';
+                    codeInput.placeholder = 'From your administrator';
+                    Object.assign(codeInput.style, {
+                        padding: '4px 8px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '12px',
+                        background: '#fff', color: '#333', width: '200px'
+                    });
+                    codeError = document.createElement('div');
+                    codeError.className = 'dt-ct-error';
+                    Object.assign(codeError.style, { color: '#c0392b', fontSize: '12px', marginTop: '3px' });
+                    codeRow.append(label, codeInput, codeError);
+                    const sync = () => { codeRow.style.display = cb.checked ? 'block' : 'none'; };
+                    cb.addEventListener('change', sync);
+                    sync();
+                    wrap.appendChild(codeRow);
+                }
+            }
+        }
+        return {
+            element: wrap,
+            choices: () => {
+                const c = {};
+                boxes.forEach((cb, id) => { c[id] = cb.checked; });
+                return c;
+            },
+            // True when no code is needed or the code is right. Otherwise shows why and returns false.
+            verifyCode: async () => {
+                const locked = DATA_REGISTRY.find(t => t.locked);
+                const cb = locked && boxes.get(locked.id);
+                if (!cb || !cb.checked || !codeInput) return true;
+                if (await dtCheckCtCode(codeInput.value)) {
+                    GM_setValue(DT_CT_UNLOCKED_KEY, true);
+                    return true;
+                }
+                codeError.textContent = 'That code is not valid.';
+                return false;
+            }
+        };
+    }
+
+    function dtShowToolPicker(ids, ticked) {
+        const list = dtBuildToolList(ids, ticked);
+        dtDialog('Choose your tools', [
+            'Pick the tools you want. You can change this any time in the toolbar Settings, under Tools.',
+            list.element
+        ], [
+            { label: 'Later', onClick: () => { if (DT_INSTALL_KIND === 'upgrade') GM_setValue(DT_PICKER_LATER_KEY, dtToday()); } },
+            { label: 'Save', primary: true, check: () => list.verifyCode(),
+              onClick: () => { dtSaveChoices(list.choices()); location.reload(); } }
+        ]);
+    }
+
+    function dtMarkDetected(ids) {
+        if (!ids.length) return;
+        const current = GM_getValue(DT_DETECTED_KEY, []);
+        GM_setValue(DT_DETECTED_KEY, [...new Set([...(Array.isArray(current) ? current : []), ...ids])]);
+    }
+
+    // Shows the picker on ServiceNow and Netskope tenant pages while tools of this site are undecided.
+    function dtMaybeShowPicker() {
+        const site = dtMigrationSite();
+        if (!site || document.getElementById('toolbarSuiteDataHost')) return;
+        const choices = dtChoices();
+        const all = DATA_REGISTRY.filter(t => t.id !== 'toolbar');
+        if (DT_INSTALL_KIND === 'new') {
+            if (Object.keys(choices).length) return;
+            dtShowToolPicker(all.map(t => t.id), new Set(['ticketQuickOpen']));
+            return;
+        }
+        if (GM_getValue(DT_PICKER_LATER_KEY, '') === dtToday()) return;
+        const undecided = all.filter(t => (t.site === site || t.site === 'all') && !Object.prototype.hasOwnProperty.call(choices, t.id));
+        if (!undecided.length) return;
+        const detected = GM_getValue(DT_DETECTED_KEY, []);
+        const ticked = new Set(undecided
+            .filter(t => ((Array.isArray(detected) && detected.includes(t.id)) || dtSuiteHasData(t)) && (!t.locked || dtCtUnlocked()))
+            .map(t => t.id));
+        dtShowToolPicker(undecided.map(t => t.id), ticked);
+    }
+
+    let dtSettingsToolList = null;
+
+    // Fills Settings > Tools with every tool, ticked when it runs now.
+    function dtRenderSettingsTools() {
+        const container = document.getElementById('toolbar-tools-list');
+        if (!container) return;
+        const ids = DATA_REGISTRY.filter(t => t.id !== 'toolbar').map(t => t.id);
+        dtSettingsToolList = dtBuildToolList(ids, new Set(ids.filter(isToolEnabled)));
+        // Drawn in a closed shadow root, so page scripts cannot read the code or change the boxes.
+        const host = document.createElement('div');
+        dtAttachShadow.call(host, { mode: 'closed' }).appendChild(dtSettingsToolList.element);
+        container.innerHTML = '';
+        container.appendChild(host);
+    }
+
+    // Called by Save in Settings. False keeps Settings open (wrong code).
+    async function dtSaveSettingsTools() {
+        if (!dtSettingsToolList) return true;
+        if (!(await dtSettingsToolList.verifyCode())) return false;
+        dtSaveChoices(dtSettingsToolList.choices());
+        return true;
     }
 
     function dtExportEverything() {
@@ -1239,6 +1523,34 @@ Version 1.0.0:
                         'Hover an icon to see the tool name.',
                         'Tools only appear on the pages they support.',
                         'If the menu only shows the gear, no tools match the current page.'
+                    ]);
+                }
+            },
+            {
+                icon: '🧩',
+                title: 'Tools',
+                buildContent: (body) => {
+                    lead(body, 'Choose which tools run. Tools you turn off leave the menu and keep their data.');
+                    const list = document.createElement('div');
+                    Object.assign(list.style, {
+                        border: '1px solid #e8e8f0', borderRadius: '6px', padding: '8px 12px',
+                        maxWidth: '380px', background: '#fff', margin: '0 0 8px 0'
+                    });
+                    [['Ticket Assignment', true, false], ['Change Tracker', false, true], ['General Toolkit', true, false]].forEach(([name, on, beta]) => {
+                        const box = span(on ? '✓' : '', {
+                            width: '15px', height: '15px', borderRadius: '3px', display: 'inline-block', textAlign: 'center',
+                            lineHeight: '15px', fontSize: '11px', color: '#fff', background: on ? '#667eea' : '#fff',
+                            border: on ? 'none' : '1px solid #b0b0b0', flexShrink: '0', boxSizing: 'border-box'
+                        });
+                        const items = [box, span(name, { fontSize: '12px', fontWeight: 'bold', color: '#333' })];
+                        if (beta) items.push(span('BETA', { background: '#ff8c00', color: '#fff', fontSize: '10px', fontWeight: 'bold', borderRadius: '8px', padding: '0 6px' }));
+                        list.appendChild(hrow(items, { margin: '3px 0', gap: '8px', flexWrap: 'nowrap' }));
+                    });
+                    body.appendChild(list);
+                    bullets(body, [
+                        'The first time, a "Choose your tools" window asks which tools you want. No tool runs before that.',
+                        'Change it any time in Settings, under Tools. The page reloads to apply the change.',
+                        'Change Tracker is in beta: tick it and enter the activation code from your administrator.'
                     ]);
                 }
             },
@@ -2682,6 +2994,7 @@ Version 1.0.0:
                 }
             }
             populatePinnedToolsList();
+            dtRenderSettingsTools();
             return;
         }
 
@@ -2825,6 +3138,13 @@ Version 1.0.0:
                             </div>
                         </div>
 
+                        <!-- Tools -->
+                        <div class="settings-section">
+                            <h3>Tools</h3>
+                            <p class="setting-help-text">Choose which tools run. Turning a tool off keeps its data. The page reloads when you save a change.</p>
+                            <div id="toolbar-tools-list"></div>
+                        </div>
+
                         <!-- Pinned Tools -->
                         <div class="settings-section">
                             <h3>Pinned Tools</h3>
@@ -2891,6 +3211,7 @@ Version 1.0.0:
         }
 
         populatePinnedToolsList();
+        dtRenderSettingsTools();
     }
 
     function setupSettingsEventListeners() {
@@ -2904,7 +3225,9 @@ Version 1.0.0:
         cancelBtn.addEventListener('click', () => modal.classList.remove('visible'));
         overlay.addEventListener('click', () => modal.classList.remove('visible'));
 
-        saveBtn.addEventListener('click', () => {
+        saveBtn.addEventListener('click', async (e) => {
+            if (!e.isTrusted) return;   // only a real click saves Settings
+            if (!(await dtSaveSettingsTools())) return;   // wrong activation code: stay in Settings
             saveSettings();
             modal.classList.remove('visible');
             location.reload();
@@ -3216,6 +3539,9 @@ Version 1.0.0:
 
     const registerGeneralToolkit = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('ticketQuickOpen')) return function register() {};
 
     // ─────────────────────────────────────────────────────────────
     // VERSION CONTROL
@@ -4406,6 +4732,9 @@ Version 1.2:
 
     const registerServiceNowToolkit = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('serviceNowToolkit')) return function register() {};
 
     console.log('🛠️ ServiceNow Toolkit loading...');
 
@@ -6084,6 +6413,9 @@ Version 1.1.4:
     const registerMiniSummarySidebar = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('miniSummary')) return function register() {};
+
     console.log('📊 Mini Summary Sidebar loading...');
 
     /* ==========================================================
@@ -7539,6 +7871,9 @@ Version 1.0.2:
     const registerEnhancementRequestLogger = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('enhancementRequestLogger')) return function register() {};
+
     console.log('📋 Enhancement Request Logger loading...');
 
     /* ==========================================================
@@ -8555,6 +8890,9 @@ Version 1.1.1:
     const registerTicketAssignmentTool = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('ticketAssignment')) return function register() {};
+
 
     console.log('🎫 ServiceNow Ticket Assignment Tool loading...');
 
@@ -8945,7 +9283,9 @@ Version 1.2.1:
                 members.forEach((m, i) => {
                     const item = document.createElement('div');
                     item.className = 'sn-setup-member-item';
-                    item.innerHTML = `<span>${m.name}</span>`;
+                    const nameEl = document.createElement('span');
+                    nameEl.textContent = m.name;
+                    item.appendChild(nameEl);
                     const removeBtn = document.createElement('button');
                     removeBtn.className = 'sn-setup-member-remove';
                     removeBtn.textContent = '×';
@@ -9143,7 +9483,9 @@ Version 1.2.1:
                 members.forEach((m, i) => {
                     const item = document.createElement('div');
                     item.className = 'sn-manage-item';
-                    item.innerHTML = `<span>${m.name}</span>`;
+                    const nameEl = document.createElement('span');
+                    nameEl.textContent = m.name;
+                    item.appendChild(nameEl);
                     const rm = document.createElement('button');
                     rm.className = 'sn-manage-remove';
                     rm.textContent = '×';
@@ -11047,8 +11389,13 @@ Thank you for your cooperation.` : '';
         const members = getStoredMembers();
 
         if (!members || members.length === 0) {
-            showMemberSetupWizard((newMembers) => {
-                initializeModal(newMembers);
+            // Wait until the toolbar had the chance to import a saved team list.
+            dtWhenMigrationSettled(() => {
+                const imported = getStoredMembers();
+                if (imported && imported.length) { initializeModal(imported); return; }
+                showMemberSetupWizard((newMembers) => {
+                    initializeModal(newMembers);
+                });
             });
         } else {
             initializeModal(members);
@@ -11070,6 +11417,9 @@ Thank you for your cooperation.` : '';
 
     const registerURLListEditor = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('netskopeUrlListManager')) return function register() {};
 
     console.log('🔧 Netskope URL List Manager v1.6.1 loading...');
 
@@ -14729,9 +15079,12 @@ Version 1.4.1:
         isInitialized = true;
 
         // Show host setup on first run (non-blocking — modal triggers on toolbar click too)
-        if (!areTenantHostsConfigured()) {
-            showTenantHostSetup(() => console.log('✅ Tenant hosts configured.'));
-        }
+        // Waits until the toolbar had the chance to import saved hosts.
+        dtWhenMigrationSettled(() => {
+            if (!areTenantHostsConfigured()) {
+                showTenantHostSetup(() => console.log('✅ Tenant hosts configured.'));
+            }
+        });
 
         initializeModal();
         console.log('✅ Netskope URL List Manager initialized!');
@@ -14750,6 +15103,9 @@ Version 1.4.1:
 
     const registerServiceNowRowHighlighter = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('rowHighlighter')) return function register() {};
 
     console.log('🎨 ServiceNow Row Highlighter loading...');
 
@@ -16966,8 +17322,10 @@ Version 2.3.1:
 
         // Show first-run prompt if no username is stored
         if (!targetUsername) {
-            // Small delay so the page has started rendering
-            setTimeout(() => showFirstRunPrompt(), 800);
+            // Waits until the toolbar had the chance to import a saved username.
+            dtWhenMigrationSettled(() => {
+                if (!getStoredUsername()) setTimeout(() => showFirstRunPrompt(), 800);
+            });
         } else {
             // Start highlighting if username is set
             setTimeout(() => {
@@ -17213,6 +17571,9 @@ Version 2.3.1:
 
     const registerServiceNowTicketHistory = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('changeTracker')) return function register() {};
 
     console.log('📝 Change Tracker loading...');
 
@@ -20802,11 +21163,14 @@ Version 1.4.3:
         sidebar.appendChild(closeBtn);
 
         // ── Title ────────────────────────────────────────────────
-        sidebar.appendChild(
-            css(Object.assign(mk('div'), { textContent:'✏️ Change Tracker' }), {
-                fontSize:'16px', fontWeight:'bold', color:'#333', marginBottom:'4px', paddingRight:'30px'
-            })
-        );
+        const ctTitle = css(Object.assign(mk('div'), { textContent:'✏️ Change Tracker' }), {
+            fontSize:'16px', fontWeight:'bold', color:'#333', marginBottom:'4px', paddingRight:'30px'
+        });
+        ctTitle.appendChild(css(Object.assign(mk('span'), { textContent:'BETA', title:'Change Tracker is in testing' }), {
+            display:'inline-block', marginLeft:'8px', padding:'1px 7px', borderRadius:'8px', background:'#ff8c00',
+            color:'#fff', fontSize:'10px', fontWeight:'bold', letterSpacing:'.5px', verticalAlign:'middle'
+        }));
+        sidebar.appendChild(ctTitle);
 
         // ── Version row ──────────────────────────────────────────
         const verRow = css(mk('div'), { display:'flex', alignItems:'center', fontSize:'11px', color:'#999', marginBottom:'8px', paddingRight:'30px', flexWrap:'wrap' });
@@ -21715,7 +22079,8 @@ Version 1.4.3:
                     body.appendChild(p);
                     bullets(body, [
                         'Pick the change type, fill in its fields, then click "+ Add Entry" (Ctrl+Enter also works).',
-                        'Every entry is saved to the shared team log, so anyone opening this ticket sees the same history.'
+                        'Every entry is saved to the shared team log, so anyone opening this ticket sees the same history.',
+                        'Change Tracker is in beta. It is turned on in the toolbar Settings, under Tools, with an activation code from your administrator.'
                     ]);
                 }
             },
@@ -22486,7 +22851,7 @@ Version 1.4.3:
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Change Tracker', position: 7 }
+                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Change Tracker (Beta)', position: 7 }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
@@ -22496,6 +22861,9 @@ Version 1.4.3:
 
     const registerDomainTools = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('domainTools')) return function register() {};
 
     /* ==========================================================
      *  VERSION CONTROL
@@ -23815,6 +24183,9 @@ Version 1.0:
     const registerNetskopePolicyDeletionScheduler = (() => {
         'use strict';
 
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('policyDeletionReminder')) return function register() {};
+
     console.log('🗑️ Policy Deletion Reminder loading...');
 
     /* ==========================================================
@@ -24818,6 +25189,9 @@ Version 0.9.1:
 
     const registerNetskopePolicyToolkit = (() => {
         'use strict';
+
+    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
+    if (!isToolEnabled('nsDlpToolkit')) return function register() {};
 
     // This body runs as soon as the suite loads (document start), because the steering
     // request sniffer must be in place before the Netskope console makes its first calls.
@@ -31312,9 +31686,10 @@ Version 1.16:
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
-        if (!GM_getValue('toolkit_username', '')) {
-            setTimeout(() => showUsernamePromptModal(), 800);
-        }
+        // Waits until the toolbar had the chance to import a saved name.
+        dtWhenMigrationSettled(() => {
+            if (!GM_getValue('toolkit_username', '')) setTimeout(() => showUsernamePromptModal(), 800);
+        });
 
         console.log('✅ NS Policies Toolkit v' + SCRIPT_VERSION + ' ready');
     }
