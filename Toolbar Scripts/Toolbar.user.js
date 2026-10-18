@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.18.1
+// @version      1.18.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.18.1';
-    const CHANGELOG = `Version 1.18.1:
+   const SCRIPT_VERSION = '1.18.2';
+    const CHANGELOG = `Version 1.18.2:
+- Each tool appears again only on the pages it was made for, as with the separate scripts: Ticket Assignment, Change Tracker and Domain Tools on tickets and the ServiceNow dashboard, Mini Summary and URL List Editor on tickets, Row Highlighter, ServiceNow Toolkit and Enhancement Request Logger on any ServiceNow page.
+- The floating toolbar no longer appears on every website, only on ServiceNow and Netskope. The ticket number button of General Toolkit still works on any site.
+
+Version 1.18.1:
 - Importing from your old scripts now finds every tool you had on any ServiceNow page, not only on ticket pages. Ticket Assignment, URL List Editor, Change Tracker, Mini Summary and Domain Tools were missed before.
 - First setups that open by themselves (Ticket Assignment team members, URL List Editor tenant hosts, Row Highlighter username, NS Policies Toolkit name) now wait until your data could be imported, so they no longer ask for things you already set up.
 - Import from old scripts in Settings can now replace a setup you typed by hand in the toolbar, and says so before importing.
@@ -541,32 +545,33 @@ Version 1.0.0:
 
     // Which tool owns each stored key: a key belongs to a tool when it equals one of its
     // exact keys or starts with one of its prefixes. setupKeys mark a tool as "set up".
+    // pages are the @match rules of the tool's old separate script: it only runs there.
     const DATA_REGISTRY = [
-        { id: 'toolbar', name: 'Toolbar', site: 'all', script: '|| Tools Toolbar ||',
+        { id: 'toolbar', pages: ['https://*.netskope.com/*', 'https://*.goskope.com/*', 'https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'Toolbar', site: 'all', script: '|| Tools Toolbar ||',
           exact: ['compact-mode', 'auto-close', 'show-tooltips', 'button-size', 'tool-size',
                   'animation-speed', 'menu-gap', 'show-labels', 'label-position'],
           prefixes: ['toolbar-', 'toolbarSuite'] },
-        { id: 'ticketQuickOpen', name: 'General Toolkit', description: 'Open any ticket or case number you select', site: 'all', script: '|Toolbar| General Toolkit',
+        { id: 'ticketQuickOpen', pages: ['*://*/*'], name: 'General Toolkit', description: 'Open any ticket or case number you select', site: 'all', script: '|Toolbar| General Toolkit',
           exact: [], prefixes: ['tqo_'] },
-        { id: 'domainTools', name: 'Domain Tools', description: 'Extract domains from tickets and check their reputation', site: 'servicenow', script: '|Toolbar| Domain Tools',
+        { id: 'domainTools', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Domain Tools', description: 'Extract domains from tickets and check their reputation', site: 'servicenow', script: '|Toolbar| Domain Tools',
           exact: [], prefixes: ['domainTools'] },
-        { id: 'enhancementRequestLogger', name: 'Enhancement Request Logger', description: 'Open a pre filled enhancement request form', site: 'servicenow',
+        { id: 'enhancementRequestLogger', pages: ['https://*.service-now.com/*'], name: 'Enhancement Request Logger', description: 'Open a pre filled enhancement request form', site: 'servicenow',
           script: '|Toolbar| Enhancement Request Logger', exact: [], prefixes: ['erl'] },
-        { id: 'miniSummary', name: 'Mini Summary Sidebar', description: 'Key ticket fields at a glance', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
+        { id: 'miniSummary', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Mini Summary Sidebar', description: 'Key ticket fields at a glance', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
           exact: [], prefixes: ['miniSummarySidebar'] },
-        { id: 'rowHighlighter', name: 'Row Highlighter', description: 'Highlight list rows updated by you, with SLA colors', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
+        { id: 'rowHighlighter', pages: ['https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'Row Highlighter', description: 'Highlight list rows updated by you, with SLA colors', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
           exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
-        { id: 'changeTracker', name: 'Change Tracker', description: 'Shared change log per ticket, written to the ticket', beta: true, locked: true, site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
+        { id: 'changeTracker', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Change Tracker', description: 'Shared change log per ticket, written to the ticket', beta: true, locked: true, site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
           exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerWorkerUrl', 'changeTrackerToken'] },
-        { id: 'serviceNowToolkit', name: 'ServiceNow Toolkit', description: 'Draft autosave and SCTASK auto open', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
+        { id: 'serviceNowToolkit', pages: ['https://*.service-now.com/*'], name: 'ServiceNow Toolkit', description: 'Draft autosave and SCTASK auto open', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
-        { id: 'ticketAssignment', name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
+        { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
-        { id: 'netskopeUrlListManager', name: 'URL List Editor', description: 'Create and update Netskope URL lists from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+        { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'URL List Editor', description: 'Create and update Netskope URL lists from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
-        { id: 'policyDeletionReminder', name: 'Policy Deletion Reminder', description: 'Register a reminder to delete a temporary policy', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
+        { id: 'policyDeletionReminder', pages: ['https://*.goskope.com/*'], name: 'Policy Deletion Reminder', description: 'Register a reminder to delete a temporary policy', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
           exact: [], prefixes: ['pdr'] },
-        { id: 'nsDlpToolkit', name: 'NS Policies Toolkit', description: 'Copy and open buttons, logs and steering exception tools', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
+        { id: 'nsDlpToolkit', pages: ['https://*.goskope.com/*'], name: 'NS Policies Toolkit', description: 'Copy and open buttons, logs and steering exception tools', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
           exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
     ];
 
@@ -683,6 +688,16 @@ Version 1.0.0:
             return true;
         }
         return false;
+    }
+
+    // Tampermonkey style @match test against this page, so every tool keeps the pages it had.
+    function dtPageMatches(patterns) {
+        const url = location.href;
+        return patterns.some(p => new RegExp('^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(url));
+    }
+    function dtToolRunsHere(id) {
+        const tool = dtTool(id);
+        return !!tool && dtPageMatches(tool.pages);
     }
 
     // Does a tool run? Each tool section asks this before doing anything.
@@ -3540,8 +3555,8 @@ Version 1.0.0:
     const registerGeneralToolkit = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('ticketQuickOpen')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('ticketQuickOpen') || !dtToolRunsHere('ticketQuickOpen')) return function register() {};
 
     // ─────────────────────────────────────────────────────────────
     // VERSION CONTROL
@@ -4733,8 +4748,8 @@ Version 1.2:
     const registerServiceNowToolkit = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('serviceNowToolkit')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('serviceNowToolkit') || !dtToolRunsHere('serviceNowToolkit')) return function register() {};
 
     console.log('🛠️ ServiceNow Toolkit loading...');
 
@@ -6413,8 +6428,8 @@ Version 1.1.4:
     const registerMiniSummarySidebar = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('miniSummary')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('miniSummary') || !dtToolRunsHere('miniSummary')) return function register() {};
 
     console.log('📊 Mini Summary Sidebar loading...');
 
@@ -7871,8 +7886,8 @@ Version 1.0.2:
     const registerEnhancementRequestLogger = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('enhancementRequestLogger')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('enhancementRequestLogger') || !dtToolRunsHere('enhancementRequestLogger')) return function register() {};
 
     console.log('📋 Enhancement Request Logger loading...');
 
@@ -8890,8 +8905,8 @@ Version 1.1.1:
     const registerTicketAssignmentTool = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('ticketAssignment')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('ticketAssignment') || !dtToolRunsHere('ticketAssignment')) return function register() {};
 
 
     console.log('🎫 ServiceNow Ticket Assignment Tool loading...');
@@ -11418,8 +11433,8 @@ Thank you for your cooperation.` : '';
     const registerURLListEditor = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('netskopeUrlListManager')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('netskopeUrlListManager') || !dtToolRunsHere('netskopeUrlListManager')) return function register() {};
 
     console.log('🔧 Netskope URL List Manager v1.6.1 loading...');
 
@@ -15104,8 +15119,8 @@ Version 1.4.1:
     const registerServiceNowRowHighlighter = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('rowHighlighter')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('rowHighlighter') || !dtToolRunsHere('rowHighlighter')) return function register() {};
 
     console.log('🎨 ServiceNow Row Highlighter loading...');
 
@@ -17572,8 +17587,8 @@ Version 2.3.1:
     const registerServiceNowTicketHistory = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('changeTracker')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('changeTracker') || !dtToolRunsHere('changeTracker')) return function register() {};
 
     console.log('📝 Change Tracker loading...');
 
@@ -22862,8 +22877,8 @@ Version 1.4.3:
     const registerDomainTools = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('domainTools')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('domainTools') || !dtToolRunsHere('domainTools')) return function register() {};
 
     /* ==========================================================
      *  VERSION CONTROL
@@ -24183,8 +24198,8 @@ Version 1.0:
     const registerNetskopePolicyDeletionScheduler = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('policyDeletionReminder')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('policyDeletionReminder') || !dtToolRunsHere('policyDeletionReminder')) return function register() {};
 
     console.log('🗑️ Policy Deletion Reminder loading...');
 
@@ -25190,8 +25205,8 @@ Version 0.9.1:
     const registerNetskopePolicyToolkit = (() => {
         'use strict';
 
-    // Turned off in Settings > Tools (or not chosen yet): this tool does nothing at all.
-    if (!isToolEnabled('nsDlpToolkit')) return function register() {};
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+    if (!isToolEnabled('nsDlpToolkit') || !dtToolRunsHere('nsDlpToolkit')) return function register() {};
 
     // This body runs as soon as the suite loads (document start), because the steering
     // request sniffer must be in place before the Netskope console makes its first calls.
@@ -31726,11 +31741,23 @@ Version 1.16:
         }
         dtAutoMigrate();
     }
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() { initToolbar(); doRegisterAllTools(); });
-    } else {
-        initToolbar();
+    // The floating toolbar only shows on ServiceNow and Netskope, like the old Toolbar script.
+    // Elsewhere only General Toolkit runs (its ticket number button works on any site).
+    function startSuite() {
+        if (dtToolRunsHere('toolbar')) initToolbar();
+        else if (!document.getElementById('custom-toolbar-suite-marker')) {
+            // Tells the old separate scripts that the suite is installed, so they stay quiet.
+            const marker = document.createElement('div');
+            marker.id = 'custom-toolbar-suite-marker';
+            marker.style.display = 'none';
+            document.body.appendChild(marker);
+        }
         doRegisterAllTools();
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', startSuite);
+    } else {
+        startSuite();
     }
 
 })();
