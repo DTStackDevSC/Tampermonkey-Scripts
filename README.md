@@ -6,16 +6,32 @@ Scripts are split into two categories: standalone scripts that run independently
 
 ---
 
-## Standalone Scripts
+## Ticket Helpers Suite
 
-| Script | Description |
-|---|---|
-| `ServiceNowTicketResponseHelper.js` | Dropdown of configurable response templates for populating ticket comment and work note fields. |
-| `ServiceNowShortDescriptionHelper.js` | Form-based generator for standardised short description fields with team-specific presets. |
-| `ServiceNowFormattedTextHelper.js` | Rich text formatting helper for ServiceNow comment and journal fields. |
-| `ServiceNowSLAAlertBanner.js` | Injects a visible alert banner on tickets when an SLA breach is approaching. |
-| `NetskopePolicyNameHelper.js` | Standardised policy name builder with support for saving custom presets. |
-| `NetskopeTicketSubjectHelper.js` | Generates standardised subject lines for Netskope tickets. |
+`ServiceNowShortDescriptionHelper.user.js` is the **Ticket Helpers Suite** (it appears in Tampermonkey as "Short Description Helper"): one script with every ticket helper. Each helper only runs on its own pages, and you choose which ones you want.
+
+| Helper | Pages | Description |
+|---|---|---|
+| Short Description Helper | ServiceNow tickets | Builds and updates the short description in the team format, with tenant detection. |
+| Ticket Response Helper | ServiceNow tickets and SCTASKs | Inserts team response templates, with @mentions, pinned and custom responses. |
+| Formatted Text Helper | ServiceNow tickets | Rich text editor for comments and work notes. |
+| SLA Alert Banner | ServiceNow tickets | Colored banner when the SLA due date is close. |
+| Policy Naming Helper | Netskope tenant | Builds policy names in the team format, with presets. |
+| Ticket Subject Helper | Netskope support portal | Builds the subject line of Netskope support cases. |
+
+The **⚙ Suite** button next to Help in every helper (and **⚙ Ticket Helpers settings** in the Tampermonkey menu) opens the shared settings: tools, team, tenant URLs and backups. The other script files are kept only so existing installs can hand their saved data to the suite.
+
+## Moving to the Ticket Helpers Suite
+
+**If you have the Short Description Helper installed**
+1. Let Tampermonkey update it (or use "Check for userscript updates"). Tampermonkey may open a tab to confirm the update, because the script now also runs on Netskope pages: click **Update**. Do the same for the other helper scripts if tabs open for them.
+2. Open a ServiceNow ticket. When asked "Bring your data into Ticket Helpers", click **Import**, then **Reload now**. Then tick your helpers in "Choose your tools" and click **Save**.
+3. If you used the Policy Naming Helper, open a Netskope tenant; if you used the Ticket Subject Helper, open the Netskope support portal. Import there too.
+4. When everything works, uninstall the old helper scripts that show version 99.0.0.
+
+Do not uninstall the old scripts before importing: their saved data is deleted with them.
+
+**If you did not have the Short Description Helper:** install it from the script installer page (it is the Ticket Helpers Suite), then follow steps 2 to 4.
 
 ### Configuration Editors
 
@@ -24,6 +40,8 @@ The `Helpers/` subfolder contains PyQt5-based GUI editors for modifying the team
 - `ServiceNowTicketResponseHelper_Editor.py`
 - `ServiceNowShortDescriptionHelper_Editor.py`
 - `NetskopePolicyNameHelper_Editor.py`
+
+These editors were written for the separate scripts. They will be updated to work on the Ticket Helpers Suite file; until then, edit the team blocks in the suite by hand.
 
 ---
 
