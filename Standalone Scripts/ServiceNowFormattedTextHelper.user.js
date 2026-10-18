@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.2.5
+// @version      1.2.6
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.5';
-    const CHANGELOG = `Version 1.2.5:
+    const SCRIPT_VERSION = '1.2.6';
+    const CHANGELOG = `Version 1.2.6:
+- Safer pasting: content pasted from other pages can no longer run code in ServiceNow, and links or images with unsafe addresses are removed. Only web (http and https) and email links are kept.
+
+Version 1.2.5:
 - The Feature Guide is now visual: it shows the editor with its tool rows, the color palettes, the link, image and table windows, the insert choices and the preview as they look on screen.
 
 Version 1.2.4:
@@ -569,7 +572,7 @@ Version 1.0.3:
         // Live-update preview on URL input / size change
         function updatePreview() {
             const url = urlInput.value.trim();
-            if (url) {
+            if (url && safeUrl(url, false)) {
                 previewImg.src = url;
                 previewImg.style.width = sizeSelect.value + '%';
                 previewImg.style.display = 'block';
@@ -636,7 +639,7 @@ Version 1.0.3:
             const url  = urlInput.value.trim();
             const size = sizeSelect.value;
 
-            if (!url) {
+            if (!url || !safeUrl(url, false)) {
                 urlInput.style.borderColor = '#dc3545';
                 urlInput.style.boxShadow  = '0 0 0 0.2rem rgba(220,53,69,0.25)';
                 urlInput.focus();
@@ -801,7 +804,7 @@ Version 1.0.3:
         insertBtn.onmouseout  = () => insertBtn.style.backgroundColor = '#28a745';
         insertBtn.onclick = () => {
             const url = urlInput.value.trim();
-            if (!url || /^\s*javascript:/i.test(url)) {
+            if (!url || !safeUrl(url, true)) {
                 urlInput.style.borderColor = '#dc3545';
                 urlInput.style.boxShadow  = '0 0 0 0.2rem rgba(220,53,69,0.25)';
                 urlInput.focus();
@@ -2802,10 +2805,24 @@ Version 1.0.3:
      *  HTML CLEANING AND FORMATTING
      * ==========================================================*/
 
+    // Returns the address when it is a safe web link (http, https, or mailto for links), otherwise ''.
+    // Parsing it, instead of checking the text, catches tricks like "java\tscript:".
+    function safeUrl(value, allowMailto) {
+        try {
+            const u = new URL(String(value || '').trim(), location.href);
+            const ok = u.protocol === 'http:' || u.protocol === 'https:' || (allowMailto && u.protocol === 'mailto:');
+            return ok ? u.href : '';
+        } catch (e) { return ''; }
+    }
+
+    // Parses HTML in an inert document, so nothing in it runs while it is cleaned.
+    function parseInert(html) {
+        return new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html').body.firstChild;
+    }
+
     function cleanHTML(html) {
-        // Create a temporary div to parse HTML
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
+        // Parse in an inert document, never in the page
+        const temp = parseInert(html);
 
         // Tags allowed to carry an inline style through to ServiceNow:
         // spans (font size and colors), images (width), and every table part (borders).
@@ -2827,8 +2844,8 @@ Version 1.0.3:
 
             Array.from(el.attributes).forEach(attr => el.removeAttribute(attr.name));
 
-            if (href && tag === 'a')   el.setAttribute('href', href);
-            if (src  && tag === 'img') el.setAttribute('src', src);
+            if (href && tag === 'a' && safeUrl(href, true)) el.setAttribute('href', href);
+            if (src  && tag === 'img' && safeUrl(src, false)) el.setAttribute('src', src);
             if (alt  && tag === 'img') el.setAttribute('alt', alt);
             if (title)                 el.setAttribute('title', title);
             if (style && STYLE_TAGS.includes(tag)) el.setAttribute('style', style);
@@ -2893,8 +2910,8 @@ Version 1.0.3:
     }
 
     function sanitizePastedHTML(html) {
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
+        // Pasted content comes from anywhere: parse it in an inert document so nothing in it runs
+        const temp = parseInert(html);
 
         // Drop dangerous or noise containers entirely
         temp.querySelectorAll('script, style, meta, link, title, head, noscript, iframe, object, embed')
@@ -2918,9 +2935,9 @@ Version 1.0.3:
             Array.from(el.attributes).forEach(attr => {
                 const name = attr.name.toLowerCase();
                 if (name === 'href' && tag === 'A') {
-                    if (/^\s*javascript:/i.test(attr.value)) el.removeAttribute('href');
+                    if (!safeUrl(attr.value, true)) el.removeAttribute('href');
                 } else if (name === 'src' && tag === 'IMG') {
-                    if (/^\s*javascript:/i.test(attr.value)) el.removeAttribute('src');
+                    if (!safeUrl(attr.value, false)) el.removeAttribute('src');
                 } else if (name === 'style' && keepStyle) {
                     const filtered = filterStyle(attr.value);
                     if (filtered) el.setAttribute('style', filtered);
