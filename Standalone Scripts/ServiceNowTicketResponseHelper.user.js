@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowTicketResponseHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      2.21.1
+// @version      2.21.2
 // @description  Insert predefined responses into tickets with team-specific options and automatic name detection with enhanced @ mention support
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -25,8 +25,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.1';
-    const CHANGELOG = `Version 2.21.1:
+    const SCRIPT_VERSION = '2.21.2';
+    const CHANGELOG = `Version 2.21.2:
+- The Feature Guide is now visual: it shows the button, the response list with its sections and colored dots, the pinned and recently used sections, the custom response editor, the footer and every setting as they look on screen. It also explains which field each response goes to, the clipboard paste and the variables you can use in custom responses.
+
+Version 2.21.1:
 - The Feature Guide now also explains pinned and recently used responses, the @mention banner shown while names are added, and the Footer Signature setting.
 
 Version 2.21.0:
@@ -2990,36 +2993,181 @@ Regards.`,
     function showHelpModal() {
         if (document.getElementById('responseHelperHelpModal')) return;
 
-        function addParagraph(body, text) {
+        /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
+         *      the others return an element you place yourself. ---- */
+
+        // lead: the single orienting sentence at the very top of a section.
+        function lead(body, text) {
             const p = document.createElement('p');
             p.textContent = text;
             Object.assign(p.style, {
                 fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
             });
             body.appendChild(p);
         }
 
-        function addBulletList(body, items) {
+        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
+        function bullets(body, items) {
             const ul = document.createElement('div');
-            ul.style.marginBottom = '8px';
+            ul.style.margin = '8px 0 0 0';
             for (const item of items) {
                 const row = document.createElement('div');
                 Object.assign(row.style, {
                     display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5',
-                    fontFamily: 'Arial, sans-serif'
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
                 });
                 const dot = document.createElement('span');
                 dot.textContent = '•';
                 Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = item;
+                const t = document.createElement('span');
+                t.textContent = item;
                 row.appendChild(dot);
-                row.appendChild(text);
+                row.appendChild(t);
                 ul.appendChild(row);
             }
             body.appendChild(ul);
+        }
+
+        // caption: a small italic note placed directly under a visual to explain it.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(c);
+        }
+
+        // span: an inline text node with optional extra styles.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: a small colored rounded label. Use for categories and button previews.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block', lineHeight: '1.4'
+            });
+            return c;
+        }
+
+        // badgeRow: a button preview on the left with a one line description on the right.
+        function badgeRow(body, item) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+            });
+            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px', radius: item.radius });
+            badge.style.flexShrink = '0';
+            if (item.minWidth) { badge.style.minWidth = item.minWidth; badge.style.textAlign = 'center'; }
+            row.appendChild(badge);
+            row.appendChild(span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' }));
+            body.appendChild(row);
+        }
+
+        // kvGrid: a two column key:value grid for field references and named settings.
+        function kvGrid(body, pairs) {
+            const grid = document.createElement('div');
+            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '0 0 6px 0' });
+            for (const [key, val] of pairs) {
+                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
+                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
+            }
+            body.appendChild(grid);
+        }
+
+        // formatBox: a monospace box for a fixed format or a template.
+        function formatBox(body, text) {
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                padding: '9px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                margin: '0 0 8px 0', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: '1.5'
+            });
+            box.textContent = text;
+            body.appendChild(box);
+        }
+
+        // beforeAfter: labelled rows showing how something changes, e.g. Before / After.
+        function beforeAfter(body, rows) {
+            const wrap = document.createElement('div');
+            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+            rows.forEach(([label, text, good], i) => {
+                const row = hrow([
+                    span(label, { fontSize: '10px', fontWeight: 'bold', color: good ? '#2a7d4f' : '#888', textTransform: 'uppercase', width: '62px', flexShrink: '0' }),
+                    span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333', whiteSpace: 'pre-wrap' })
+                ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', alignItems: 'flex-start',
+                     background: good ? '#f2fff7' : '#f8f8ff', borderBottom: i < rows.length - 1 ? '1px solid #e8e8f0' : 'none' });
+                wrap.appendChild(row);
+            });
+            body.appendChild(wrap);
+        }
+
+        // panelMock: a white card that stands in for a panel or window of the script.
+        function panelMock(children, extra) {
+            const p = document.createElement('div');
+            Object.assign(p.style, {
+                border: '1px solid #ccc', borderRadius: '8px', background: '#fff', padding: '10px 12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)', maxWidth: '400px', margin: '0 0 8px 0'
+            }, extra || {});
+            children.forEach(c => p.appendChild(c));
+            return p;
+        }
+
+        // mockField: a labelled input or dropdown as it appears in the real form.
+        function mockField(label, value, opts) {
+            opts = opts || {};
+            const row = hrow([
+                span(label, { fontSize: '11px', fontWeight: 'bold', color: '#555', width: opts.labelWidth || '110px', flexShrink: '0' })
+            ], { margin: '0 0 5px 0', flexWrap: 'nowrap', gap: '8px' });
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                flex: '1', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', minHeight: '16px',
+                background: opts.locked ? '#efefef' : '#fff'
+            });
+            box.appendChild(span(value, { fontSize: '11px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
+            if (opts.caret) box.appendChild(span('▾', { fontSize: '10px', color: '#999' }));
+            row.appendChild(box);
+            return row;
+        }
+
+        // toggle: a ticked or unticked checkbox preview with an optional one line description.
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = span(on ? '✓' : '', {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
+                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+            });
+            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0', flexWrap: 'nowrap' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px', lineHeight: '1.4' }));
+            return wrap;
         }
 
         const sections = [
@@ -3027,388 +3175,175 @@ Regards.`,
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent: (body) => {
-                    addParagraph(body, 'The Ticket Response Helper adds an inline button next to the Short Description field on every ServiceNow ticket. Click it to open a dropdown of predefined response templates for your team.');
-
-                    const btnRow = document.createElement('div');
-                    Object.assign(btnRow.style, {
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        marginBottom: '12px', padding: '10px 14px',
-                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
-                    });
-                    const btnBadge = document.createElement('span');
-                    btnBadge.textContent = '🗣 Quick Response';
-                    Object.assign(btnBadge.style, {
-                        background: '#669bea', color: '#fff', borderRadius: '4px',
-                        padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
-                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
-                    });
-                    const btnDesc = document.createElement('span');
-                    btnDesc.textContent = 'This button appears next to the Short Description field on every ticket. Click it to open the response dropdown.';
-                    Object.assign(btnDesc.style, {
-                        fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                    });
-                    btnRow.appendChild(btnBadge);
-                    btnRow.appendChild(btnDesc);
-                    body.appendChild(btnRow);
-
-                    addBulletList(body, [
-                        'Open any RITM or Incident ticket in ServiceNow.',
-                        'Click the blue "🗣 Quick Response" button next to the Short Description field.',
-                        'Browse sections or use the search box to find a template.',
-                        'Click a template to insert it into the correct field on the ticket immediately.'
+                    lead(body, 'A blue Quick Response button appears next to the Short Description field of every ticket.');
+                    body.appendChild(hrow([
+                        span('Short description', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
+                        span('13-10-2026 | UK | DLP | WIP | ...', { fontSize: '11px', fontFamily: 'monospace', color: '#555', border: '1px solid #ccc', borderRadius: '3px', padding: '3px 8px', background: '#fff' }),
+                        chip('🗣 Quick Response', '#669bea', { fontSize: '12px', padding: '5px 10px' })
+                    ], { gap: '6px', margin: '0 0 6px 0' }));
+                    caption(body, 'Click it to open the list of response templates for your team.');
+                    bullets(body, [
+                        'Pick a template and it is written into the ticket straight away.',
+                        'Works on RITMs and Incidents, opened in a new tab or from the dashboard.'
                     ]);
                 }
             },
             {
-                icon: '📋',
-                title: 'Response Templates',
+                icon: '📂',
+                title: 'The Response List',
                 buildContent: (body) => {
-                    addParagraph(body, 'Templates are grouped into collapsible sections: First contact, Responses, Reminders, Closures, Work Notes Comments, Other, and Custom. Click a section header to expand or collapse it.');
-
-                    addParagraph(body, 'Each template targets a specific ticket field:');
-
-                    const fieldTypes = [
-                        {
-                            bg: '#0066cc', label: 'Comments',
-                            desc: 'Customer-facing. The requester can see these. Use for replies, updates, and requests directed at the person who opened the ticket.'
-                        },
-                        {
-                            bg: '#5a6672', label: 'Work Notes',
-                            desc: 'Internal only. Visible to your team but not the requester. Use for handover notes, investigation logs, and internal status updates.'
-                        }
-                    ];
-                    for (const ft of fieldTypes) {
-                        const row = document.createElement('div');
-                        Object.assign(row.style, {
-                            display: 'flex', gap: '10px', alignItems: 'flex-start',
-                            marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
-                        });
-                        const badge = document.createElement('span');
-                        badge.textContent = ft.label;
-                        Object.assign(badge.style, {
-                            background: ft.bg, color: '#fff', borderRadius: '4px',
-                            padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
-                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
-                            alignSelf: 'flex-start', minWidth: '80px', textAlign: 'center'
-                        });
-                        const descEl = document.createElement('span');
-                        descEl.textContent = ft.desc;
-                        Object.assign(descEl.style, {
-                            fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                        });
-                        row.appendChild(badge);
-                        row.appendChild(descEl);
-                        body.appendChild(row);
-                    }
-
-                    addParagraph(body, 'Some templates have sub-options: hover over the item to reveal a flyout menu with variants. Click any variant to insert it.');
-
-                    addParagraph(body, 'Inserting a response also updates the status in the short description to match it. Work note templates leave the status unchanged.');
-
-                    const statusWrap = document.createElement('div');
-                    Object.assign(statusWrap.style, { marginBottom: '8px', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
-                    const statusRows = [
-                        { label: 'Before', bg: '#f8f8ff', labelColor: '#888',    text: '01-10-2026 | MF | Product | WIP | ...' },
-                        { label: 'After',  bg: '#f2fff7', labelColor: '#2a7d4f', text: '13-10-2026 | MF | Product | Closed | ...' }
-                    ];
-                    for (const r of statusRows) {
-                        const row = document.createElement('div');
-                        Object.assign(row.style, {
-                            display: 'flex', alignItems: 'baseline', gap: '10px',
-                            padding: '7px 12px', background: r.bg,
-                            borderBottom: r.label === 'Before' ? '1px solid #e8e8f0' : 'none'
-                        });
-                        const labelEl = document.createElement('span');
-                        labelEl.textContent = r.label;
-                        Object.assign(labelEl.style, {
-                            fontSize: '10px', fontWeight: 'bold', color: r.labelColor,
-                            textTransform: 'uppercase', whiteSpace: 'nowrap',
-                            width: '42px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
-                        });
-                        const textEl = document.createElement('span');
-                        textEl.textContent = r.text;
-                        Object.assign(textEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#333' });
-                        row.appendChild(labelEl);
-                        row.appendChild(textEl);
-                        statusWrap.appendChild(row);
-                    }
-                    body.appendChild(statusWrap);
-
-                    const statusPairs = [
-                        ['Waiting Requester', 'Contact, information requests, reminders, bypasses and configuration changes'],
-                        ['WIP',               '"Working on the request" reminder and SOC Tier 2 task request'],
-                        ['Waiting Vendor',    'Vendor case, recategorization and IDEA requests'],
-                        ['Waiting SPM',       'SPM request loaded'],
-                        ['Closed',            'Solved, Timeout and End User closures']
-                    ];
-                    const statusGrid = document.createElement('div');
-                    Object.assign(statusGrid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
-                    for (const [key, val] of statusPairs) {
-                        const keyEl = document.createElement('span');
-                        keyEl.textContent = key;
-                        Object.assign(keyEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0' });
-                        const valEl = document.createElement('span');
-                        valEl.textContent = val;
-                        Object.assign(valEl.style, { fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
-                        statusGrid.appendChild(keyEl);
-                        statusGrid.appendChild(valEl);
-                    }
-                    body.appendChild(statusGrid);
+                    lead(body, 'Templates are grouped in sections. Type in the search box to filter all of them at once.');
+                    const item = (label, color, extra) => hrow([
+                        span(label, { fontSize: '12px', color: '#000' }),
+                        hrow([
+                            extra ? span(extra, { fontSize: '11px', color: '#999' }) : span(''),
+                            span('', { width: '7px', height: '7px', borderRadius: '50%', background: color, display: 'inline-block' }),
+                            span('📌', { fontSize: '11px', opacity: '0.25' })
+                        ], { gap: '6px', margin: '0', flexWrap: 'nowrap' })
+                    ], { justifyContent: 'space-between', flexWrap: 'nowrap', padding: '6px 12px', margin: '0', borderBottom: '1px solid #f0f0f0' });
+                    const head = (t, bg) => span(t, { display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#555', background: bg, padding: '5px 12px', textTransform: 'uppercase', letterSpacing: '.7px', borderTop: '1px solid #d4d8de', borderBottom: '2px solid #d4d8de' });
+                    const list = document.createElement('div');
+                    Object.assign(list.style, { border: '1px solid #ccc', borderRadius: '6px', overflow: 'hidden', maxWidth: '400px', background: '#fff', margin: '0 0 8px 0' });
+                    list.appendChild(hrow([
+                        span('Team: EMEA Team • v2.21', { fontSize: '10px', color: '#888' }),
+                        chip('⚙ Settings', 'transparent', { color: '#555', border: '1px solid #ccc', fontSize: '10px' }),
+                        chip('? Help', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0', fontSize: '10px' })
+                    ], { padding: '6px 12px', margin: '0', gap: '6px', background: '#f8f9fa' }));
+                    list.appendChild(span('Filter templates…', { display: 'block', fontSize: '11px', color: '#aaa', fontStyle: 'italic', border: '1px solid #d0d0d0', borderRadius: '4px', padding: '4px 8px', margin: '6px 12px' }));
+                    list.appendChild(head('First contact ▼', '#f1f3f5'));
+                    list.appendChild(item('Initial Contact', '#17a2b8'));
+                    list.appendChild(head('Responses ▼', '#f1f3f5'));
+                    list.appendChild(item('SSL/Domain/App Bypass', '#17a2b8', '❯'));
+                    list.appendChild(head('Work Notes Comments ▼', '#f1f3f5'));
+                    list.appendChild(item('# URL Check', '#ffc107'));
+                    body.appendChild(list);
+                    bullets(body, [
+                        'Click a section header to fold or unfold it.',
+                        'Templates with ❯ open a side menu with their variants when you point at them.',
+                        'Sections: First contact, Responses, Reminders, Closures, Work Notes Comments, Other and Custom.'
+                    ]);
                 }
             },
             {
-                icon: '🔍',
-                title: 'Search',
+                icon: '🎯',
+                title: 'Where a Response Goes',
                 buildContent: (body) => {
-                    addParagraph(body, 'A search box at the top of the dropdown filters all templates across all sections in real time:');
-
-                    const searchBox = document.createElement('div');
-                    Object.assign(searchBox.style, {
-                        display: 'flex', alignItems: 'center', gap: '6px',
-                        padding: '6px 10px', border: '1px solid #ccc', borderRadius: '4px',
-                        background: '#fff', marginBottom: '12px', maxWidth: '260px'
-                    });
-                    const searchIcon = document.createElement('span');
-                    searchIcon.textContent = '🔍';
-                    searchIcon.style.fontSize = '12px';
-                    const searchPlaceholder = document.createElement('span');
-                    searchPlaceholder.textContent = 'Search responses...';
-                    Object.assign(searchPlaceholder.style, {
-                        fontSize: '12px', color: '#bbb', fontFamily: 'Arial, sans-serif', fontStyle: 'italic'
-                    });
-                    searchBox.appendChild(searchIcon);
-                    searchBox.appendChild(searchPlaceholder);
-                    body.appendChild(searchBox);
-
-                    addBulletList(body, [
-                        'Type any word from a template label to narrow the list instantly.',
-                        'The search works across all sections and flyout sub-options.',
-                        'Clear the search box to return to the full grouped list.'
-                    ]);
+                    lead(body, 'Each template goes to the customer comments or to the internal work notes.');
+                    const dot = (c) => span('', { width: '9px', height: '9px', borderRadius: '50%', background: c, display: 'inline-block' });
+                    body.appendChild(hrow([ dot('#17a2b8'), chip('Additional comments', '#0066cc'), span('Customer facing: the requester sees it.', { fontSize: '12px', color: '#555' }) ], { margin: '0 0 6px 0', gap: '8px' }));
+                    body.appendChild(hrow([ dot('#ffc107'), chip('Work Notes', '#5a6672'), span('Internal only: your team sees it.', { fontSize: '12px', color: '#555' }) ], { margin: '0 0 6px 0', gap: '8px' }));
+                    caption(body, 'The colored dot beside each template shows its target. Dots appear when the ticket shows both fields.');
                 }
             },
             {
                 icon: '📌',
                 title: 'Pinned and Recently Used',
                 buildContent: (body) => {
-                    addParagraph(body, 'Two extra sections can appear at the top of the dropdown so your most used templates are always one click away:');
-
-                    const mockList = document.createElement('div');
-                    Object.assign(mockList.style, {
-                        border: '1px solid #d4d8de', borderRadius: '6px', overflow: 'hidden',
-                        marginBottom: '10px', maxWidth: '340px', background: '#fff'
-                    });
-                    const mockRows = [
-                        { header: true, text: '📌 Pinned', bg: '#eef0ff' },
-                        { text: 'SSL Bypass', pin: true },
-                        { header: true, text: '⏱ Recently Used', bg: '#fff8e1' },
-                        { text: 'Initial Contact', pin: false },
-                        { text: 'First Reminder', pin: false }
-                    ];
-                    for (const r of mockRows) {
-                        const row = document.createElement('div');
-                        if (r.header) {
-                            row.textContent = r.text;
-                            Object.assign(row.style, {
-                                padding: '6px 12px', fontSize: '10px', fontWeight: 'bold', color: '#555',
-                                background: r.bg, textTransform: 'uppercase', letterSpacing: '0.7px',
-                                borderTop: '1px solid #d4d8de', borderBottom: '2px solid #d4d8de',
-                                fontFamily: 'Arial, sans-serif'
-                            });
-                        } else {
-                            Object.assign(row.style, {
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                padding: '6px 12px', fontSize: '12px', color: '#333',
-                                borderBottom: '1px solid #f0f0f0', fontFamily: 'Arial, sans-serif'
-                            });
-                            const label = document.createElement('span');
-                            label.textContent = r.text;
-                            const pin = document.createElement('span');
-                            pin.textContent = '📌';
-                            pin.style.opacity = r.pin ? '1' : '0.25';
-                            row.appendChild(label);
-                            row.appendChild(pin);
-                        }
-                        mockList.appendChild(row);
-                    }
-                    body.appendChild(mockList);
-
-                    addBulletList(body, [
-                        'Click the faded 📌 next to any template to pin it. Click it again to unpin.',
-                        'Pinned templates still appear in their own section too. Pinned parents keep their flyout of variants.',
-                        'Recently Used always shows the last 3 templates you inserted.'
+                    lead(body, 'Two sections can appear at the top so your favourite templates are one click away.');
+                    const row = (label, pinned) => hrow([ span(label, { fontSize: '12px', color: '#000' }), span('📌', { fontSize: '11px', opacity: pinned ? '1' : '0.25' }) ],
+                        { justifyContent: 'space-between', padding: '6px 12px', margin: '0', borderBottom: '1px solid #f0f0f0', flexWrap: 'nowrap' });
+                    const head = (t, bg) => span(t, { display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#555', background: bg, padding: '5px 12px', textTransform: 'uppercase', letterSpacing: '.7px' });
+                    const list = document.createElement('div');
+                    Object.assign(list.style, { border: '1px solid #d4d8de', borderRadius: '6px', overflow: 'hidden', maxWidth: '340px', background: '#fff', margin: '0 0 6px 0' });
+                    list.append(head('📌 Pinned', '#eef0ff'), row('SSL Bypass', true), head('⏱ Recently Used', '#fff8e1'), row('Initial Contact', false), row('First Reminder', false));
+                    body.appendChild(list);
+                    bullets(body, [
+                        'Click the faded 📌 of a template to pin it, click again to unpin. Pinned parents keep their variants.',
+                        'Recently Used always shows your last 3 templates.'
                     ]);
                 }
             },
             {
-                icon: '👤',
-                title: 'Name Detection',
+                icon: '🏷️',
+                title: 'Status in the Short Description',
                 buildContent: (body) => {
-                    addParagraph(body, 'Templates can include the requester\'s first name. When you insert a template the script reads the "Opened by" field and substitutes the name automatically:');
-
-                    const exampleWrap = document.createElement('div');
-                    Object.assign(exampleWrap.style, {
-                        marginBottom: '12px', borderRadius: '6px',
-                        border: '1px solid #d0d0f0', overflow: 'hidden'
-                    });
-                    const exRows = [
-                        { label: 'Template', bg: '#f8f8ff', color: '#888', text: 'Hello [Name], thank you for contacting us.' },
-                        { label: 'Inserted',  bg: '#f2fff7', color: '#2a7d4f', text: 'Hello Jane, thank you for contacting us.' }
-                    ];
-                    for (const exRow of exRows) {
-                        const row = document.createElement('div');
-                        Object.assign(row.style, {
-                            display: 'flex', alignItems: 'baseline', gap: '10px',
-                            padding: '7px 12px', background: exRow.bg,
-                            borderBottom: exRow.label === 'Template' ? '1px solid #e8e8f0' : 'none'
-                        });
-                        const labelEl = document.createElement('span');
-                        labelEl.textContent = exRow.label;
-                        Object.assign(labelEl.style, {
-                            fontSize: '10px', fontWeight: 'bold', color: exRow.color,
-                            textTransform: 'uppercase', whiteSpace: 'nowrap',
-                            width: '55px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
-                        });
-                        const textEl = document.createElement('span');
-                        textEl.textContent = exRow.text;
-                        Object.assign(textEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#333' });
-                        row.appendChild(labelEl);
-                        row.appendChild(textEl);
-                        exampleWrap.appendChild(row);
-                    }
-                    body.appendChild(exampleWrap);
-
-                    addParagraph(body, 'Where a template mentions the requester, the name is turned into a real ServiceNow @mention. While the mentions are added, a dark banner is shown at the top of the page:');
-
-                    const mentionBar = document.createElement('div');
-                    Object.assign(mentionBar.style, {
-                        display: 'inline-flex', alignItems: 'center', gap: '8px',
-                        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)', color: '#fff', borderRadius: '8px',
-                        border: '1px solid rgba(102,126,234,0.55)', padding: '8px 14px', fontSize: '12px', marginBottom: '10px',
-                        fontFamily: 'Arial, sans-serif'
-                    });
-                    const mText = document.createElement('span');
-                    mText.textContent = 'Inserting @mention (1 of 2)';
-                    const mField = document.createElement('span');
-                    mField.textContent = '→ Comments';
-                    mField.style.color = '#67e8f9';
-                    const mStop = document.createElement('span');
-                    mStop.textContent = '⛔ do not click';
-                    Object.assign(mStop.style, { color: '#fca5a5', fontSize: '11px' });
-                    mentionBar.appendChild(mText);
-                    mentionBar.appendChild(mField);
-                    mentionBar.appendChild(mStop);
-                    body.appendChild(mentionBar);
-
-                    addBulletList(body, [
-                        'Do not click or type while the banner is shown. It disappears on its own when every mention is in place.',
-                        'Name detection works in both the classic (new tab) and Polaris (dashboard) ticket views.',
-                        'If the name cannot be read from the ticket, the placeholder "[Name]" stays in the inserted text so you can fill it in before saving.'
+                    lead(body, 'Inserting a response also sets the matching status in the short description.');
+                    beforeAfter(body, [
+                        ['Before', '01-10-2026 | MF | Product | WIP | ...', false],
+                        ['After', '13-10-2026 | MF | Product | Closed | ...', true]
                     ]);
+                    kvGrid(body, [
+                        ['Waiting Requester', 'Contact, information requests, reminders, bypasses and changes'],
+                        ['WIP', '"Working on the request" reminder and SOC Tier 2 task request'],
+                        ['Waiting Vendor', 'Vendor case, recategorization and IDEA requests'],
+                        ['Waiting SPM', 'SPM request loaded'],
+                        ['Closed', 'Solved, Timeout and End User closures']
+                    ]);
+                    caption(body, 'Work note templates leave the status as it is. The date updates too when that setting is on.');
+                }
+            },
+            {
+                icon: '👤',
+                title: 'Names and @Mentions',
+                buildContent: (body) => {
+                    lead(body, 'Templates greet the requester by name, read from the Opened by field, and @mention them.');
+                    beforeAfter(body, [
+                        ['Template', 'Hi @[Name], our team has taken ownership...', false],
+                        ['Inserted', 'Hi @Jane Smith, our team has taken ownership...', true]
+                    ]);
+                    const bar = hrow([
+                        span('Inserting @mention (1 of 2)', { fontSize: '12px', color: '#fff' }),
+                        span('→ Comments', { fontSize: '12px', color: '#67e8f9' }),
+                        span('⛔ do not click', { fontSize: '11px', color: '#fca5a5' })
+                    ], { background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)', border: '1px solid rgba(102,126,234,0.55)', borderRadius: '8px', padding: '8px 14px', display: 'inline-flex', margin: '4px 0 0 0' });
+                    body.appendChild(bar);
+                    caption(body, 'This banner shows while the mentions are added. Do not click until it goes away.');
+                    bullets(body, [
+                        'If the name cannot be read, "User" is used so you can correct it before saving.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'Paste Clipboard into Responses',
+                buildContent: (body) => {
+                    lead(body, 'With this setting on, a template\'s empty ">" line is filled with what you copied.');
+                    beforeAfter(body, [
+                        ['Template', 'The following URLs have been bypassed:\n>', false],
+                        ['Inserted', 'The following URLs have been bypassed:\n> example.com\n> app.example.com', true]
+                    ]);
+                    caption(body, 'Off by default. Your browser may ask once for clipboard access. If the clipboard is empty, the ">" stays for you to fill in.');
                 }
             },
             {
                 icon: '✦',
                 title: 'Custom Responses',
                 buildContent: (body) => {
-                    const headerRow = document.createElement('div');
-                    Object.assign(headerRow.style, {
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        marginBottom: '12px', padding: '10px 14px',
-                        background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
-                    });
-                    const headerBadge = document.createElement('span');
-                    headerBadge.textContent = '✦ Manage Custom Responses';
-                    Object.assign(headerBadge.style, {
-                        background: '#f0f2ff', color: '#667eea', border: '1px solid #667eea',
-                        borderRadius: '4px', padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
-                        whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
-                    });
-                    const headerDesc = document.createElement('span');
-                    headerDesc.textContent = 'Located in the dropdown header. Opens the editor where you can create, edit, and delete your personal templates.';
-                    Object.assign(headerDesc.style, {
-                        fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                    });
-                    headerRow.appendChild(headerBadge);
-                    headerRow.appendChild(headerDesc);
-                    body.appendChild(headerRow);
-
-                    const fieldDescs = [
-                        ['Label',      'The name shown in the dropdown list for your template.'],
-                        ['Body',       'The full text that gets inserted into the ticket field when clicked.'],
-                        ['Field Type', 'Choose "Comments" (customer-facing) or "Work Notes" (internal).']
-                    ];
-                    const grid = document.createElement('div');
-                    Object.assign(grid.style, {
-                        display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px'
-                    });
-                    for (const [field, desc] of fieldDescs) {
-                        const nameEl = document.createElement('span');
-                        nameEl.textContent = field;
-                        Object.assign(nameEl.style, {
-                            fontFamily: 'monospace', fontSize: '11px',
-                            color: '#667eea', fontWeight: 'bold', padding: '2px 0'
-                        });
-                        const descEl = document.createElement('span');
-                        descEl.textContent = desc;
-                        Object.assign(descEl.style, {
-                            fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif'
-                        });
-                        grid.appendChild(nameEl);
-                        grid.appendChild(descEl);
-                    }
-                    body.appendChild(grid);
-
-                    addBulletList(body, [
-                        'Custom responses appear in a dedicated "Custom" section at the bottom of the dropdown.',
-                        'They are stored locally in your browser and do not affect other users on your team.'
-                    ]);
+                    lead(body, 'Write your own templates. They appear in the Custom section and only on your computer.');
+                    badgeRow(body, { bg: '#f0f2ff', color: '#667eea', border: '1px solid #667eea', label: '✦ Manage Custom Responses', desc: 'In the list header. Opens the editor.' });
+                    body.appendChild(panelMock([
+                        mockField('Response Title', 'Escalation update', { labelWidth: '100px' }),
+                        hrow([
+                            span('Target field', { fontSize: '11px', fontWeight: 'bold', color: '#555', width: '100px', flexShrink: '0' }),
+                            chip('💬 Additional comments', '#e8f0fe', { color: '#1d4ed8', border: '1px solid #667eea' }),
+                            chip('🔒 Work notes', '#fff', { color: '#555', border: '1px solid #ccc' })
+                        ], { margin: '0 0 6px 0', gap: '6px' }),
+                        hrow([
+                            span('Insert variable:', { fontSize: '11px', color: '#666' }),
+                            chip('@Mention Opened By', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
+                            chip('Page Type', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' })
+                        ], { margin: '0 0 4px 0', gap: '6px' }),
+                        span('Hi @[{{openedByName}}], your {{pageType}} has been escalated.', { display: 'block', fontSize: '11px', fontFamily: 'monospace', border: '1px solid #ccc', borderRadius: '4px', padding: '6px 8px', color: '#333' })
+                    ]));
+                    caption(body, 'A preview below the body shows the text with sample values.');
+                    body.appendChild(hrow([
+                        chip('▲', '#6c757d'), chip('▼', '#6c757d'), chip('✎', '#007bff'), chip('🗑', '#dc3545'),
+                        span('Reorder, edit or delete a saved response.', { fontSize: '12px', color: '#555' })
+                    ], { gap: '4px', margin: '6px 0 0 0' }));
                 }
             },
             {
                 icon: '📝',
                 title: 'Footer Signature',
                 buildContent: (body) => {
-                    addParagraph(body, 'Turn on "Append footer on insert" in Settings to add your own signature under every response you insert:');
-
-                    const wrap = document.createElement('div');
-                    Object.assign(wrap.style, { marginBottom: '10px', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
-                    const rows = [
-                        { label: 'Before', bg: '#f8f8ff', labelColor: '#888',    lines: ['Hi Jane,', 'The bypass is now in place.'] },
-                        { label: 'After',  bg: '#f2fff7', labelColor: '#2a7d4f', lines: ['Hi Jane,', 'The bypass is now in place.', '──────────────', 'Kind regards, EMEA Netskope Team'] }
-                    ];
-                    for (const r of rows) {
-                        const row = document.createElement('div');
-                        Object.assign(row.style, {
-                            display: 'flex', alignItems: 'flex-start', gap: '10px',
-                            padding: '7px 12px', background: r.bg,
-                            borderBottom: r.label === 'Before' ? '1px solid #e8e8f0' : 'none'
-                        });
-                        const labelEl = document.createElement('span');
-                        labelEl.textContent = r.label;
-                        Object.assign(labelEl.style, {
-                            fontSize: '10px', fontWeight: 'bold', color: r.labelColor,
-                            textTransform: 'uppercase', whiteSpace: 'nowrap',
-                            width: '42px', flexShrink: '0', fontFamily: 'Arial, sans-serif'
-                        });
-                        const textEl = document.createElement('div');
-                        Object.assign(textEl.style, { fontFamily: 'monospace', fontSize: '11px', color: '#333', lineHeight: '1.5' });
-                        for (const line of r.lines) {
-                            const l = document.createElement('div');
-                            l.textContent = line;
-                            if (line.startsWith('──')) l.style.color = '#aaa';
-                            textEl.appendChild(l);
-                        }
-                        row.appendChild(labelEl);
-                        row.appendChild(textEl);
-                        wrap.appendChild(row);
-                    }
-                    body.appendChild(wrap);
-
-                    addBulletList(body, [
-                        'Click "Edit" next to the toggle in Settings to write or change your footer text.',
-                        'The separator shows as a horizontal line on the ticket.',
-                        'When the comment field is empty, the footer is already filled in when the ticket opens. Inserting a response never adds it twice.'
+                    lead(body, 'Turn on "Append footer on insert" in Settings to add your signature under every response.');
+                    beforeAfter(body, [
+                        ['Before', 'Hi Jane,\nThe bypass is now in place.', false],
+                        ['After', 'Hi Jane,\nThe bypass is now in place.\n──────────────\nKind regards, EMEA Netskope Team', true]
+                    ]);
+                    bullets(body, [
+                        'Edit, next to the setting, changes the footer text.',
+                        'An empty comment field starts with the footer already in it. A response never adds it twice.'
                     ]);
                 }
             },
@@ -3416,74 +3351,18 @@ Regards.`,
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent: (body) => {
-                    const headerButtons = [
-                        {
-                            bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Settings',
-                            desc: 'Opens the Settings modal with the insert options, the footer signature and the team switcher.'
-                        },
-                        {
-                            bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help',
-                            desc: 'Opens this Feature Guide.'
-                        },
-                        {
-                            bg: '#f0f2ff', color: '#667eea', border: '1px solid #667eea', label: '✦ Manage Custom Responses',
-                            desc: 'Opens the custom response editor. Create, edit, and delete your personal templates.'
-                        }
-                    ];
-                    for (const item of headerButtons) {
-                        const row = document.createElement('div');
-                        Object.assign(row.style, {
-                            display: 'flex', gap: '10px', alignItems: 'flex-start',
-                            marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
-                        });
-                        const badge = document.createElement('span');
-                        badge.textContent = item.label;
-                        Object.assign(badge.style, {
-                            background: item.bg, color: item.color, border: item.border,
-                            borderRadius: '4px', padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
-                            whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
-                            alignSelf: 'flex-start'
-                        });
-                        const descEl = document.createElement('span');
-                        descEl.textContent = item.desc;
-                        Object.assign(descEl.style, {
-                            fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                        });
-                        row.appendChild(badge);
-                        row.appendChild(descEl);
-                        body.appendChild(row);
-                    }
-
-                    addParagraph(body, 'Inside the Settings modal:');
-
-                    const settingsItems = [
-                        ['Auto-update date on insert', 'Updates the date at the start of the short description to today (DD-MM-YYYY) every time you insert a response.'],
-                        ['Add Change Tracker summary to Solved Closure', 'Off by default. When on, Solved Closure writes the Change Tracker summary of the ticket to the work notes and lists the same changes in the comment. Needs the Change Tracker script.'],
-                        ['Paste clipboard into responses', 'Off by default. When on, the empty ">" line of a response is filled with what you have copied, for example the URLs of a bypass. If the clipboard is empty, the ">" line stays so you can fill it in by hand.'],
-                        ['Append footer on insert', 'Off by default. Adds a separator and your footer text to every inserted response. Use the Edit button beside it to change the text.'],
-                        ['Switch Team',               'Changes your active team between EMEA, AME, and APAC. Each team has its own set of templates and section layout. Switching teams reloads the page.']
-                    ];
-                    const grid = document.createElement('div');
-                    Object.assign(grid.style, {
-                        display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 14px'
-                    });
-                    for (const [name, desc] of settingsItems) {
-                        const nameEl = document.createElement('span');
-                        nameEl.textContent = name;
-                        Object.assign(nameEl.style, {
-                            fontFamily: 'monospace', fontSize: '11px', color: '#667eea',
-                            fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap'
-                        });
-                        const descEl = document.createElement('span');
-                        descEl.textContent = desc;
-                        Object.assign(descEl.style, {
-                            fontSize: '12px', color: '#555', padding: '2px 0',
-                            fontFamily: 'Arial, sans-serif', lineHeight: '1.4'
-                        });
-                        grid.appendChild(nameEl);
-                        grid.appendChild(descEl);
-                    }
-                    body.appendChild(grid);
+                    lead(body, 'The list header holds these buttons.');
+                    badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Settings', desc: 'Opens the settings below.' });
+                    badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' });
+                    badgeRow(body, { bg: 'transparent', color: '#0066cc', label: "🔵 What's New", desc: 'Beside the version after an update. Opens the changelog.' });
+                    body.appendChild(span('Inside Settings', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '8px 0 6px 0' }));
+                    body.appendChild(toggle('Auto-update date on insert', true, 'Sets the short description date to today whenever you insert a response.'));
+                    body.appendChild(toggle('Add Change Tracker summary to Solved Closure', false, 'Solved Closure also writes the ticket\'s Change Tracker summary to the work notes and lists the changes in the comment.'));
+                    body.appendChild(toggle('Paste clipboard into responses', false, 'Fills the empty ">" line of a response with what you copied.'));
+                    body.appendChild(toggle('Append footer on insert', false, 'Adds your footer signature to every response. Edit changes its text.'));
+                    kvGrid(body, [
+                        ['👥 Switch Team', 'Changes your team (EMEA, AME or APAC), each with its own templates.']
+                    ]);
                 }
             }
         ];

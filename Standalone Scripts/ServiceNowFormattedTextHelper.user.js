@@ -4,7 +4,7 @@
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowFormattedTextHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
 // @author       J.R.
-// @version      1.2.4
+// @version      1.2.5
 // @description  Add formatted text with HTML support to ServiceNow tickets using a rich text editor with full HTML formatting options
 // @match        https://*.service-now.com/sc_req_item.do*
 // @match        https://*.service-now.com/incident.do*
@@ -21,8 +21,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.4';
-    const CHANGELOG = `Version 1.2.4:
+    const SCRIPT_VERSION = '1.2.5';
+    const CHANGELOG = `Version 1.2.5:
+- The Feature Guide is now visual: it shows the editor with its tool rows, the color palettes, the link, image and table windows, the insert choices and the preview as they look on screen.
+
+Version 1.2.4:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.2.3:
@@ -1357,258 +1360,323 @@ Version 1.0.3:
     function showHelpModal() {
         if (document.getElementById('formattedTextHelpModal')) return;
 
-        function addParagraph(body, text) {
+        /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
+         *      the others return an element you place yourself. ---- */
+
+        // lead: the single orienting sentence at the very top of a section.
+        function lead(body, text) {
             const p = document.createElement('p');
             p.textContent = text;
             Object.assign(p.style, {
                 fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 8px 0', fontFamily: 'Arial, sans-serif'
+                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
             });
             body.appendChild(p);
         }
 
-        function addBulletList(body, items) {
+        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
+        function bullets(body, items) {
             const ul = document.createElement('div');
-            ul.style.marginBottom = '8px';
+            ul.style.margin = '8px 0 0 0';
             for (const item of items) {
                 const row = document.createElement('div');
                 Object.assign(row.style, {
                     display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5',
-                    fontFamily: 'Arial, sans-serif'
+                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
                 });
                 const dot = document.createElement('span');
                 dot.textContent = '•';
                 Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = item;
+                const t = document.createElement('span');
+                t.textContent = item;
                 row.appendChild(dot);
-                row.appendChild(text);
+                row.appendChild(t);
                 ul.appendChild(row);
             }
             body.appendChild(ul);
         }
 
-        function addKeyValueGrid(body, pairs) {
+        // caption: a small italic note placed directly under a visual to explain it.
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, {
+                fontSize: '11px', color: '#888', fontStyle: 'italic',
+                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
+            });
+            body.appendChild(c);
+        }
+
+        // span: an inline text node with optional extra styles.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
+            return s;
+        }
+
+        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, {
+                display: 'flex', alignItems: 'center', gap: '10px',
+                flexWrap: 'wrap', margin: '0 0 4px 0'
+            }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+
+        // chip: a small colored rounded label. Use for categories and button previews.
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff',
+                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
+                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
+                display: 'inline-block', lineHeight: '1.4'
+            });
+            return c;
+        }
+
+        // badgeRow: a button preview on the left with a one line description on the right.
+        function badgeRow(body, item) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+            });
+            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px', radius: item.radius });
+            badge.style.flexShrink = '0';
+            if (item.minWidth) { badge.style.minWidth = item.minWidth; badge.style.textAlign = 'center'; }
+            row.appendChild(badge);
+            row.appendChild(span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' }));
+            body.appendChild(row);
+        }
+
+        // kvGrid: a two column key:value grid for field references and named settings.
+        function kvGrid(body, pairs) {
             const grid = document.createElement('div');
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
+            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '0 0 6px 0' });
             for (const [key, val] of pairs) {
-                const keyEl = document.createElement('span');
-                keyEl.textContent = key;
-                Object.assign(keyEl.style, {
-                    fontFamily: 'monospace', fontSize: '11px',
-                    color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap'
-                });
-                const valEl = document.createElement('span');
-                valEl.textContent = val;
-                Object.assign(valEl.style, { fontSize: '12px', color: '#555', padding: '2px 0', fontFamily: 'Arial, sans-serif' });
-                grid.appendChild(keyEl);
-                grid.appendChild(valEl);
+                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
+                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
             }
             body.appendChild(grid);
         }
 
-        function addButtonBadge(body, label, bg, color, border, desc) {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                marginBottom: '10px', padding: '10px 14px',
-                background: '#f8f8ff', borderRadius: '6px', border: '1px solid #d0d0f0'
+        // formatBox: a monospace box for a fixed format or a template.
+        function formatBox(body, text) {
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                padding: '9px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                margin: '0 0 8px 0', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: '1.5'
             });
-            const badge = document.createElement('span');
-            badge.textContent = label;
-            Object.assign(badge.style, {
-                background: bg, color: color, border: border || 'none', borderRadius: '4px',
-                padding: '4px 10px', fontSize: '11px', fontWeight: 'bold',
-                whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif'
-            });
-            const descEl = document.createElement('span');
-            descEl.textContent = desc;
-            Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-            row.appendChild(badge);
-            row.appendChild(descEl);
-            body.appendChild(row);
+            box.textContent = text;
+            body.appendChild(box);
         }
 
-        function addCategoryBadges(body, items) {
-            for (const opt of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '10px', alignItems: 'flex-start',
-                    marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
-                });
-                const badge = document.createElement('span');
-                badge.textContent = opt.label;
-                Object.assign(badge.style, {
-                    background: opt.bg, color: '#fff', borderRadius: '4px',
-                    padding: '4px 8px', fontSize: '11px', fontWeight: 'bold',
-                    whiteSpace: 'nowrap', flexShrink: '0', fontFamily: 'Arial, sans-serif',
-                    alignSelf: 'flex-start', minWidth: '90px', textAlign: 'center'
-                });
-                const descEl = document.createElement('span');
-                descEl.textContent = opt.desc;
-                Object.assign(descEl.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                row.appendChild(badge);
-                row.appendChild(descEl);
-                body.appendChild(row);
-            }
+        // beforeAfter: labelled rows showing how something changes, e.g. Before / After.
+        function beforeAfter(body, rows) {
+            const wrap = document.createElement('div');
+            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+            rows.forEach(([label, text, good], i) => {
+                const row = hrow([
+                    span(label, { fontSize: '10px', fontWeight: 'bold', color: good ? '#2a7d4f' : '#888', textTransform: 'uppercase', width: '62px', flexShrink: '0' }),
+                    span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333', whiteSpace: 'pre-wrap' })
+                ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', alignItems: 'flex-start',
+                     background: good ? '#f2fff7' : '#f8f8ff', borderBottom: i < rows.length - 1 ? '1px solid #e8e8f0' : 'none' });
+                wrap.appendChild(row);
+            });
+            body.appendChild(wrap);
+        }
+
+        // panelMock: a white card that stands in for a panel or window of the script.
+        function panelMock(children, extra) {
+            const p = document.createElement('div');
+            Object.assign(p.style, {
+                border: '1px solid #ccc', borderRadius: '8px', background: '#fff', padding: '10px 12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)', maxWidth: '400px', margin: '0 0 8px 0'
+            }, extra || {});
+            children.forEach(c => p.appendChild(c));
+            return p;
+        }
+
+        // mockField: a labelled input or dropdown as it appears in the real form.
+        function mockField(label, value, opts) {
+            opts = opts || {};
+            const row = hrow([
+                span(label, { fontSize: '11px', fontWeight: 'bold', color: '#555', width: opts.labelWidth || '110px', flexShrink: '0' })
+            ], { margin: '0 0 5px 0', flexWrap: 'nowrap', gap: '8px' });
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                flex: '1', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', minHeight: '16px',
+                background: opts.locked ? '#efefef' : '#fff'
+            });
+            box.appendChild(span(value, { fontSize: '11px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
+            if (opts.caret) box.appendChild(span('▾', { fontSize: '10px', color: '#999' }));
+            row.appendChild(box);
+            return row;
+        }
+
+        // toggle: a ticked or unticked checkbox preview with an optional one line description.
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = span(on ? '✓' : '', {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
+                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+            });
+            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0', flexWrap: 'nowrap' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px', lineHeight: '1.4' }));
+            return wrap;
         }
 
         const sections = [
             {
                 icon: '🚀', title: 'Getting Started',
                 buildContent: (body) => {
-                    addParagraph(body, 'The helper adds a button to the ticket action row. Click it to open the rich text editor, build your content, then insert it into the ticket.');
-                    addButtonBadge(body, '📝 Formatted Text', '#28a745', '#fff', null, 'Opens the Formatted Text Editor. It appears next to the Quick Response button, or near the activity stream when that helper is not installed.');
-                    addBulletList(body, [
-                        'Type your message in the editor and use the toolbar to format it.',
-                        'Click Insert to choose where the text goes, then it is added to the ticket wrapped in [code] tags so ServiceNow renders the HTML.',
-                        'Your selection of formatting is converted to clean HTML automatically on insert.'
+                    lead(body, 'A green button on the ticket opens the editor. Write, format, then insert into the ticket.');
+                    badgeRow(body, { bg: '#28a745', label: '📝 Formatted Text', desc: 'Next to the Quick Response button, or above the comment field when that helper is not installed.' });
+                    bullets(body, [
+                        'Type your message in the editor and format it with the toolbar.',
+                        'Click Insert. The text is added to the ticket wrapped in [code] tags so ServiceNow shows the formatting.'
                     ]);
                 }
             },
             {
-                icon: '📋', title: 'Formatting Toolbar',
+                icon: '🖥️', title: 'The Editor',
                 buildContent: (body) => {
-                    addParagraph(body, 'Select text first, then click a button to apply that format. These controls live in the top row of the editor.');
-                    addKeyValueGrid(body, [
-                        ['B',          'Bold the selected text. Shortcut Ctrl+B.'],
-                        ['I',          'Italic the selected text. Shortcut Ctrl+I.'],
-                        ['U',          'Underline the selected text. Shortcut Ctrl+U.'],
-                        ['S',          'Strikethrough the selected text.'],
-                        ['Size',       'Set a specific font size on the selected text, from 8 up to 36.'],
-                        ['Text Color', 'Open a swatch palette and color the selected text. Includes a Remove option to clear the color.'],
-                        ['Highlight Color', 'Open a swatch palette and highlight the selected text in any color. Includes a Remove option.'],
-                        ['Highlight',  'Mark the selected text with a yellow highlight.'],
-                        ['Small',      'Render the selected text in a smaller size.'],
-                        ['Del',        'Show the text as deleted, with a line through it.'],
-                        ['Ins',        'Show the text as inserted, underlined on a green tint.'],
-                        ['Subscript',  'Lower the text below the baseline, like in H2O.'],
-                        ['Superscript','Raise the text above the baseline, like in x squared.'],
-                        ['Code',       'Format the selection as inline code with a mono font.'],
-                        ['Blockquote', 'Turn the selection into an indented quote block.'],
-                        ['Link',       'Open the link dialog to add a clickable address.'],
-                        ['Image',      'Open the image dialog to insert a picture by URL.'],
-                        ['Table',      'Open the table dialog to insert a grid of rows and columns.'],
-                        ['Bullet List','Turn lines into an unordered bullet list.'],
-                        ['Numbered',   'Turn lines into an ordered numbered list.'],
-                        ['H1 / H2',    'Apply a large or medium heading to the current line.'],
-                        ['P',          'Reset the current line back to a normal paragraph.']
-                    ]);
+                    lead(body, 'The editor window has a header, two rows of tools, the writing area and a footer.');
+                    const tb = (labels) => hrow(labels.map(l => chip(l, '#f3f4f6', { color: '#333', border: '1px solid #ddd', weight: 'normal', padding: '2px 6px' })), { gap: '3px', margin: '0 0 4px 0' });
+                    const area = span('Hello Jane, the policy is now live.', {
+                        display: 'block', border: '1px solid #ddd', borderRadius: '4px', padding: '10px', fontSize: '12px', color: '#333', margin: '4px 0 8px 0', minHeight: '30px'
+                    });
+                    body.appendChild(panelMock([
+                        hrow([
+                            span('Formatted Text Editor', { fontSize: '13px', fontWeight: 'bold', color: '#333' }),
+                            chip('? Help', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', fontSize: '10px' }),
+                            chip("📋 What's New", '#ff8c00', { fontSize: '10px' })
+                        ], { margin: '0 0 8px 0', gap: '6px' }),
+                        tb(['B', 'I', 'U', 'S', 'Size ▾', 'A', 'A', 'H', 'Aa', 'Del', 'Ins', 'X₂', 'X²']),
+                        tb(['</>', '"', '🔗', '🖼️', '▦ Table', '• List', '1. List', 'H1', 'H2', 'P', '✕ Selection', '✕ All Format', '🗑 Clear']),
+                        area,
+                        hrow([
+                            chip('👁 Preview HTML', '#6c757d'),
+                            chip('Cancel', '#fff', { color: '#333', border: '1px solid #ccc' }),
+                            chip('Insert', '#28a745')
+                        ], { gap: '6px', margin: '0', justifyContent: 'flex-end' })
+                    ], { maxWidth: '520px' }));
+                    caption(body, 'Select text first, then click a tool to format it.');
                 }
             },
             {
-                icon: '🔗', title: 'Links',
+                icon: '🅱️', title: 'Formatting Tools',
                 buildContent: (body) => {
-                    addParagraph(body, 'The link button opens a dialog with two fields so you control both the visible text and the destination.');
-                    addBulletList(body, [
-                        'Select text before clicking the link button to prefill the Link Text field.',
-                        'Enter the address in the URL field. Addresses starting with javascript are rejected for safety.',
-                        'Leave the text blank to show the URL itself as the link label.'
-                    ]);
-                }
-            },
-            {
-                icon: '🖼️', title: 'Images',
-                buildContent: (body) => {
-                    addParagraph(body, 'The image button opens a dialog where you paste an image URL and pick a display size.');
-                    addBulletList(body, [
-                        'A live preview shows the image before you insert it.',
-                        'Choose a display width of 25, 50, 75, or 100 percent.',
-                        'The image is inserted at your cursor position in the editor.'
-                    ]);
-                }
-            },
-            {
-                icon: '▦', title: 'Tables',
-                buildContent: (body) => {
-                    addParagraph(body, 'The table button opens a dialog where you pick the size of the table to insert.');
-                    addBulletList(body, [
-                        'Hover the quick grid and click to choose the number of rows and columns, or type larger sizes into the Rows and Columns boxes.',
-                        'Leave Make the first row a header ticked to get a shaded header row, or untick it for a plain grid.',
-                        'The empty table is inserted at your cursor. Click any cell to type into it.'
-                    ]);
+                    lead(body, 'What each group of tools does.');
+                    const group = (labels, desc) => {
+                        const row = hrow([
+                            hrow(labels.map(l => chip(l, '#f3f4f6', { color: '#333', border: '1px solid #ddd', weight: 'normal', padding: '2px 6px' })), { gap: '3px', margin: '0', width: '190px', flexShrink: '0' }),
+                            span(desc, { fontSize: '12px', color: '#555', lineHeight: '1.4' })
+                        ], { flexWrap: 'nowrap', alignItems: 'flex-start', margin: '0 0 8px 0' });
+                        body.appendChild(row);
+                    };
+                    group(['B', 'I', 'U', 'S'], 'Bold, italic, underline and strikethrough. Ctrl+B, Ctrl+I and Ctrl+U work too.');
+                    group(['Size ▾'], 'Font size from 8 to 36.');
+                    group(['H', 'Aa'], 'Yellow highlight and smaller text.');
+                    group(['Del', 'Ins'], 'Mark text as deleted (struck) or inserted (underlined on green).');
+                    group(['X₂', 'X²'], 'Subscript and superscript.');
+                    group(['</>', '"'], 'Inline code and an indented quote block.');
+                    group(['• List', '1. List'], 'Bullet and numbered lists.');
+                    group(['H1', 'H2', 'P'], 'Large heading, medium heading, or back to a normal paragraph.');
                 }
             },
             {
                 icon: '🎨', title: 'Text and Highlight Color',
                 buildContent: (body) => {
-                    addParagraph(body, 'Two color buttons sit next to the font size selector. Select text first, then pick a color.');
-                    addBulletList(body, [
-                        'Text Color changes the color of the selected letters.',
-                        'Highlight Color shades the background behind the selected text, in any color you choose, not just yellow.',
-                        'Each palette has a Remove option that clears the color back to normal.'
+                    lead(body, 'The two A buttons next to Size open a palette. Select text, then pick a color.');
+                    const swatches = (colors) => hrow(colors.map(c => span('', {
+                        width: '16px', height: '16px', borderRadius: '3px', background: c, border: '1px solid #ccc', display: 'inline-block', boxSizing: 'border-box'
+                    })).concat([chip('✕ Remove', '#fff', { color: '#333', border: '1px solid #ccc', weight: 'normal', fontSize: '10px' })]), { gap: '3px', margin: '0 0 6px 0' });
+                    body.appendChild(hrow([chip('A', '#fff', { color: '#cc0000', border: '1px solid #ddd' }), span('Text Color', { fontSize: '11px', color: '#555', fontWeight: 'bold' })], { margin: '0 0 4px 0', gap: '6px' }));
+                    body.appendChild(swatches(['#000000', '#666666', '#cc0000', '#ff9900', '#f1c232', '#6aa84f', '#1155cc', '#674ea7', '#a64d79']));
+                    body.appendChild(hrow([chip('A', '#ffff00', { color: '#333', border: '1px solid #ddd' }), span('Highlight Color', { fontSize: '11px', color: '#555', fontWeight: 'bold' })], { margin: '8px 0 4px 0', gap: '6px' }));
+                    body.appendChild(swatches(['#ffff00', '#00ff00', '#00ffff', '#ff00ff', '#ff9900', '#ffd966', '#b6d7a8', '#a4c2f4', '#f4cccc']));
+                    caption(body, 'Remove clears the color of the selected text.');
+                }
+            },
+            {
+                icon: '🔗', title: 'Links, Images and Tables',
+                buildContent: (body) => {
+                    lead(body, 'These three tools open a small window to fill in.');
+                    body.appendChild(span('🔗 Insert Link', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '0 0 4px 0' }));
+                    body.appendChild(panelMock([
+                        mockField('Link Text', 'Netskope status page', { labelWidth: '80px' }),
+                        mockField('URL', 'https://status.netskope.com', { labelWidth: '80px' })
+                    ], { maxWidth: '360px' }));
+                    caption(body, 'Selected text fills Link Text. Addresses starting with javascript are refused.');
+                    body.appendChild(span('🖼️ Insert Image', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 4px 0' }));
+                    body.appendChild(hrow(['25%', '50%', '75%', '100%'].map((w, i) => chip(w, i === 1 ? '#667eea' : '#fff', { color: i === 1 ? '#fff' : '#333', border: '1px solid #ccc' })), { gap: '4px' }));
+                    caption(body, 'Paste the image URL, check the live preview, pick a width.');
+                    body.appendChild(span('▦ Insert Table', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 4px 0' }));
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'repeat(6, 14px)', gap: '2px', margin: '0 0 4px 0' });
+                    for (let r = 0; r < 4; r++) for (let c = 0; c < 6; c++) {
+                        grid.appendChild(span('', { width: '14px', height: '14px', display: 'inline-block', border: '1px solid #ccc', background: r < 3 && c < 4 ? '#c0c8f0' : '#fff', boxSizing: 'border-box' }));
+                    }
+                    body.appendChild(hrow([grid, span('3 × 4 Table', { fontSize: '11px', color: '#555' })], { alignItems: 'flex-start' }));
+                    body.appendChild(toggle('Make the first row a header', true));
+                    caption(body, 'Hover the grid and click, or type Rows and Columns for bigger tables (up to 50).');
+                }
+            },
+            {
+                icon: '⚡', title: 'Where It Gets Inserted',
+                buildContent: (body) => {
+                    lead(body, 'Insert asks where to put the text when the ticket shows both journal fields.');
+                    badgeRow(body, { bg: '#0066cc', label: 'Insert as Comment', minWidth: '130px', desc: 'Customer facing. The requester can see it.' });
+                    badgeRow(body, { bg: '#5a6672', label: 'Insert as Work Note', minWidth: '130px', desc: 'Internal only, for your team.' });
+                    badgeRow(body, { bg: '#667eea', label: 'Insert as Both', minWidth: '130px', desc: 'Adds the same text to both fields.' });
+                    bullets(body, [
+                        'When only one field is visible, the text goes there without asking.',
+                        'The text is added below anything already written in the field.'
                     ]);
                 }
             },
             {
                 icon: '👁', title: 'Preview',
                 buildContent: (body) => {
-                    addParagraph(body, 'The Preview HTML button in the footer opens a window with two views of your content.');
-                    addBulletList(body, [
-                        'The rendered preview shows roughly how the content will look once posted.',
-                        'The source view shows the exact text, including the [code] wrapper, that will be inserted.',
-                        'Use the Copy Source button to copy that text to your clipboard.'
-                    ]);
+                    lead(body, 'Preview HTML shows how the text will look and exactly what gets inserted.');
+                    body.appendChild(span('Rendered preview', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', margin: '0 0 3px 0' }));
+                    body.appendChild(panelMock([ span('Hello Jane, the policy is now live.', { fontSize: '12px', color: '#333' }) ], { maxWidth: '520px' }));
+                    body.appendChild(span('Source (this is what gets inserted)', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', margin: '4px 0 3px 0' }));
+                    formatBox(body, '[code]<p>Hello Jane, the policy is now <b>live</b>.</p>[/code]');
+                    body.appendChild(hrow([ chip('📋 Copy Source', '#667eea') ]));
                 }
             },
             {
-                icon: '⚡', title: 'Where It Gets Inserted',
+                icon: '🧹', title: 'Cleanup and Pasting',
                 buildContent: (body) => {
-                    addParagraph(body, 'When you click Insert, the script checks which journal fields are currently visible on the ticket. The text is appended below anything already there.');
-                    addCategoryBadges(body, [
-                        { bg: '#0066cc', label: 'Comment',   desc: 'Customer facing. The requester can read this.' },
-                        { bg: '#5a6672', label: 'Work Note', desc: 'Internal only. Visible to your team but not the requester.' },
-                        { bg: '#667eea', label: 'Both',      desc: 'Adds the same text to the comment and the work note at once.' }
-                    ]);
-                    addBulletList(body, [
-                        'When both Comments and Work Notes are visible, a dialog asks where to insert.',
-                        'When only one field is visible (single mode), the text is inserted into that field automatically without asking.'
-                    ]);
+                    lead(body, 'Tools at the end of the second row tidy up the text.');
+                    badgeRow(body, { bg: '#f3f4f6', color: '#333', border: '1px solid #ddd', label: '✕ Selection', minWidth: '90px', desc: 'Removes formatting from the selected text only.' });
+                    badgeRow(body, { bg: '#f3f4f6', color: '#333', border: '1px solid #ddd', label: '✕ All Format', minWidth: '90px', desc: 'Removes all formatting and keeps plain text and line breaks.' });
+                    badgeRow(body, { bg: '#f3f4f6', color: '#333', border: '1px solid #ddd', label: '🗑 Clear', minWidth: '90px', desc: 'Empties the editor.' });
+                    caption(body, 'Text pasted from Word, Outlook or a web page is cleaned automatically. Bold, italic, lists and links are kept.');
                 }
             },
             {
-                icon: '🧹', title: 'Cleanup Tools',
+                icon: '⚙️', title: 'Controls',
                 buildContent: (body) => {
-                    addParagraph(body, 'These utility buttons sit on the right of the second toolbar row.');
-                    addKeyValueGrid(body, [
-                        ['✕ Selection',  'Removes inline formatting from just the highlighted text and leaves the rest alone.'],
-                        ['✕ All Format', 'Strips formatting from the entire document and keeps only the plain text and line breaks.'],
-                        ['🗑 Clear',      'Deletes all text in the editor so you can start over.']
-                    ]);
-                }
-            },
-            {
-                icon: '🧽', title: 'Pasting Content',
-                buildContent: (body) => {
-                    addParagraph(body, 'When you paste from Word, Outlook, or a web page, the content is cleaned automatically.');
-                    addBulletList(body, [
-                        'Hidden styling, classes, and unsupported tags are stripped on paste.',
-                        'Basic formatting such as bold, italic, lists, and links is preserved.',
-                        'This keeps the inserted HTML small and predictable for ServiceNow.'
-                    ]);
-                }
-            },
-            {
-                icon: '⌨️', title: 'Keyboard Shortcuts',
-                buildContent: (body) => {
-                    addParagraph(body, 'These shortcuts work while the editor is focused.');
-                    addKeyValueGrid(body, [
-                        ['Ctrl+B', 'Bold the selected text.'],
-                        ['Ctrl+I', 'Italic the selected text.'],
-                        ['Ctrl+U', 'Underline the selected text.']
-                    ]);
-                }
-            },
-            {
-                icon: '⚙️', title: 'Header and Footer Controls',
-                buildContent: (body) => {
-                    addParagraph(body, 'These controls frame the editor window.');
-                    addButtonBadge(body, '? Help',           '#fff',     '#667eea', '1px solid #c0c8f0', 'Opens this Feature Guide.');
-                    addButtonBadge(body, '📋 What\'s New',    '#ff8c00',  '#fff',    null, 'Appears after an update. Shows the changelog of recent changes.');
-                    addButtonBadge(body, '👁 Preview HTML',   '#6c757d',  '#fff',    null, 'Opens the preview window described above.');
-                    addButtonBadge(body, 'Insert',            '#28a745',  '#fff',    null, 'Asks where to place the text, then inserts it into the ticket.');
-                    addButtonBadge(body, 'Cancel',            '#fff',     '#333',    '1px solid #ccc', 'Closes the editor without inserting anything.');
+                    lead(body, 'The header and footer of the editor hold these controls.');
+                    badgeRow(body, { bg: '#fff', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', minWidth: '110px', desc: 'Opens this Feature Guide.' });
+                    badgeRow(body, { bg: '#ff8c00', label: "📋 What's New", minWidth: '110px', desc: 'Appears after an update. Shows the changelog.' });
+                    badgeRow(body, { bg: '#6c757d', label: '👁 Preview HTML', minWidth: '110px', desc: 'Opens the preview described above.' });
+                    badgeRow(body, { bg: '#28a745', label: 'Insert', minWidth: '110px', desc: 'Adds the text to the ticket.' });
+                    badgeRow(body, { bg: '#fff', color: '#333', border: '1px solid #ccc', label: 'Cancel', minWidth: '110px', desc: 'Closes the editor without inserting.' });
                 }
             }
         ];
