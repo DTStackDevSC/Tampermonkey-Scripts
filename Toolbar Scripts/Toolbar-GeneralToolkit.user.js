@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-GeneralToolkit.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      99.0.1
+// @version      99.0.2
 // @description  Now part of the Tools Toolbar. Keeps your saved data until the toolbar imports it.
 // @author       J.R.
 // @match        *://*/*
@@ -26,7 +26,7 @@
     document.addEventListener('toolbarSuiteDataRequest', (e) => {
         const requestId = e.detail && e.detail.requestId;
         if (typeof requestId !== 'string' || !requestId) return;
-        if (!/\.service-now\.com$|\.servicenow\.com$|\.goskope\.com$/.test(location.hostname)) return;
+        if (location.hostname !== 'deloitteglobal.service-now.com' && !/\.goskope\.com$/.test(location.hostname)) return;
         const values = {};
         for (const key of GM_listValues()) {
             if (key !== SEEN_KEY) values[key] = GM_getValue(key);

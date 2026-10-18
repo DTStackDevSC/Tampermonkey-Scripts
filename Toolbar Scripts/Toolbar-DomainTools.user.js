@@ -3,11 +3,10 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-DomainTools.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      99.0.1
+// @version      99.0.2
 // @description  Now part of the Tools Toolbar. Keeps your saved data until the toolbar imports it.
 // @author       J.R.
-// @match        https://*.service-now.com/*
-// @match        https://*.servicenow.com/*
+// @match        https://deloitteglobal.service-now.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_listValues
@@ -27,7 +26,7 @@
     document.addEventListener('toolbarSuiteDataRequest', (e) => {
         const requestId = e.detail && e.detail.requestId;
         if (typeof requestId !== 'string' || !requestId) return;
-        if (!/\.service-now\.com$|\.servicenow\.com$/.test(location.hostname)) return;
+        if (location.hostname !== 'deloitteglobal.service-now.com') return;   // the team's only ServiceNow instance
         const values = {};
         for (const key of GM_listValues()) {
             if (key !== SEEN_KEY) values[key] = GM_getValue(key);
