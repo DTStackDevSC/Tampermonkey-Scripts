@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.0.0
+// @version      4.0.1
 // @description  Ticket Helpers Suite: Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.0.0';
-    const CHANGELOG = `Version 4.0.0:
+    const SCRIPT_VERSION = '4.0.1';
+    const CHANGELOG = `Version 4.0.1:
+- Fixed the Ticket Response Helper data not being imported: the import window said the data did not look right, even though it was fine.
+- If some data really cannot be imported, the warning now shows only once, and the Choose your tools window opens right after it.
+
+Version 4.0.0:
 - The Short Description Helper is now the Ticket Helpers Suite: one script with the Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers.
 - If you used the other helpers as separate scripts, the suite offers to import their data the first time: click Import, then Reload now. Your Short Description Helper settings stay as they are.
 - Then a Choose your tools window lists the helpers. The ones you already had are ticked for you.
@@ -99,10 +103,10 @@
     const DT_TEAM_TOOLS = ['shortDescription', 'ticketResponse'];
 
     function dtCheckValues(tool, values) {
-        if (tool.id === 'ticketResponse' && values.ticketResponseCustomResponses !== undefined) {
-            let list = null;
-            try { list = JSON.parse(values.ticketResponseCustomResponses); } catch (e) { /* not JSON */ }
-            if (!Array.isArray(list)) return 'the custom responses are not in the expected format';
+        // The Ticket Response Helper keeps its custom responses as a list, not as JSON text.
+        if (tool.id === 'ticketResponse' && values.ticketResponseCustomResponses !== undefined &&
+            !Array.isArray(values.ticketResponseCustomResponses)) {
+            return 'the custom responses are not in the expected format';
         }
         if (tool.id === 'policyNaming' && values.netskopePresets !== undefined) {
             let list = null;
@@ -502,7 +506,7 @@
         document.dispatchEvent(new CustomEvent('ticketHelpersDataRequest', { detail: { requestId } }));
         setTimeout(() => {
             document.removeEventListener('ticketHelpersDataResponse', onAnswer);
-            done([...answers.values()].filter(a => !conflicts.has(a.tool.id)), [...conflicts].map(id => dtTool(id).name));
+            done([...answers.values()].filter(a => !conflicts.has(a.tool.id)), [...conflicts].map(id => dtTool(id)));
         }, DT_WAIT_MS);
     }
 
@@ -512,8 +516,13 @@
             return;
         }
         if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) { dtSettle(); dtMaybeShowPicker(); return; }
-        dtRequestOldData((answers, conflicts) => {
-            dtMarkDetected(answers.map(a => a.tool.id));
+        dtRequestOldData((answers, refused) => {
+            const conflicts = manual ? refused : refused.filter(tool => !dtMigrated().includes(tool.id));
+            // A refused tool is still one the user had: it is offered in the picker, and the
+            // warning is shown once. ⚙ Suite > Import from old scripts can try it again.
+            dtMarkDetected([...answers, ...conflicts.map(tool => ({ tool }))].map(a => a.tool.id));
+            if (!manual) dtMarkMigrated(conflicts.map(tool => tool.id));
+            const conflictNames = conflicts.map(tool => tool.name).join(', ');
             const migrated = dtMigrated();
             const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
             const hasValues = a => Object.keys(a.values).length > 0;
@@ -528,7 +537,8 @@
                 dtSettle();
                 if (conflicts.length) {
                     dtDialog('Import from old scripts', ['Not imported, because the data received did not look right: ' +
-                        conflicts.join(', ') + '. Use a backup file instead.'], [{ label: 'Close', primary: true }]);
+                        conflictNames + '. Use a backup file instead.'],
+                        [{ label: 'Close', primary: true }], () => { if (!manual) dtMaybeShowPicker(); });
                 } else if (!manual) {
                     dtMaybeShowPicker();
                 } else {
@@ -544,7 +554,7 @@
             const lines = ['Data found from your previous scripts:'];
             for (const a of todo) lines.push('• ' + a.tool.name +
                 (manual && dtSuiteHasData(a.tool) ? ' (replaces what you set up in Ticket Helpers)' : ''));
-                        if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflicts.join(', ') + '.');
+            if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflictNames + '.');
             const savedTeam = GM_getValue('shortDescTeam', '');
             if (todo.some(a => a.values.ticketResponseTeam && savedTeam && a.values.ticketResponseTeam !== savedTeam)) {
                 lines.push('Team: your Ticket Response Helper used another team. The Short Description Helper team is kept.');
@@ -800,8 +810,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.0.0';
-    const CHANGELOG = `Version 4.0.0:
+    const SCRIPT_VERSION = '4.0.1';
+    const CHANGELOG = `Version 4.0.1:
+- Fixed the Ticket Response Helper data not being imported: the import window said the data did not look right, even though it was fine.
+- If some data really cannot be imported, the warning now shows only once, and the Choose your tools window opens right after it.
+
+Version 4.0.0:
 - The Short Description Helper is now the Ticket Helpers Suite: one script with the Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers.
 - If you used the other helpers as separate scripts, the suite offers to import their data the first time: click Import, then Reload now. Your Short Description Helper settings stay as they are.
 - Then a Choose your tools window lists the helpers. The ones you already had are ticked for you.
