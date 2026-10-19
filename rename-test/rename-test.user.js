@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Rename Test A
+// @name         Rename Test B
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.0
+// @version      2.0
 // @description  Throwaway test: does an update that changes @name keep the same script and its storage?
 // @author       DTStackDevSC
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/rename-test/rename-test.user.js
