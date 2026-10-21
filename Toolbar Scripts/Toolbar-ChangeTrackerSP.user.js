@@ -706,7 +706,7 @@
     function getOfflineAddEnabled()  { return GM_getValue(OFFLINE_ADD_KEY, true) !== false; }
     function setOfflineAddEnabled(v) { GM_setValue(OFFLINE_ADD_KEY, !!v); }
     // Adding is possible online, or offline when the fallback is on.
-    function canAddEntries() { return connState === 'ONLINE' || (connState === 'OFFLINE' && getOfflineAddEnabled()); }
+    function canAddEntries() { return connState === 'ONLINE' || ((connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') && getOfflineAddEnabled()); }
 
     const BATCH_PERSIST_KEY  = 'changeTrackerBatchPersistEnabled';
     const BATCH_SESSIONS_KEY = 'changeTrackerBatchSessions';
@@ -998,6 +998,10 @@
         .ctsp-cs-item     { color: #333333 !important; }
         .ctsp-cs-group-header { background-color: #e9edf2 !important; color: #555555 !important; }
 
+        #ctsp-setup-checklist { background-color: #f8f8ff !important; color: #333333 !important; }
+        #ctsp-choice-modal { background-color: #ffffff !important; color: #333333 !important; }
+        #ctsp-choice-modal button { color: #ffffff !important; }
+
         /* Feature Guide (? Help): above the sidebar and the edit / setup modals */
         #changeTrackerSpHelpModalOverlay { position: fixed !important; top: 0 !important; left: 0 !important;
             width: 100% !important; height: 100% !important; background: rgba(0,0,0,0.5) !important; z-index: 1060000 !important; }
@@ -1031,13 +1035,14 @@
 
     /* ──────────────────────────────────────────────────────────
      *  CONNECTIVITY STATE  (must be initialised before initializeSidebar())
-     *  States: 'INIT' | 'ONLINE' | 'OFFLINE' | 'INVALID_TOKEN' | 'SETUP'
+     *  States: 'INIT' | 'SETUP' | 'ONLINE' | 'OFFLINE' | 'SESSION_EXPIRED' | 'NO_ACCESS'
      *
-     *  INIT          → no token/URL in GM → sidebar open shows setup prompt
-     *  ONLINE        → Worker reachable, token valid → full functionality
-     *  OFFLINE       → Worker unreachable or 5xx → read-only, offline banner
-     *  INVALID_TOKEN → Worker returned 401 → read-only, token-invalid banner
-     *  SETUP         → user is in the first-run setup form
+     *  INIT            → no site set up yet → sidebar open shows setup prompt
+     *  SETUP           → user is in the setup form
+     *  ONLINE          → SharePoint list reachable → full functionality
+     *  OFFLINE         → SharePoint unreachable or failing → changes queue locally
+     *  SESSION_EXPIRED → M365 sign in needed → changes queue locally
+     *  NO_ACCESS       → no permission on the site or list → read only
      * ─────────────────────────────────────────────────────────*/
     let connState = 'INIT';
 
@@ -3973,12 +3978,8 @@
             textDecoration:'underline', fontFamily:'Arial, sans-serif'
         });
         cfgBtn.textContent = '⚙ Configure';
-        cfgBtn.title       = 'Change the Worker URL or API token';
-        cfgBtn.onclick     = () => {
-            const previousToken = GM_getValue('changeTrackerToken', '');
-            const previousState = connState;
-            openSetupPrompt({ previousToken, previousState });
-        };
+        cfgBtn.title       = 'Change the SharePoint site or list';
+        cfgBtn.onclick     = () => openSetupPrompt({ previousState: connState });
         verRow.appendChild(cfgBtn);
 
         // Help pill: opens the Feature Guide
@@ -4223,53 +4224,50 @@
         const banner = document.getElementById('ctsp-conn-banner');
         if (!banner) return;
 
-        // Hide the banner outside of OFFLINE / INVALID_TOKEN
-        if (connState !== 'OFFLINE' && connState !== 'INVALID_TOKEN') {
+        if (!['OFFLINE', 'SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) {
             banner.style.display = 'none';
             banner.innerHTML     = '';
             return;
         }
-
         banner.innerHTML = '';
         banner.style.display = 'flex';
 
-        if (connState === 'OFFLINE') {
-            css(banner, {
-                background:'#fff3cd', border:'1px solid #ffc107', color:'#856404'
-            });
-            const waiting = pendingCount(getTicketNumber());
-            const msg = mk('span');
-            msg.textContent = waiting
-                ? `⚠ Offline · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync`
-                : (getOfflineAddEnabled() ? '⚠ Offline · new entries are saved locally' : '⚠ Offline — read only');
-            const btn = css(mk('button', { id:'ctsp-reconnect-btn' }), {
-                background:'#ffc107', color:'#333', border:'none', borderRadius:'3px',
-                cursor:'pointer', padding:'3px 10px', fontSize:'11px',
+        const button = (text, id, colors) => {
+            const b = css(mk('button', id ? { id, type:'button' } : { type:'button' }), Object.assign({
+                border:'none', borderRadius:'3px', cursor:'pointer', padding:'3px 10px', fontSize:'11px',
                 fontWeight:'bold', fontFamily:'Arial, sans-serif'
-            });
-            btn.textContent = '↺ Reconnect';
+            }, colors));
+            b.textContent = text;
+            return b;
+        };
+        const waiting = pendingCount(getTicketNumber());
+        const waitingText = waiting ? ` · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync` : '';
+        const msg = mk('span');
+
+        if (connState === 'OFFLINE') {
+            css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
+            msg.textContent = waiting ? `⚠ Offline${waitingText}`
+                : (getOfflineAddEnabled() ? '⚠ Offline · new entries are saved locally' : '⚠ Offline · read only');
+            const btn = button('↺ Reconnect', 'ctsp-reconnect-btn', { background:'#ffc107', color:'#333' });
             btn.onclick = () => attemptReconnect(getTicketNumber(), false);
             banner.append(msg, btn);
-
-        } else if (connState === 'INVALID_TOKEN') {
-            css(banner, {
-                background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24'
-            });
-            const msg = mk('span'); msg.textContent = '🔑 Token invalid';
-            const btn = css(mk('button'), {
-                background:'transparent', color:'#721c24', border:'none',
-                cursor:'pointer', padding:'2px 4px', fontSize:'12px',
-                textDecoration:'underline', fontFamily:'Arial, sans-serif',
-                fontWeight:'bold'
-            });
-            btn.textContent = 'Reset token';
-            btn.onclick = () => {
-                const previousToken = GM_getValue('changeTrackerToken', '');
-                const previousState = connState;
-                GM_deleteValue('changeTrackerToken');
-                openSetupPrompt({ previousToken, previousState });
-            };
-            banner.append(msg, btn);
+        } else if (connState === 'SESSION_EXPIRED') {
+            css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
+            msg.textContent = `🔒 SharePoint session expired${waitingText}`;
+            const open = button('Open SharePoint to sign in', 'ctsp-signin-btn', { background:'#ffc107', color:'#333' });
+            open.onclick = () => window.open(spClient.siteUrl(), '_blank');
+            const retry = button('↺', 'ctsp-reconnect-btn', { background:'transparent', color:'#856404' });
+            retry.title = 'Try again';
+            retry.onclick = () => attemptReconnect(getTicketNumber(), false);
+            const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
+            btns.append(open, retry);
+            banner.append(msg, btns);
+        } else {
+            css(banner, { background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24' });
+            msg.textContent = '⛔ No access to the SharePoint list. Ask the site owner for access.';
+            const cfg = button('Configure', null, { background:'transparent', color:'#721c24', textDecoration:'underline' });
+            cfg.onclick = () => openSetupPrompt({ previousState: connState });
+            banner.append(msg, cfg);
         }
     }
 
@@ -4305,8 +4303,8 @@
         // Block adding when the API is not currently usable (offline adds
         // are allowed when the offline fallback setting is on)
         if (!canAddEntries()) {
-            if (connState === 'OFFLINE')           flashStatus('⚠️ Offline — adding new entries is disabled.', '#e67e22');
-            else if (connState === 'INVALID_TOKEN') flashStatus('🔑 Token invalid — reset to add entries.', '#dc3545');
+            if (connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') flashStatus('⚠️ Offline: adding new entries is turned off in the settings.', '#e67e22');
+            else if (connState === 'NO_ACCESS') flashStatus('⛔ No access to the SharePoint list.', '#dc3545');
             else                                    flashStatus('⚠️ Not connected yet.', '#e67e22');
             return;
         }
@@ -4575,9 +4573,9 @@
 
     /* ==========================================================
      *  RECONNECT
-     *  Pings the Worker, then issues a real authenticated request to
-     *  prove the token is still valid. Routes through handleApiResponse
-     *  on failure so OFFLINE / INVALID_TOKEN are surfaced consistently.
+     *  Checks the SharePoint session, then reads the ticket from the
+     *  list. Routes through handleApiResponse on failure so OFFLINE,
+     *  SESSION_EXPIRED and NO_ACCESS are surfaced consistently.
      * ==========================================================*/
 
     async function attemptReconnect(ticket, silent = false) {
@@ -5126,13 +5124,16 @@
 
     /* ==========================================================
      *  FIRST-RUN SETUP PROMPT
-     *  Modal overlay (independent of sidebar) for capturing the
-     *  Worker URL and bearer token. Reused by the "Reset token"
-     *  link in the INVALID_TOKEN banner.
+     *  Modal overlay (independent of sidebar) for the SharePoint site
+     *  and list, with the "Check / prepare list" button. Reused by
+     *  the Configure links.
      * ==========================================================*/
 
     function openSetupPrompt(options = {}) {
-        const { previousToken = null, previousState = null } = options;
+        const { previousState = null } = options;
+        const prevSite = GM_getValue(SP_SITE_KEY, '');
+        const prevList = GM_getValue(SP_LIST_KEY, '');
+        const prevOk   = GM_getValue(SP_SETUP_OK_KEY, false) === true;
 
         document.getElementById('ctsp-setup-overlay')?.remove();
         document.getElementById('ctsp-setup-modal')?.remove();
@@ -5157,7 +5158,7 @@
         const hTitle = css(mk('div'), {
             fontSize:'15px', fontWeight:'bold', color:'#333', fontFamily:'Arial, sans-serif'
         });
-        hTitle.textContent = '☁ Connect to Cloud Sync';
+        hTitle.textContent = '☁ Connect to SharePoint';
 
         const closeX = css(mk('button'), {
             background:'red', color:'#fff', border:'none', borderRadius:'4px',
@@ -5169,71 +5170,88 @@
         hdr.append(hTitle, closeX);
         modal.appendChild(hdr);
 
-        // URL field
-        modal.appendChild(css(Object.assign(mk('label'), { textContent:'Worker URL', htmlFor:'ctsp-setup-url' }), {
-            display:'block', fontSize:'11px', fontWeight:'bold',
-            color:'#666', marginBottom:'4px', fontFamily:'Arial, sans-serif'
-        }));
-        const urlInput = css(mk('input', { id:'ctsp-setup-url', type:'text' }), {
-            width:'100%', padding:'7px 10px', border:'1px solid #ccc',
-            borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif',
-            background:'#fafafa', color:'#333', boxSizing:'border-box',
-            outline:'none', marginBottom:'12px'
+        const fieldLabel = (text, forId) => css(Object.assign(mk('label'), { textContent: text, htmlFor: forId }), {
+            display:'block', fontSize:'11px', fontWeight:'bold', color:'#666', marginBottom:'4px', fontFamily:'Arial, sans-serif'
         });
-        urlInput.placeholder = 'https://change-tracker-api.yourname.workers.dev';
-        urlInput.value       = GM_getValue('changeTrackerWorkerUrl', '');
-        modal.appendChild(urlInput);
+        const fieldInput = (id, placeholder, value) => {
+            const el = css(mk('input', { id, type:'text' }), {
+                width:'100%', padding:'7px 10px', border:'1px solid #ccc', borderRadius:'4px', fontSize:'12px',
+                fontFamily:'Arial, sans-serif', background:'#fafafa', color:'#333', boxSizing:'border-box',
+                outline:'none', marginBottom:'12px'
+            });
+            el.placeholder = placeholder;
+            el.value = value;
+            return el;
+        };
 
-        // Token field
-        modal.appendChild(css(Object.assign(mk('label'), { textContent:'Your API Token', htmlFor:'ctsp-setup-token' }), {
-            display:'block', fontSize:'11px', fontWeight:'bold',
-            color:'#666', marginBottom:'4px', fontFamily:'Arial, sans-serif'
-        }));
-        const tokenInput = css(mk('input', { id:'ctsp-setup-token', type:'password' }), {
-            width:'100%', padding:'7px 36px 7px 10px', border:'1px solid #ccc',
-            borderRadius:'4px', fontSize:'12px',
-            fontFamily:'"Courier New", Courier, monospace',
-            background:'#fafafa', color:'#333', boxSizing:'border-box',
-            outline:'none'
-        });
-        tokenInput.placeholder = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
-        tokenInput.value       = GM_getValue('changeTrackerToken', '');
+        modal.appendChild(fieldLabel('SharePoint site URL', 'ctsp-setup-site'));
+        const siteInput = fieldInput('ctsp-setup-site', 'https://contoso.sharepoint.com/sites/YourTeam', prevSite);
+        modal.appendChild(siteInput);
 
-        const EYE_OPEN   = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-        const EYE_CLOSED = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+        modal.appendChild(fieldLabel('List name', 'ctsp-setup-list'));
+        const listInput = fieldInput('ctsp-setup-list', SP_DEFAULT_LIST, prevList || SP_DEFAULT_LIST);
+        modal.appendChild(listInput);
 
-        const revealBtn = css(mk('button', { type:'button', title:'Show token' }), {
-            position:'absolute', right:'6px', top:'50%', transform:'translateY(-50%)',
-            background:'none', border:'none', cursor:'pointer', padding:'2px',
-            color:'#888', display:'flex', alignItems:'center', lineHeight:'1'
-        });
-        revealBtn.innerHTML = EYE_OPEN;
-        revealBtn.addEventListener('click', () => {
-            const show = tokenInput.type === 'password';
-            tokenInput.type     = show ? 'text' : 'password';
-            revealBtn.innerHTML = show ? EYE_CLOSED : EYE_OPEN;
-            revealBtn.title     = show ? 'Hide token' : 'Show token';
-        });
-
-        const tokenWrap = css(mk('div'), { position:'relative', marginBottom:'12px' });
-        tokenWrap.appendChild(tokenInput);
-        tokenWrap.appendChild(revealBtn);
-        modal.appendChild(tokenWrap);
-
-        // Help text
-        const help = css(mk('div'), {
-            fontSize:'11px', color:'#666', marginBottom:'14px',
-            lineHeight:'1.5', fontFamily:'Arial, sans-serif'
-        });
-        help.appendChild(document.createTextNode('Ask your administrator for both values. Contact '));
-        const mailto = css(mk('a'), {
-            color:'inherit', textDecoration:'underline'
-        });
-        mailto.href        = 'mailto:jrocarolvalls@deloitte.es';
-        mailto.textContent = 'jrocarolvalls@deloitte.es';
-        help.appendChild(mailto);
-        help.appendChild(document.createTextNode(' to request access.'));
+        const help = css(mk('div'), { fontSize:'11px', color:'#666', marginBottom:'10px', lineHeight:'1.5', fontFamily:'Arial, sans-serif' });
+        help.textContent = 'Use the SharePoint site where your team keeps the change log. Everyone who can open that site can see and edit the log. ' +
+            'If the list does not exist yet, "Check / prepare list" creates it with every column it needs.';
         modal.appendChild(help);
+
+        const checkBtn = css(mk('button', { id:'ctsp-setup-check', type:'button' }), {
+            padding:'7px 14px', background:'#667eea', color:'#fff', border:'none', borderRadius:'4px',
+            cursor:'pointer', fontWeight:'bold', fontSize:'12px', fontFamily:'Arial, sans-serif', marginBottom:'8px'
+        });
+        checkBtn.textContent = '✔ Check / prepare list';
+        modal.appendChild(checkBtn);
+
+        const checklist = css(mk('div', { id:'ctsp-setup-checklist' }), {
+            display:'none', marginBottom:'14px', padding:'8px 10px', background:'#f8f8ff', border:'1px solid #d0d0f0',
+            borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif', lineHeight:'1.6'
+        });
+        modal.appendChild(checklist);
+
+        let checkPassedFor = null;   // "site|list" of the last check that passed
+
+        function currentTarget() {
+            return { site: siteInput.value.trim().replace(/\/+$/, ''), list: listInput.value.trim() || SP_DEFAULT_LIST };
+        }
+
+        function renderChecklist(steps) {
+            checklist.innerHTML = '';
+            checklist.style.display = 'block';
+            for (const s of steps) {
+                const row = mk('div', { className: 'ctsp-check-row' });
+                row.dataset.ok = s.ok ? '1' : '0';
+                const mark = css(mk('span'), { color: s.ok ? '#28a745' : '#dc3545', fontWeight:'bold', marginRight:'6px' });
+                mark.textContent = s.ok ? '✔' : '✖';
+                row.append(mark, document.createTextNode(s.label));
+                if (s.detail) {
+                    const d = css(mk('div'), { fontSize:'11px', color:'#721c24', margin:'0 0 4px 18px' });
+                    d.textContent = s.detail;
+                    row.appendChild(d);
+                }
+                checklist.appendChild(row);
+            }
+        }
+
+        async function runCheck() {
+            hideError();
+            const { site, list } = currentTarget();
+            if (!/^https:\/\/[^/]+\/.+/i.test(site)) { showError('Enter the full address of the SharePoint site, starting with https://'); return false; }
+            checkBtn.disabled = true;
+            checkBtn.textContent = 'Checking…';
+            GM_setValue(SP_SITE_KEY, site);
+            GM_setValue(SP_LIST_KEY, list);
+            GM_setValue(SP_SETUP_OK_KEY, false);
+            api._entityType = null;
+            const result = await listSchema.prepare();
+            renderChecklist(result.steps);
+            checkBtn.disabled = false;
+            checkBtn.textContent = '✔ Check / prepare list';
+            checkPassedFor = result.ready ? `${site}|${list}` : null;
+            return result.ready;
+        }
+        checkBtn.onclick = () => { runCheck(); };
 
         // Auto-write toggle — copies entry text into ticket worknote/comments
         const autoWriteRow = css(mk('label', { htmlFor:'ctsp-setup-autowrite' }), {
@@ -5397,6 +5415,23 @@
         searchableRow.append(searchableInput, searchableText);
         modal.appendChild(searchableRow);
 
+        // Ticket Response Helper: answer its summary requests too (off while the toolbar's tracker also runs)
+        const summaryRow = css(mk('label', { htmlFor:'ctsp-setup-summary' }), {
+            display:'flex', alignItems:'flex-start', gap:'8px', padding:'8px 10px', marginBottom:'14px',
+            background:'#f6f8fa', border:'1px solid #e1e4e8', borderRadius:'4px', cursor:'pointer', fontFamily:'Arial, sans-serif'
+        });
+        const summaryInput = css(mk('input', { id:'ctsp-setup-summary', type:'checkbox' }), { marginTop:'2px', cursor:'pointer' });
+        summaryInput.checked = getAnswerSummary();
+        const summaryText  = css(mk('div'), { fontSize:'12px', color:'#333', lineHeight:'1.4' });
+        const summaryTitle = css(mk('div'), { fontWeight:'bold', marginBottom:'2px' });
+        summaryTitle.textContent = 'Share the change summary with the Ticket Response Helper';
+        const summaryDesc  = css(mk('div'), { fontSize:'11px', color:'#666' });
+        summaryDesc.textContent = 'Off by default, so the Ticket Response Helper keeps using the Change Tracker of the toolbar. ' +
+            'Turn it on to test the summary from this SharePoint version as well.';
+        summaryText.append(summaryTitle, summaryDesc);
+        summaryRow.append(summaryInput, summaryText);
+        modal.appendChild(summaryRow);
+
         // Inline error area
         const errEl = css(mk('div', { id:'ctsp-setup-error' }), {
             display:'none', marginBottom:'10px', padding:'7px 10px',
@@ -5440,15 +5475,13 @@
         }
 
         function cancel() {
-            if (previousToken) {
-                // Restore previous token + state (Reset path)
-                GM_setValue('changeTrackerToken', previousToken);
-                setConnState(previousState || 'INVALID_TOKEN');
+            GM_setValue(SP_SITE_KEY, prevSite);
+            GM_setValue(SP_LIST_KEY, prevList);
+            GM_setValue(SP_SETUP_OK_KEY, prevOk);
+            api._entityType = null;
+            if (prevOk) {
+                setConnState(previousState || 'INIT');
             } else {
-                // First-time setup cancelled — clear anything save() may have
-                // already written so the next open re-prompts cleanly.
-                GM_deleteValue('changeTrackerWorkerUrl');
-                GM_deleteValue('changeTrackerToken');
                 setConnState('INIT');
                 hideSidebar();
             }
@@ -5457,16 +5490,17 @@
 
         async function save() {
             hideError();
-            const url   = urlInput.value.trim().replace(/\/+$/, '');
-            const token = tokenInput.value.trim();
-            if (!url)   { showError('Worker URL is required.');  return; }
-            if (!token) { showError('API token is required.');   return; }
-
+            const { site, list } = currentTarget();
             saveBtn.disabled    = true;
             saveBtn.textContent = 'Connecting…';
-
-            GM_setValue('changeTrackerWorkerUrl', url);
-            GM_setValue('changeTrackerToken',     token);
+            const ready = checkPassedFor === `${site}|${list}` ? true : await runCheck();
+            if (!ready) {
+                saveBtn.disabled    = false;
+                saveBtn.textContent = 'Save & Connect';
+                if (!errEl.textContent) showError('The list is not ready yet. Fix the items marked ✖ above, then try again.');
+                return;
+            }
+            GM_setValue(SP_SETUP_OK_KEY, true);
             setAutoWriteEnabled(autoWriteInput.checked);
             resetWriteChecks();
             setUpdateShortDescEnabled(shortDescInput.checked);
@@ -5474,23 +5508,19 @@
             setOfflineAddEnabled(offlineInput.checked);
             setCacheTtlDays(ttlInput.value);
             setSearchableDropdown(searchableInput.checked);
+            setAnswerSummary(summaryInput.checked);
 
-            // Try to connect using the current ticket
-            const ticket = getTicketNumber();
-            await attemptReconnect(ticket, /* silent */ true);
-
+            await attemptReconnect(getTicketNumber(), /* silent */ true);
             if (connState === 'ONLINE') {
                 close();
-                showSidebar();           // ensure sidebar slides in
+                showSidebar();
                 flashStatus('✓ Connected!');
-            } else if (connState === 'INVALID_TOKEN') {
-                saveBtn.disabled    = false;
-                saveBtn.textContent = 'Save & Connect';
-                showError('Token rejected. Double-check the token value.');
             } else {
                 saveBtn.disabled    = false;
                 saveBtn.textContent = 'Save & Connect';
-                showError('Could not reach the Worker. Check the URL and try again.');
+                showError(connState === 'SESSION_EXPIRED'
+                    ? 'Your SharePoint session has expired. Open the site in another tab, sign in, then try again.'
+                    : 'Could not reach SharePoint. Check the site address and try again.');
             }
         }
 
@@ -5500,7 +5530,7 @@
         saveBtn.onclick   = save;
 
         document.body.append(overlay, modal);
-        urlInput.focus();
+        siteInput.focus();
     }
 
     /* ==========================================================
@@ -5533,7 +5563,7 @@
         setTimeout(() => document.getElementById('ctsp-snippet-select')?.focus(), 310);
 
         // Background: attempt reconnect if offline, sync if online
-        if (connState === 'OFFLINE' || connState === 'INVALID_TOKEN') {
+        if (['OFFLINE', 'SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) {
             attemptReconnect(ticket, /* silent */ true);
         } else if (connState === 'ONLINE') {
             syncTicket(ticket).then(() => refreshLog(ticket));
@@ -5604,6 +5634,19 @@
 
     document.addEventListener('toolbarToolClicked', (e) => { if (e.detail.id === TOOL_ID) toggleSidebar(); });
 
+    // Coming back to the tab: reconnect if the session had expired, or
+    // reread the ticket after more than 2 minutes away to show teammates' entries.
+    let hiddenSince = 0;
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { hiddenSince = Date.now(); return; }
+        const away = hiddenSince ? Date.now() - hiddenSince : 0;
+        hiddenSince = 0;
+        if (!api.isConfigured()) return;
+        const ticket = getTicketNumber();
+        if (connState === 'SESSION_EXPIRED' || connState === 'OFFLINE') { attemptReconnect(ticket, /* silent */ true); return; }
+        if (sidebarVisible && connState === 'ONLINE' && away > 2 * 60 * 1000) syncTicket(ticket).then(() => refreshLog(ticket));
+    });
+
     function initialize() {
         if (!document.body) { setTimeout(initialize, 50); return; }
         if (isInitialized) return;
@@ -5624,7 +5667,7 @@
 
         // While offline, retry the connection in the background every minute.
         setInterval(() => {
-            if (connState === 'OFFLINE' && api.isConfigured()) {
+            if ((connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') && api.isConfigured()) {
                 attemptReconnect(getTicketNumber(), /* silent */ true);
             }
         }, 60000);
@@ -5633,7 +5676,8 @@
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerSpTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema };
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
+                setHiddenSince: (v) => { hiddenSince = v; } };
         }
 
         return function register() {
