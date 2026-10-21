@@ -2733,6 +2733,7 @@
                 handleApiResponse(res);
             } else {
                 markEntryProblem(ticket, entryId, res.kind);
+                if (res.kind === 'conflict' || res.kind === 'notfound') await resolveEntryProblem(ticket, entryId);
             }
         }
         return loadEntries(ticket);
@@ -3467,6 +3468,121 @@
     }
 
     /* ==========================================================
+     *  SAVE PROBLEMS  (edit conflicts, entries deleted by someone
+     *  else, entries too large for SharePoint)
+     * ==========================================================*/
+
+    const PROBLEM_TAGS = {
+        conflict: { text: '⚠ Edit conflict', title: 'Someone else changed this entry while you were editing it. Click to choose which version to keep.' },
+        deleted:  { text: '⚠ Deleted by someone else', title: 'Someone else deleted this entry. Click to recreate it or discard your change.' },
+        tooLarge: { text: '⚠ Too large to sync', title: 'This entry is too large to save to SharePoint. Edit it and make it shorter; it stays on this computer until then.' },
+        rejected: { text: '⚠ Not accepted by SharePoint', title: 'SharePoint did not accept this entry. It stays on this computer. Edit it to try again.' },
+    };
+
+    function choiceModal(message, choices) {
+        document.getElementById('ctsp-choice-overlay')?.remove();
+        document.getElementById('ctsp-choice-modal')?.remove();
+        const ov = css(mk('div', { id:'ctsp-choice-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.45)', zIndex:'1100000' });
+        const md = css(mk('div', { id:'ctsp-choice-modal' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1100001', background:'#fff',
+            border:'2px solid #f0ad4e', padding:'22px', borderRadius:'10px', fontFamily:'Arial, sans-serif',
+            width:'380px', maxWidth:'92vw', boxShadow:'0 4px 16px rgba(0,0,0,.3)', textAlign:'center'
+        });
+        const msg = css(mk('p'), { margin:'0 0 18px', fontSize:'13px', color:'#333', lineHeight:'1.5', whiteSpace:'pre-line' });
+        msg.textContent = message;
+        const row = css(mk('div'), { display:'flex', gap:'10px', justifyContent:'center', flexWrap:'wrap' });
+        choices.forEach((c, i) => {
+            const b = css(mk('button', { type:'button' }), {
+                padding:'8px 16px', border:'none', borderRadius:'5px', cursor:'pointer', fontWeight:'bold', fontSize:'13px',
+                fontFamily:'Arial, sans-serif', background: i === 0 ? '#667eea' : '#6c757d', color:'#fff'
+            });
+            b.textContent = c.label;
+            b.dataset.choice = c.id;
+            b.onclick = async () => { ov.remove(); md.remove(); await c.action(); };
+            row.appendChild(b);
+        });
+        md.append(msg, row);
+        document.body.append(ov, md);
+    }
+
+    function formatWhen(iso) {
+        const d = new Date(iso);
+        return isNaN(d) ? 'an unknown time' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function replaceCached(ticket, entryId, next) {
+        const entries = loadEntries(ticket).filter(e => e.id !== entryId);
+        if (next) entries.push(next);
+        entries.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+        _cacheEntries(ticket, entries);
+    }
+
+    async function pushOne(ticket, entryId, extra) {
+        const entry = loadEntries(ticket).find(e => e.id === entryId);
+        if (!entry) return;
+        const res = await api.saveEntry({ ...entry, ...extra, ticket });
+        if (res.ok) {
+            applySaved(ticket, res.data);
+            clearPendingUpsert(ticket, entryId);
+            flashStatus('✓ Saved');
+        } else if (isTransientFailure(res)) {
+            handleApiResponse(res);
+        } else {
+            markEntryProblem(ticket, entryId, res.kind);
+        }
+        refreshLog(ticket);
+    }
+
+    let problemModalOpen = false;
+
+    async function resolveEntryProblem(ticket, entryId) {
+        const entry = loadEntries(ticket).find(e => e.id === entryId);
+        if (!entry || !entry.problem || problemModalOpen) return;
+        if (entry.problem === 'conflict') {
+            const server = await api.getEntry(entryId);
+            if (!server.ok && server.kind === 'notfound') {
+                markEntryProblem(ticket, entryId, 'notfound');
+                return resolveEntryProblem(ticket, entryId);
+            }
+            if (!server.ok) { handleApiResponse(server); return; }
+            problemModalOpen = true;
+            choiceModal(`${server.data.modified_by_label || 'Someone else'} changed this entry at ${formatWhen(server.data.modified_at)} while you were editing it.`, [
+                { id: 'theirs', label: 'View their version', action: async () => {
+                    problemModalOpen = false;
+                    replaceCached(ticket, entryId, server.data);
+                    clearPendingUpsert(ticket, entryId);
+                    refreshLog(ticket);
+                } },
+                { id: 'mine', label: 'Overwrite with mine', action: async () => {
+                    problemModalOpen = false;
+                    await pushOne(ticket, entryId, { force: true, spId: server.data.spId });
+                } },
+            ]);
+        } else if (entry.problem === 'deleted') {
+            problemModalOpen = true;
+            choiceModal('This entry was deleted by someone else while you were editing it.', [
+                { id: 'recreate', label: 'Recreate it', action: async () => {
+                    problemModalOpen = false;
+                    await pushOne(ticket, entryId, { spId: null, etag: null });
+                } },
+                { id: 'discard', label: 'Discard my change', action: async () => {
+                    problemModalOpen = false;
+                    replaceCached(ticket, entryId, null);
+                    clearPendingUpsert(ticket, entryId);
+                    refreshLog(ticket);
+                } },
+            ]);
+        }
+    }
+
+    // After a sync, ask about the first entry of this ticket that needs a decision.
+    function resolveFirstProblem(ticket) {
+        const e = loadEntries(ticket).find(x => x.problem === 'conflict' || x.problem === 'deleted');
+        if (e) resolveEntryProblem(ticket, e.id);
+    }
+
+
+    /* ==========================================================
      *  LONG ENTRIES  (preview in the card, full text in a modal)
      * ==========================================================*/
 
@@ -3730,6 +3846,18 @@
             tag.textContent = '⏳ Not synced';
             tag.title = 'Saved on this computer only. It is sent to the server automatically when the connection is back.';
             footer.appendChild(tag);
+        }
+        if (entry.problem && PROBLEM_TAGS[entry.problem]) {
+            const info = PROBLEM_TAGS[entry.problem];
+            const clickable = entry.problem === 'conflict' || entry.problem === 'deleted';
+            const ptag = css(mk('span', { className: 'ctsp-problem-tag' }), {
+                marginLeft:'8px', padding:'1px 6px', borderRadius:'8px', background:'#f8d7da', color:'#721c24',
+                border:'1px solid #f5c6cb', fontFamily:'Arial, sans-serif', fontWeight:'bold', cursor: clickable ? 'pointer' : 'default'
+            });
+            ptag.textContent = info.text;
+            ptag.title = info.title;
+            if (clickable) ptag.onclick = () => resolveEntryProblem(ticket, entry.id);
+            footer.appendChild(ptag);
         }
         card.appendChild(footer);
 
@@ -4610,6 +4738,7 @@
             const fresh   = flushed.synced ? await api.fetchEntries(ticket) : res;
             _cacheEntries(ticket, mergeWithPending(ticket, (fresh.ok ? fresh : res).data.entries || []));
             refreshLog(ticket);
+            resolveFirstProblem(ticket);
             renderConnBanner();
             if (flushed.synced) {
                 flashStatus(`✓ Back online · ${flushed.synced} pending ${flushed.synced === 1 ? 'change' : 'changes'} synced`, '#28a745', 4000);
@@ -5566,7 +5695,7 @@
         if (['OFFLINE', 'SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) {
             attemptReconnect(ticket, /* silent */ true);
         } else if (connState === 'ONLINE') {
-            syncTicket(ticket).then(() => refreshLog(ticket));
+            syncTicket(ticket).then(() => { refreshLog(ticket); resolveFirstProblem(ticket); });
         } else {
             // First open after config saved (connState still 'INIT' or 'SETUP') → go online
             attemptReconnect(ticket, /* silent */ true);
@@ -5644,7 +5773,7 @@
         if (!api.isConfigured()) return;
         const ticket = getTicketNumber();
         if (connState === 'SESSION_EXPIRED' || connState === 'OFFLINE') { attemptReconnect(ticket, /* silent */ true); return; }
-        if (sidebarVisible && connState === 'ONLINE' && away > 2 * 60 * 1000) syncTicket(ticket).then(() => refreshLog(ticket));
+        if (sidebarVisible && connState === 'ONLINE' && away > 2 * 60 * 1000) syncTicket(ticket).then(() => { refreshLog(ticket); resolveFirstProblem(ticket); });
     });
 
     function initialize() {
@@ -5677,7 +5806,7 @@
         if (GM_getValue('changeTrackerSpTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
-                setHiddenSince: (v) => { hiddenSince = v; } };
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, isPending: (tk) => hasPending(tk) };
         }
 
         return function register() {
