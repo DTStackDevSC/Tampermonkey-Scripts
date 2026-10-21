@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.1.1
+// @version      0.1.2
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,8 +91,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.1.1';
-    const CHANGELOG = `Version 0.1.1:
+    const SCRIPT_VERSION = '0.1.2';
+    const CHANGELOG = `Version 0.1.2:
+- Fixed "Check / prepare list" failing on every new list because SharePoint already has its own "Type" column. The tracker's column is now called "Change Type", and SharePoint's own columns are never touched.
+- When a column cannot be removed, the checklist now shows the real reason.
+
+Version 0.1.1:
 - Fixed "Check / prepare list" creating columns the tracker could not find afterwards, which kept "Save & Connect" from finishing even when every row was green.
 - "Check / prepare list" now marks every column that is still missing with ✖. On an empty list it replaces columns with the same name that the tracker did not create, such as those left by version 0.1.0. When the list already has entries, it asks you to delete those columns instead.
 - New columns now also appear in the list's default view in SharePoint.
@@ -1392,7 +1396,7 @@ Version 0.1.0:
     const SP_COLUMNS = [
         { name: 'CTEntryDate', title: 'Entry Date', type: 'DateTime', indexed: true },
         { name: 'CTGroup',     title: 'Group',      type: 'Choice',   choices: 'groups' },
-        { name: 'CTType',      title: 'Type',       type: 'Choice',   choices: 'types' },
+        { name: 'CTType',      title: 'Change Type', type: 'Choice',  choices: 'types' },
         { name: 'CTObject',    title: 'Object',     type: 'Text' },
         { name: 'CTDetails',   title: 'Details',    type: 'Note' },
         { name: 'CTEntryId',   title: 'Entry ID',   type: 'Text',     indexed: true, unique: true },
@@ -1450,7 +1454,7 @@ Version 0.1.0:
             const low = Number(list.data.EffectiveBasePermissions && list.data.EffectiveBasePermissions.Low) || 0;
             report.perms = Object.fromEntries(Object.entries(P).map(([k, bit]) => [k, (low & bit) === bit]));
             const fields = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/fields` +
-                qs({ $filter: 'Hidden eq false', $select: 'Title,InternalName,TypeAsString,Indexed,EnforceUniqueValues,Choices' }) });
+                qs({ $filter: 'Hidden eq false', $select: 'Title,InternalName,TypeAsString,Indexed,EnforceUniqueValues,Choices,CanBeDeleted,FromBaseType' }) });
             if (!fields.ok) { report.failure = fields; return report; }
             const byName = {};
             (fields.data.value || []).forEach(f => { byName[f.InternalName] = f; });
@@ -1461,7 +1465,9 @@ Version 0.1.0:
                 if (!f) {
                     report.missingColumns.push(col.name);
                     // Same display name, other internal name: added by hand or by version 0.1.0.
-                    const twin = (fields.data.value || []).find(x => x.Title === col.title && x.InternalName !== col.name);
+                    // SharePoint's own columns (such as the built in "Type") are never touched.
+                    const twin = (fields.data.value || []).find(x => x.Title === col.title && x.InternalName !== col.name &&
+                        x.CanBeDeleted !== false && !x.FromBaseType);
                     if (twin) report.lookalikes[col.name] = twin.InternalName;
                     continue;
                 }
@@ -1490,6 +1496,7 @@ Version 0.1.0:
 
         async function prepare() {
             const steps = [];
+            const removeFailed = {};   // column name -> why SharePoint refused to remove it
             const step = (label, res) => {
                 const ok = res === true || !!(res && res.ok);
                 steps.push({ label, ok, detail: ok ? '' : describeFailure(res) });
@@ -1527,6 +1534,7 @@ Version 0.1.0:
                         const removed = await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/getbyinternalnameortitle('${twin}')`,
                             xMethod: 'DELETE', ifMatch: '*' });
                         if (step(`Remove column "${titleOf(name)}" (not made by the tracker, the list is empty)`, removed)) delete r.lookalikes[name];
+                        else removeFailed[name] = removed.message || `HTTP ${removed.status}`;
                     }
                 }
                 for (const name of r.missingColumns.filter(n => !r.lookalikes[n])) {
@@ -1552,7 +1560,11 @@ Version 0.1.0:
             for (const name of r.missingColumns) {
                 const twin = r.lookalikes[name];
                 steps.push({ label: `Column "${titleOf(name)}"`, ok: false, detail: twin
-                    ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and the list already has entries. Delete that column in the list settings, then check again.`
+                    ? (removeFailed[name]
+                        ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and it could not be removed: ${removeFailed[name]} Delete it in the list settings, then check again.`
+                        : r.itemCount > 0
+                            ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and the list already has entries. Delete that column in the list settings, then check again.`
+                            : `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}). Ask a site owner to press "Check / prepare list", or delete that column in the list settings, then check again.`)
                     : `This column is still missing. Ask a site owner to press "Check / prepare list", then check again.` });
             }
             if (r.wrongColumns.length) steps.push({ label: 'Column types', ok: false,
