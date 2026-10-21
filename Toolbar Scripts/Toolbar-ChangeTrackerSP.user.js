@@ -93,7 +93,13 @@
 
     const SCRIPT_VERSION = '0.1.0';
     const CHANGELOG = `Version 0.1.0:
-- First test version of the Change Tracker that keeps the team log in a SharePoint list instead of the team server.`;
+- First test version of the Change Tracker that keeps the team log in a SharePoint list instead of the team server. It has its own "SP" button in the toolbar, so you can try it next to the current Change Tracker.
+- Setup asks for the SharePoint site and the list name. "Check / prepare list" creates the list and its columns when they are missing, and tells you what to ask the site owner for when you cannot change the list.
+- No token or activation code: everyone who can open the SharePoint site can use the log.
+- Each entry shows who created it and who edited it last.
+- If someone else changed an entry while you were editing it, you choose whether to keep their version or overwrite it with yours.
+- When your SharePoint session expires, your changes wait on this computer and are sent once you sign in again.
+- The list can be filtered in SharePoint by ticket, date, group and type, and its Details column can be searched.`;
 
     /* ==========================================================
      *  OPTIONAL EXTRA FIELDS
@@ -699,7 +705,7 @@
     // all" then writes them together as one worknote + one comment.
     // Sessions live in memory and end on page reload, unless the
     // "keep batch session" setting is on (then they are mirrored to GM).
-    // Offline fallback: when the Worker is unreachable, new entries can
+    // Offline fallback: when SharePoint is unreachable, new entries can
     // still be added. They are saved locally and synced on reconnect
     // (see PENDING SYNC QUEUE). Default ON.
     const OFFLINE_ADD_KEY = 'changeTrackerOfflineAddEnabled';
@@ -1087,7 +1093,7 @@
      *  - Freeform types    → fields null, note populated
      *  Backward compat: old v1.1.0 entries only have {id,ts,type,note} — handled gracefully
      *
-     *  v1.3.0: GM storage now serves as a local read cache. The Worker
+     *  GM storage serves as a local read cache. The SharePoint list
      *  (api object below) is the source of truth when ONLINE. Local cache
      *  is updated optimistically on every mutation so the sidebar feels
      *  instant even when the API is slow or unreachable.
@@ -1132,7 +1138,7 @@
      *  CACHE EXPIRY
      *  Tracks the last time each ticket's cache was consulted (sidebar
      *  opened). On startup, any ticket cache older than the configured
-     *  TTL is deleted — the server remains the source of truth and will
+     *  TTL is deleted; SharePoint remains the source of truth and will
      *  re-populate the cache on next open.
      * ==========================================================*/
 
@@ -2523,16 +2529,16 @@
     }
 
     /* ==========================================================
-     *  ENTRY CRUD  (cache-first, write-through to Worker when online)
+     *  ENTRY CRUD  (cache-first, write-through to SharePoint when online)
      *
      *  All mutations update the GM cache synchronously, then push to
-     *  the Worker if connState === 'ONLINE'. This keeps the sidebar
+     *  SharePoint if connState === 'ONLINE'. This keeps the sidebar
      *  instant and lets the offline mode degrade gracefully.
      * ==========================================================*/
 
     /* ──────────────────────────────────────────────────────────
      *  PENDING SYNC QUEUE
-     *  Any mutation that does not reach the Worker (offline, network
+     *  Any mutation that does not reach SharePoint (offline, network
      *  failure, 5xx) is recorded per ticket in GM, so it survives a page
      *  reload. The queue is flushed before every server read, and server
      *  reads are merged with what is still pending instead of replacing
@@ -2597,8 +2603,8 @@
     }
 
     /**
-     * Sends a ticket's pending changes to the Worker.
-     * Returns { ok, synced }: ok=false means the Worker could not be reached
+     * Sends a ticket's pending changes to SharePoint.
+     * Returns { ok, synced }: ok=false means SharePoint could not be reached
      * (the rest stays queued); synced counts the changes that went through.
      */
     async function flushPending(ticket) {
@@ -2615,7 +2621,7 @@
         for (const id of [...p.deletes]) {
             const res = await api.deleteEntry(ticket, id);
             if (!res.ok && isTransientFailure(res)) { handleApiResponse(res); return { ok: false, synced }; }
-            // 404 means it is already gone on the server, which is the goal.
+            // 404 means it is already gone on SharePoint, which is the goal.
             p.deletes = p.deletes.filter(x => x !== id); synced++;
             savePending(ticket, p);
         }
@@ -2770,7 +2776,7 @@
         }
     }
 
-    // Pull authoritative entries from D1 into the cache for one ticket.
+    // Pull authoritative entries from SharePoint into the cache for one ticket.
     // Pending local changes are sent first and kept if they still fail.
     // Called when the sidebar opens, after a successful reconnect, etc.
     async function syncTicket(ticket) {
@@ -3844,7 +3850,7 @@
                 fontFamily:'Arial, sans-serif', fontWeight:'bold'
             });
             tag.textContent = '⏳ Not synced';
-            tag.title = 'Saved on this computer only. It is sent to the server automatically when the connection is back.';
+            tag.title = 'Saved on this computer only. It is sent to SharePoint automatically when the connection is back.';
             footer.appendChild(tag);
         }
         if (entry.problem && PROBLEM_TAGS[entry.problem]) {
@@ -4075,7 +4081,7 @@
         sidebar.appendChild(closeBtn);
 
         // ── Title ────────────────────────────────────────────────
-        const ctTitle = css(Object.assign(mk('div'), { textContent:'✏️ Change Tracker' }), {
+        const ctTitle = css(Object.assign(mk('div'), { textContent:'✏️ Change Tracker (SharePoint)' }), {
             fontSize:'16px', fontWeight:'bold', color:'#333', marginBottom:'4px', paddingRight:'30px'
         });
         ctTitle.appendChild(css(Object.assign(mk('span'), { textContent:'BETA', title:'Change Tracker is in testing' }), {
@@ -4477,7 +4483,7 @@
         }
 
         refreshLog(ticket);
-        if (isEntryPending(ticket, lastEntry.id)) flashStatus('⏳ Saved locally. It syncs with the server when the connection is back.', '#e67e22', 4000);
+        if (isEntryPending(ticket, lastEntry.id)) flashStatus('⏳ Saved locally. It syncs with SharePoint when the connection is back.', '#e67e22', 4000);
         else flashStatus(`✓ Entry added  (${entries.length} total)`);
 
         // Auto-write the equivalent text into the SNow worknote/comments
@@ -4727,12 +4733,12 @@
             return;
         }
 
-        // Ping succeeded — verify token with a real request
+        // Signed in: read the ticket to make sure the list answers too
         const res = await api.fetchEntries(ticket);
         if (res.ok) {
             setConnState('ONLINE');
             // Send everything that was queued while offline (all tickets),
-            // then refresh this ticket from the server without losing
+            // then refresh this ticket from SharePoint without losing
             // anything that is still pending.
             const flushed = await flushAllPending();
             const fresh   = flushed.synced ? await api.fetchEntries(ticket) : res;
@@ -5092,7 +5098,7 @@
                 icon: '🔗',
                 title: 'Connection',
                 buildContent: (body) => {
-                    lead(body, 'The log syncs with the team server; a banner appears when it cannot.');
+                    lead(body, 'The log is kept in your team\'s SharePoint list; a banner appears when it cannot be reached.');
                     function banner(text, btnText, bg, border, color, btnBg, btnColor) {
                         const b = document.createElement('div');
                         Object.assign(b.style, {
@@ -5105,18 +5111,25 @@
                         return b;
                     }
                     body.appendChild(banner('⚠ Offline · 2 changes waiting to sync', '↺ Reconnect', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
-                    body.appendChild(banner('🔑 Token invalid', 'Reset token', '#f8d7da', '#f5c6cb', '#721c24', 'transparent', '#721c24'));
+                    body.appendChild(banner('🔒 SharePoint session expired · 1 change waiting to sync', 'Open SharePoint to sign in', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
+                    body.appendChild(banner('⛔ No access to the SharePoint list', 'Configure', '#f8d7da', '#f5c6cb', '#721c24', 'transparent', '#721c24'));
                     body.appendChild(hrow([
                         span('2026-10-13 14:05  ·  by Jane', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace' }),
                         chip('⏳ Not synced', '#fff3cd', { color: '#856404', border: '1px solid #ffc107', fontSize: '10px', padding: '1px 6px', radius: '8px' })
                     ], { margin: '6px 0 0 0' }));
-                    caption(body, 'Entries that have not reached the server yet show this tag at the bottom of their card.');
+                    caption(body, 'Entries that have not reached SharePoint yet show this tag at the bottom of their card.');
+                    body.appendChild(hrow([
+                        chip('⚠ Edit conflict', '#f8d7da', { color: '#721c24', border: '1px solid #f5c6cb', fontSize: '10px', padding: '1px 6px', radius: '8px' }),
+                        chip('⚠ Too large to sync', '#f8d7da', { color: '#721c24', border: '1px solid #f5c6cb', fontSize: '10px', padding: '1px 6px', radius: '8px' })
+                    ], { margin: '6px 0 0 0' }));
+                    caption(body, 'Edit conflict: someone else changed the entry while you edited it. Click the tag to keep their version or overwrite it with yours.');
                     bullets(body, [
-                        'Changes that cannot reach the server are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
+                        'Changes that cannot reach SharePoint are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
                         'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
                         'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
-                        'Token invalid: open the setup panel and enter a new API token.',
-                        'First setup: "Import from a backup file" restores your connection and settings from a toolbar backup.'
+                        'Session expired: open SharePoint in another tab and sign in. Your changes wait on this computer and are sent when you come back to the ticket.',
+                        'No access: ask the owner of the SharePoint site to give you access to the list.',
+                        'Each entry shows who created it and who edited it last.'
                     ]);
                 }
             },
@@ -5127,10 +5140,11 @@
                     lead(body, 'The links next to the version number open the setup panel and this guide.');
                     badgeRow(body, chip('⚙ Configure', 'transparent', { color: '#666', underline: true }), 'Opens the setup panel with the connection details and options below.');
                     badgeRow(body, chip('? Help', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0', radius: '3px' }), 'Opens this Feature Guide.');
+                    badgeRow(body, chip('✔ Check / prepare list', '#667eea'), 'In the setup panel: checks your access and creates the list and its columns when they are missing. If you cannot change the list, it tells you what to ask the site owner for.');
 
                     const pairs = [
-                        ['Worker URL', 'Address of the team server that stores the shared log.'],
-                        ['API token', 'Your personal access key, provided by your administrator.'],
+                        ['SharePoint site URL', 'The site where your team keeps the change log.'],
+                        ['List name', 'The list inside that site. ChangeTracker unless your team chose another name.'],
                         ['Local cache expiry', 'Days a ticket log stays cached in your browser (default 30).']
                     ];
                     const grid = document.createElement('div');
@@ -5143,9 +5157,10 @@
 
                     body.appendChild(toggle('Auto-write entries to ticket', true, 'Writes the worknote and comment as soon as you add an entry.'));
                     body.appendChild(toggle('Update short description on write', true, 'Sets today\'s date and the matching status whenever an entry is written.'));
-                    body.appendChild(toggle('Allow adding entries while offline', true, 'Keeps adding entries when the server is unreachable; they sync once it is back.'));
+                    body.appendChild(toggle('Allow adding entries while offline', true, 'Keeps adding entries when SharePoint is unreachable; they sync once it is back.'));
                     body.appendChild(toggle('Keep batch session after page reload', false, 'When on, an open batch session survives a page reload.'));
                     body.appendChild(toggle('Searchable change-type dropdown', true, 'Lets you type to filter the change types, including by group name.'));
+                    body.appendChild(toggle('Share the change summary with the Ticket Response Helper', false, 'Off by default, so the Ticket Response Helper keeps using the toolbar\'s Change Tracker.'));
                 }
             }
         ];
@@ -5172,7 +5187,7 @@
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Change Tracker • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Change Tracker (SharePoint) • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -5430,7 +5445,7 @@
         shortDescRow.append(shortDescInput, shortDescText);
         modal.appendChild(shortDescRow);
 
-        // Offline fallback toggle: allow adding entries while the server is unreachable
+        // Offline fallback toggle: allow adding entries while SharePoint is unreachable
         const offlineRow = css(mk('label', { htmlFor:'ctsp-setup-offlineadd' }), {
             display:'flex', alignItems:'flex-start', gap:'8px',
             padding:'8px 10px', marginBottom:'14px',
@@ -5447,7 +5462,7 @@
         offlineTitle.textContent = 'Allow adding entries while offline';
         const offlineDesc  = css(mk('div'), { fontSize:'11px', color:'#666' });
         offlineDesc.textContent =
-            'When the server cannot be reached, keep adding entries: they are saved on this computer ' +
+            'When SharePoint cannot be reached, keep adding entries: they are saved on this computer ' +
             'and sent automatically when the connection is back. When off, the log is read only while offline.';
         offlineText.append(offlineTitle, offlineDesc);
 
