@@ -1304,6 +1304,72 @@
 
     spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
 
+    /* ==========================================================
+     *  ENTRY MAPPER  (tracker entry <-> SharePoint list item)
+     *  CTPayload holds the full entry and is the only column read back.
+     *  The other columns are rebuilt on every save so the list can be
+     *  filtered and searched in SharePoint.
+     * ==========================================================*/
+
+    const entryMapper = (() => {
+        const GROUP_OF = {};
+        SNIPPET_GROUPS.forEach(g => g.items.forEach(i => { GROUP_OF[i.value] = g.group; }));
+
+        // The field that names the thing that changed: the first field of the type.
+        function objectKey(type) {
+            const key = getSchemaKey(type);
+            const schema = key ? FIELD_SCHEMAS[key] : null;
+            return schema && schema.length ? schema[0].key : null;
+        }
+
+        function toIsoDate(ts) {
+            const m = String(ts || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+            const d = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : new Date(ts);
+            return (isNaN(d) ? new Date() : d).toISOString();
+        }
+
+        function details(entry) {
+            if (!entry.fields) return entry.note || '';
+            const skip = objectKey(entry.type);
+            const rest = Object.fromEntries(Object.entries(entry.fields).filter(([k]) => k !== skip));
+            const text = formatEntryContent({ ...entry, fields: rest });
+            return text === '(all fields empty)' ? '' : text;
+        }
+
+        function toItem(entry, ticket, entityType) {
+            const key = objectKey(entry.type);
+            return {
+                __metadata:  { type: entityType },
+                Title:       ticket,
+                CTEntryDate: toIsoDate(entry.ts),
+                CTGroup:     GROUP_OF[entry.type] || 'Other',
+                CTType:      entry.type,
+                CTObject:    (key && entry.fields && entry.fields[key] ? String(entry.fields[key]) : '').slice(0, 255),
+                CTDetails:   details(entry),
+                CTEntryId:   entry.id,
+                CTPayload:   JSON.stringify({ v: 1, id: entry.id, ts: entry.ts, type: entry.type,
+                                              fields: entry.fields || null, note: entry.note || null }),
+            };
+        }
+
+        function fromItem(item) {
+            let p = null;
+            try { p = JSON.parse(item.CTPayload || ''); } catch (e) { p = null; }
+            if (!p || !p.id) return null;
+            return {
+                id: p.id, ts: p.ts, type: p.type, fields: p.fields || null, note: p.note || null,
+                spId: item.Id,
+                etag: item['odata.etag'] || null,
+                author_label: (item.Author && item.Author.Title) || '',
+                modified_by_label: (item.Editor && item.Editor.Title) || '',
+                modified_at: item.Modified || '',
+            };
+        }
+
+        return { toItem, fromItem, objectKey, toIsoDate };
+    })();
+
+
 
     /* ==========================================================
      *  API CLIENT  (Cloudflare Worker proxy to D1)
@@ -5333,7 +5399,7 @@
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerSpTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs };
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper };
         }
 
         return function register() {
