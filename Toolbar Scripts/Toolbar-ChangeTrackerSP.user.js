@@ -1369,6 +1369,165 @@
         return { toItem, fromItem, objectKey, toIsoDate };
     })();
 
+    /* ==========================================================
+     *  LIST SCHEMA  (the columns the list needs, "Check / prepare list")
+     * ==========================================================*/
+
+    const SP_COLUMNS = [
+        { name: 'CTEntryDate', title: 'Entry Date', type: 'DateTime', indexed: true },
+        { name: 'CTGroup',     title: 'Group',      type: 'Choice',   choices: 'groups' },
+        { name: 'CTType',      title: 'Type',       type: 'Choice',   choices: 'types' },
+        { name: 'CTObject',    title: 'Object',     type: 'Text' },
+        { name: 'CTDetails',   title: 'Details',    type: 'Note' },
+        { name: 'CTEntryId',   title: 'Entry ID',   type: 'Text',     indexed: true, unique: true },
+        { name: 'CTPayload',   title: 'Payload',    type: 'Note' },
+    ];
+
+    const listSchema = (() => {
+        const P = { view: 0x1, add: 0x2, edit: 0x4, del: 0x8, manage: 0x800 };
+        const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+        const colByName = (name) => SP_COLUMNS.find(c => c.name === name);
+        const titleOf = (name) => (colByName(name) || { title: name === 'Title' ? 'Ticket' : name }).title;
+
+        function choicesFor(col) {
+            return col.choices === 'groups'
+                ? SNIPPET_GROUPS.map(g => g.group)
+                : SNIPPET_GROUPS.flatMap(g => g.items.map(i => i.value));
+        }
+
+        function fieldXml(col) {
+            const a = `Name='${col.name}' StaticName='${col.name}' DisplayName='${xmlEsc(col.title)}'`;
+            if (col.type === 'DateTime') return `<Field Type='DateTime' ${a} Format='DateTime'/>`;
+            if (col.type === 'Text')     return `<Field Type='Text' ${a} MaxLength='255'/>`;
+            if (col.type === 'Note')     return `<Field Type='Note' ${a} RichText='FALSE' NumLines='6'/>`;
+            return `<Field Type='Choice' ${a} FillInChoice='TRUE' Format='Dropdown'><CHOICES>` +
+                choicesFor(col).map(c => `<CHOICE>${xmlEsc(c)}</CHOICE>`).join('') + '</CHOICES></Field>';
+        }
+
+        function describeFailure(res) {
+            if (!res) return '';
+            if (res.kind === 'session') return 'You are not signed in to SharePoint in this browser. Open the site in another tab, sign in, then check again.';
+            if (res.kind === 'forbidden') return 'You do not have access to this site or list. Ask the site owner for access.';
+            if (res.kind === 'network' || res.kind === 'server') return 'SharePoint could not be reached. Check the site address and your connection.';
+            if (res.kind === 'notfound') return 'Not found. Check the site address.';
+            return res.message || `SharePoint answered with an error (HTTP ${res.status}).`;
+        }
+
+        async function inspect() {
+            const report = { user: null, list: null, entityType: null, versioning: false, perms: null, titleRenamed: false,
+                missingColumns: [], wrongColumns: [], missingIndexes: [], missingUnique: [], missingChoices: {}, haveChoices: {}, failure: null };
+            const me = await spClient.currentUser();
+            if (!me.ok) { report.failure = me; return report; }
+            report.user = me.data.Title;
+            const list = await spClient.call({ method: 'GET', path: spClient.listPath() +
+                qs({ $select: 'Title,ListItemEntityTypeFullName,EnableVersioning,EffectiveBasePermissions' }) });
+            if (list.kind === 'notfound') { report.list = false; return report; }
+            if (!list.ok) { report.failure = list; return report; }
+            report.list = true;
+            report.entityType = list.data.ListItemEntityTypeFullName;
+            report.versioning = !!list.data.EnableVersioning;
+            const low = Number(list.data.EffectiveBasePermissions && list.data.EffectiveBasePermissions.Low) || 0;
+            report.perms = Object.fromEntries(Object.entries(P).map(([k, bit]) => [k, (low & bit) === bit]));
+            const fields = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/fields` +
+                qs({ $filter: 'Hidden eq false', $select: 'Title,InternalName,TypeAsString,Indexed,EnforceUniqueValues,Choices' }) });
+            if (!fields.ok) { report.failure = fields; return report; }
+            const byName = {};
+            (fields.data.value || []).forEach(f => { byName[f.InternalName] = f; });
+            report.titleRenamed = !!(byName.Title && byName.Title.Title === 'Ticket');
+            if (!byName.Title || !byName.Title.Indexed) report.missingIndexes.push('Title');
+            for (const col of SP_COLUMNS) {
+                const f = byName[col.name];
+                if (!f) { report.missingColumns.push(col.name); continue; }
+                if (f.TypeAsString !== col.type) report.wrongColumns.push(col.name);
+                if (col.indexed && !f.Indexed) report.missingIndexes.push(col.name);
+                if (col.unique && !f.EnforceUniqueValues) report.missingUnique.push(col.name);
+                if (col.type === 'Choice') {
+                    const have = Array.isArray(f.Choices) ? f.Choices : ((f.Choices && f.Choices.results) || []);
+                    report.haveChoices[col.name] = have;
+                    const miss = choicesFor(col).filter(c => !have.includes(c));
+                    if (miss.length) report.missingChoices[col.name] = miss;
+                }
+            }
+            return report;
+        }
+
+        function isReady(r) {
+            return r.list === true && !r.failure && !r.missingColumns.length && !r.wrongColumns.length &&
+                r.perms.view && r.perms.add && r.perms.edit && r.perms.del;
+        }
+
+        function mergeField(name, body) {
+            return spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/getbyinternalnameortitle('${name}')`,
+                body, xMethod: 'MERGE', ifMatch: '*' });
+        }
+
+        async function prepare() {
+            const steps = [];
+            const step = (label, res) => {
+                const ok = res === true || !!(res && res.ok);
+                steps.push({ label, ok, detail: ok ? '' : describeFailure(res) });
+                return ok;
+            };
+            let r = await inspect();
+            if (r.failure && r.list === null && !r.user) { step('Signed in to SharePoint', r.failure); return { steps, report: r, ready: false }; }
+            steps.push({ label: `Signed in as ${r.user}`, ok: true, detail: '' });
+            if (r.failure) { step(`Open list "${spClient.listTitle()}"`, r.failure); return { steps, report: r, ready: false }; }
+            if (r.list === false) {
+                const created = await spClient.call({ method: 'POST', path: '/_api/web/lists',
+                    body: { __metadata: { type: 'SP.List' }, BaseTemplate: 100, Title: spClient.listTitle(), EnableVersioning: true } });
+                if (!step(`Create list "${spClient.listTitle()}"`, created)) {
+                    if (created.kind === 'forbidden' || created.kind === 'session') steps[steps.length - 1].detail =
+                        `The list does not exist and you cannot create it. Ask a site owner to press "Check / prepare list" once.`;
+                    return { steps, report: r, ready: false };
+                }
+                r = await inspect();
+                if (r.failure) { step('Open the new list', r.failure); return { steps, report: r, ready: false }; }
+            } else {
+                steps.push({ label: `List "${spClient.listTitle()}" found`, ok: true, detail: '' });
+            }
+
+            const needsChanges = r.missingColumns.length || r.missingIndexes.length || r.missingUnique.length ||
+                Object.keys(r.missingChoices).length || !r.versioning || !r.titleRenamed;
+            if (needsChanges && !r.perms.manage) {
+                const missing = [...r.missingColumns.map(n => `column "${titleOf(n)}"`),
+                    ...r.missingIndexes.map(n => `index on "${titleOf(n)}"`)].join(', ');
+                steps.push({ label: 'Prepare the list', ok: !r.missingColumns.length,
+                    detail: `You cannot change this list. Ask a site owner to press "Check / prepare list" once${missing ? ', or to add: ' + missing : ''}.` });
+            } else if (needsChanges) {
+                for (const name of r.missingColumns) {
+                    const col = colByName(name);
+                    step(`Add column "${col.title}"`, await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/createfieldasxml`,
+                        body: { parameters: { __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: fieldXml(col), Options: 0 } } }));
+                }
+                if (r.missingColumns.length) r = await inspect();
+                for (const name of r.missingIndexes) step(`Index column "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.Field' }, Indexed: true }));
+                for (const name of r.missingUnique) step(`Require unique values in "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.Field' }, EnforceUniqueValues: true }));
+                for (const name of Object.keys(r.missingChoices)) {
+                    const all = [...new Set([...(r.haveChoices[name] || []), ...choicesFor(colByName(name))])];
+                    step(`Update the choices of "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.FieldChoice' },
+                        Choices: { __metadata: { type: 'Collection(Edm.String)' }, results: all } }));
+                }
+                if (!r.versioning) step('Turn on version history', await spClient.call({ method: 'POST', path: spClient.listPath(),
+                    body: { __metadata: { type: 'SP.List' }, EnableVersioning: true }, xMethod: 'MERGE', ifMatch: '*' }));
+                if (!r.titleRenamed) step('Show the Title column as "Ticket"', await mergeField('Title', { __metadata: { type: 'SP.Field' }, Title: 'Ticket' }));
+            }
+
+            r = await inspect();
+            if (r.failure) { step('Check the list again', r.failure); return { steps, report: r, ready: false }; }
+            if (r.wrongColumns.length) steps.push({ label: 'Column types', ok: false,
+                detail: `These columns exist with another type: ${r.wrongColumns.map(titleOf).join(', ')}. Ask a site owner to delete them, then check again.` });
+            const permLabels = [['view', 'Read entries'], ['add', 'Add entries'], ['edit', 'Edit entries'], ['del', 'Delete entries']];
+            for (const [k, label] of permLabels) {
+                steps.push({ label, ok: r.perms[k], detail: r.perms[k] ? '' : 'You do not have this permission on the list. Ask the site owner.' });
+            }
+            return { steps, report: r, ready: isReady(r) };
+        }
+
+        return { inspect, prepare, isReady, describeFailure };
+    })();
+
+
 
 
     /* ==========================================================
@@ -5399,7 +5558,7 @@
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerSpTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper };
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema };
         }
 
         return function register() {
