@@ -1531,83 +1531,128 @@
 
 
     /* ==========================================================
-     *  API CLIENT  (Cloudflare Worker proxy to D1)
-     *  Single fetch surface. All errors return { ok: false, ... }
-     *  rather than throwing, so callers can route them through
-     *  handleApiResponse() without try/catch.
+     *  API  (SharePoint list)
+     *  Same surface the rest of the tool has always used. Calls never
+     *  throw; failures go through handleApiResponse().
      * ==========================================================*/
 
+    const ITEM_SELECT  = 'Id,CTPayload,Modified,Author/Title,Editor/Title';
+    const SP_PAGE_SIZE = Number(GM_getValue('changeTrackerSpPageSize', 500)) || 500;
+
     const api = {
+        lastFailure: null,
+        _entityType: null,
 
-        // Read Worker URL and token from GM storage
-        getConfig() {
-            return {
-                url:   GM_getValue('changeTrackerWorkerUrl', ''),
-                token: GM_getValue('changeTrackerToken',     ''),
-            };
-        },
-
-        // Returns true if both url and token are set
         isConfigured() {
-            const { url, token } = api.getConfig();
-            return Boolean(url && token);
-        },
-
-        // Shared fetch wrapper.
-        // Returns { ok: true, data } or { ok: false, status, network: bool }
-        // A failed network attempt (dropped connection, proxy hiccup) is
-        // retried once before reporting the failure, so one glitch does not
-        // flip the sidebar to offline.
-        async request(method, path, body, retries = 1) {
-            const { url, token } = api.getConfig();
-            try {
-                const res = await fetch(`${url}${path}`, {
-                    method,
-                    headers: {
-                        'Content-Type':  'application/json',
-                        'Authorization': `Bearer ${token}`,
-                    },
-                    body: body ? JSON.stringify(body) : undefined,
-                });
-                if (res.ok) {
-                    return { ok: true, data: await res.json() };
-                }
-                return { ok: false, status: res.status, network: false };
-            } catch (e) {
-                if (retries > 0) {
-                    await new Promise(r => setTimeout(r, 800));
-                    return api.request(method, path, body, retries - 1);
-                }
-                return { ok: false, status: 0, network: true };
-            }
+            return Boolean(spClient.siteUrl()) && GM_getValue(SP_SETUP_OK_KEY, false) === true;
         },
 
         async ping() {
-            const { url } = api.getConfig();
-            if (!url) return false;
-            try {
-                const res = await fetch(`${url}/ping`);
-                return res.ok;
-            } catch { return false; }
+            const res = await spClient.currentUser();
+            api.lastFailure = res.ok ? null : res;
+            return res.ok;
+        },
+
+        async entityType() {
+            if (api._entityType) return { ok: true, data: api._entityType };
+            const res = await spClient.call({ method: 'GET', path: spClient.listPath() + qs({ $select: 'ListItemEntityTypeFullName' }) });
+            if (!res.ok) return res;
+            api._entityType = res.data.ListItemEntityTypeFullName;
+            return { ok: true, data: api._entityType };
+        },
+
+        async _allItems(params) {
+            const items = [];
+            let res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` + qs(Object.assign({ $top: String(SP_PAGE_SIZE) }, params)) });
+            for (;;) {
+                if (!res.ok) return res;
+                items.push(...(res.data.value || []));
+                const next = res.data['odata.nextLink'];
+                if (!next) return { ok: true, data: items };
+                res = await spClient.call({ method: 'GET', url: next });
+            }
         },
 
         async fetchEntries(ticket) {
-            return api.request('GET', `/entries/${encodeURIComponent(ticket)}`);
+            const res = await api._allItems({ $filter: `Title eq '${spClient.odataQuote(ticket)}'`, $select: ITEM_SELECT,
+                $expand: 'Author,Editor', $orderby: 'CTEntryDate asc' });
+            if (!res.ok) return res;
+            return { ok: true, data: { entries: res.data.map(entryMapper.fromItem).filter(Boolean) } };
+        },
+
+        async findItem(entryId) {
+            const res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` + qs({
+                $filter: `CTEntryId eq '${spClient.odataQuote(entryId)}'`, $select: ITEM_SELECT, $expand: 'Author,Editor', $top: '1' }) });
+            if (!res.ok) return res;
+            const item = (res.data.value || [])[0];
+            return item ? { ok: true, data: item } : { ok: false, status: 404, kind: 'notfound' };
+        },
+
+        async getEntry(entryId) {
+            const res = await api.findItem(entryId);
+            if (!res.ok) return res;
+            const entry = entryMapper.fromItem(res.data);
+            return entry ? { ok: true, data: entry } : { ok: false, status: 0, kind: 'bad' };
+        },
+
+        // Creates or updates one entry. entry.ticket must be set.
+        async saveEntry(entry) {
+            const et = await api.entityType();
+            if (!et.ok) return et;
+            const body = entryMapper.toItem(entry, entry.ticket, et.data);
+            if (body.CTPayload.length > SP_FIELD_MAX || body.CTDetails.length > SP_FIELD_MAX) return { ok: false, status: 0, kind: 'tooLarge' };
+            const itemsPath = `${spClient.listPath()}/items`;
+            let spId = entry.spId || null;
+            if (!spId) {
+                const created = await spClient.call({ method: 'POST', path: itemsPath, body });
+                if (created.ok) return { ok: true, data: { id: entry.id, spId: created.data.Id, etag: created.etag || created.data['odata.etag'] || null } };
+                // Already in the list: an earlier attempt was saved but its reply never arrived.
+                if (created.kind !== 'bad' || !/unique|duplicate|already used/i.test(created.message || '')) return created;
+                const found = await api.findItem(entry.id);
+                if (!found.ok) return found;
+                spId = found.data.Id;
+            }
+            const ifMatch = entry.force || !entry.etag ? '*' : entry.etag;
+            const res = await spClient.call({ method: 'POST', path: `${itemsPath}(${spId})`, body, xMethod: 'MERGE', ifMatch });
+            if (!res.ok) return res;
+            let etag = res.etag;
+            if (!etag) {
+                const fresh = await spClient.call({ method: 'GET', path: `${itemsPath}(${spId})` + qs({ $select: 'Id' }) });
+                etag = fresh.ok ? fresh.data['odata.etag'] || null : null;
+            }
+            return { ok: true, data: { id: entry.id, spId, etag } };
         },
 
         async pushEntries(entries) {
-            return api.request('POST', '/entries', { entries });
+            const saved = [];
+            for (const entry of entries) {
+                const res = await api.saveEntry(entry);
+                if (!res.ok) return Object.assign({}, res, { entryId: entry.id, saved });
+                saved.push(res.data);
+            }
+            return { ok: true, data: { saved } };
+        },
+
+        async deleteEntry(ticket, entryId, spId) {
+            if (!spId) {
+                const found = await api.findItem(entryId);
+                if (!found.ok) return found;   // notfound: already gone, which is the goal
+                spId = found.data.Id;
+            }
+            return spClient.call({ method: 'POST', path: `${spClient.listPath()}/items(${spId})`, xMethod: 'DELETE', ifMatch: '*' });
         },
 
         async deleteTicket(ticket) {
-            return api.request('DELETE', `/entries/${encodeURIComponent(ticket)}`);
-        },
-
-        async deleteEntry(ticket, id) {
-            return api.request('DELETE',
-                `/entries/${encodeURIComponent(ticket)}/${encodeURIComponent(id)}`);
+            const res = await api._allItems({ $filter: `Title eq '${spClient.odataQuote(ticket)}'`, $select: 'Id' });
+            if (!res.ok) return res;
+            for (const item of res.data) {
+                const del = await spClient.call({ method: 'POST', path: `${spClient.listPath()}/items(${item.Id})`, xMethod: 'DELETE', ifMatch: '*' });
+                if (!del.ok && del.kind !== 'notfound') return del;
+            }
+            return { ok: true, data: { deleted: res.data.length } };
         },
     };
+
 
     /* ==========================================================
      *  TICKET WRITER  (auto-write entries into SNow worknote/comments)
@@ -2467,11 +2512,9 @@
 
     function handleApiResponse(res) {
         if (res.ok) return;
-        if (res.status === 401) {
-            setConnState('INVALID_TOKEN');
-        } else if (res.network || res.status >= 500) {
-            setConnState('OFFLINE');
-        }
+        if (res.kind === 'session')                          setConnState('SESSION_EXPIRED');
+        else if (res.kind === 'forbidden' || res.kind === 'notfound') setConnState('NO_ACCESS');
+        else if (res.kind === 'network' || res.kind === 'server')     setConnState('OFFLINE');
     }
 
     /* ==========================================================
@@ -2543,10 +2586,9 @@
             .map(k => k.slice(PENDING_PREFIX.length));
     }
 
-    // Network / 5xx / 401 failures stop the flush (try again later);
-    // other client errors (400, 404, 429) are handled per item.
+    // These stop a flush (try again later); anything else is about one entry only.
     function isTransientFailure(res) {
-        return res.network || res.status >= 500 || res.status === 401;
+        return ['network', 'server', 'session', 'forbidden'].includes(res.kind);
     }
 
     /**
@@ -2579,16 +2621,16 @@
         p.upserts = p.upserts.filter(id => toPush.some(e => e.id === id));
         savePending(ticket, p);
 
-        for (let i = 0; i < toPush.length; i += 50) {
-            const chunk = toPush.slice(i, i + 50);
-            const res = await api.pushEntries(chunk.map(e => ({ ...e, ticket })));
+        for (const entry of toPush) {
+            if (entry.problem) continue;   // waits for the user's decision or a shorter edit
+            const res = await api.saveEntry({ ...entry, ticket });
             if (!res.ok) {
                 if (isTransientFailure(res)) { handleApiResponse(res); return { ok: false, synced }; }
-                console.warn(`CT: server rejected ${chunk.length} pending entries for ${ticket} (HTTP ${res.status}); they stay queued`);
+                markEntryProblem(ticket, entry.id, res.kind);
                 continue;
             }
-            const done = new Set(chunk.map(e => e.id));
-            p.upserts = p.upserts.filter(id => !done.has(id)); synced += chunk.length;
+            applySaved(ticket, res.data);
+            p.upserts = p.upserts.filter(id => id !== entry.id); synced++;
             savePending(ticket, p);
         }
         return { ok: true, synced };
@@ -2618,27 +2660,51 @@
             .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
     }
 
+    // Copy what SharePoint returned for a saved entry (item id and version) into the cache.
+    function applySaved(ticket, saved) {
+        const entries = loadEntries(ticket);
+        const e = entries.find(x => x.id === saved.id);
+        if (!e) return;
+        e.spId = saved.spId;
+        e.etag = saved.etag;
+        delete e.problem;
+        delete e.force;
+        _cacheEntries(ticket, entries);
+    }
+
+    // Remember why SharePoint refused an entry, so its card can say so.
+    function markEntryProblem(ticket, id, kind) {
+        const problem = kind === 'notfound' ? 'deleted' : (kind === 'conflict' || kind === 'tooLarge' ? kind : 'rejected');
+        const entries = loadEntries(ticket);
+        const e = entries.find(x => x.id === id);
+        if (!e) return;
+        e.problem = problem;
+        _cacheEntries(ticket, entries);
+    }
+
+    function clearPendingUpsert(ticket, id) {
+        const p = loadPending(ticket);
+        p.upserts = p.upserts.filter(x => x !== id);
+        savePending(ticket, p);
+    }
+
     async function addEntry(ticket, type, fields, note) {
-        const entry   = {
-            id:     uid(),
-            ts:     nowStamp(),
-            type,
-            fields: fields || null,
-            note:   note   || null,
-        };
+        const entry = { id: uid(), ts: nowStamp(), type, fields: fields || null, note: note || null };
         const current = loadEntries(ticket);
         current.push(entry);
         _cacheEntries(ticket, current);                          // optimistic local update
-        markPendingUpsert(ticket, entry.id);                     // cleared once the Worker confirms
+        markPendingUpsert(ticket, entry.id);                     // cleared once SharePoint confirms
 
         if (connState === 'ONLINE') {
-            const res = await api.pushEntries([{ ...entry, ticket }]);
-            handleApiResponse(res);
+            const res = await api.saveEntry({ ...entry, ticket });
             if (res.ok) {
-                const p = loadPending(ticket);
-                p.upserts = p.upserts.filter(id => id !== entry.id);
-                savePending(ticket, p);
+                applySaved(ticket, res.data);
+                clearPendingUpsert(ticket, entry.id);
                 await syncTicket(ticket);
+            } else if (isTransientFailure(res)) {
+                handleApiResponse(res);
+            } else {
+                markEntryProblem(ticket, entry.id, res.kind);
             }
         }
         return loadEntries(ticket);
@@ -2646,37 +2712,42 @@
 
     async function updateEntry(ticket, entryId, type, fields, note) {
         const entries = loadEntries(ticket);
-        const idx     = entries.findIndex(e => e.id === entryId);
-        if (idx !== -1) {
-            entries[idx] = { ...entries[idx], type, fields: fields || null, note: note || null };
-            _cacheEntries(ticket, entries);
-            markPendingUpsert(ticket, entryId);
+        const idx = entries.findIndex(e => e.id === entryId);
+        if (idx === -1) return entries;
+        entries[idx] = { ...entries[idx], type, fields: fields || null, note: note || null };
+        delete entries[idx].problem;
+        _cacheEntries(ticket, entries);
+        markPendingUpsert(ticket, entryId);
 
-            if (connState === 'ONLINE') {
-                const res = await api.pushEntries([{ ...entries[idx], ticket }]);
+        if (connState === 'ONLINE') {
+            const res = await api.saveEntry({ ...entries[idx], ticket });
+            if (res.ok) {
+                applySaved(ticket, res.data);
+                clearPendingUpsert(ticket, entryId);
+            } else if (isTransientFailure(res)) {
                 handleApiResponse(res);
-                if (res.ok) {
-                    const p = loadPending(ticket);
-                    p.upserts = p.upserts.filter(id => id !== entryId);
-                    savePending(ticket, p);
-                }
+            } else {
+                markEntryProblem(ticket, entryId, res.kind);
             }
         }
-        return entries;
+        return loadEntries(ticket);
     }
 
     async function deleteEntry(ticket, entryId) {
-        const entries = loadEntries(ticket).filter(e => e.id !== entryId);
+        const all = loadEntries(ticket);
+        const gone = all.find(e => e.id === entryId);
+        const entries = all.filter(e => e.id !== entryId);
         _cacheEntries(ticket, entries);
         markPendingDelete(ticket, entryId);
 
         if (connState === 'ONLINE') {
-            const res = await api.deleteEntry(ticket, entryId);
-            handleApiResponse(res);
-            if (res.ok || res.status === 404) {
+            const res = await api.deleteEntry(ticket, entryId, gone && gone.spId);
+            if (res.ok || res.kind === 'notfound') {
                 const p = loadPending(ticket);
                 p.deletes = p.deletes.filter(id => id !== entryId);
                 savePending(ticket, p);
+            } else {
+                handleApiResponse(res);
             }
         }
         return entries;
@@ -3640,8 +3711,9 @@
         }
 
         // Timestamp + author
-        const author = entry.author_label || entry.author_user_id || '(unknown)';
-        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}` }), {
+        const author = entry.author_label || (entry.spId ? '(unknown)' : 'you');
+        const editedBy = entry.modified_by_label && entry.modified_by_label !== author ? `  ·  edited by ${entry.modified_by_label}` : '';
+        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}${editedBy}` }), {
             fontSize:'10px', color:'#bbb', marginTop:'6px', fontFamily:'monospace'
         });
         if (isEntryPending(ticket, entry.id)) {
@@ -4519,8 +4591,11 @@
         const reachable = await api.ping();
 
         if (!reachable) {
-            setConnState('OFFLINE');
-            if (!silent) flashStatus('Still offline — try again later.', '#e67e22');
+            const f = api.lastFailure || { ok: false, kind: 'network' };
+            handleApiResponse(['session', 'forbidden'].includes(f.kind) ? f : { ok: false, kind: 'network' });
+            if (!silent) flashStatus(
+                connState === 'SESSION_EXPIRED' ? 'SharePoint session expired. Sign in to SharePoint, then try again.'
+                : connState === 'NO_ACCESS' ? 'No access to the SharePoint list.' : 'Still offline. Try again later.', '#e67e22');
             const b = document.getElementById('ctsp-reconnect-btn');
             if (b) { b.textContent = '↺ Reconnect'; b.disabled = false; b.style.opacity = '1'; }
             return;
