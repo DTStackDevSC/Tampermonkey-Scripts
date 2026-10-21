@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.1.0
+// @version      0.1.1
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,8 +91,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.1.0';
-    const CHANGELOG = `Version 0.1.0:
+    const SCRIPT_VERSION = '0.1.1';
+    const CHANGELOG = `Version 0.1.1:
+- Fixed "Check / prepare list" creating columns the tracker could not find afterwards, which kept "Save & Connect" from finishing even when every row was green.
+- "Check / prepare list" now marks every column that is still missing with ✖. On an empty list it replaces columns with the same name that the tracker did not create, such as those left by version 0.1.0. When the list already has entries, it asks you to delete those columns instead.
+- New columns now also appear in the list's default view in SharePoint.
+
+Version 0.1.0:
 - First test version of the Change Tracker that keeps the team log in a SharePoint list instead of the team server. It has its own "SP" button in the toolbar, so you can try it next to the current Change Tracker.
 - Setup asks for the SharePoint site and the list name. "Check / prepare list" creates the list and its columns when they are missing, and tells you what to ask the site owner for when you cannot change the list.
 - No token or activation code: everyone who can open the SharePoint site can use the log.
@@ -1396,6 +1401,9 @@
 
     const listSchema = (() => {
         const P = { view: 0x1, add: 0x2, edit: 0x4, del: 0x8, manage: 0x800 };
+        // AddFieldInternalNameHint (8) keeps our internal names; without it SharePoint names the
+        // column after its display name. AddFieldToDefaultView (16) shows it in the list view.
+        const SP_ADD_FIELD_OPTIONS = 8 | 16;
         const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/'/g, '&apos;').replace(/"/g, '&quot;');
         const colByName = (name) => SP_COLUMNS.find(c => c.name === name);
@@ -1427,17 +1435,18 @@
 
         async function inspect() {
             const report = { user: null, list: null, entityType: null, versioning: false, perms: null, titleRenamed: false,
-                missingColumns: [], wrongColumns: [], missingIndexes: [], missingUnique: [], missingChoices: {}, haveChoices: {}, failure: null };
+                missingColumns: [], lookalikes: {}, wrongColumns: [], missingIndexes: [], missingUnique: [], missingChoices: {}, haveChoices: {}, failure: null };
             const me = await spClient.currentUser();
             if (!me.ok) { report.failure = me; return report; }
             report.user = me.data.Title;
             const list = await spClient.call({ method: 'GET', path: spClient.listPath() +
-                qs({ $select: 'Title,ListItemEntityTypeFullName,EnableVersioning,EffectiveBasePermissions' }) });
+                qs({ $select: 'Title,ItemCount,ListItemEntityTypeFullName,EnableVersioning,EffectiveBasePermissions' }) });
             if (list.kind === 'notfound') { report.list = false; return report; }
             if (!list.ok) { report.failure = list; return report; }
             report.list = true;
             report.entityType = list.data.ListItemEntityTypeFullName;
             report.versioning = !!list.data.EnableVersioning;
+            report.itemCount = Number(list.data.ItemCount) || 0;
             const low = Number(list.data.EffectiveBasePermissions && list.data.EffectiveBasePermissions.Low) || 0;
             report.perms = Object.fromEntries(Object.entries(P).map(([k, bit]) => [k, (low & bit) === bit]));
             const fields = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/fields` +
@@ -1449,7 +1458,13 @@
             if (!byName.Title || !byName.Title.Indexed) report.missingIndexes.push('Title');
             for (const col of SP_COLUMNS) {
                 const f = byName[col.name];
-                if (!f) { report.missingColumns.push(col.name); continue; }
+                if (!f) {
+                    report.missingColumns.push(col.name);
+                    // Same display name, other internal name: added by hand or by version 0.1.0.
+                    const twin = (fields.data.value || []).find(x => x.Title === col.title && x.InternalName !== col.name);
+                    if (twin) report.lookalikes[col.name] = twin.InternalName;
+                    continue;
+                }
                 if (f.TypeAsString !== col.type) report.wrongColumns.push(col.name);
                 if (col.indexed && !f.Indexed) report.missingIndexes.push(col.name);
                 if (col.unique && !f.EnforceUniqueValues) report.missingUnique.push(col.name);
@@ -1506,12 +1521,20 @@
                 steps.push({ label: 'Prepare the list', ok: !r.missingColumns.length,
                     detail: `You cannot change this list. Ask a site owner to press "Check / prepare list" once${missing ? ', or to add: ' + missing : ''}.` });
             } else if (needsChanges) {
-                for (const name of r.missingColumns) {
+                // On an empty list, a column with our name that we did not create can go: nothing is lost.
+                if (r.itemCount === 0) {
+                    for (const [name, twin] of Object.entries(r.lookalikes)) {
+                        const removed = await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/getbyinternalnameortitle('${twin}')`,
+                            xMethod: 'DELETE', ifMatch: '*' });
+                        if (step(`Remove column "${titleOf(name)}" (not made by the tracker, the list is empty)`, removed)) delete r.lookalikes[name];
+                    }
+                }
+                for (const name of r.missingColumns.filter(n => !r.lookalikes[n])) {
                     const col = colByName(name);
                     step(`Add column "${col.title}"`, await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/createfieldasxml`,
-                        body: { parameters: { __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: fieldXml(col), Options: 0 } } }));
+                        body: { parameters: { __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: fieldXml(col), Options: SP_ADD_FIELD_OPTIONS } } }));
                 }
-                if (r.missingColumns.length) r = await inspect();
+                if (r.missingColumns.some(n => !r.lookalikes[n])) r = await inspect();
                 for (const name of r.missingIndexes) step(`Index column "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.Field' }, Indexed: true }));
                 for (const name of r.missingUnique) step(`Require unique values in "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.Field' }, EnforceUniqueValues: true }));
                 for (const name of Object.keys(r.missingChoices)) {
@@ -1526,6 +1549,12 @@
 
             r = await inspect();
             if (r.failure) { step('Check the list again', r.failure); return { steps, report: r, ready: false }; }
+            for (const name of r.missingColumns) {
+                const twin = r.lookalikes[name];
+                steps.push({ label: `Column "${titleOf(name)}"`, ok: false, detail: twin
+                    ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and the list already has entries. Delete that column in the list settings, then check again.`
+                    : `This column is still missing. Ask a site owner to press "Check / prepare list", then check again.` });
+            }
             if (r.wrongColumns.length) steps.push({ label: 'Column types', ok: false,
                 detail: `These columns exist with another type: ${r.wrongColumns.map(titleOf).join(', ')}. Ask a site owner to delete them, then check again.` });
             const permLabels = [['view', 'Read entries'], ['add', 'Add entries'], ['edit', 'Edit entries'], ['del', 'Delete entries']];
