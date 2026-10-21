@@ -1175,6 +1175,137 @@
     }
 
     /* ==========================================================
+     *  SHAREPOINT SETTINGS
+     * ==========================================================*/
+
+    const SP_SITE_KEY     = 'changeTrackerSpSiteUrl';
+    const SP_LIST_KEY     = 'changeTrackerSpListTitle';
+    const SP_SETUP_OK_KEY = 'changeTrackerSpSetupOk';
+    const SP_DEFAULT_LIST = 'ChangeTracker';
+    const SP_FIELD_MAX    = 63000;   // a plain multi line column holds about 63,999 characters
+    const SP_ACCEPT       = 'application/json;odata=minimalmetadata';
+    const SP_VERBOSE      = 'application/json;odata=verbose';
+
+    function qs(params) {
+        return '?' + Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== null && v !== '')
+            .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    }
+
+    /* ==========================================================
+     *  SHAREPOINT CLIENT
+     *  Every call to SharePoint goes through here, with the user's own
+     *  M365 session. Calls never throw: they resolve to
+     *  { ok, status, kind, data, etag, message }.
+     *  kind: ok | network | server | session | forbidden | conflict |
+     *        notfound | tooLarge | bad
+     * ==========================================================*/
+
+    const spClient = (() => {
+        let digest = null;
+        let digestExpires = 0;
+        let hadSuccess = false;   // a 403 after a success means the session changed
+        let onWait = null;
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+        function siteUrl()   { return String(GM_getValue(SP_SITE_KEY, '') || '').trim().replace(/\/+$/, ''); }
+        function listTitle() { return String(GM_getValue(SP_LIST_KEY, '') || '').trim() || SP_DEFAULT_LIST; }
+        function odataQuote(s) { return String(s).replace(/'/g, "''"); }
+        function listPath()  { return `/_api/web/lists/getbytitle('${encodeURIComponent(odataQuote(listTitle()))}')`; }
+
+        function raw(method, url, headers, body) {
+            return new Promise(resolve => {
+                GM_xmlhttpRequest({
+                    method, url, headers, data: body, anonymous: false, timeout: 20000,
+                    onload:    r  => resolve(r),
+                    onerror:   () => resolve({ status: 0, network: true }),
+                    ontimeout: () => resolve({ status: 0, network: true }),
+                });
+            });
+        }
+
+        function header(r, name) {
+            const m = String(r.responseHeaders || '').match(new RegExp('^' + name + ':\\s*(.+?)\\s*$', 'im'));
+            return m ? m[1] : null;
+        }
+
+        function classify(r) {
+            const text = r.responseText || '';
+            let data = null;
+            try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+            const err = data && (data['odata.error'] || data.error);
+            const message = err && err.message ? String(err.message.value || err.message) : '';
+            const toLogin = /login\.microsoftonline\.com|login\.windows\.net|\/_forms\/default\.aspx|\/_layouts\/15\/Authenticate\.aspx/i.test(r.finalUrl || '');
+            const base = { status: r.status || 0, data, message, etag: header(r, 'etag') };
+            if (r.network) return { ...base, ok: false, kind: 'network' };
+            if (toLogin || (r.status === 200 && !data && /^\s*</.test(text))) return { ...base, ok: false, kind: 'session' };
+            if (r.status >= 200 && r.status < 300) return { ...base, ok: true, kind: 'ok' };
+            if (r.status === 401) return { ...base, ok: false, kind: 'session' };
+            if (r.status === 403) {
+                const kind = /security validation/i.test(message) ? 'digest' : (hadSuccess ? 'session' : 'forbidden');
+                return { ...base, ok: false, kind };
+            }
+            if (r.status === 404) return { ...base, ok: false, kind: 'notfound' };
+            if (r.status === 412) return { ...base, ok: false, kind: 'conflict' };
+            if (r.status === 413 || (r.status === 400 && /maximum length|too long|exceeds/i.test(message))) return { ...base, ok: false, kind: 'tooLarge' };
+            if (r.status === 429 || r.status >= 500) return { ...base, ok: false, kind: 'server', retryAfter: Number(header(r, 'retry-after')) || 0 };
+            return { ...base, ok: false, kind: 'bad' };
+        }
+
+        async function refreshDigest() {
+            const res = classify(await raw('POST', `${siteUrl()}/_api/contextinfo`, { Accept: SP_ACCEPT }));
+            if (res.ok && res.data && res.data.FormDigestValue) {
+                digest = res.data.FormDigestValue;
+                digestExpires = Date.now() + ((Number(res.data.FormDigestTimeoutSeconds) || 1800) - 60) * 1000;
+                hadSuccess = true;
+            }
+            return res;
+        }
+
+        async function call(opts) {
+            const url = opts.url || (siteUrl() + opts.path);
+            const isWrite = opts.method !== 'GET';
+            let digestRetried = false, netRetried = false, throttleTries = 0;
+            for (;;) {
+                const headers = { Accept: SP_ACCEPT };
+                if (isWrite) {
+                    if (!digest || Date.now() >= digestExpires) {
+                        const d = await refreshDigest();
+                        if (!d.ok) return d.kind === 'digest' ? { ...d, kind: 'session' } : d;
+                    }
+                    headers['X-RequestDigest'] = digest;
+                    headers['Content-Type'] = SP_VERBOSE;
+                }
+                if (opts.xMethod) headers['X-HTTP-Method'] = opts.xMethod;
+                if (opts.ifMatch) headers['IF-MATCH'] = opts.ifMatch;
+                const res = classify(await raw(opts.method, url, headers, opts.body ? JSON.stringify(opts.body) : undefined));
+                if (res.ok) { hadSuccess = true; return res; }
+                if (res.kind === 'digest' && !digestRetried) { digestRetried = true; digest = null; continue; }
+                if (res.kind === 'digest') return { ...res, kind: 'session' };
+                if (res.kind === 'session') digest = null;
+                if (res.kind === 'network' && !netRetried) { netRetried = true; await wait(800); continue; }
+                if (res.kind === 'server' && res.retryAfter && throttleTries < 3) {
+                    throttleTries++;
+                    const seconds = Math.min(res.retryAfter, 30);
+                    if (seconds > 10 && onWait) onWait(seconds);
+                    await wait(seconds * 1000);
+                    continue;
+                }
+                return res;
+            }
+        }
+
+        function currentUser() {
+            return call({ method: 'GET', path: '/_api/web/currentuser' + qs({ $select: 'Id,Title,Email' }) });
+        }
+
+        return { call, currentUser, siteUrl, listTitle, listPath, odataQuote, setOnWait: (fn) => { onWait = fn; } };
+    })();
+
+    spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
+
+
+    /* ==========================================================
      *  API CLIENT  (Cloudflare Worker proxy to D1)
      *  Single fetch surface. All errors return { ok: false, ... }
      *  rather than throwing, so callers can route them through
@@ -5202,7 +5333,7 @@
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerSpTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS };
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs };
         }
 
         return function register() {
