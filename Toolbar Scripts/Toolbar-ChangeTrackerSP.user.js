@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.3.1
+// @version      0.4.0
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,8 +91,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.3.1';
-    const CHANGELOG = `Version 0.3.1:
+    const SCRIPT_VERSION = '0.4.0';
+    const CHANGELOG = `Version 0.4.0:
+- When someone else changed an entry while you were editing it, the warning now shows both versions side by side, field by field, with the changed fields highlighted. Unchanged fields are folded away and can be shown with one click.
+- The buttons now say exactly what they keep: "Keep <name>'s version" or "Keep mine".
+- New "Copy mine" button in that window: it copies your version of the entry, so you can keep the other version and still redo part of your change.
+
+Version 0.3.1:
 - Removed the temporary "🧪 Debug" button now that its checks have passed against the real SharePoint list.
 
 Version 0.3.0:
@@ -1033,6 +1038,9 @@ Version 0.1.0:
         #ctsp-setup-checklist { background-color: #f8f8ff !important; color: #333333 !important; }
         #ctsp-choice-modal { background-color: #ffffff !important; color: #333333 !important; }
         #ctsp-choice-modal button { color: #ffffff !important; }
+        #ctsp-choice-modal th { background-color: #f3f4ff !important; color: #444444 !important; }
+        #ctsp-choice-modal tr[data-diff="1"] td { background-color: #fff8e1 !important; color: #333333 !important; }
+        #ctsp-choice-modal tr[data-diff="0"] td { background-color: #ffffff !important; color: #888888 !important; }
 
         /* Busy indicator: blocks clicks at once, shows the wheel only after 150 ms */
         .ctsp-busy {
@@ -3646,14 +3654,15 @@ Version 0.1.0:
         rejected: { text: '⚠ Not accepted by SharePoint', title: 'SharePoint did not accept this entry. It stays on this computer. Edit it to try again.' },
     };
 
-    function choiceModal(message, choices) {
+    function choiceModal(message, choices, content) {
         document.getElementById('ctsp-choice-overlay')?.remove();
         document.getElementById('ctsp-choice-modal')?.remove();
         const ov = css(mk('div', { id:'ctsp-choice-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.45)', zIndex:'1100000' });
         const md = css(mk('div', { id:'ctsp-choice-modal' }), {
             position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1100001', background:'#fff',
             border:'2px solid #f0ad4e', padding:'22px', borderRadius:'10px', fontFamily:'Arial, sans-serif',
-            width:'380px', maxWidth:'92vw', boxShadow:'0 4px 16px rgba(0,0,0,.3)', textAlign:'center'
+            width: content ? '680px' : '380px', maxWidth:'94vw', maxHeight:'90vh', overflowY:'auto',
+            boxShadow:'0 4px 16px rgba(0,0,0,.3)', textAlign:'center', boxSizing:'border-box'
         });
         const msg = css(mk('p'), { margin:'0 0 18px', fontSize:'13px', color:'#333', lineHeight:'1.5', whiteSpace:'pre-line' });
         msg.textContent = message;
@@ -3661,15 +3670,89 @@ Version 0.1.0:
         choices.forEach((c, i) => {
             const b = css(mk('button', { type:'button' }), {
                 padding:'8px 16px', border:'none', borderRadius:'5px', cursor:'pointer', fontWeight:'bold', fontSize:'13px',
-                fontFamily:'Arial, sans-serif', background: i === 0 ? '#667eea' : '#6c757d', color:'#fff'
+                fontFamily:'Arial, sans-serif', background: c.secondary ? '#adb5bd' : i === 0 ? '#667eea' : '#6c757d', color:'#fff'
             });
             b.textContent = c.label;
             b.dataset.choice = c.id;
-            b.onclick = async () => { ov.remove(); md.remove(); await c.action(); };
+            b.onclick = async () => {
+                if (c.keepOpen) { await c.action(b); return; }
+                ov.remove(); md.remove(); await c.action();
+            };
             row.appendChild(b);
         });
-        md.append(msg, row);
+        md.append(msg);
+        if (content) md.appendChild(content);
+        md.append(row);
         document.body.append(ov, md);
+    }
+
+    // Field by field rows of two versions of one entry, in the order of the entry type's form.
+    function compareRows(theirs, mine) {
+        const rows = [];
+        const add = (label, a, b) => {
+            const x = a == null ? '' : String(a), y = b == null ? '' : String(b);
+            if (x || y) rows.push({ label, theirs: x, mine: y, differs: x !== y });
+        };
+        add('Change type', theirs.type, mine.type);
+        const keys = [], labels = {};
+        [theirs.type, mine.type].forEach(t => (getSchema(t) || []).forEach(f => {
+            [f, ...(f.extraFields || [])].forEach(x => { if (!labels[x.key]) { labels[x.key] = x.label; keys.push(x.key); } });
+        }));
+        const tf = theirs.fields || {}, mf = mine.fields || {};
+        Object.keys(tf).concat(Object.keys(mf)).forEach(k => { if (!labels[k]) { labels[k] = k; keys.push(k); } });
+        keys.forEach(k => add(labels[k], tf[k], mf[k]));
+        add(theirs.fields || mine.fields ? 'Additional details' : 'Details', theirs.note, mine.note);
+        return rows;
+    }
+
+    // Side by side table: changed fields first and highlighted, identical ones folded away.
+    function compareTable(rows, theirName) {
+        const wrap = css(mk('div', { className: 'ctsp-cmp' }), {
+            textAlign:'left', margin:'0 0 16px', maxHeight:'52vh', overflow:'auto',
+            border:'1px solid #e0e0e0', borderRadius:'6px'
+        });
+        const table = css(mk('table'), { width:'100%', borderCollapse:'collapse', fontSize:'12px', tableLayout:'fixed' });
+        const head = mk('tr');
+        [['', '24%'], [`Their version (${theirName})`, '38%'], ['Your version', '38%']].forEach(([h, w]) => {
+            head.appendChild(css(mk('th', { textContent: h }), {
+                textAlign:'left', padding:'6px 8px', background:'#f3f4ff', color:'#444', width: w,
+                borderBottom:'1px solid #e0e0e0', position:'sticky', top:'0'
+            }));
+        });
+        table.appendChild(head);
+        const changed = rows.filter(r => r.differs), same = rows.filter(r => !r.differs);
+        const sameRows = [];
+        for (const r of changed.concat(same)) {
+            const tr = mk('tr');
+            tr.dataset.diff = r.differs ? '1' : '0';
+            const cell = (text, bold) => css(mk('td', { textContent: text || '(empty)' }), {
+                padding:'6px 8px', verticalAlign:'top', whiteSpace:'pre-wrap', wordBreak:'break-word',
+                borderBottom:'1px solid #f0f0f0', fontWeight: bold ? 'bold' : 'normal',
+                color: r.differs ? '#333' : '#888', fontStyle: text ? 'normal' : 'italic',
+                background: r.differs ? '#fff8e1' : '#fff'
+            });
+            tr.append(cell(r.label, true), cell(r.theirs), cell(r.mine));
+            if (!r.differs) { tr.style.display = 'none'; sameRows.push(tr); }
+            table.appendChild(tr);
+        }
+        wrap.appendChild(table);
+        if (sameRows.length) {
+            const toggle = css(mk('span', { role:'button', tabIndex: 0 }), {
+                display:'block', padding:'6px 8px', fontSize:'11px', color:'#667eea', cursor:'pointer', textAlign:'left'
+            });
+            let open = false;
+            const label = () => { toggle.textContent = open ? `Hide the ${sameRows.length} unchanged ${sameRows.length === 1 ? 'field' : 'fields'}`
+                : `Show the ${sameRows.length} unchanged ${sameRows.length === 1 ? 'field' : 'fields'}`; };
+            const flip = () => { open = !open; sameRows.forEach(tr => { tr.style.display = open ? '' : 'none'; }); label(); };
+            toggle.onclick = flip;
+            toggle.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
+            label();
+            wrap.appendChild(toggle);
+        }
+        if (!changed.length) {
+            wrap.insertBefore(css(mk('div', { textContent: 'Both versions have the same content.' }), { padding:'8px', fontSize:'12px', color:'#555' }), table);
+        }
+        return wrap;
     }
 
     function formatWhen(iso) {
@@ -3714,18 +3797,24 @@ Version 0.1.0:
             }
             if (!server.ok) { handleApiResponse(server); return; }
             problemModalOpen = true;
-            choiceModal(`${server.data.modified_by_label || 'Someone else'} changed this entry at ${formatWhen(server.data.modified_at)} while you were editing it.`, [
-                { id: 'theirs', label: 'View their version', action: async () => {
+            const theirName = server.data.modified_by_label || 'Someone else';
+            choiceModal(`${theirName} changed this entry at ${formatWhen(server.data.modified_at)} while you were editing it.\nCompare both versions and choose which one to keep.`, [
+                { id: 'theirs', label: `Keep ${theirName}'s version`, action: async () => {
                     problemModalOpen = false;
                     replaceCached(ticket, entryId, server.data);
                     clearPendingUpsert(ticket, entryId);
                     refreshLog(ticket);
                 } },
-                { id: 'mine', label: 'Overwrite with mine', action: async () => {
+                { id: 'mine', label: 'Keep mine', action: async () => {
                     problemModalOpen = false;
                     await pushOne(ticket, entryId, { force: true, spId: server.data.spId });
                 } },
-            ]);
+                { id: 'copy', label: '📋 Copy mine', secondary: true, keepOpen: true, action: async (btn) => {
+                    await copyToClipboard(formatEntryContent(entry));
+                    btn.textContent = '✓ Copied';
+                    setTimeout(() => { btn.textContent = '📋 Copy mine'; }, 2000);
+                } },
+            ], compareTable(compareRows(server.data, entry), theirName));
         } else if (entry.problem === 'deleted') {
             problemModalOpen = true;
             choiceModal('This entry was deleted by someone else while you were editing it.', [
@@ -5284,7 +5373,7 @@ Version 0.1.0:
                         chip('⚠ Edit conflict', '#f8d7da', { color: '#721c24', border: '1px solid #f5c6cb', fontSize: '10px', padding: '1px 6px', radius: '8px' }),
                         chip('⚠ Too large to sync', '#f8d7da', { color: '#721c24', border: '1px solid #f5c6cb', fontSize: '10px', padding: '1px 6px', radius: '8px' })
                     ], { margin: '6px 0 0 0' }));
-                    caption(body, 'Edit conflict: someone else changed the entry while you edited it. Click the tag to keep their version or overwrite it with yours.');
+                    caption(body, 'Edit conflict: someone else changed the entry while you edited it. A window shows both versions side by side, with the changed fields highlighted, so you can keep theirs or yours. "Copy mine" copies your text first, in case you want to redo part of it.');
                     bullets(body, [
                         'Changes that cannot reach SharePoint are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
                         'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
