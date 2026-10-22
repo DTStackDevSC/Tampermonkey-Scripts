@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.4.0
+// @version      0.4.1
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,8 +91,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.4.0';
-    const CHANGELOG = `Version 0.4.0:
+    const SCRIPT_VERSION = '0.4.1';
+    const CHANGELOG = `Version 0.4.1:
+- Fixed "Check / prepare list" showing 0 items for a list that has entries. The tracker now counts the entries itself.
+- "Replace columns" is now only offered after the tracker has checked that the list really has no entries, so it can never be offered for a list with data.
+
+Version 0.4.0:
 - When someone else changed an entry while you were editing it, the warning now shows both versions side by side, field by field, with the changed fields highlighted. Unchanged fields are folded away and can be shown with one click.
 - The buttons now say exactly what they keep: "Keep <name>'s version" or "Keep mine".
 - New "Copy mine" button in that window: it copies your version of the entry, so you can keep the other version and still redo part of your change.
@@ -1514,6 +1518,17 @@ Version 0.1.0:
             report.entityType = list.data.ListItemEntityTypeFullName;
             report.versioning = !!list.data.EnableVersioning;
             report.itemCount = Number(list.data.ItemCount) || 0;
+            // SharePoint's ItemCount can say 0 for a list that has entries, so count the rows ourselves.
+            // The list only counts as empty when that read worked and found nothing.
+            report.itemCountPlus = false;
+            report.emptyConfirmed = false;
+            const probe = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` + qs({ $select: 'Id', $top: '5000' }) });
+            if (probe.ok) {
+                const n = (probe.data.value || []).length;
+                report.itemCountPlus = !!probe.data['odata.nextLink'];
+                report.itemCount = report.itemCountPlus ? Math.max(n, report.itemCount) : n;
+                report.emptyConfirmed = n === 0 && !report.itemCountPlus;
+            }
             report.listId = list.data.Id || null;
             report.listTitle = list.data.Title || spClient.listTitle();
             report.viewUrl = list.data.DefaultViewUrl ? spClient.siteUrl().replace(/^(https?:\/\/[^/]+).*$/i, '$1') + list.data.DefaultViewUrl : '';
@@ -1614,7 +1629,7 @@ Version 0.1.0:
                 r = await inspect();
                 if (r.failure) { step('Open the new list', r.failure); return { steps, report: r, ready: false }; }
             } else {
-                steps.push({ label: `List "${r.listTitle}" found: ${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'}`, ok: true, detail: '', link: r.viewUrl });
+                steps.push({ label: `List "${r.listTitle}" found: ${r.itemCount.toLocaleString('en-US')}${r.itemCountPlus ? '+' : ''} ${r.itemCount === 1 && !r.itemCountPlus ? 'item' : 'items'}`, ok: true, detail: '', link: r.viewUrl });
             }
 
             const needsChanges = r.missingColumns.length || r.missingIndexes.length || r.missingUnique.length ||
@@ -1626,7 +1641,7 @@ Version 0.1.0:
                     detail: `You cannot change this list. Ask a site owner to press "Check / prepare list" once${missing ? ', or to add: ' + missing : ''}.` });
             } else if (needsChanges) {
                 // On an empty list, a column with our name that we did not create can go: nothing is lost.
-                if (r.itemCount === 0 && allowRemove) {
+                if (r.emptyConfirmed && allowRemove) {
                     for (const [name, twin] of Object.entries(r.lookalikes)) {
                         const removed = await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/getbyinternalnameortitle('${twin}')`,
                             xMethod: 'DELETE', ifMatch: '*' });
@@ -1659,7 +1674,7 @@ Version 0.1.0:
                 steps.push({ label: `Column "${titleOf(name)}"`, ok: false, detail: twin
                     ? (removeFailed[name]
                         ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and it could not be removed: ${removeFailed[name]} Delete it in the list settings, then check again.`
-                        : r.itemCount > 0
+                        : !r.emptyConfirmed
                             ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and the list already has entries. Delete that column in the list settings, then check again.`
                             : `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}). The list is empty, so it can be replaced with the tracker's own column: press "Replace columns" below.`)
                     : `This column is still missing. Ask a site owner to press "Check / prepare list", then check again.` });
@@ -1670,7 +1685,7 @@ Version 0.1.0:
             for (const [k, label] of permLabels) {
                 steps.push({ label, ok: r.perms[k], detail: r.perms[k] ? '' : 'You do not have this permission on the list. Ask the site owner.' });
             }
-            const needsRemove = r.itemCount === 0 ? r.missingColumns.filter(n => r.lookalikes[n] && !removeFailed[n]) : [];
+            const needsRemove = r.emptyConfirmed ? r.missingColumns.filter(n => r.lookalikes[n] && !removeFailed[n]) : [];
             return { steps, report: r, ready: isReady(r), listId: r.listId, needsRemove };
         }
 
