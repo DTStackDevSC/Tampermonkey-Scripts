@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.3.0
+// @version      0.3.1
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,8 +91,11 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.3.0';
-    const CHANGELOG = `Version 0.3.0:
+    const SCRIPT_VERSION = '0.3.1';
+    const CHANGELOG = `Version 0.3.1:
+- Removed the temporary "🧪 Debug" button now that its checks have passed against the real SharePoint list.
+
+Version 0.3.0:
 - "Check / prepare list" no longer creates a list on its own. When no list has the name you typed, it says so, suggests lists with a similar name and their number of items, and only creates a new empty list when you press "Create new list".
 - The checklist now shows which list was found, how many items it has and a link to open it in SharePoint.
 - After setup the tracker keeps using the same list even if it is renamed. If the list disappears, the banner says so instead of creating another one, and the setup warns you when a different list now has the old name.
@@ -1047,8 +1050,6 @@ Version 0.1.0:
         .ctsp-busy-label { font-size: 11px !important; color: #555555 !important; font-family: Arial, sans-serif !important; }
         @keyframes ctspSpin { to { transform: rotate(360deg); } }
         @keyframes ctspBusyIn { to { opacity: 1; } }
-        #ctsp-debug-modal { background-color: #ffffff !important; color: #333333 !important; }
-        #ctsp-debug-modal input, #ctsp-debug-modal select, #ctsp-debug-modal textarea { background-color: #ffffff !important; color: #333333 !important; }
 
         /* Feature Guide (? Help): above the sidebar and the edit / setup modals */
         #changeTrackerSpHelpModalOverlay { position: fixed !important; top: 0 !important; left: 0 !important;
@@ -4290,23 +4291,6 @@ Version 0.1.0:
         helpBtn.onclick     = () => showHelpModal();
         verRow.appendChild(helpBtn);
 
-        // Debug pill (temporary, beta only): automatic checks against the SharePoint list
-        const debugBtn = css(mk('span', { id:'ctsp-debug-btn' }), {
-            color:'#b36b00', cursor:'pointer', fontSize:'11px', display:'inline-flex',
-            alignItems:'center', padding:'1px 6px', borderRadius:'3px', marginLeft:'4px',
-            border:'1px solid #f0c890', fontWeight:'bold', userSelect:'none',
-            backgroundColor:'transparent', fontFamily:'Arial, sans-serif'
-        });
-        debugBtn.textContent = '🧪 Debug';
-        debugBtn.title       = 'Run automatic checks against the SharePoint list (test version only)';
-        debugBtn.onmouseover = () => { debugBtn.style.backgroundColor = '#fff3e0'; };
-        debugBtn.onmouseout  = () => { debugBtn.style.backgroundColor = 'transparent'; };
-        debugBtn.onclick     = () => {
-            if (!api.isConfigured()) { flashStatus('⚠️ Set up the SharePoint list first.', '#e67e22'); return; }
-            openDebugModal();
-        };
-        verRow.appendChild(debugBtn);
-
         sidebar.appendChild(verRow);
 
         // ── Ticket badge ─────────────────────────────────────────
@@ -4938,371 +4922,6 @@ Version 0.1.0:
     }
 
     /* ==========================================================
-     *  DEBUG RUNNER  (temporary, beta only: remove before the
-     *  SharePoint backend moves into the suite)
-     *  Runs checks against the real SharePoint list on made up
-     *  tickets, without touching the local cache or ServiceNow,
-     *  then deletes what it created.
-     * ==========================================================*/
-
-    const DEBUG_SIZE_CAP = 1000000;   // never send a field larger than this
-
-    async function runDebugSuite({ keepData = false, onProgress = () => {} } = {}) {
-        const base    = `CTSP-DEBUG-${nowStamp().replace(/\D/g, '')}`;
-        const tickets = { main: base, quote: `${base}-O'NEIL`, size: `${base}-SIZE`, bulk: `${base}-BULK` };
-        const results = [];
-
-        const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
-        const why    = (res) => `${res.kind}${res.message ? ': ' + res.message : res.status ? ' (HTTP ' + res.status + ')' : ''}`;
-
-        async function test(name, fn) {
-            onProgress(name);
-            const t0 = performance.now();
-            const row = { name, ok: false, ms: 0, detail: '' };
-            try {
-                const detail = await fn();
-                row.ok = true;
-                row.detail = typeof detail === 'string' ? detail : '';
-            } catch (e) {
-                row.detail = e && e.message ? e.message : String(e);
-            }
-            row.ms = Math.round(performance.now() - t0);
-            results.push(row);
-            return row.ok;
-        }
-
-        const typeWithSchema = (schemaKey) => {
-            for (const g of SNIPPET_GROUPS) for (const i of g.items) if ((i.schema || null) === schemaKey) return i.value;
-            return null;
-        };
-        const sampleFields = (type, tag) => {
-            const schema = getSchema(type);
-            if (!schema) return null;
-            const out = {};
-            schema.forEach(f => {
-                out[f.key] = `${f.label} ${tag}`;
-                (f.extraFields || []).forEach(ef => { out[ef.key] = `${ef.label} ${tag}`; });
-            });
-            return out;
-        };
-        const newEntry = (type, fields, note, ticket = tickets.main) =>
-            ({ id: uid(), ts: nowStamp(), type, fields: fields || null, note: note || null, ticket });
-
-        async function save(entry) {
-            const t0 = performance.now();
-            const res = await api.saveEntry(entry);
-            expect(res.ok, `saving "${entry.type}" failed: ${why(res)}`);
-            entry.spId = res.data.spId;
-            entry.etag = res.data.etag;
-            return performance.now() - t0;
-        }
-        async function readTicket(ticket) {
-            const res = await api.fetchEntries(ticket);
-            expect(res.ok, `reading ${ticket} failed: ${why(res)}`);
-            return res.data.entries;
-        }
-        async function rawItem(spId) {
-            const res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items(${spId})` +
-                qs({ $select: 'Id,Title,CTGroup,CTType,CTObject,CTDetails,CTEntryDate,CTEntryId,CTPayload' }) });
-            expect(res.ok, `reading item ${spId} failed: ${why(res)}`);
-            return res.data;
-        }
-        async function rawCreate(ticket, values) {
-            const et = await api.entityType();
-            expect(et.ok, `list type unknown: ${why(et)}`);
-            return spClient.call({ method: 'POST', path: `${spClient.listPath()}/items`,
-                body: Object.assign({ __metadata: { type: et.data }, Title: ticket, CTEntryId: uid() }, values) });
-        }
-        const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-        const groupOf = (type) => (SNIPPET_GROUPS.find(g => g.items.some(i => i.value === type)) || { group: 'Other' }).group;
-        const n = (x) => Number(x).toLocaleString('en-US');
-
-        const set = [];   // the six entries of the main ticket
-        try {
-            await test('Session and list', async () => {
-                const r = await listSchema.inspect();
-                expect(!r.failure, `not reachable: ${why(r.failure || {})}`);
-                expect(r.list === true, `list "${spClient.listTitle()}" not found`);
-                expect(listSchema.isReady(r), `list not ready, missing: ${r.missingColumns.join(', ') || 'permissions'}`);
-                return `Signed in as ${r.user}, list "${spClient.listTitle()}" with ${n(r.itemCount)} items`;
-            });
-
-            await test('Create 6 entries of different types', async () => {
-                const kinds = [
-                    ['Custom', null, 'Plain note written by the debug run'],
-                    [typeWithSchema('policy_full'), null, 'extra details'],
-                    [typeWithSchema('url_list'), null, null],
-                    [typeWithSchema('dlp_rule_full'), null, null],
-                    [typeWithSchema('handover_note'), null, null],
-                    [typeWithSchema('custom_app_full'), null, null],
-                ].filter(k => k[0]);
-                for (const [type, , note] of kinds) {
-                    const fields = sampleFields(type, 'v1');
-                    if (fields && fields.domains !== undefined) fields.domains = 'example.com\nexample.org\nsub.example.net';
-                    set.push(newEntry(type, fields, note));
-                }
-                let total = 0;
-                for (const e of set) total += await save(e);
-                return `${set.length} entries, ${Math.round(total / set.length)} ms each on average`;
-            });
-
-            await test('Columns written correctly', async () => {
-                for (const e of set) {
-                    const it = await rawItem(e.spId);
-                    expect(it.Title === tickets.main, `Ticket is "${it.Title}"`);
-                    expect(it.CTType === e.type, `Change Type is "${it.CTType}" for ${e.type}`);
-                    expect(it.CTGroup === groupOf(e.type), `Group is "${it.CTGroup}" for ${e.type}`);
-                    expect(it.CTEntryId === e.id, `Entry ID differs for ${e.type}`);
-                    const key = entryMapper.objectKey(e.type);
-                    expect((it.CTObject || '') === (key ? e.fields[key] : ''), `Object is "${it.CTObject}" for ${e.type}`);
-                    expect(e.fields ? !!it.CTDetails : it.CTDetails === e.note, `Details wrong for ${e.type}`);
-                    expect(!isNaN(new Date(it.CTEntryDate)), `Entry Date is "${it.CTEntryDate}"`);
-                }
-                return 'Ticket, Entry Date, Group, Change Type, Object, Details and Entry ID match';
-            });
-
-            await test('Read back by ticket, payload intact', async () => {
-                const got = await readTicket(tickets.main);
-                expect(got.length === set.length, `${got.length} entries read, ${set.length} expected`);
-                for (const e of set) {
-                    const g = got.find(x => x.id === e.id);
-                    expect(g, `${e.type} missing`);
-                    expect(same([g.type, g.ts, g.fields, g.note], [e.type, e.ts, e.fields, e.note]), `${e.type} came back different`);
-                    expect(g.author_label, `${e.type} has no author`);
-                }
-                return `${got.length} entries, author "${got[0].author_label}"`;
-            });
-
-            await test('Edit 2 entries', async () => {
-                for (const e of set.slice(0, 2)) {
-                    const before = e.etag;
-                    if (e.fields) e.fields = sampleFields(e.type, 'v2'); else e.note = 'Edited by the debug run';
-                    await save(e);
-                    expect(e.etag && e.etag !== before, `version did not change for ${e.type}`);
-                }
-                const got = await readTicket(tickets.main);
-                for (const e of set.slice(0, 2)) {
-                    const g = got.find(x => x.id === e.id);
-                    expect(same([g.fields, g.note], [e.fields, e.note]), `edit of ${e.type} not saved`);
-                }
-                return `versions now ${set.slice(0, 2).map(e => e.etag).join(' and ')}`;
-            });
-
-            await test('Delete 3 of 6, keep the other 3', async () => {
-                const gone = set.slice(3);
-                for (const e of gone) {
-                    const res = await api.deleteEntry(tickets.main, e.id, e.spId);
-                    expect(res.ok, `delete of ${e.type} failed: ${why(res)}`);
-                }
-                const got = await readTicket(tickets.main);
-                expect(got.length === 3, `${got.length} entries left`);
-                expect(set.slice(0, 3).every(e => got.some(g => g.id === e.id)), 'a kept entry is missing');
-                expect(!gone.some(e => got.some(g => g.id === e.id)), 'a deleted entry is still there');
-                return 'kept: ' + set.slice(0, 3).map(e => e.type).join(', ');
-            });
-
-            await test('Saving over a newer version is refused', async () => {
-                const e = set[0];
-                const old = e.etag;
-                e.note = 'newer version'; e.fields = e.fields && sampleFields(e.type, 'v3');
-                await save(e);
-                const stale = await api.saveEntry(Object.assign({}, e, { etag: old, note: 'stale write' }));
-                expect(!stale.ok && stale.kind === 'conflict', `expected a conflict, got ${stale.ok ? 'a save' : why(stale)}`);
-                const forced = await api.saveEntry(Object.assign({}, e, { force: true }));
-                expect(forced.ok, `overwrite failed: ${why(forced)}`);
-                e.etag = forced.data.etag;
-                return 'old version refused, overwrite accepted';
-            });
-
-            await test('Deleting twice is fine', async () => {
-                const e = set[2];
-                const first = await api.deleteEntry(tickets.main, e.id, e.spId);
-                expect(first.ok, `delete failed: ${why(first)}`);
-                const again = await api.deleteEntry(tickets.main, e.id, e.spId);
-                expect(!again.ok && again.kind === 'notfound', `second delete gave ${again.ok ? 'ok' : why(again)}`);
-                return 'second delete reports "already gone"';
-            });
-
-            await test('Saving the same entry twice gives one row', async () => {
-                const e = newEntry('Custom', null, 'saved twice');
-                await save(e);
-                const lostReply = await api.saveEntry(Object.assign({}, e, { spId: null, etag: null }));
-                expect(lostReply.ok, `second save failed: ${why(lostReply)}`);
-                const rows = (await readTicket(tickets.main)).filter(g => g.id === e.id);
-                expect(rows.length === 1, `${rows.length} rows for one entry`);
-                return 'Entry ID uniqueness works';
-            });
-
-            await test('Special characters come back identical', async () => {
-                const text = 'Ñandú café "double" \'single\' <b>html</b> & amp; 100% \\ back\\slash\nnew line\ttab 🚀🔥 中文 עברית';
-                const type = typeWithSchema('policy_full');
-                const e = newEntry(type, Object.assign(sampleFields(type, 'x'), { policyName: text, description: text }), text);
-                await save(e);
-                const g = (await readTicket(tickets.main)).find(x => x.id === e.id);
-                expect(g && same([g.fields, g.note], [e.fields, e.note]), 'text changed on the way');
-                const it = await rawItem(e.spId);
-                expect(it.CTObject === text, 'Object column changed the text');
-                return 'accents, quotes, html, emoji, tabs and new lines';
-            });
-
-            await test('Ticket with an apostrophe', async () => {
-                const e = newEntry('Custom', null, 'apostrophe ticket', tickets.quote);
-                await save(e);
-                const got = await readTicket(tickets.quote);
-                expect(got.length === 1 && got[0].id === e.id, `${got.length} entries found for ${tickets.quote}`);
-                return tickets.quote;
-            });
-
-            await test('Object is cut at 255 characters', async () => {
-                const type = typeWithSchema('policy_full');
-                const long = 'P'.repeat(400);
-                const e = newEntry(type, Object.assign(sampleFields(type, 'x'), { policyName: long }), null);
-                await save(e);
-                const it = await rawItem(e.spId);
-                expect((it.CTObject || '').length === 255, `Object has ${(it.CTObject || '').length} characters`);
-                const g = (await readTicket(tickets.main)).find(x => x.id === e.id);
-                expect(g.fields.policyName.length === 400, 'the full name was not kept in Payload');
-                return 'column cut at 255, full text kept in Payload';
-            });
-
-            let payloadMax = null;
-            await test('Size limit of the Payload column', async () => {
-                const tryLen = async (len) => (await rawCreate(tickets.size, { CTPayload: 'x'.repeat(len) })).ok;
-                expect(await tryLen(1000), 'even 1,000 characters were refused');
-                let good = 1000, bad = null;
-                for (let len = 16000; len <= DEBUG_SIZE_CAP; len *= 2) {
-                    if (await tryLen(len)) good = len; else { bad = len; break; }
-                }
-                if (bad === null) { payloadMax = good; return `Payload accepts at least ${n(good)} characters (stopped testing there)`; }
-                while (bad - good > 1) {
-                    const mid = Math.floor((good + bad) / 2);
-                    if (await tryLen(mid)) good = mid; else bad = mid;
-                }
-                payloadMax = good;
-                expect(good >= SP_FIELD_MAX, `SharePoint refuses above ${n(good)}, but the tracker allows up to ${n(SP_FIELD_MAX)}`);
-                return `Payload accepts up to ${n(good)} characters (refused at ${n(bad)}); the tracker stops at ${n(SP_FIELD_MAX)}`;
-            });
-
-            await test('Details accepts the tracker maximum', async () => {
-                const res = await rawCreate(tickets.size, { CTDetails: 'd'.repeat(SP_FIELD_MAX), CTPayload: '{}' });
-                expect(res.ok, `refused: ${why(res)}`);
-                return `${n(SP_FIELD_MAX)} characters accepted`;
-            });
-
-            await test('Too large entry is refused before sending', async () => {
-                const e = newEntry('Custom', null, 'x'.repeat(SP_FIELD_MAX + 1));
-                const res = await api.saveEntry(e);
-                expect(!res.ok && res.kind === 'tooLarge', `got ${res.ok ? 'a save' : why(res)}`);
-                return 'refused with "too large"; in the sidebar the entry stays on this computer';
-            });
-
-            await test('Volume: 30 entries, read in pages', async () => {
-                let total = 0;
-                for (let i = 0; i < 30; i++) total += await save(newEntry('Custom', null, `bulk ${i + 1}`, tickets.bulk));
-                const t0 = performance.now();
-                let pages = 0, count = 0;
-                let res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` +
-                    qs({ $filter: `Title eq '${spClient.odataQuote(tickets.bulk)}'`, $select: 'Id', $top: '10' }) });
-                for (;;) {
-                    expect(res.ok, `page read failed: ${why(res)}`);
-                    pages++; count += (res.data.value || []).length;
-                    const next = res.data['odata.nextLink'];
-                    if (!next) break;
-                    res = await spClient.call({ method: 'GET', url: next });
-                }
-                expect(count === 30, `${count} rows read`);
-                expect(pages >= 3, `only ${pages} page(s) read`);
-                return `${Math.round(total / 30)} ms per save on average, 30 rows read in ${pages} pages (${Math.round(performance.now() - t0)} ms)`;
-            });
-
-            await test('Clear all removes every row of a ticket', async () => {
-                const res = await api.deleteTicket(tickets.bulk);
-                expect(res.ok, `failed: ${why(res)}`);
-                const left = await api._allItems({ $filter: `Title eq '${spClient.odataQuote(tickets.bulk)}'`, $select: 'Id' });
-                expect(left.ok && left.data.length === 0, `${left.ok ? left.data.length : '?'} rows left`);
-                return `${res.data.deleted} rows deleted`;
-            });
-        } finally {
-            if (!keepData) {
-                await test('Clean up test data', async () => {
-                    let removed = 0;
-                    for (const tk of Object.values(tickets)) {
-                        const res = await api.deleteTicket(tk);
-                        expect(res.ok, `cleaning ${tk} failed: ${why(res)}`);
-                        removed += res.data.deleted;
-                    }
-                    return `${removed} test rows deleted`;
-                });
-            } else {
-                results.push({ name: 'Clean up test data', ok: true, ms: 0, detail: `kept on purpose: tickets starting with ${base}` });
-            }
-        }
-        return { tickets, results };
-    }
-
-    function openDebugModal() {
-        if (document.getElementById('ctsp-debug-modal')) return;
-        const overlay = css(mk('div', { id:'ctsp-debug-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.5)', zIndex:'1056000' });
-        const modal = css(mk('div', { id:'ctsp-debug-modal' }), {
-            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1056001',
-            background:'#fff', border:'2px solid #667eea', borderRadius:'10px', padding:'18px', width:'640px', maxWidth:'94vw',
-            maxHeight:'86vh', overflowY:'auto', fontFamily:'Arial, sans-serif', color:'#333', boxShadow:'0 6px 24px rgba(0,0,0,.25)'
-        });
-        const title = css(mk('div'), { fontWeight:'bold', fontSize:'15px', marginBottom:'6px' });
-        title.textContent = '🧪 SharePoint debug run';
-        const intro = css(mk('div'), { fontSize:'12px', color:'#555', lineHeight:'1.5', marginBottom:'10px' });
-        intro.textContent = `Runs 18 checks against the list "${spClient.listTitle()}" on made up tickets starting with CTSP-DEBUG. ` +
-            'Your tickets, this computer\'s cache and ServiceNow are not touched. Everything it creates is deleted at the end. ' +
-            'The size test sends fields of up to 1,000,000 characters, so it can take a minute.';
-        const keepRow = css(mk('label', { htmlFor:'ctsp-debug-keep' }), { display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', marginBottom:'10px', cursor:'pointer' });
-        const keep = mk('input', { id:'ctsp-debug-keep', type:'checkbox' });
-        keepRow.append(keep, document.createTextNode('Keep test data, to look at it in SharePoint'));
-        const btns = css(mk('div'), { display:'flex', gap:'8px', marginBottom:'10px' });
-        const btnStyle = { padding:'8px 14px', border:'none', borderRadius:'5px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', color:'#fff' };
-        const run = css(mk('button', { id:'ctsp-debug-run', type:'button', textContent:'▶ Run checks' }), Object.assign({ background:'#667eea' }, btnStyle));
-        const copy = css(mk('button', { id:'ctsp-debug-copy', type:'button', textContent:'📋 Copy results' }), Object.assign({ background:'#6c757d' }, btnStyle));
-        const closeB = css(mk('button', { type:'button', textContent:'Close' }), Object.assign({ background:'#6c757d', marginLeft:'auto' }, btnStyle));
-        btns.append(run, copy, closeB);
-        const summary = css(mk('div', { id:'ctsp-debug-summary' }), { fontSize:'12px', fontWeight:'bold', margin:'4px 0 8px' });
-        const list = css(mk('div', { id:'ctsp-debug-results' }), { minHeight:'60px', border:'1px solid #e8e8f0', borderRadius:'6px', padding:'6px 8px', fontSize:'12px', position:'relative' });
-        modal.append(title, intro, keepRow, btns, summary, list);
-        document.body.append(overlay, modal);
-
-        let lastText = '';
-        const close = () => { overlay.remove(); modal.remove(); };
-        closeB.onclick = close;
-        copy.onclick = () => { if (lastText) copyToClipboard(lastText).then(() => flashStatus('✓ Results copied')); };
-
-        run.onclick = async () => {
-            if (run.disabled) return;
-            run.disabled = true; closeB.disabled = true;
-            list.innerHTML = ''; summary.textContent = '';
-            const progress = css(mk('div'), { color:'#888', fontStyle:'italic' });
-            list.appendChild(progress);
-            const out = await withBusy(list, () => runDebugSuite({ keepData: keep.checked, onProgress: (name) => { progress.textContent = `Running: ${name}…`; } }), 'Running checks…');
-            progress.remove();
-            for (const r of out.results) {
-                const row = css(mk('div', { className:'ctsp-debug-row' }), { display:'grid', gridTemplateColumns:'18px 1fr auto', gap:'2px 8px', padding:'4px 0', borderBottom:'1px solid #f0f0f0' });
-                row.dataset.ok = r.ok ? '1' : '0';
-                const mark = css(mk('span', { textContent: r.ok ? '✔' : '✖' }), { color: r.ok ? '#28a745' : '#dc3545', fontWeight:'bold' });
-                const name = css(mk('span', { textContent: r.name }), { fontWeight:'bold' });
-                const ms = css(mk('span', { textContent: `${r.ms} ms` }), { color:'#999', fontFamily:'monospace', fontSize:'11px' });
-                row.append(mark, name, ms);
-                if (r.detail) row.appendChild(css(mk('span', { textContent: r.detail }), { gridColumn:'2 / 4', color: r.ok ? '#666' : '#721c24', fontSize:'11px', wordBreak:'break-word' }));
-                list.appendChild(row);
-            }
-            const failed = out.results.filter(r => !r.ok).length;
-            summary.textContent = `${out.results.length - failed} of ${out.results.length} checks passed`;
-            summary.style.color = failed ? '#dc3545' : '#28a745';
-            lastText = [`Change Tracker (SharePoint) v${SCRIPT_VERSION} debug run, ${new Date().toISOString()}`,
-                `List: ${spClient.listTitle()} on ${spClient.siteUrl().replace(/^https:\/\/([^/]+).*/, '$1')}`,
-                summary.textContent, '',
-                ...out.results.map(r => `${r.ok ? 'PASS' : 'FAIL'}  ${r.name}  (${r.ms} ms)${r.detail ? '\n      ' + r.detail : ''}`)].join('\n');
-            run.disabled = false; closeB.disabled = false;
-        };
-    }
-
-    /* ==========================================================
      *  FEATURE GUIDE  (? Help modal)
      * ==========================================================*/
 
@@ -5684,7 +5303,6 @@ Version 0.1.0:
                     lead(body, 'The links next to the version number open the setup panel and this guide.');
                     badgeRow(body, chip('⚙ Configure', 'transparent', { color: '#666', underline: true }), 'Opens the setup panel with the connection details and options below.');
                     badgeRow(body, chip('? Help', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0', radius: '3px' }), 'Opens this Feature Guide.');
-                    badgeRow(body, chip('🧪 Debug', 'transparent', { color: '#b36b00', border: '1px solid #f0c890', radius: '3px' }), 'Test version only: runs automatic checks against the SharePoint list on made up tickets (create, edit, delete, conflicts, special characters, size limits, volume) and shows the results. Everything it creates is deleted afterwards.');
                     badgeRow(body, chip('✔ Check / prepare list', '#667eea'), 'In the setup panel: checks your access and adds the columns the list is missing. It shows which list it found, with its number of items and a link to open it. If no list has that name, it suggests similar lists and only creates a new one when you press "Create new list". The tracker never deletes a list.');
 
                     const pairs = [
@@ -6424,7 +6042,7 @@ Version 0.1.0:
         if (GM_getValue('changeTrackerSpTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
-                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, runDebugSuite, isPending: (tk) => hasPending(tk) };
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk) };
         }
 
         return function register() {
