@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.2.0
+// @version      0.3.0
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,8 +91,17 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.2.0';
-    const CHANGELOG = `Version 0.2.0:
+    const SCRIPT_VERSION = '0.3.0';
+    const CHANGELOG = `Version 0.3.0:
+- "Check / prepare list" no longer creates a list on its own. When no list has the name you typed, it says so, suggests lists with a similar name and their number of items, and only creates a new empty list when you press "Create new list".
+- The checklist now shows which list was found, how many items it has and a link to open it in SharePoint.
+- After setup the tracker keeps using the same list even if it is renamed. If the list disappears, the banner says so instead of creating another one, and the setup warns you when a different list now has the old name.
+- Columns that have the tracker's names but were not made by it are only replaced when you press "Replace columns", and only on an empty list.
+- The tracker can never delete a list or send it to the recycle bin.
+- Fixed an entry that could stay "Not synced" forever when SharePoint saved it but the answer got lost on the way.
+- Entries can now be up to 250,000 characters long, instead of 63,000.
+
+Version 0.2.0:
 - While an entry is being added, edited or deleted, a spinning wheel now covers the form, the entry or the window you used, until SharePoint has saved it. The same happens for Clear all and for "Check / prepare list". Quick saves do not show it.
 - A deleted entry now stays on screen, covered by the wheel, until SharePoint confirms the delete.
 - New temporary "🧪 Debug" button next to "? Help". It runs automatic checks against your SharePoint list on made up tickets: creating, editing and deleting entries, edit conflicts, special characters, the real size limit of the fields and a volume test. It shows the results with a "Copy results" button and deletes everything it created.
@@ -1084,6 +1093,7 @@ Version 0.1.0:
      *  NO_ACCESS       → no permission on the site or list → read only
      * ─────────────────────────────────────────────────────────*/
     let connState = 'INIT';
+    let noAccessReason = null;   // 'notfound' when the list itself is gone
 
     /* ==========================================================
      *  TICKET CONTEXT (polaris / classic mode detection)
@@ -1225,8 +1235,9 @@ Version 0.1.0:
     const SP_SITE_KEY     = 'changeTrackerSpSiteUrl';
     const SP_LIST_KEY     = 'changeTrackerSpListTitle';
     const SP_SETUP_OK_KEY = 'changeTrackerSpSetupOk';
+    const SP_LIST_ID_KEY  = 'changeTrackerSpListId';   // the list's own id, so a rename or a namesake never switches lists
     const SP_DEFAULT_LIST = 'ChangeTracker';
-    const SP_FIELD_MAX    = 63000;   // a plain multi line column holds about 63,999 characters
+    const SP_FIELD_MAX    = 250000;  // SharePoint accepted 512,000 characters in a plain multi line column; this keeps a margin
     const SP_ACCEPT       = 'application/json;odata=minimalmetadata';
     const SP_VERBOSE      = 'application/json;odata=verbose';
 
@@ -1255,7 +1266,22 @@ Version 0.1.0:
         function siteUrl()   { return String(GM_getValue(SP_SITE_KEY, '') || '').trim().replace(/\/+$/, ''); }
         function listTitle() { return String(GM_getValue(SP_LIST_KEY, '') || '').trim() || SP_DEFAULT_LIST; }
         function odataQuote(s) { return String(s).replace(/'/g, "''"); }
-        function listPath()  { return `/_api/web/lists/getbytitle('${encodeURIComponent(odataQuote(listTitle()))}')`; }
+        function listPath() {
+            const id = String(GM_getValue(SP_LIST_ID_KEY, '') || '');
+            return /^[0-9a-f-]{36}$/i.test(id) ? `/_api/web/lists(guid'${id}')`
+                : `/_api/web/lists/getbytitle('${encodeURIComponent(odataQuote(listTitle()))}')`;
+        }
+
+        // Hard safety net: whatever calls this client, a list is never deleted or sent to the
+        // recycle bin, and a list is only created when the user pressed "Create new list".
+        function refusal(opts, url) {
+            const p = String(url).replace(/^https?:\/\/[^/]+/i, '').split('?')[0];
+            const deleting = opts.method === 'DELETE' || /^(DELETE|RECYCLE)$/i.test(opts.xMethod || '');
+            if (/\/_api\/web\/lists/i.test(p) && /\/recycle(\(|\/|$)/i.test(p)) return 'Refused: the tracker never sends a list to the recycle bin.';
+            if (deleting && /\/_api\/web\/lists(\(guid'[^']*'\)|\/getbytitle\('[^']*'\))\/?$/i.test(p)) return 'Refused: the tracker never deletes a list.';
+            if (opts.method !== 'GET' && /\/_api\/web\/lists\/?$/i.test(p) && !opts.allowListCreate) return 'Refused: a list is only created when you press "Create new list".';
+            return null;
+        }
 
         function raw(method, url, headers, body) {
             return new Promise(resolve => {
@@ -1284,6 +1310,8 @@ Version 0.1.0:
             if (r.network) return { ...base, ok: false, kind: 'network' };
             if (toLogin || (r.status === 200 && !data && /^\s*</.test(text))) return { ...base, ok: false, kind: 'session' };
             if (r.status >= 200 && r.status < 300) return { ...base, ok: true, kind: 'ok' };
+            // SharePoint answers 500 (not 400) when a unique column already has the value.
+            if (/duplicate values were found|already used in this list|enforces unique values/i.test(message)) return { ...base, ok: false, kind: 'duplicate' };
             if (r.status === 401) return { ...base, ok: false, kind: 'session' };
             if (r.status === 403) {
                 const kind = /security validation/i.test(message) ? 'digest' : (hadSuccess ? 'session' : 'forbidden');
@@ -1308,6 +1336,8 @@ Version 0.1.0:
 
         async function call(opts) {
             const url = opts.url || (siteUrl() + opts.path);
+            const refused = refusal(opts, url);
+            if (refused) { console.warn('CT SP:', refused, url); return { ok: false, status: 0, kind: 'bad', data: null, message: refused, etag: null }; }
             const isWrite = opts.method !== 'GET';
             let digestRetried = false, netRetried = false, throttleTries = 0;
             for (;;) {
@@ -1468,13 +1498,16 @@ Version 0.1.0:
             if (!me.ok) { report.failure = me; return report; }
             report.user = me.data.Title;
             const list = await spClient.call({ method: 'GET', path: spClient.listPath() +
-                qs({ $select: 'Title,ItemCount,ListItemEntityTypeFullName,EnableVersioning,EffectiveBasePermissions' }) });
+                qs({ $select: 'Id,Title,ItemCount,DefaultViewUrl,ListItemEntityTypeFullName,EnableVersioning,EffectiveBasePermissions' }) });
             if (list.kind === 'notfound') { report.list = false; return report; }
             if (!list.ok) { report.failure = list; return report; }
             report.list = true;
             report.entityType = list.data.ListItemEntityTypeFullName;
             report.versioning = !!list.data.EnableVersioning;
             report.itemCount = Number(list.data.ItemCount) || 0;
+            report.listId = list.data.Id || null;
+            report.listTitle = list.data.Title || spClient.listTitle();
+            report.viewUrl = list.data.DefaultViewUrl ? spClient.siteUrl().replace(/^(https?:\/\/[^/]+).*$/i, '$1') + list.data.DefaultViewUrl : '';
             const low = Number(list.data.EffectiveBasePermissions && list.data.EffectiveBasePermissions.Low) || 0;
             report.perms = Object.fromEntries(Object.entries(P).map(([k, bit]) => [k, (low & bit) === bit]));
             const fields = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/fields` +
@@ -1518,7 +1551,31 @@ Version 0.1.0:
                 body, xMethod: 'MERGE', ifMatch: '*' });
         }
 
-        async function prepare() {
+        // Lists of this site whose name looks like the one asked for, to catch typos.
+        async function similarLists() {
+            const res = await spClient.call({ method: 'GET', path: '/_api/web/lists' +
+                qs({ $select: 'Id,Title,ItemCount', $filter: 'Hidden eq false and BaseTemplate eq 100' }) });
+            if (!res.ok) return [];
+            const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9]/g, '');
+            const want = norm(spClient.listTitle());
+            const near = (a, b) => {
+                if (!a || !b) return false;
+                if (a === b || a.includes(b) || b.includes(a)) return true;
+                // one or two letters typed differently
+                const dp = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+                for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+                for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+                    dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+                }
+                return dp[a.length][b.length] <= 2;
+            };
+            return (res.data.value || [])
+                .filter(l => near(norm(l.Title), want) || /changetracker|tracker/.test(norm(l.Title)))
+                .map(l => ({ title: l.Title, items: Number(l.ItemCount) || 0, id: l.Id }));
+        }
+
+        // allowCreate / allowRemove are only true after the user pressed the matching button.
+        async function prepare({ allowCreate = false, allowRemove = false } = {}) {
             const steps = [];
             const removeFailed = {};   // column name -> why SharePoint refused to remove it
             const step = (label, res) => {
@@ -1530,8 +1587,15 @@ Version 0.1.0:
             if (r.failure && r.list === null && !r.user) { step('Signed in to SharePoint', r.failure); return { steps, report: r, ready: false }; }
             steps.push({ label: `Signed in as ${r.user}`, ok: true, detail: '' });
             if (r.failure) { step(`Open list "${spClient.listTitle()}"`, r.failure); return { steps, report: r, ready: false }; }
+            if (r.list === false && !allowCreate) {
+                const similar = await similarLists();
+                steps.push({ label: `No list called "${spClient.listTitle()}" on this site`, ok: false,
+                    detail: similar.length ? 'Did you mean one of the lists below? Pick it, or create a new empty list with this name.'
+                        : 'Check the name and the site address, or create a new empty list with this name.' });
+                return { steps, report: r, ready: false, needsCreate: true, similar };
+            }
             if (r.list === false) {
-                const created = await spClient.call({ method: 'POST', path: '/_api/web/lists',
+                const created = await spClient.call({ method: 'POST', path: '/_api/web/lists', allowListCreate: true,
                     body: { __metadata: { type: 'SP.List' }, BaseTemplate: 100, Title: spClient.listTitle(), EnableVersioning: true } });
                 if (!step(`Create list "${spClient.listTitle()}"`, created)) {
                     if (created.kind === 'forbidden' || created.kind === 'session') steps[steps.length - 1].detail =
@@ -1541,7 +1605,7 @@ Version 0.1.0:
                 r = await inspect();
                 if (r.failure) { step('Open the new list', r.failure); return { steps, report: r, ready: false }; }
             } else {
-                steps.push({ label: `List "${spClient.listTitle()}" found`, ok: true, detail: '' });
+                steps.push({ label: `List "${r.listTitle}" found: ${r.itemCount} ${r.itemCount === 1 ? 'item' : 'items'}`, ok: true, detail: '', link: r.viewUrl });
             }
 
             const needsChanges = r.missingColumns.length || r.missingIndexes.length || r.missingUnique.length ||
@@ -1553,7 +1617,7 @@ Version 0.1.0:
                     detail: `You cannot change this list. Ask a site owner to press "Check / prepare list" once${missing ? ', or to add: ' + missing : ''}.` });
             } else if (needsChanges) {
                 // On an empty list, a column with our name that we did not create can go: nothing is lost.
-                if (r.itemCount === 0) {
+                if (r.itemCount === 0 && allowRemove) {
                     for (const [name, twin] of Object.entries(r.lookalikes)) {
                         const removed = await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/getbyinternalnameortitle('${twin}')`,
                             xMethod: 'DELETE', ifMatch: '*' });
@@ -1588,7 +1652,7 @@ Version 0.1.0:
                         ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and it could not be removed: ${removeFailed[name]} Delete it in the list settings, then check again.`
                         : r.itemCount > 0
                             ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and the list already has entries. Delete that column in the list settings, then check again.`
-                            : `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}). Ask a site owner to press "Check / prepare list", or delete that column in the list settings, then check again.`)
+                            : `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}). The list is empty, so it can be replaced with the tracker's own column: press "Replace columns" below.`)
                     : `This column is still missing. Ask a site owner to press "Check / prepare list", then check again.` });
             }
             if (r.wrongColumns.length) steps.push({ label: 'Column types', ok: false,
@@ -1597,7 +1661,8 @@ Version 0.1.0:
             for (const [k, label] of permLabels) {
                 steps.push({ label, ok: r.perms[k], detail: r.perms[k] ? '' : 'You do not have this permission on the list. Ask the site owner.' });
             }
-            return { steps, report: r, ready: isReady(r) };
+            const needsRemove = r.itemCount === 0 ? r.missingColumns.filter(n => r.lookalikes[n] && !removeFailed[n]) : [];
+            return { steps, report: r, ready: isReady(r), listId: r.listId, needsRemove };
         }
 
         return { inspect, prepare, isReady, describeFailure };
@@ -1626,13 +1691,16 @@ Version 0.1.0:
         async ping() {
             const res = await spClient.currentUser();
             api.lastFailure = res.ok ? null : res;
+            // Set up before lists were remembered by id: learn it now.
+            if (res.ok && !GM_getValue(SP_LIST_ID_KEY, '') && api.isConfigured()) await api.entityType();
             return res.ok;
         },
 
         async entityType() {
             if (api._entityType) return { ok: true, data: api._entityType };
-            const res = await spClient.call({ method: 'GET', path: spClient.listPath() + qs({ $select: 'ListItemEntityTypeFullName' }) });
+            const res = await spClient.call({ method: 'GET', path: spClient.listPath() + qs({ $select: 'Id,ListItemEntityTypeFullName' }) });
             if (!res.ok) return res;
+            if (!GM_getValue(SP_LIST_ID_KEY, '') && res.data.Id && api.isConfigured()) GM_setValue(SP_LIST_ID_KEY, res.data.Id);
             api._entityType = res.data.ListItemEntityTypeFullName;
             return { ok: true, data: api._entityType };
         },
@@ -1683,7 +1751,7 @@ Version 0.1.0:
                 const created = await spClient.call({ method: 'POST', path: itemsPath, body });
                 if (created.ok) return { ok: true, data: { id: entry.id, spId: created.data.Id, etag: created.etag || created.data['odata.etag'] || null } };
                 // Already in the list: an earlier attempt was saved but its reply never arrived.
-                if (created.kind !== 'bad' || !/unique|duplicate|already used/i.test(created.message || '')) return created;
+                if (created.kind !== 'duplicate') return created;
                 const found = await api.findItem(entry.id);
                 if (!found.ok) return found;
                 spId = found.data.Id;
@@ -2589,7 +2657,7 @@ Version 0.1.0:
     function handleApiResponse(res) {
         if (res.ok) return;
         if (res.kind === 'session')                          setConnState('SESSION_EXPIRED');
-        else if (res.kind === 'forbidden' || res.kind === 'notfound') setConnState('NO_ACCESS');
+        else if (res.kind === 'forbidden' || res.kind === 'notfound') { noAccessReason = res.kind; setConnState('NO_ACCESS'); }
         else if (res.kind === 'network' || res.kind === 'server')     setConnState('OFFLINE');
     }
 
@@ -4506,7 +4574,9 @@ Version 0.1.0:
             banner.append(msg, btns);
         } else {
             css(banner, { background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24' });
-            msg.textContent = '⛔ No access to the SharePoint list. Ask the site owner for access.';
+            msg.textContent = noAccessReason === 'notfound'
+                ? '⛔ The SharePoint list was not found. It may have been deleted, moved or renamed: check Site contents and the recycle bin, then open Configure.'
+                : '⛔ No access to the SharePoint list. Ask the site owner for access.';
             const cfg = button('Configure', null, { background:'transparent', color:'#721c24', textDecoration:'underline' });
             cfg.onclick = () => openSetupPrompt({ previousState: connState });
             banner.append(msg, cfg);
@@ -5615,7 +5685,7 @@ Version 0.1.0:
                     badgeRow(body, chip('⚙ Configure', 'transparent', { color: '#666', underline: true }), 'Opens the setup panel with the connection details and options below.');
                     badgeRow(body, chip('? Help', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0', radius: '3px' }), 'Opens this Feature Guide.');
                     badgeRow(body, chip('🧪 Debug', 'transparent', { color: '#b36b00', border: '1px solid #f0c890', radius: '3px' }), 'Test version only: runs automatic checks against the SharePoint list on made up tickets (create, edit, delete, conflicts, special characters, size limits, volume) and shows the results. Everything it creates is deleted afterwards.');
-                    badgeRow(body, chip('✔ Check / prepare list', '#667eea'), 'In the setup panel: checks your access and creates the list and its columns when they are missing. If you cannot change the list, it tells you what to ask the site owner for.');
+                    badgeRow(body, chip('✔ Check / prepare list', '#667eea'), 'In the setup panel: checks your access and adds the columns the list is missing. It shows which list it found, with its number of items and a link to open it. If no list has that name, it suggests similar lists and only creates a new one when you press "Create new list". The tracker never deletes a list.');
 
                     const pairs = [
                         ['SharePoint site URL', 'The site where your team keeps the change log.'],
@@ -5753,6 +5823,7 @@ Version 0.1.0:
         const prevSite = GM_getValue(SP_SITE_KEY, '');
         const prevList = GM_getValue(SP_LIST_KEY, '');
         const prevOk   = GM_getValue(SP_SETUP_OK_KEY, false) === true;
+        const prevListId = GM_getValue(SP_LIST_ID_KEY, '');
 
         document.getElementById('ctsp-setup-overlay')?.remove();
         document.getElementById('ctsp-setup-modal')?.remove();
@@ -5835,17 +5906,27 @@ Version 0.1.0:
             return { site: siteInput.value.trim().replace(/\/+$/, ''), list: listInput.value.trim() || SP_DEFAULT_LIST };
         }
 
+        // Buttons that only appear when the check needs a decision from the user.
+        const actions = css(mk('div', { id:'ctsp-setup-actions' }), { display:'none', flexWrap:'wrap', gap:'6px', margin:'-6px 0 14px' });
+        checklist.after(actions);
+
         function renderChecklist(steps) {
             checklist.innerHTML = '';
             checklist.style.display = 'block';
             for (const s of steps) {
                 const row = mk('div', { className: 'ctsp-check-row' });
                 row.dataset.ok = s.ok ? '1' : '0';
-                const mark = css(mk('span'), { color: s.ok ? '#28a745' : '#dc3545', fontWeight:'bold', marginRight:'6px' });
-                mark.textContent = s.ok ? '✔' : '✖';
+                const mark = css(mk('span'), { color: s.warn ? '#b36b00' : s.ok ? '#28a745' : '#dc3545', fontWeight:'bold', marginRight:'6px' });
+                mark.textContent = s.warn ? '⚠' : s.ok ? '✔' : '✖';
                 row.append(mark, document.createTextNode(s.label));
+                if (s.link) {
+                    const a = css(mk('a', { href: s.link, target: '_blank', rel: 'noopener', textContent: 'Open in SharePoint' }), {
+                        marginLeft:'8px', fontSize:'11px', color:'#667eea'
+                    });
+                    row.appendChild(a);
+                }
                 if (s.detail) {
-                    const d = css(mk('div'), { fontSize:'11px', color:'#721c24', margin:'0 0 4px 18px' });
+                    const d = css(mk('div'), { fontSize:'11px', color: s.warn ? '#856404' : s.ok ? '#666' : '#721c24', margin:'0 0 4px 18px' });
                     d.textContent = s.detail;
                     row.appendChild(d);
                 }
@@ -5853,18 +5934,64 @@ Version 0.1.0:
             }
         }
 
-        async function runCheck() {
+        function actionButton(text, id, className, colors) {
+            const b = css(mk('button', { type:'button', textContent: text }), Object.assign({
+                padding:'6px 12px', border:'none', borderRadius:'4px', cursor:'pointer',
+                fontWeight:'bold', fontSize:'12px', fontFamily:'Arial, sans-serif'
+            }, colors));
+            if (id) b.id = id;
+            if (className) b.className = className;
+            return b;
+        }
+
+        function renderActions(result) {
+            actions.innerHTML = '';
+            const { list } = currentTarget();
+            if (result.needsCreate) {
+                for (const l of result.similar || []) {
+                    const b = actionButton(`Use "${l.title}" (${l.items} ${l.items === 1 ? 'item' : 'items'})`, null, 'ctsp-setup-suggest',
+                        { background:'#e8f0fe', color:'#333', border:'1px solid #667eea' });
+                    b.onclick = () => { listInput.value = l.title; runCheck(); };
+                    actions.appendChild(b);
+                }
+                const create = actionButton(`➕ Create new list "${list}"`, 'ctsp-setup-create', null, { background:'#28a745', color:'#fff' });
+                create.onclick = () => runCheck({ allowCreate: true });
+                actions.appendChild(create);
+            }
+            if (result.needsRemove && result.needsRemove.length) {
+                const n = result.needsRemove.length;
+                const rm = actionButton(`Replace ${n} ${n === 1 ? 'column' : 'columns'} (the list is empty)`, 'ctsp-setup-remove-cols', null,
+                    { background:'#f0ad4e', color:'#fff' });
+                rm.onclick = () => runCheck({ allowRemove: true });
+                actions.appendChild(rm);
+            }
+            actions.style.display = actions.children.length ? 'flex' : 'none';
+        }
+
+        async function runCheck(opts = {}) {
             hideError();
             const { site, list } = currentTarget();
             if (!/^https:\/\/[^/]+\/.+/i.test(site)) { showError('Enter the full address of the SharePoint site, starting with https://'); return false; }
             checkBtn.disabled = true;
             checkBtn.textContent = 'Checking…';
+            actions.innerHTML = '';
+            actions.style.display = 'none';
             GM_setValue(SP_SITE_KEY, site);
             GM_setValue(SP_LIST_KEY, list);
             GM_setValue(SP_SETUP_OK_KEY, false);
+            GM_deleteValue(SP_LIST_ID_KEY);   // look the list up by its name while checking
             api._entityType = null;
-            const result = await withBusy(modal, () => listSchema.prepare(), 'Checking the list…');
+            const result = await withBusy(modal, () => listSchema.prepare(opts), 'Checking the list…');
+            // Same site and name as before, but another list: the old one was deleted, renamed or replaced.
+            if (result.listId && prevListId && result.listId !== prevListId && site === prevSite && list === (prevList || SP_DEFAULT_LIST)) {
+                const at = Math.max(1, result.steps.findIndex(x => /found:/.test(x.label)) + 1);
+                result.steps.splice(at, 0, { label: 'This is not the list you used before', ok: true, warn: true,
+                    detail: 'The list you set up earlier was deleted, renamed or replaced by another one with the same name. ' +
+                        'Entries of the old list are not shown here. Look for it in Site contents or in the recycle bin of the SharePoint site.' });
+            }
             renderChecklist(result.steps);
+            renderActions(result);
+            if (result.ready && result.listId) GM_setValue(SP_LIST_ID_KEY, result.listId);
             checkBtn.disabled = false;
             checkBtn.textContent = '✔ Check / prepare list';
             checkPassedFor = result.ready ? `${site}|${list}` : null;
@@ -6094,6 +6221,7 @@ Version 0.1.0:
         }
 
         function cancel() {
+            if (prevListId) GM_setValue(SP_LIST_ID_KEY, prevListId); else GM_deleteValue(SP_LIST_ID_KEY);
             GM_setValue(SP_SITE_KEY, prevSite);
             GM_setValue(SP_LIST_KEY, prevList);
             GM_setValue(SP_SETUP_OK_KEY, prevOk);
