@@ -56,7 +56,7 @@ These editors were written for the separate scripts. They will be updated to wor
 | Enhancement Request Logger | ServiceNow | Opens a pre filled enhancement request form for the current RITM. |
 | Mini Summary Sidebar | ServiceNow | Shows the key fields of the current ticket at a glance. |
 | Row Highlighter | ServiceNow | Highlights list rows by who updated them, with SLA heat mapping. |
-| Change Tracker | ServiceNow | Shared change log per ticket, written to work notes and comments. |
+| Change Tracker | ServiceNow | Shared change log per ticket, kept in your team's SharePoint list and written to work notes and comments. |
 | ServiceNow Toolkit | ServiceNow | Draft autosave for work notes and comments, SCTASK auto open. |
 | Ticket Assignment | ServiceNow | Assigns tickets and fills the related fields in one step. |
 | URL List Editor | ServiceNow | Creates and updates Netskope URL lists through the API. |
