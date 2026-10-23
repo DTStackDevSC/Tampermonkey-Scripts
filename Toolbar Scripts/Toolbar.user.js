@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.0.0
+// @version      2.0.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -16,6 +16,8 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_listValues
 // @grant        unsafeWindow
+// @connect      sharepoint.com
+// @connect      deloitte.com
 // @run-at       document-start
 // ==/UserScript==
 
@@ -26,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.0.0';
-    const CHANGELOG = `Version 2.0.0:
+   const SCRIPT_VERSION = '2.0.1';
+    const CHANGELOG = `Version 2.0.1:
+- Change Tracker: Tampermonkey no longer asks for permission before the tracker talks to your SharePoint site.
+
+Version 2.0.0:
 - Change Tracker: the team log now lives in a SharePoint list of your team instead of the old team server. The first time you open it after this update, it asks for the SharePoint site and the list once. Changes you made while the old server was being retired are sent to SharePoint as soon as you connect.
 - Change Tracker: no activation code any more, and no Beta label. If you used it before, nothing changes for you. If not, turn it on in Settings, under Tools.
 
