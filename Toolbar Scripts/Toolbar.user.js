@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      1.18.2
+// @version      2.0.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -26,8 +26,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '1.18.2';
-    const CHANGELOG = `Version 1.18.2:
+   const SCRIPT_VERSION = '2.0.0';
+    const CHANGELOG = `Version 2.0.0:
+- Change Tracker: the team log now lives in a SharePoint list of your team instead of the old team server. The first time you open it after this update, it asks for the SharePoint site and the list once. Changes you made while the old server was being retired are sent to SharePoint as soon as you connect.
+- Change Tracker: no activation code any more, and no Beta label. If you used it before, nothing changes for you. If not, turn it on in Settings, under Tools.
+
+Version 1.18.2:
 - Each tool appears again only on the pages it was made for, as with the separate scripts: Ticket Assignment, Change Tracker and Domain Tools on tickets and the ServiceNow dashboard, Mini Summary and URL List Editor on tickets, Row Highlighter, ServiceNow Toolkit and Enhancement Request Logger on any ServiceNow page.
 - The floating toolbar no longer appears on every website, only on ServiceNow and Netskope. The ticket number button of General Toolkit still works on any site.
 
@@ -561,8 +565,8 @@ Version 1.0.0:
           exact: [], prefixes: ['miniSummarySidebar'] },
         { id: 'rowHighlighter', pages: ['https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'Row Highlighter', description: 'Highlight list rows updated by you, with SLA colors', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
           exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
-        { id: 'changeTracker', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Change Tracker', description: 'Shared change log per ticket, written to the ticket', beta: true, locked: true, site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
-          exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerWorkerUrl', 'changeTrackerToken'] },
+        { id: 'changeTracker', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Change Tracker', description: 'Shared change log per ticket in your team\'s SharePoint list, written to the ticket', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
+          exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerSpSiteUrl'] },
         { id: 'serviceNowToolkit', pages: ['https://*.service-now.com/*'], name: 'ServiceNow Toolkit', description: 'Draft autosave and SCTASK auto open', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
         { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
@@ -598,10 +602,14 @@ Version 1.0.0:
 
     // Checks that imported values have the shape the tool expects. Returns a problem, or ''.
     function dtCheckValues(tool, values) {
-        if (tool.id === 'changeTracker' && values.changeTrackerWorkerUrl) {
-            let url = null;
-            try { url = new URL(values.changeTrackerWorkerUrl); } catch (e) { /* not a URL */ }
-            if (!url || url.protocol !== 'https:') return 'the server address is not a valid https address';
+        if (tool.id === 'changeTracker') {
+            for (const key of ['changeTrackerWorkerUrl', 'changeTrackerSpSiteUrl']) {
+                if (!values[key]) continue;
+                let url = null;
+                try { url = new URL(values[key]); } catch (e) { /* not a URL */ }
+                if (!url || url.protocol !== 'https:') return key === 'changeTrackerSpSiteUrl'
+                    ? 'the SharePoint site is not a valid https address' : 'the server address is not a valid https address';
+            }
         }
         if (tool.id === 'netskopeUrlListManager') {
             for (const [key, value] of Object.entries(values)) {
@@ -656,14 +664,12 @@ Version 1.0.0:
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    /* Tool activation: which tools run, and the Change Tracker beta code. */
+    /* Tool activation: which tools run. */
     const DT_CHOICES_KEY      = 'toolbarSuiteToolChoices';
     const DT_INSTALL_KIND_KEY = 'toolbarSuiteInstallKind';
     const DT_DETECTED_KEY     = 'toolbarSuiteDetectedTools';
     const DT_CT_UNLOCKED_KEY  = 'toolbarSuiteCtUnlocked';
     const DT_PICKER_LATER_KEY = 'toolbarSuitePickerLater';
-    // SHA-256 of "toolbar-suite-ct:" followed by the activation code without "CT", dashes or spaces.
-    const DT_CT_CODE_HASH = 'cce5579e99b0991105c18c7a2b932e4f3d2799259ef789fad583a27a484bd4fd';
 
     // Decided once, the first time the suite runs: 'upgrade' when it found saved data, 'new' when storage was empty.
     const DT_INSTALL_KIND = (() => {
@@ -680,7 +686,7 @@ Version 1.0.0:
     }
     function dtSaveChoices(update) { GM_setValue(DT_CHOICES_KEY, Object.assign(dtChoices(), update)); }
 
-    // Change Tracker is unlocked by the code, or for people who already set it up.
+    // Before version 2.0.0 the Change Tracker needed an activation code, or an existing server and token.
     function dtCtUnlocked() {
         if (GM_getValue(DT_CT_UNLOCKED_KEY, false) === true) return true;
         if (GM_getValue('changeTrackerWorkerUrl', '') && GM_getValue('changeTrackerToken', '')) {
@@ -702,20 +708,21 @@ Version 1.0.0:
 
     // Does a tool run? Each tool section asks this before doing anything.
     function isToolEnabled(id) {
-        const tool = dtTool(id);
-        if (tool && tool.locked && !dtCtUnlocked()) return false;
         const choices = dtChoices();
         if (Object.prototype.hasOwnProperty.call(choices, id)) return choices[id] === true;
+        // Undecided: the Change Tracker stays as before 2.0.0, on only for people who could use it then.
+        if (id === 'changeTracker') return DT_INSTALL_KIND === 'upgrade' && dtCtUnlocked();
         return DT_INSTALL_KIND === 'upgrade';
     }
 
-    async function dtCheckCtCode(input) {
-        const rest = String(input || '').toUpperCase().replace(/[\s-]/g, '').replace(/^CT/, '');
-        if (!rest) return false;
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('toolbar-suite-ct:' + rest));
-        const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-        return hex === DT_CT_CODE_HASH;
-    }
+    // Version 2.0.0 dropped the activation code and the old team server. On every load, an old server
+    // address and token (left by an old install or brought by an import) only mark the tracker as used, then go.
+    (function dtForgetCtServer() {
+        if (!GM_getValue('changeTrackerWorkerUrl', '') && !GM_getValue('changeTrackerToken', '')) return;
+        dtCtUnlocked();
+        GM_deleteValue('changeTrackerWorkerUrl');
+        GM_deleteValue('changeTrackerToken');
+    })();
 
     // Kept from the moment the suite loads, before any page script can replace it.
     const dtAttachShadow = Element.prototype.attachShadow;
@@ -980,6 +987,7 @@ Version 1.0.0:
     // The addresses a tool will talk to after the import, shown so the user can check them.
     function dtServerNote(answer) {
         if (answer.tool.id === 'changeTracker') {
+            try { return ` (SharePoint: ${new URL(answer.values.changeTrackerSpSiteUrl).host})`; } catch (e) { /* no SharePoint site */ }
             try { return ` (server: ${new URL(answer.values.changeTrackerWorkerUrl).host})`; } catch (e) { return ''; }
         }
         if (answer.tool.id === 'netskopeUrlListManager') {
@@ -1079,21 +1087,10 @@ Version 1.0.0:
 
     const DT_SITE_LABELS = { servicenow: 'ServiceNow', netskope: 'Netskope tenant', all: 'All pages' };
 
-    function dtBetaPill() {
-        const pill = document.createElement('span');
-        pill.textContent = 'BETA';
-        Object.assign(pill.style, {
-            display: 'inline-block', marginLeft: '6px', padding: '0 6px', borderRadius: '8px',
-            background: '#ff8c00', color: '#fff', fontSize: '10px', fontWeight: 'bold', letterSpacing: '.5px'
-        });
-        return pill;
-    }
-
     // A checkbox list of tools grouped by site. Used by the picker and by Settings > Tools.
     function dtBuildToolList(ids, ticked) {
         const wrap = document.createElement('div');
         const boxes = new Map();
-        let codeInput = null, codeError = null;
         for (const site of ['servicenow', 'netskope', 'all']) {
             const group = DATA_REGISTRY.filter(t => ids.includes(t.id) && t.site === site);
             if (!group.length) continue;
@@ -1119,7 +1116,6 @@ Version 1.0.0:
                 const name = document.createElement('strong');
                 name.textContent = tool.name;
                 text.appendChild(name);
-                if (tool.beta) text.appendChild(dtBetaPill());
                 const desc = document.createElement('span');
                 desc.textContent = ' ' + tool.description;
                 desc.style.color = '#666';
@@ -1128,29 +1124,6 @@ Version 1.0.0:
                 wrap.appendChild(row);
                 boxes.set(tool.id, cb);
 
-                if (tool.locked && !dtCtUnlocked()) {
-                    const codeRow = document.createElement('div');
-                    Object.assign(codeRow.style, { margin: '2px 0 6px 24px', fontSize: '12px', color: '#555' });
-                    const label = document.createElement('span');
-                    label.textContent = 'Activation code: ';
-                    codeInput = document.createElement('input');
-                    codeInput.type = 'text';
-                    codeInput.className = 'dt-ct-code';
-                    codeInput.autocomplete = 'off';
-                    codeInput.placeholder = 'From your administrator';
-                    Object.assign(codeInput.style, {
-                        padding: '4px 8px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '12px',
-                        background: '#fff', color: '#333', width: '200px'
-                    });
-                    codeError = document.createElement('div');
-                    codeError.className = 'dt-ct-error';
-                    Object.assign(codeError.style, { color: '#c0392b', fontSize: '12px', marginTop: '3px' });
-                    codeRow.append(label, codeInput, codeError);
-                    const sync = () => { codeRow.style.display = cb.checked ? 'block' : 'none'; };
-                    cb.addEventListener('change', sync);
-                    sync();
-                    wrap.appendChild(codeRow);
-                }
             }
         }
         return {
@@ -1160,18 +1133,6 @@ Version 1.0.0:
                 boxes.forEach((cb, id) => { c[id] = cb.checked; });
                 return c;
             },
-            // True when no code is needed or the code is right. Otherwise shows why and returns false.
-            verifyCode: async () => {
-                const locked = DATA_REGISTRY.find(t => t.locked);
-                const cb = locked && boxes.get(locked.id);
-                if (!cb || !cb.checked || !codeInput) return true;
-                if (await dtCheckCtCode(codeInput.value)) {
-                    GM_setValue(DT_CT_UNLOCKED_KEY, true);
-                    return true;
-                }
-                codeError.textContent = 'That code is not valid.';
-                return false;
-            }
         };
     }
 
@@ -1182,7 +1143,7 @@ Version 1.0.0:
             list.element
         ], [
             { label: 'Later', onClick: () => { if (DT_INSTALL_KIND === 'upgrade') GM_setValue(DT_PICKER_LATER_KEY, dtToday()); } },
-            { label: 'Save', primary: true, check: () => list.verifyCode(),
+            { label: 'Save', primary: true,
               onClick: () => { dtSaveChoices(list.choices()); location.reload(); } }
         ]);
     }
@@ -1209,7 +1170,7 @@ Version 1.0.0:
         if (!undecided.length) return;
         const detected = GM_getValue(DT_DETECTED_KEY, []);
         const ticked = new Set(undecided
-            .filter(t => ((Array.isArray(detected) && detected.includes(t.id)) || dtSuiteHasData(t)) && (!t.locked || dtCtUnlocked()))
+            .filter(t => (Array.isArray(detected) && detected.includes(t.id)) || dtSuiteHasData(t))
             .map(t => t.id));
         dtShowToolPicker(undecided.map(t => t.id), ticked);
     }
@@ -1232,7 +1193,6 @@ Version 1.0.0:
     // Called by Save in Settings. False keeps Settings open (wrong code).
     async function dtSaveSettingsTools() {
         if (!dtSettingsToolList) return true;
-        if (!(await dtSettingsToolList.verifyCode())) return false;
         dtSaveChoices(dtSettingsToolList.choices());
         return true;
     }
@@ -1551,7 +1511,7 @@ Version 1.0.0:
                         border: '1px solid #e8e8f0', borderRadius: '6px', padding: '8px 12px',
                         maxWidth: '380px', background: '#fff', margin: '0 0 8px 0'
                     });
-                    [['Ticket Assignment', true, false], ['Change Tracker', false, true], ['General Toolkit', true, false]].forEach(([name, on, beta]) => {
+                    [['Ticket Assignment', true, false], ['Change Tracker', false, false], ['General Toolkit', true, false]].forEach(([name, on, beta]) => {
                         const box = span(on ? '✓' : '', {
                             width: '15px', height: '15px', borderRadius: '3px', display: 'inline-block', textAlign: 'center',
                             lineHeight: '15px', fontSize: '11px', color: '#fff', background: on ? '#667eea' : '#fff',
@@ -1564,8 +1524,7 @@ Version 1.0.0:
                     body.appendChild(list);
                     bullets(body, [
                         'The first time, a "Choose your tools" window asks which tools you want. No tool runs before that.',
-                        'Change it any time in Settings, under Tools. The page reloads to apply the change.',
-                        'Change Tracker is in beta: tick it and enter the activation code from your administrator.'
+                        'Change it any time in Settings, under Tools. The page reloads to apply the change.'
                     ]);
                 }
             },
@@ -3242,7 +3201,7 @@ Version 1.0.0:
 
         saveBtn.addEventListener('click', async (e) => {
             if (!e.isTrusted) return;   // only a real click saves Settings
-            if (!(await dtSaveSettingsTools())) return;   // wrong activation code: stay in Settings
+            if (!(await dtSaveSettingsTools())) return;
             saveSettings();
             modal.classList.remove('visible');
             location.reload();
@@ -17590,14 +17549,26 @@ Version 2.3.1:
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
     if (!isToolEnabled('changeTracker') || !dtToolRunsHere('changeTracker')) return function register() {};
 
+    // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
+
     console.log('📝 Change Tracker loading...');
 
     /* ==========================================================
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.25.0';
-    const CHANGELOG = `Version 1.25.0:
+    const SCRIPT_VERSION = '2.0.0';
+    const CHANGELOG = `Version 2.0.0:
+- The Change Tracker now keeps the team log in a SharePoint list of your team instead of the old team server. The first time you open it after this update, it asks for the SharePoint site and the list name once. No token is needed any more: everyone who can open the site can use the log.
+- Changes you made while the old server was being retired are kept and sent to SharePoint as soon as you connect.
+- "Check / prepare list" checks your access, shows which list it found with its number of entries and a link to it, and adds what the list is missing. It never creates or deletes a list on its own.
+- Each entry shows who created it and who edited it last. Entries that came from the old server show their original author.
+- When someone else changed an entry while you were editing it, you see both versions side by side and choose which one to keep.
+- A spinning wheel covers the form, entry or window you are working on while SharePoint saves.
+- When your SharePoint session expires, your changes wait on this computer and are sent once you sign in again.
+- Entries can be up to 250,000 characters long.
+
+Version 1.25.0:
 - New "Work note" and "Comment" checks next to the "+ Add Entry" button. Untick one to skip writing that part to the ticket, or tick it to write it even when auto-write is off. They only apply to the entry you are adding and then go back to the auto-write setting. They are hidden during a batch session.
 
 Version 1.24.0:
@@ -18368,14 +18339,14 @@ Version 1.4.3:
     // all" then writes them together as one worknote + one comment.
     // Sessions live in memory and end on page reload, unless the
     // "keep batch session" setting is on (then they are mirrored to GM).
-    // Offline fallback: when the Worker is unreachable, new entries can
+    // Offline fallback: when SharePoint is unreachable, new entries can
     // still be added. They are saved locally and synced on reconnect
     // (see PENDING SYNC QUEUE). Default ON.
     const OFFLINE_ADD_KEY = 'changeTrackerOfflineAddEnabled';
     function getOfflineAddEnabled()  { return GM_getValue(OFFLINE_ADD_KEY, true) !== false; }
     function setOfflineAddEnabled(v) { GM_setValue(OFFLINE_ADD_KEY, !!v); }
     // Adding is possible online, or offline when the fallback is on.
-    function canAddEntries() { return connState === 'ONLINE' || (connState === 'OFFLINE' && getOfflineAddEnabled()); }
+    function canAddEntries() { return connState === 'ONLINE' || ((connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') && getOfflineAddEnabled()); }
 
     const BATCH_PERSIST_KEY  = 'changeTrackerBatchPersistEnabled';
     const BATCH_SESSIONS_KEY = 'changeTrackerBatchSessions';
@@ -18434,7 +18405,7 @@ Version 1.4.3:
 
         const cardsWrap = document.createElement('div');
         cardsWrap.style.marginBottom = '0';
-        parseChangelog().forEach((entry, index) => {
+        parseChangelog(CHANGELOG).forEach((entry, index) => {
             const isLatest = index === 0;
             const card = document.createElement('div');
             Object.assign(card.style, {
@@ -18663,6 +18634,31 @@ Version 1.4.3:
         .ct-cs-item     { color: #333333 !important; }
         .ct-cs-group-header { background-color: #e9edf2 !important; color: #555555 !important; }
 
+        #ct-setup-checklist { background-color: #f8f8ff !important; color: #333333 !important; }
+        #ct-setup-waiting { background-color: #fff3cd !important; color: #856404 !important; }
+        #ct-choice-modal { background-color: #ffffff !important; color: #333333 !important; }
+        #ct-choice-modal button { color: #ffffff !important; }
+        #ct-choice-modal th { background-color: #f3f4ff !important; color: #444444 !important; }
+        #ct-choice-modal tr[data-diff="1"] td { background-color: #fff8e1 !important; color: #333333 !important; }
+        #ct-choice-modal tr[data-diff="0"] td { background-color: #ffffff !important; color: #888888 !important; }
+
+        /* Busy indicator: blocks clicks at once, shows the wheel only after 150 ms */
+        .ct-busy {
+            position: absolute !important; inset: 0 !important; z-index: 50 !important;
+            display: flex !important; flex-direction: column !important; align-items: center !important;
+            justify-content: center !important; gap: 6px !important; border-radius: inherit !important;
+            background: rgba(255,255,255,0.78) !important; cursor: progress !important;
+            opacity: 0; animation: ctspBusyIn .12s linear .15s forwards;
+        }
+        .ct-busy-wheel {
+            width: 26px !important; height: 26px !important; border-radius: 50% !important;
+            border: 3px solid #d0d0f0 !important; border-top-color: #667eea !important;
+            animation: ctspSpin .8s linear infinite;
+        }
+        .ct-busy-label { font-size: 11px !important; color: #555555 !important; font-family: Arial, sans-serif !important; }
+        @keyframes ctspSpin { to { transform: rotate(360deg); } }
+        @keyframes ctspBusyIn { to { opacity: 1; } }
+
         /* Feature Guide (? Help): above the sidebar and the edit / setup modals */
         #changeTrackerHelpModalOverlay { position: fixed !important; top: 0 !important; left: 0 !important;
             width: 100% !important; height: 100% !important; background: rgba(0,0,0,0.5) !important; z-index: 1060000 !important; }
@@ -18695,15 +18691,17 @@ Version 1.4.3:
 
     /* ──────────────────────────────────────────────────────────
      *  CONNECTIVITY STATE  (must be initialised before initializeSidebar())
-     *  States: 'INIT' | 'ONLINE' | 'OFFLINE' | 'INVALID_TOKEN' | 'SETUP'
+     *  States: 'INIT' | 'SETUP' | 'ONLINE' | 'OFFLINE' | 'SESSION_EXPIRED' | 'NO_ACCESS'
      *
-     *  INIT          → no token/URL in GM → sidebar open shows setup prompt
-     *  ONLINE        → Worker reachable, token valid → full functionality
-     *  OFFLINE       → Worker unreachable or 5xx → read-only, offline banner
-     *  INVALID_TOKEN → Worker returned 401 → read-only, token-invalid banner
-     *  SETUP         → user is in the first-run setup form
+     *  INIT            → no site set up yet → sidebar open shows setup prompt
+     *  SETUP           → user is in the setup form
+     *  ONLINE          → SharePoint list reachable → full functionality
+     *  OFFLINE         → SharePoint unreachable or failing → changes queue locally
+     *  SESSION_EXPIRED → M365 sign in needed → changes queue locally
+     *  NO_ACCESS       → no permission on the site or list → read only
      * ─────────────────────────────────────────────────────────*/
     let connState = 'INIT';
+    let noAccessReason = null;   // 'notfound' when the list itself is gone
 
     /* ==========================================================
      *  TICKET CONTEXT (polaris / classic mode detection)
@@ -18746,7 +18744,7 @@ Version 1.4.3:
      *  - Freeform types    → fields null, note populated
      *  Backward compat: old v1.1.0 entries only have {id,ts,type,note} — handled gracefully
      *
-     *  v1.3.0: GM storage now serves as a local read cache. The Worker
+     *  GM storage serves as a local read cache. The SharePoint list
      *  (api object below) is the source of truth when ONLINE. Local cache
      *  is updated optimistically on every mutation so the sidebar feels
      *  instant even when the API is slow or unreachable.
@@ -18791,7 +18789,7 @@ Version 1.4.3:
      *  CACHE EXPIRY
      *  Tracks the last time each ticket's cache was consulted (sidebar
      *  opened). On startup, any ticket cache older than the configured
-     *  TTL is deleted — the server remains the source of truth and will
+     *  TTL is deleted; SharePoint remains the source of truth and will
      *  re-populate the cache on next open.
      * ==========================================================*/
 
@@ -18839,83 +18837,604 @@ Version 1.4.3:
     }
 
     /* ==========================================================
-     *  API CLIENT  (Cloudflare Worker proxy to D1)
-     *  Single fetch surface. All errors return { ok: false, ... }
-     *  rather than throwing, so callers can route them through
-     *  handleApiResponse() without try/catch.
+     *  SHAREPOINT SETTINGS
      * ==========================================================*/
 
-    const api = {
+    const SP_SITE_KEY     = 'changeTrackerSpSiteUrl';
+    const SP_LIST_KEY     = 'changeTrackerSpListTitle';
+    const SP_SETUP_OK_KEY = 'changeTrackerSpSetupOk';
+    const SP_LIST_ID_KEY  = 'changeTrackerSpListId';   // the list's own id, so a rename or a namesake never switches lists
+    const SP_DEFAULT_LIST = 'ChangeTracker';
+    const SP_FIELD_MAX    = 250000;  // SharePoint accepted 512,000 characters in a plain multi line column; this keeps a margin
+    const SP_ACCEPT       = 'application/json;odata=minimalmetadata';
+    const SP_VERBOSE      = 'application/json;odata=verbose';
 
-        // Read Worker URL and token from GM storage
-        getConfig() {
-            return {
-                url:   GM_getValue('changeTrackerWorkerUrl', ''),
-                token: GM_getValue('changeTrackerToken',     ''),
-            };
-        },
+    function qs(params) {
+        return '?' + Object.entries(params)
+            .filter(([, v]) => v !== undefined && v !== null && v !== '')
+            .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    }
 
-        // Returns true if both url and token are set
-        isConfigured() {
-            const { url, token } = api.getConfig();
-            return Boolean(url && token);
-        },
+    /* ==========================================================
+     *  SHAREPOINT CLIENT
+     *  Every call to SharePoint goes through here, with the user's own
+     *  M365 session. Calls never throw: they resolve to
+     *  { ok, status, kind, data, etag, message }.
+     *  kind: ok | network | server | session | forbidden | conflict |
+     *        notfound | tooLarge | bad
+     * ==========================================================*/
 
-        // Shared fetch wrapper.
-        // Returns { ok: true, data } or { ok: false, status, network: bool }
-        // A failed network attempt (dropped connection, proxy hiccup) is
-        // retried once before reporting the failure, so one glitch does not
-        // flip the sidebar to offline.
-        async request(method, path, body, retries = 1) {
-            const { url, token } = api.getConfig();
-            try {
-                const res = await fetch(`${url}${path}`, {
-                    method,
-                    headers: {
-                        'Content-Type':  'application/json',
-                        'Authorization': `Bearer ${token}`,
-                    },
-                    body: body ? JSON.stringify(body) : undefined,
+    const spClient = (() => {
+        let digest = null;
+        let digestExpires = 0;
+        let hadSuccess = false;   // a 403 after a success means the session changed
+        let onWait = null;
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+        function siteUrl()   { return String(GM_getValue(SP_SITE_KEY, '') || '').trim().replace(/\/+$/, ''); }
+        function listTitle() { return String(GM_getValue(SP_LIST_KEY, '') || '').trim() || SP_DEFAULT_LIST; }
+        function odataQuote(s) { return String(s).replace(/'/g, "''"); }
+        function listPath() {
+            const id = String(GM_getValue(SP_LIST_ID_KEY, '') || '');
+            return /^[0-9a-f-]{36}$/i.test(id) ? `/_api/web/lists(guid'${id}')`
+                : `/_api/web/lists/getbytitle('${encodeURIComponent(odataQuote(listTitle()))}')`;
+        }
+
+        // Hard safety net: whatever calls this client, a list is never deleted or sent to the
+        // recycle bin, and a list is only created when the user pressed "Create new list".
+        function refusal(opts, url) {
+            const p = String(url).replace(/^https?:\/\/[^/]+/i, '').split('?')[0];
+            const deleting = opts.method === 'DELETE' || /^(DELETE|RECYCLE)$/i.test(opts.xMethod || '');
+            if (/\/_api\/web\/lists/i.test(p) && /\/recycle(\(|\/|$)/i.test(p)) return 'Refused: the tracker never sends a list to the recycle bin.';
+            if (deleting && /\/_api\/web\/lists(\(guid'[^']*'\)|\/getbytitle\('[^']*'\))\/?$/i.test(p)) return 'Refused: the tracker never deletes a list.';
+            if (opts.method !== 'GET' && /\/_api\/web\/lists\/?$/i.test(p) && !opts.allowListCreate) return 'Refused: a list is only created when you press "Create new list".';
+            return null;
+        }
+
+        function raw(method, url, headers, body) {
+            return new Promise(resolve => {
+                GM_xmlhttpRequest({
+                    method, url, headers, data: body, anonymous: false, timeout: 20000,
+                    onload:    r  => resolve(r),
+                    onerror:   () => resolve({ status: 0, network: true }),
+                    ontimeout: () => resolve({ status: 0, network: true }),
                 });
-                if (res.ok) {
-                    return { ok: true, data: await res.json() };
-                }
-                return { ok: false, status: res.status, network: false };
-            } catch (e) {
-                if (retries > 0) {
-                    await new Promise(r => setTimeout(r, 800));
-                    return api.request(method, path, body, retries - 1);
-                }
-                return { ok: false, status: 0, network: true };
+            });
+        }
+
+        function header(r, name) {
+            const m = String(r.responseHeaders || '').match(new RegExp('^' + name + ':\\s*(.+?)\\s*$', 'im'));
+            return m ? m[1] : null;
+        }
+
+        function classify(r) {
+            const text = r.responseText || '';
+            let data = null;
+            try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+            const err = data && (data['odata.error'] || data.error);
+            const message = err && err.message ? String(err.message.value || err.message) : '';
+            const toLogin = /login\.microsoftonline\.com|login\.windows\.net|\/_forms\/default\.aspx|\/_layouts\/15\/Authenticate\.aspx/i.test(r.finalUrl || '');
+            const base = { status: r.status || 0, data, message, etag: header(r, 'etag') };
+            if (r.network) return { ...base, ok: false, kind: 'network' };
+            if (toLogin || (r.status === 200 && !data && /^\s*</.test(text))) return { ...base, ok: false, kind: 'session' };
+            if (r.status >= 200 && r.status < 300) return { ...base, ok: true, kind: 'ok' };
+            // SharePoint answers 500 (not 400) when a unique column already has the value.
+            if (/duplicate values were found|already used in this list|enforces unique values/i.test(message)) return { ...base, ok: false, kind: 'duplicate' };
+            if (r.status === 401) return { ...base, ok: false, kind: 'session' };
+            if (r.status === 403) {
+                const kind = /security validation/i.test(message) ? 'digest' : (hadSuccess ? 'session' : 'forbidden');
+                return { ...base, ok: false, kind };
             }
+            if (r.status === 404) return { ...base, ok: false, kind: 'notfound' };
+            if (r.status === 412) return { ...base, ok: false, kind: 'conflict' };
+            if (r.status === 413 || (r.status === 400 && /maximum length|too long|exceeds/i.test(message))) return { ...base, ok: false, kind: 'tooLarge' };
+            if (r.status === 429 || r.status >= 500) return { ...base, ok: false, kind: 'server', retryAfter: Number(header(r, 'retry-after')) || 0 };
+            return { ...base, ok: false, kind: 'bad' };
+        }
+
+        // Parallel writes share one request for a new digest instead of each asking for its own.
+        let digestInFlight = null;
+        function refreshDigest() {
+            if (!digestInFlight) digestInFlight = fetchDigest().finally(() => { digestInFlight = null; });
+            return digestInFlight;
+        }
+
+        async function fetchDigest() {
+            const res = classify(await raw('POST', `${siteUrl()}/_api/contextinfo`, { Accept: SP_ACCEPT }));
+            if (res.ok && res.data && res.data.FormDigestValue) {
+                digest = res.data.FormDigestValue;
+                digestExpires = Date.now() + ((Number(res.data.FormDigestTimeoutSeconds) || 1800) - 60) * 1000;
+                hadSuccess = true;
+            }
+            return res;
+        }
+
+        async function call(opts) {
+            const url = opts.url || (siteUrl() + opts.path);
+            const refused = refusal(opts, url);
+            if (refused) { console.warn('CT SP:', refused, url); return { ok: false, status: 0, kind: 'bad', data: null, message: refused, etag: null }; }
+            const isWrite = opts.method !== 'GET';
+            let digestRetried = false, netRetried = false, throttleTries = 0;
+            for (;;) {
+                const headers = { Accept: SP_ACCEPT };
+                if (isWrite) {
+                    if (!digest || Date.now() >= digestExpires) {
+                        const d = await refreshDigest();
+                        if (!d.ok) return d.kind === 'digest' ? { ...d, kind: 'session' } : d;
+                    }
+                    headers['X-RequestDigest'] = digest;
+                    headers['Content-Type'] = SP_VERBOSE;
+                }
+                if (opts.xMethod) headers['X-HTTP-Method'] = opts.xMethod;
+                if (opts.ifMatch) headers['IF-MATCH'] = opts.ifMatch;
+                const res = classify(await raw(opts.method, url, headers, opts.body ? JSON.stringify(opts.body) : undefined));
+                if (res.ok) { hadSuccess = true; return res; }
+                if (res.kind === 'digest' && !digestRetried) { digestRetried = true; digest = null; continue; }
+                if (res.kind === 'digest') return { ...res, kind: 'session' };
+                if (res.kind === 'session') digest = null;
+                if (res.kind === 'network' && !netRetried) { netRetried = true; await wait(800); continue; }
+                if (res.kind === 'server' && res.retryAfter && throttleTries < 3) {
+                    throttleTries++;
+                    const seconds = Math.min(res.retryAfter, 30);
+                    if (seconds > 10 && onWait) onWait(seconds);
+                    await wait(seconds * 1000);
+                    continue;
+                }
+                return res;
+            }
+        }
+
+        function currentUser() {
+            return call({ method: 'GET', path: '/_api/web/currentuser' + qs({ $select: 'Id,Title,Email' }) });
+        }
+
+        return { call, currentUser, siteUrl, listTitle, listPath, odataQuote, setOnWait: (fn) => { onWait = fn; } };
+    })();
+
+    spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
+
+    /* ==========================================================
+     *  ENTRY MAPPER  (tracker entry <-> SharePoint list item)
+     *  CTPayload holds the full entry and is the only column read back.
+     *  The other columns are rebuilt on every save so the list can be
+     *  filtered and searched in SharePoint.
+     * ==========================================================*/
+
+    const entryMapper = (() => {
+        const GROUP_OF = {};
+        SNIPPET_GROUPS.forEach(g => g.items.forEach(i => { GROUP_OF[i.value] = g.group; }));
+
+        // The field that names the thing that changed: the first field of the type.
+        function objectKey(type) {
+            const key = getSchemaKey(type);
+            const schema = key ? FIELD_SCHEMAS[key] : null;
+            return schema && schema.length ? schema[0].key : null;
+        }
+
+        function toIsoDate(ts) {
+            const m = String(ts || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+            const d = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : new Date(ts);
+            return (isNaN(d) ? new Date() : d).toISOString();
+        }
+
+        function details(entry) {
+            const origin = entry.imported
+                ? `Imported from Cloudflare, originally by ${entry.imported.author_label || 'unknown'} on ${entry.ts}.\n` : '';
+            if (!entry.fields) return origin + (entry.note || '');
+            const skip = objectKey(entry.type);
+            const rest = Object.fromEntries(Object.entries(entry.fields).filter(([k]) => k !== skip));
+            const text = formatEntryContent({ ...entry, fields: rest });
+            return origin + (text === '(all fields empty)' ? '' : text);
+        }
+
+        function toItem(entry, ticket, entityType) {
+            const key = objectKey(entry.type);
+            return {
+                __metadata:  { type: entityType },
+                Title:       ticket,
+                CTEntryDate: toIsoDate(entry.ts),
+                CTGroup:     GROUP_OF[entry.type] || 'Other',
+                CTType:      entry.type,
+                CTObject:    (key && entry.fields && entry.fields[key] ? String(entry.fields[key]) : '').slice(0, 255),
+                CTDetails:   details(entry),
+                CTEntryId:   entry.id,
+                CTPayload:   JSON.stringify({ v: 1, id: entry.id, ts: entry.ts, type: entry.type,
+                                              fields: entry.fields || null, note: entry.note || null,
+                                              imported: entry.imported || undefined }),
+            };
+        }
+
+        function fromItem(item) {
+            let p = null;
+            try { p = JSON.parse(item.CTPayload || ''); } catch (e) { p = null; }
+            if (!p || !p.id) return null;
+            return {
+                id: p.id, ts: p.ts, type: p.type, fields: p.fields || null, note: p.note || null,
+                spId: item.Id,
+                etag: item['odata.etag'] || null,
+                // Imported entries keep the name of whoever wrote them on the old server.
+                author_label: (p.imported && p.imported.author_label) || (item.Author && item.Author.Title) || '',
+                sp_author_label: (item.Author && item.Author.Title) || '',
+                imported: p.imported || null,
+                modified_by_label: (item.Editor && item.Editor.Title) || '',
+                modified_at: item.Modified || '',
+            };
+        }
+
+        return { toItem, fromItem, objectKey, toIsoDate };
+    })();
+
+    /* ==========================================================
+     *  LIST SCHEMA  (the columns the list needs, "Check / prepare list")
+     * ==========================================================*/
+
+    const SP_COLUMNS = [
+        { name: 'CTEntryDate', title: 'Entry Date', type: 'DateTime', indexed: true },
+        { name: 'CTGroup',     title: 'Group',      type: 'Choice',   choices: 'groups' },
+        { name: 'CTType',      title: 'Change Type', type: 'Choice',  choices: 'types' },
+        { name: 'CTObject',    title: 'Object',     type: 'Text' },
+        { name: 'CTDetails',   title: 'Details',    type: 'Note' },
+        { name: 'CTEntryId',   title: 'Entry ID',   type: 'Text',     indexed: true, unique: true },
+        { name: 'CTPayload',   title: 'Payload',    type: 'Note' },
+    ];
+
+    const listSchema = (() => {
+        const P = { view: 0x1, add: 0x2, edit: 0x4, del: 0x8, manage: 0x800 };
+        // AddFieldInternalNameHint (8) keeps our internal names; without it SharePoint names the
+        // column after its display name. AddFieldToDefaultView (16) shows it in the list view.
+        const SP_ADD_FIELD_OPTIONS = 8 | 16;
+        const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+        const colByName = (name) => SP_COLUMNS.find(c => c.name === name);
+        const titleOf = (name) => (colByName(name) || { title: name === 'Title' ? 'Ticket' : name }).title;
+
+        function choicesFor(col) {
+            return col.choices === 'groups'
+                ? SNIPPET_GROUPS.map(g => g.group)
+                : SNIPPET_GROUPS.flatMap(g => g.items.map(i => i.value));
+        }
+
+        function fieldXml(col) {
+            const a = `Name='${col.name}' StaticName='${col.name}' DisplayName='${xmlEsc(col.title)}'`;
+            if (col.type === 'DateTime') return `<Field Type='DateTime' ${a} Format='DateTime'/>`;
+            if (col.type === 'Text')     return `<Field Type='Text' ${a} MaxLength='255'/>`;
+            if (col.type === 'Note')     return `<Field Type='Note' ${a} RichText='FALSE' NumLines='6'/>`;
+            return `<Field Type='Choice' ${a} FillInChoice='TRUE' Format='Dropdown'><CHOICES>` +
+                choicesFor(col).map(c => `<CHOICE>${xmlEsc(c)}</CHOICE>`).join('') + '</CHOICES></Field>';
+        }
+
+        function describeFailure(res) {
+            if (!res) return '';
+            if (res.kind === 'session') return 'You are not signed in to SharePoint in this browser. Open the site in another tab, sign in, then check again.';
+            if (res.kind === 'forbidden') return 'You do not have access to this site or list. Ask the site owner for access.';
+            if (res.kind === 'network' || res.kind === 'server') return 'SharePoint could not be reached. Check the site address and your connection.';
+            if (res.kind === 'notfound') return 'Not found. Check the site address.';
+            return res.message || `SharePoint answered with an error (HTTP ${res.status}).`;
+        }
+
+        async function inspect() {
+            const report = { user: null, list: null, entityType: null, versioning: false, perms: null, titleRenamed: false,
+                missingColumns: [], lookalikes: {}, wrongColumns: [], missingIndexes: [], missingUnique: [], missingChoices: {}, haveChoices: {}, failure: null };
+            const me = await spClient.currentUser();
+            if (!me.ok) { report.failure = me; return report; }
+            report.user = me.data.Title;
+            const list = await spClient.call({ method: 'GET', path: spClient.listPath() +
+                qs({ $select: 'Id,Title,ItemCount,DefaultViewUrl,ListItemEntityTypeFullName,EnableVersioning,EffectiveBasePermissions' }) });
+            if (list.kind === 'notfound') { report.list = false; return report; }
+            if (!list.ok) { report.failure = list; return report; }
+            report.list = true;
+            report.entityType = list.data.ListItemEntityTypeFullName;
+            report.versioning = !!list.data.EnableVersioning;
+            report.itemCount = Number(list.data.ItemCount) || 0;
+            // SharePoint's ItemCount can say 0 for a list that has entries, so count the rows ourselves.
+            // The list only counts as empty when that read worked and found nothing.
+            report.itemCountPlus = false;
+            report.emptyConfirmed = false;
+            const probe = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` + qs({ $select: 'Id', $top: '5000' }) });
+            if (probe.ok) {
+                const n = (probe.data.value || []).length;
+                report.itemCountPlus = !!probe.data['odata.nextLink'];
+                report.itemCount = report.itemCountPlus ? Math.max(n, report.itemCount) : n;
+                report.emptyConfirmed = n === 0 && !report.itemCountPlus;
+            }
+            report.listId = list.data.Id || null;
+            report.listTitle = list.data.Title || spClient.listTitle();
+            report.viewUrl = list.data.DefaultViewUrl ? spClient.siteUrl().replace(/^(https?:\/\/[^/]+).*$/i, '$1') + list.data.DefaultViewUrl : '';
+            const low = Number(list.data.EffectiveBasePermissions && list.data.EffectiveBasePermissions.Low) || 0;
+            report.perms = Object.fromEntries(Object.entries(P).map(([k, bit]) => [k, (low & bit) === bit]));
+            const fields = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/fields` +
+                qs({ $filter: 'Hidden eq false', $select: 'Title,InternalName,TypeAsString,Indexed,EnforceUniqueValues,Choices,CanBeDeleted,FromBaseType' }) });
+            if (!fields.ok) { report.failure = fields; return report; }
+            const byName = {};
+            (fields.data.value || []).forEach(f => { byName[f.InternalName] = f; });
+            report.titleRenamed = !!(byName.Title && byName.Title.Title === 'Ticket');
+            if (!byName.Title || !byName.Title.Indexed) report.missingIndexes.push('Title');
+            for (const col of SP_COLUMNS) {
+                const f = byName[col.name];
+                if (!f) {
+                    report.missingColumns.push(col.name);
+                    // Same display name, other internal name: added by hand or by version 0.1.0.
+                    // SharePoint's own columns (such as the built in "Type") are never touched.
+                    const twin = (fields.data.value || []).find(x => x.Title === col.title && x.InternalName !== col.name &&
+                        x.CanBeDeleted !== false && !x.FromBaseType);
+                    if (twin) report.lookalikes[col.name] = twin.InternalName;
+                    continue;
+                }
+                if (f.TypeAsString !== col.type) report.wrongColumns.push(col.name);
+                if (col.indexed && !f.Indexed) report.missingIndexes.push(col.name);
+                if (col.unique && !f.EnforceUniqueValues) report.missingUnique.push(col.name);
+                if (col.type === 'Choice') {
+                    const have = Array.isArray(f.Choices) ? f.Choices : ((f.Choices && f.Choices.results) || []);
+                    report.haveChoices[col.name] = have;
+                    const miss = choicesFor(col).filter(c => !have.includes(c));
+                    if (miss.length) report.missingChoices[col.name] = miss;
+                }
+            }
+            return report;
+        }
+
+        function isReady(r) {
+            return r.list === true && !r.failure && !r.missingColumns.length && !r.wrongColumns.length &&
+                r.perms.view && r.perms.add && r.perms.edit && r.perms.del;
+        }
+
+        function mergeField(name, body) {
+            return spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/getbyinternalnameortitle('${name}')`,
+                body, xMethod: 'MERGE', ifMatch: '*' });
+        }
+
+        // Lists of this site whose name looks like the one asked for, to catch typos.
+        async function similarLists() {
+            const res = await spClient.call({ method: 'GET', path: '/_api/web/lists' +
+                qs({ $select: 'Id,Title,ItemCount', $filter: 'Hidden eq false and BaseTemplate eq 100' }) });
+            if (!res.ok) return [];
+            const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9]/g, '');
+            const want = norm(spClient.listTitle());
+            const near = (a, b) => {
+                if (!a || !b) return false;
+                if (a === b || a.includes(b) || b.includes(a)) return true;
+                // one or two letters typed differently
+                const dp = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+                for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+                for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+                    dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+                }
+                return dp[a.length][b.length] <= 2;
+            };
+            return (res.data.value || [])
+                .filter(l => near(norm(l.Title), want) || /changetracker|tracker/.test(norm(l.Title)))
+                .map(l => ({ title: l.Title, items: Number(l.ItemCount) || 0, id: l.Id }));
+        }
+
+        // allowCreate / allowRemove are only true after the user pressed the matching button.
+        async function prepare({ allowCreate = false, allowRemove = false } = {}) {
+            const steps = [];
+            const removeFailed = {};   // column name -> why SharePoint refused to remove it
+            const step = (label, res) => {
+                const ok = res === true || !!(res && res.ok);
+                steps.push({ label, ok, detail: ok ? '' : describeFailure(res) });
+                return ok;
+            };
+            let r = await inspect();
+            if (r.failure && r.list === null && !r.user) { step('Signed in to SharePoint', r.failure); return { steps, report: r, ready: false }; }
+            steps.push({ label: `Signed in as ${r.user}`, ok: true, detail: '' });
+            if (r.failure) { step(`Open list "${spClient.listTitle()}"`, r.failure); return { steps, report: r, ready: false }; }
+            if (r.list === false && !allowCreate) {
+                const similar = await similarLists();
+                steps.push({ label: `No list called "${spClient.listTitle()}" on this site`, ok: false,
+                    detail: similar.length ? 'Did you mean one of the lists below? Pick it, or create a new empty list with this name.'
+                        : 'Check the name and the site address, or create a new empty list with this name.' });
+                return { steps, report: r, ready: false, needsCreate: true, similar };
+            }
+            if (r.list === false) {
+                const created = await spClient.call({ method: 'POST', path: '/_api/web/lists', allowListCreate: true,
+                    body: { __metadata: { type: 'SP.List' }, BaseTemplate: 100, Title: spClient.listTitle(), EnableVersioning: true } });
+                if (!step(`Create list "${spClient.listTitle()}"`, created)) {
+                    if (created.kind === 'forbidden' || created.kind === 'session') steps[steps.length - 1].detail =
+                        `The list does not exist and you cannot create it. Ask a site owner to press "Check / prepare list" once.`;
+                    return { steps, report: r, ready: false };
+                }
+                r = await inspect();
+                if (r.failure) { step('Open the new list', r.failure); return { steps, report: r, ready: false }; }
+            } else {
+                steps.push({ label: `List "${r.listTitle}" found: ${r.itemCount.toLocaleString('en-US')}${r.itemCountPlus ? '+' : ''} ${r.itemCount === 1 && !r.itemCountPlus ? 'item' : 'items'}`, ok: true, detail: '', link: r.viewUrl });
+            }
+
+            const needsChanges = r.missingColumns.length || r.missingIndexes.length || r.missingUnique.length ||
+                Object.keys(r.missingChoices).length || !r.versioning || !r.titleRenamed;
+            if (needsChanges && !r.perms.manage) {
+                const missing = [...r.missingColumns.map(n => `column "${titleOf(n)}"`),
+                    ...r.missingIndexes.map(n => `index on "${titleOf(n)}"`)].join(', ');
+                steps.push({ label: 'Prepare the list', ok: !r.missingColumns.length,
+                    detail: `You cannot change this list. Ask a site owner to press "Check / prepare list" once${missing ? ', or to add: ' + missing : ''}.` });
+            } else if (needsChanges) {
+                // On an empty list, a column with our name that we did not create can go: nothing is lost.
+                if (r.emptyConfirmed && allowRemove) {
+                    for (const [name, twin] of Object.entries(r.lookalikes)) {
+                        const removed = await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/getbyinternalnameortitle('${twin}')`,
+                            xMethod: 'DELETE', ifMatch: '*' });
+                        if (step(`Remove column "${titleOf(name)}" (not made by the tracker, the list is empty)`, removed)) delete r.lookalikes[name];
+                        else removeFailed[name] = removed.message || `HTTP ${removed.status}`;
+                    }
+                }
+                for (const name of r.missingColumns.filter(n => !r.lookalikes[n])) {
+                    const col = colByName(name);
+                    step(`Add column "${col.title}"`, await spClient.call({ method: 'POST', path: `${spClient.listPath()}/fields/createfieldasxml`,
+                        body: { parameters: { __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: fieldXml(col), Options: SP_ADD_FIELD_OPTIONS } } }));
+                }
+                if (r.missingColumns.some(n => !r.lookalikes[n])) r = await inspect();
+                for (const name of r.missingIndexes) step(`Index column "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.Field' }, Indexed: true }));
+                for (const name of r.missingUnique) step(`Require unique values in "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.Field' }, EnforceUniqueValues: true }));
+                for (const name of Object.keys(r.missingChoices)) {
+                    const all = [...new Set([...(r.haveChoices[name] || []), ...choicesFor(colByName(name))])];
+                    step(`Update the choices of "${titleOf(name)}"`, await mergeField(name, { __metadata: { type: 'SP.FieldChoice' },
+                        Choices: { __metadata: { type: 'Collection(Edm.String)' }, results: all } }));
+                }
+                if (!r.versioning) step('Turn on version history', await spClient.call({ method: 'POST', path: spClient.listPath(),
+                    body: { __metadata: { type: 'SP.List' }, EnableVersioning: true }, xMethod: 'MERGE', ifMatch: '*' }));
+                if (!r.titleRenamed) step('Show the Title column as "Ticket"', await mergeField('Title', { __metadata: { type: 'SP.Field' }, Title: 'Ticket' }));
+            }
+
+            r = await inspect();
+            if (r.failure) { step('Check the list again', r.failure); return { steps, report: r, ready: false }; }
+            for (const name of r.missingColumns) {
+                const twin = r.lookalikes[name];
+                steps.push({ label: `Column "${titleOf(name)}"`, ok: false, detail: twin
+                    ? (removeFailed[name]
+                        ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and it could not be removed: ${removeFailed[name]} Delete it in the list settings, then check again.`
+                        : !r.emptyConfirmed
+                            ? `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}), and the list already has entries. Delete that column in the list settings, then check again.`
+                            : `A column called "${titleOf(name)}" already exists but the tracker did not create it (internal name ${twin}). The list is empty, so it can be replaced with the tracker's own column: press "Replace columns" below.`)
+                    : `This column is still missing. Ask a site owner to press "Check / prepare list", then check again.` });
+            }
+            if (r.wrongColumns.length) steps.push({ label: 'Column types', ok: false,
+                detail: `These columns exist with another type: ${r.wrongColumns.map(titleOf).join(', ')}. Ask a site owner to delete them, then check again.` });
+            const permLabels = [['view', 'Read entries'], ['add', 'Add entries'], ['edit', 'Edit entries'], ['del', 'Delete entries']];
+            for (const [k, label] of permLabels) {
+                steps.push({ label, ok: r.perms[k], detail: r.perms[k] ? '' : 'You do not have this permission on the list. Ask the site owner.' });
+            }
+            const needsRemove = r.emptyConfirmed ? r.missingColumns.filter(n => r.lookalikes[n] && !removeFailed[n]) : [];
+            return { steps, report: r, ready: isReady(r), listId: r.listId, needsRemove };
+        }
+
+        return { inspect, prepare, isReady, describeFailure };
+    })();
+
+
+
+
+    /* ==========================================================
+     *  API  (SharePoint list)
+     *  Same surface the rest of the tool has always used. Calls never
+     *  throw; failures go through handleApiResponse().
+     * ==========================================================*/
+
+    const ITEM_SELECT  = 'Id,CTPayload,Modified,Author/Title,Editor/Title';
+    const SP_PAGE_SIZE = Number(GM_getValue('changeTrackerSpPageSize', 500)) || 500;
+
+    const api = {
+        lastFailure: null,
+        _entityType: null,
+
+        isConfigured() {
+            return Boolean(spClient.siteUrl()) && GM_getValue(SP_SETUP_OK_KEY, false) === true;
         },
 
         async ping() {
-            const { url } = api.getConfig();
-            if (!url) return false;
-            try {
-                const res = await fetch(`${url}/ping`);
-                return res.ok;
-            } catch { return false; }
+            const res = await spClient.currentUser();
+            api.lastFailure = res.ok ? null : res;
+            // Set up before lists were remembered by id: learn it now.
+            if (res.ok && !GM_getValue(SP_LIST_ID_KEY, '') && api.isConfigured()) await api.entityType();
+            return res.ok;
+        },
+
+        async entityType() {
+            if (api._entityType) return { ok: true, data: api._entityType };
+            const res = await spClient.call({ method: 'GET', path: spClient.listPath() + qs({ $select: 'Id,ListItemEntityTypeFullName' }) });
+            if (!res.ok) return res;
+            if (!GM_getValue(SP_LIST_ID_KEY, '') && res.data.Id && api.isConfigured()) GM_setValue(SP_LIST_ID_KEY, res.data.Id);
+            api._entityType = res.data.ListItemEntityTypeFullName;
+            return { ok: true, data: api._entityType };
+        },
+
+        async _allItems(params) {
+            const items = [];
+            let res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` + qs(Object.assign({ $top: String(SP_PAGE_SIZE) }, params)) });
+            for (;;) {
+                if (!res.ok) return res;
+                items.push(...(res.data.value || []));
+                const next = res.data['odata.nextLink'];
+                if (!next) return { ok: true, data: items };
+                res = await spClient.call({ method: 'GET', url: next });
+            }
         },
 
         async fetchEntries(ticket) {
-            return api.request('GET', `/entries/${encodeURIComponent(ticket)}`);
+            const res = await api._allItems({ $filter: `Title eq '${spClient.odataQuote(ticket)}'`, $select: ITEM_SELECT,
+                $expand: 'Author,Editor', $orderby: 'CTEntryDate asc' });
+            if (!res.ok) return res;
+            return { ok: true, data: { entries: res.data.map(entryMapper.fromItem).filter(Boolean) } };
+        },
+
+        async findItem(entryId) {
+            const res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` + qs({
+                $filter: `CTEntryId eq '${spClient.odataQuote(entryId)}'`, $select: ITEM_SELECT, $expand: 'Author,Editor', $top: '1' }) });
+            if (!res.ok) return res;
+            const item = (res.data.value || [])[0];
+            return item ? { ok: true, data: item } : { ok: false, status: 404, kind: 'notfound' };
+        },
+
+        async getEntry(entryId) {
+            const res = await api.findItem(entryId);
+            if (!res.ok) return res;
+            const entry = entryMapper.fromItem(res.data);
+            return entry ? { ok: true, data: entry } : { ok: false, status: 0, kind: 'bad' };
+        },
+
+        // Creates or updates one entry. entry.ticket must be set.
+        async saveEntry(entry) {
+            const et = await api.entityType();
+            if (!et.ok) return et;
+            let body = entryMapper.toItem(entry, entry.ticket, et.data);
+            if (body.CTPayload.length > SP_FIELD_MAX || body.CTDetails.length > SP_FIELD_MAX) return { ok: false, status: 0, kind: 'tooLarge' };
+            const itemsPath = `${spClient.listPath()}/items`;
+            let spId = entry.spId || null;
+            if (!spId) {
+                const created = await spClient.call({ method: 'POST', path: itemsPath, body });
+                if (created.ok) return { ok: true, data: { id: entry.id, spId: created.data.Id, etag: created.etag || created.data['odata.etag'] || null } };
+                // Already in the list: an earlier attempt was saved but its reply never arrived.
+                if (created.kind !== 'duplicate') return created;
+                const found = await api.findItem(entry.id);
+                if (!found.ok) return found;
+                spId = found.data.Id;
+                // A change queued before the move to SharePoint can edit an imported entry: keep its original author.
+                if (!entry.imported) {
+                    let prev = null;
+                    try { prev = JSON.parse(found.data.CTPayload || '{}').imported || null; } catch (e) { prev = null; }
+                    if (prev) body = entryMapper.toItem(Object.assign({}, entry, { imported: prev }), entry.ticket, et.data);
+                }
+            }
+            const ifMatch = entry.force || !entry.etag ? '*' : entry.etag;
+            const res = await spClient.call({ method: 'POST', path: `${itemsPath}(${spId})`, body, xMethod: 'MERGE', ifMatch });
+            if (!res.ok) return res;
+            let etag = res.etag;
+            if (!etag) {
+                const fresh = await spClient.call({ method: 'GET', path: `${itemsPath}(${spId})` + qs({ $select: 'Id' }) });
+                etag = fresh.ok ? fresh.data['odata.etag'] || null : null;
+            }
+            return { ok: true, data: { id: entry.id, spId, etag } };
         },
 
         async pushEntries(entries) {
-            return api.request('POST', '/entries', { entries });
+            const saved = [];
+            for (const entry of entries) {
+                const res = await api.saveEntry(entry);
+                if (!res.ok) return Object.assign({}, res, { entryId: entry.id, saved });
+                saved.push(res.data);
+            }
+            return { ok: true, data: { saved } };
+        },
+
+        async deleteEntry(ticket, entryId, spId) {
+            if (!spId) {
+                const found = await api.findItem(entryId);
+                if (!found.ok) return found;   // notfound: already gone, which is the goal
+                spId = found.data.Id;
+            }
+            return spClient.call({ method: 'POST', path: `${spClient.listPath()}/items(${spId})`, xMethod: 'DELETE', ifMatch: '*' });
         },
 
         async deleteTicket(ticket) {
-            return api.request('DELETE', `/entries/${encodeURIComponent(ticket)}`);
-        },
-
-        async deleteEntry(ticket, id) {
-            return api.request('DELETE',
-                `/entries/${encodeURIComponent(ticket)}/${encodeURIComponent(id)}`);
+            const res = await api._allItems({ $filter: `Title eq '${spClient.odataQuote(ticket)}'`, $select: 'Id' });
+            if (!res.ok) return res;
+            for (const item of res.data) {
+                const del = await spClient.call({ method: 'POST', path: `${spClient.listPath()}/items(${item.Id})`, xMethod: 'DELETE', ifMatch: '*' });
+                if (!del.ok && del.kind !== 'notfound') return del;
+            }
+            return { ok: true, data: { deleted: res.data.length } };
         },
     };
+
 
     /* ==========================================================
      *  TICKET WRITER  (auto-write entries into SNow worknote/comments)
@@ -19775,24 +20294,22 @@ Version 1.4.3:
 
     function handleApiResponse(res) {
         if (res.ok) return;
-        if (res.status === 401) {
-            setConnState('INVALID_TOKEN');
-        } else if (res.network || res.status >= 500) {
-            setConnState('OFFLINE');
-        }
+        if (res.kind === 'session')                          setConnState('SESSION_EXPIRED');
+        else if (res.kind === 'forbidden' || res.kind === 'notfound') { noAccessReason = res.kind; setConnState('NO_ACCESS'); }
+        else if (res.kind === 'network' || res.kind === 'server')     setConnState('OFFLINE');
     }
 
     /* ==========================================================
-     *  ENTRY CRUD  (cache-first, write-through to Worker when online)
+     *  ENTRY CRUD  (cache-first, write-through to SharePoint when online)
      *
      *  All mutations update the GM cache synchronously, then push to
-     *  the Worker if connState === 'ONLINE'. This keeps the sidebar
+     *  SharePoint if connState === 'ONLINE'. This keeps the sidebar
      *  instant and lets the offline mode degrade gracefully.
      * ==========================================================*/
 
     /* ──────────────────────────────────────────────────────────
      *  PENDING SYNC QUEUE
-     *  Any mutation that does not reach the Worker (offline, network
+     *  Any mutation that does not reach SharePoint (offline, network
      *  failure, 5xx) is recorded per ticket in GM, so it survives a page
      *  reload. The queue is flushed before every server read, and server
      *  reads are merged with what is still pending instead of replacing
@@ -19851,15 +20368,14 @@ Version 1.4.3:
             .map(k => k.slice(PENDING_PREFIX.length));
     }
 
-    // Network / 5xx / 401 failures stop the flush (try again later);
-    // other client errors (400, 404, 429) are handled per item.
+    // These stop a flush (try again later); anything else is about one entry only.
     function isTransientFailure(res) {
-        return res.network || res.status >= 500 || res.status === 401;
+        return ['network', 'server', 'session', 'forbidden'].includes(res.kind);
     }
 
     /**
-     * Sends a ticket's pending changes to the Worker.
-     * Returns { ok, synced }: ok=false means the Worker could not be reached
+     * Sends a ticket's pending changes to SharePoint.
+     * Returns { ok, synced }: ok=false means SharePoint could not be reached
      * (the rest stays queued); synced counts the changes that went through.
      */
     async function flushPending(ticket) {
@@ -19876,7 +20392,7 @@ Version 1.4.3:
         for (const id of [...p.deletes]) {
             const res = await api.deleteEntry(ticket, id);
             if (!res.ok && isTransientFailure(res)) { handleApiResponse(res); return { ok: false, synced }; }
-            // 404 means it is already gone on the server, which is the goal.
+            // 404 means it is already gone on SharePoint, which is the goal.
             p.deletes = p.deletes.filter(x => x !== id); synced++;
             savePending(ticket, p);
         }
@@ -19887,16 +20403,16 @@ Version 1.4.3:
         p.upserts = p.upserts.filter(id => toPush.some(e => e.id === id));
         savePending(ticket, p);
 
-        for (let i = 0; i < toPush.length; i += 50) {
-            const chunk = toPush.slice(i, i + 50);
-            const res = await api.pushEntries(chunk.map(e => ({ ...e, ticket })));
+        for (const entry of toPush) {
+            if (entry.problem) continue;   // waits for the user's decision or a shorter edit
+            const res = await api.saveEntry({ ...entry, ticket });
             if (!res.ok) {
                 if (isTransientFailure(res)) { handleApiResponse(res); return { ok: false, synced }; }
-                console.warn(`CT: server rejected ${chunk.length} pending entries for ${ticket} (HTTP ${res.status}); they stay queued`);
+                markEntryProblem(ticket, entry.id, res.kind);
                 continue;
             }
-            const done = new Set(chunk.map(e => e.id));
-            p.upserts = p.upserts.filter(id => !done.has(id)); synced += chunk.length;
+            applySaved(ticket, res.data);
+            p.upserts = p.upserts.filter(id => id !== entry.id); synced++;
             savePending(ticket, p);
         }
         return { ok: true, synced };
@@ -19926,27 +20442,51 @@ Version 1.4.3:
             .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
     }
 
+    // Copy what SharePoint returned for a saved entry (item id and version) into the cache.
+    function applySaved(ticket, saved) {
+        const entries = loadEntries(ticket);
+        const e = entries.find(x => x.id === saved.id);
+        if (!e) return;
+        e.spId = saved.spId;
+        e.etag = saved.etag;
+        delete e.problem;
+        delete e.force;
+        _cacheEntries(ticket, entries);
+    }
+
+    // Remember why SharePoint refused an entry, so its card can say so.
+    function markEntryProblem(ticket, id, kind) {
+        const problem = kind === 'notfound' ? 'deleted' : (kind === 'conflict' || kind === 'tooLarge' ? kind : 'rejected');
+        const entries = loadEntries(ticket);
+        const e = entries.find(x => x.id === id);
+        if (!e) return;
+        e.problem = problem;
+        _cacheEntries(ticket, entries);
+    }
+
+    function clearPendingUpsert(ticket, id) {
+        const p = loadPending(ticket);
+        p.upserts = p.upserts.filter(x => x !== id);
+        savePending(ticket, p);
+    }
+
     async function addEntry(ticket, type, fields, note) {
-        const entry   = {
-            id:     uid(),
-            ts:     nowStamp(),
-            type,
-            fields: fields || null,
-            note:   note   || null,
-        };
+        const entry = { id: uid(), ts: nowStamp(), type, fields: fields || null, note: note || null };
         const current = loadEntries(ticket);
         current.push(entry);
         _cacheEntries(ticket, current);                          // optimistic local update
-        markPendingUpsert(ticket, entry.id);                     // cleared once the Worker confirms
+        markPendingUpsert(ticket, entry.id);                     // cleared once SharePoint confirms
 
         if (connState === 'ONLINE') {
-            const res = await api.pushEntries([{ ...entry, ticket }]);
-            handleApiResponse(res);
+            const res = await api.saveEntry({ ...entry, ticket });
             if (res.ok) {
-                const p = loadPending(ticket);
-                p.upserts = p.upserts.filter(id => id !== entry.id);
-                savePending(ticket, p);
+                applySaved(ticket, res.data);
+                clearPendingUpsert(ticket, entry.id);
                 await syncTicket(ticket);
+            } else if (isTransientFailure(res)) {
+                handleApiResponse(res);
+            } else {
+                markEntryProblem(ticket, entry.id, res.kind);
             }
         }
         return loadEntries(ticket);
@@ -19954,37 +20494,43 @@ Version 1.4.3:
 
     async function updateEntry(ticket, entryId, type, fields, note) {
         const entries = loadEntries(ticket);
-        const idx     = entries.findIndex(e => e.id === entryId);
-        if (idx !== -1) {
-            entries[idx] = { ...entries[idx], type, fields: fields || null, note: note || null };
-            _cacheEntries(ticket, entries);
-            markPendingUpsert(ticket, entryId);
+        const idx = entries.findIndex(e => e.id === entryId);
+        if (idx === -1) return entries;
+        entries[idx] = { ...entries[idx], type, fields: fields || null, note: note || null };
+        delete entries[idx].problem;
+        _cacheEntries(ticket, entries);
+        markPendingUpsert(ticket, entryId);
 
-            if (connState === 'ONLINE') {
-                const res = await api.pushEntries([{ ...entries[idx], ticket }]);
+        if (connState === 'ONLINE') {
+            const res = await api.saveEntry({ ...entries[idx], ticket });
+            if (res.ok) {
+                applySaved(ticket, res.data);
+                clearPendingUpsert(ticket, entryId);
+            } else if (isTransientFailure(res)) {
                 handleApiResponse(res);
-                if (res.ok) {
-                    const p = loadPending(ticket);
-                    p.upserts = p.upserts.filter(id => id !== entryId);
-                    savePending(ticket, p);
-                }
+            } else {
+                markEntryProblem(ticket, entryId, res.kind);
+                if (res.kind === 'conflict' || res.kind === 'notfound') await resolveEntryProblem(ticket, entryId);
             }
         }
-        return entries;
+        return loadEntries(ticket);
     }
 
     async function deleteEntry(ticket, entryId) {
-        const entries = loadEntries(ticket).filter(e => e.id !== entryId);
+        const all = loadEntries(ticket);
+        const gone = all.find(e => e.id === entryId);
+        const entries = all.filter(e => e.id !== entryId);
         _cacheEntries(ticket, entries);
         markPendingDelete(ticket, entryId);
 
         if (connState === 'ONLINE') {
-            const res = await api.deleteEntry(ticket, entryId);
-            handleApiResponse(res);
-            if (res.ok || res.status === 404) {
+            const res = await api.deleteEntry(ticket, entryId, gone && gone.spId);
+            if (res.ok || res.kind === 'notfound') {
                 const p = loadPending(ticket);
                 p.deletes = p.deletes.filter(id => id !== entryId);
                 savePending(ticket, p);
+            } else {
+                handleApiResponse(res);
             }
         }
         return entries;
@@ -20001,7 +20547,7 @@ Version 1.4.3:
         }
     }
 
-    // Pull authoritative entries from D1 into the cache for one ticket.
+    // Pull authoritative entries from SharePoint into the cache for one ticket.
     // Pending local changes are sent first and kept if they still fail.
     // Called when the sidebar opens, after a successful reconnect, etc.
     async function syncTicket(ticket) {
@@ -20699,6 +21245,230 @@ Version 1.4.3:
     }
 
     /* ==========================================================
+     *  BUSY INDICATOR
+     *  Covers the element being worked on while SharePoint answers.
+     *  The cover blocks clicks right away; the wheel fades in only when
+     *  the call takes longer than 150 ms, so fast saves do not flicker.
+     * ==========================================================*/
+
+    async function withBusy(target, work, label) {
+        if (!target || !target.isConnected) return work();
+        const madeRelative = getComputedStyle(target).position === 'static';
+        if (madeRelative) target.style.position = 'relative';
+        const cover = mk('div', { className: 'ct-busy' });
+        cover.appendChild(mk('div', { className: 'ct-busy-wheel' }));
+        if (label) cover.appendChild(mk('div', { className: 'ct-busy-label', textContent: label }));
+        target.appendChild(cover);
+        try {
+            return await work();
+        } finally {
+            cover.remove();
+            if (madeRelative) target.style.position = '';
+        }
+    }
+
+    function cardOf(entryId) {
+        return [...document.querySelectorAll('#ct-log-container [data-entry-id]')].find(c => c.dataset.entryId === entryId) || null;
+    }
+
+    /* ==========================================================
+     *  SAVE PROBLEMS  (edit conflicts, entries deleted by someone
+     *  else, entries too large for SharePoint)
+     * ==========================================================*/
+
+    const PROBLEM_TAGS = {
+        conflict: { text: '⚠ Edit conflict', title: 'Someone else changed this entry while you were editing it. Click to choose which version to keep.' },
+        deleted:  { text: '⚠ Deleted by someone else', title: 'Someone else deleted this entry. Click to recreate it or discard your change.' },
+        tooLarge: { text: '⚠ Too large to sync', title: 'This entry is too large to save to SharePoint. Edit it and make it shorter; it stays on this computer until then.' },
+        rejected: { text: '⚠ Not accepted by SharePoint', title: 'SharePoint did not accept this entry. It stays on this computer. Edit it to try again.' },
+    };
+
+    function choiceModal(message, choices, content) {
+        document.getElementById('ct-choice-overlay')?.remove();
+        document.getElementById('ct-choice-modal')?.remove();
+        const ov = css(mk('div', { id:'ct-choice-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.45)', zIndex:'1100000' });
+        const md = css(mk('div', { id:'ct-choice-modal' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1100001', background:'#fff',
+            border:'2px solid #f0ad4e', padding:'22px', borderRadius:'10px', fontFamily:'Arial, sans-serif',
+            width: content ? '680px' : '380px', maxWidth:'94vw', maxHeight:'90vh', overflowY:'auto',
+            boxShadow:'0 4px 16px rgba(0,0,0,.3)', textAlign:'center', boxSizing:'border-box'
+        });
+        const msg = css(mk('p'), { margin:'0 0 18px', fontSize:'13px', color:'#333', lineHeight:'1.5', whiteSpace:'pre-line' });
+        msg.textContent = message;
+        const row = css(mk('div'), { display:'flex', gap:'10px', justifyContent:'center', flexWrap:'wrap' });
+        choices.forEach((c, i) => {
+            const b = css(mk('button', { type:'button' }), {
+                padding:'8px 16px', border:'none', borderRadius:'5px', cursor:'pointer', fontWeight:'bold', fontSize:'13px',
+                fontFamily:'Arial, sans-serif', background: c.secondary ? '#adb5bd' : i === 0 ? '#667eea' : '#6c757d', color:'#fff'
+            });
+            b.textContent = c.label;
+            b.dataset.choice = c.id;
+            b.onclick = async () => {
+                if (c.keepOpen) { await c.action(b); return; }
+                ov.remove(); md.remove(); await c.action();
+            };
+            row.appendChild(b);
+        });
+        md.append(msg);
+        if (content) md.appendChild(content);
+        md.append(row);
+        document.body.append(ov, md);
+    }
+
+    // Field by field rows of two versions of one entry, in the order of the entry type's form.
+    function compareRows(theirs, mine) {
+        const rows = [];
+        const add = (label, a, b) => {
+            const x = a == null ? '' : String(a), y = b == null ? '' : String(b);
+            if (x || y) rows.push({ label, theirs: x, mine: y, differs: x !== y });
+        };
+        add('Change type', theirs.type, mine.type);
+        const keys = [], labels = {};
+        [theirs.type, mine.type].forEach(t => (getSchema(t) || []).forEach(f => {
+            [f, ...(f.extraFields || [])].forEach(x => { if (!labels[x.key]) { labels[x.key] = x.label; keys.push(x.key); } });
+        }));
+        const tf = theirs.fields || {}, mf = mine.fields || {};
+        Object.keys(tf).concat(Object.keys(mf)).forEach(k => { if (!labels[k]) { labels[k] = k; keys.push(k); } });
+        keys.forEach(k => add(labels[k], tf[k], mf[k]));
+        add(theirs.fields || mine.fields ? 'Additional details' : 'Details', theirs.note, mine.note);
+        return rows;
+    }
+
+    // Side by side table: changed fields first and highlighted, identical ones folded away.
+    function compareTable(rows, theirName) {
+        const wrap = css(mk('div', { className: 'ct-cmp' }), {
+            textAlign:'left', margin:'0 0 16px', maxHeight:'52vh', overflow:'auto',
+            border:'1px solid #e0e0e0', borderRadius:'6px'
+        });
+        const table = css(mk('table'), { width:'100%', borderCollapse:'collapse', fontSize:'12px', tableLayout:'fixed' });
+        const head = mk('tr');
+        [['', '24%'], [`Their version (${theirName})`, '38%'], ['Your version', '38%']].forEach(([h, w]) => {
+            head.appendChild(css(mk('th', { textContent: h }), {
+                textAlign:'left', padding:'6px 8px', background:'#f3f4ff', color:'#444', width: w,
+                borderBottom:'1px solid #e0e0e0', position:'sticky', top:'0'
+            }));
+        });
+        table.appendChild(head);
+        const changed = rows.filter(r => r.differs), same = rows.filter(r => !r.differs);
+        const sameRows = [];
+        for (const r of changed.concat(same)) {
+            const tr = mk('tr');
+            tr.dataset.diff = r.differs ? '1' : '0';
+            const cell = (text, bold) => css(mk('td', { textContent: text || '(empty)' }), {
+                padding:'6px 8px', verticalAlign:'top', whiteSpace:'pre-wrap', wordBreak:'break-word',
+                borderBottom:'1px solid #f0f0f0', fontWeight: bold ? 'bold' : 'normal',
+                color: r.differs ? '#333' : '#888', fontStyle: text ? 'normal' : 'italic',
+                background: r.differs ? '#fff8e1' : '#fff'
+            });
+            tr.append(cell(r.label, true), cell(r.theirs), cell(r.mine));
+            if (!r.differs) { tr.style.display = 'none'; sameRows.push(tr); }
+            table.appendChild(tr);
+        }
+        wrap.appendChild(table);
+        if (sameRows.length) {
+            const toggle = css(mk('span', { role:'button', tabIndex: 0 }), {
+                display:'block', padding:'6px 8px', fontSize:'11px', color:'#667eea', cursor:'pointer', textAlign:'left'
+            });
+            let open = false;
+            const label = () => { toggle.textContent = open ? `Hide the ${sameRows.length} unchanged ${sameRows.length === 1 ? 'field' : 'fields'}`
+                : `Show the ${sameRows.length} unchanged ${sameRows.length === 1 ? 'field' : 'fields'}`; };
+            const flip = () => { open = !open; sameRows.forEach(tr => { tr.style.display = open ? '' : 'none'; }); label(); };
+            toggle.onclick = flip;
+            toggle.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
+            label();
+            wrap.appendChild(toggle);
+        }
+        if (!changed.length) {
+            wrap.insertBefore(css(mk('div', { textContent: 'Both versions have the same content.' }), { padding:'8px', fontSize:'12px', color:'#555' }), table);
+        }
+        return wrap;
+    }
+
+    function formatWhen(iso) {
+        const d = new Date(iso);
+        return isNaN(d) ? 'an unknown time' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function replaceCached(ticket, entryId, next) {
+        const entries = loadEntries(ticket).filter(e => e.id !== entryId);
+        if (next) entries.push(next);
+        entries.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+        _cacheEntries(ticket, entries);
+    }
+
+    async function pushOne(ticket, entryId, extra) {
+        const entry = loadEntries(ticket).find(e => e.id === entryId);
+        if (!entry) return;
+        const res = await withBusy(cardOf(entryId) || document.getElementById('ct-log-container'),
+            () => api.saveEntry({ ...entry, ...extra, ticket }), 'Saving…');
+        if (res.ok) {
+            applySaved(ticket, res.data);
+            clearPendingUpsert(ticket, entryId);
+            flashStatus('✓ Saved');
+        } else if (isTransientFailure(res)) {
+            handleApiResponse(res);
+        } else {
+            markEntryProblem(ticket, entryId, res.kind);
+        }
+        refreshLog(ticket);
+    }
+
+    let problemModalOpen = false;
+
+    async function resolveEntryProblem(ticket, entryId) {
+        const entry = loadEntries(ticket).find(e => e.id === entryId);
+        if (!entry || !entry.problem || problemModalOpen) return;
+        if (entry.problem === 'conflict') {
+            const server = await api.getEntry(entryId);
+            if (!server.ok && server.kind === 'notfound') {
+                markEntryProblem(ticket, entryId, 'notfound');
+                return resolveEntryProblem(ticket, entryId);
+            }
+            if (!server.ok) { handleApiResponse(server); return; }
+            problemModalOpen = true;
+            const theirName = server.data.modified_by_label || 'Someone else';
+            choiceModal(`${theirName} changed this entry at ${formatWhen(server.data.modified_at)} while you were editing it.\nCompare both versions and choose which one to keep.`, [
+                { id: 'theirs', label: `Keep ${theirName}'s version`, action: async () => {
+                    problemModalOpen = false;
+                    replaceCached(ticket, entryId, server.data);
+                    clearPendingUpsert(ticket, entryId);
+                    refreshLog(ticket);
+                } },
+                { id: 'mine', label: 'Keep mine', action: async () => {
+                    problemModalOpen = false;
+                    await pushOne(ticket, entryId, { force: true, spId: server.data.spId });
+                } },
+                { id: 'copy', label: '📋 Copy mine', secondary: true, keepOpen: true, action: async (btn) => {
+                    await copyToClipboard(formatEntryContent(entry));
+                    btn.textContent = '✓ Copied';
+                    setTimeout(() => { btn.textContent = '📋 Copy mine'; }, 2000);
+                } },
+            ], compareTable(compareRows(server.data, entry), theirName));
+        } else if (entry.problem === 'deleted') {
+            problemModalOpen = true;
+            choiceModal('This entry was deleted by someone else while you were editing it.', [
+                { id: 'recreate', label: 'Recreate it', action: async () => {
+                    problemModalOpen = false;
+                    await pushOne(ticket, entryId, { spId: null, etag: null });
+                } },
+                { id: 'discard', label: 'Discard my change', action: async () => {
+                    problemModalOpen = false;
+                    replaceCached(ticket, entryId, null);
+                    clearPendingUpsert(ticket, entryId);
+                    refreshLog(ticket);
+                } },
+            ]);
+        }
+    }
+
+    // After a sync, ask about the first entry of this ticket that needs a decision.
+    function resolveFirstProblem(ticket) {
+        const e = loadEntries(ticket).find(x => x.problem === 'conflict' || x.problem === 'deleted');
+        if (e) resolveEntryProblem(ticket, e.id);
+    }
+
+
+    /* ==========================================================
      *  LONG ENTRIES  (preview in the card, full text in a modal)
      * ==========================================================*/
 
@@ -20845,6 +21615,7 @@ Version 1.4.3:
             background:'#fff', border:'1px solid #e0e0e0', borderRadius:'6px',
             padding:'10px 12px 10px 16px', marginBottom:'8px', position:'relative'
         });
+        card.dataset.entryId = entry.id;
 
         // Left colour accent bar
         card.appendChild(css(mk('div'), {
@@ -20912,13 +21683,10 @@ Version 1.4.3:
         });
         delBtn.textContent = '×';
         delBtn.title = 'Delete entry (click twice)';
-        delBtn.onclick = () => inlineConfirm(delBtn, () => {
+        delBtn.onclick = () => inlineConfirm(delBtn, async () => {
+            await withBusy(card, () => deleteEntry(ticket, entry.id), 'Deleting…');
             css(card, { opacity:'0', transition:'opacity .2s' });
-            setTimeout(async () => {
-                card.remove();
-                await deleteEntry(ticket, entry.id);
-                onMutated();
-            }, 200);
+            setTimeout(() => { card.remove(); onMutated(); }, 200);
         });
 
         if (writeBtn) btnGroup.append(editBtn, writeBtn, delBtn);
@@ -20948,8 +21716,14 @@ Version 1.4.3:
         }
 
         // Timestamp + author
-        const author = entry.author_label || entry.author_user_id || '(unknown)';
-        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}` }), {
+        const author = entry.author_label || (entry.spId ? '(unknown)' : 'you');
+        // For imported entries SharePoint names the person who ran the import as author;
+        // only a later save by someone else counts as an edit.
+        const savedBy = entry.imported ? entry.sp_author_label : author;
+        const editedBy = entry.modified_by_label && entry.modified_by_label !== savedBy ? `  ·  edited by ${entry.modified_by_label}` : '';
+        // The imported name comes from the entry's own data, so the real SharePoint author is always shown next to it.
+        const importedBy = entry.imported ? ` (imported by ${entry.sp_author_label || 'unknown'})` : '';
+        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}${importedBy}${editedBy}` }), {
             fontSize:'10px', color:'#bbb', marginTop:'6px', fontFamily:'monospace'
         });
         if (isEntryPending(ticket, entry.id)) {
@@ -20959,8 +21733,20 @@ Version 1.4.3:
                 fontFamily:'Arial, sans-serif', fontWeight:'bold'
             });
             tag.textContent = '⏳ Not synced';
-            tag.title = 'Saved on this computer only. It is sent to the server automatically when the connection is back.';
+            tag.title = 'Saved on this computer only. It is sent to SharePoint automatically when the connection is back.';
             footer.appendChild(tag);
+        }
+        if (entry.problem && PROBLEM_TAGS[entry.problem]) {
+            const info = PROBLEM_TAGS[entry.problem];
+            const clickable = entry.problem === 'conflict' || entry.problem === 'deleted';
+            const ptag = css(mk('span', { className: 'ct-problem-tag' }), {
+                marginLeft:'8px', padding:'1px 6px', borderRadius:'8px', background:'#f8d7da', color:'#721c24',
+                border:'1px solid #f5c6cb', fontFamily:'Arial, sans-serif', fontWeight:'bold', cursor: clickable ? 'pointer' : 'default'
+            });
+            ptag.textContent = info.text;
+            ptag.title = info.title;
+            if (clickable) ptag.onclick = () => resolveEntryProblem(ticket, entry.id);
+            footer.appendChild(ptag);
         }
         card.appendChild(footer);
 
@@ -21129,7 +21915,7 @@ Version 1.4.3:
             const newFields = schema ? collectFieldValues(schema, 'ct-edit-field') : null;
             const newNote   = (document.getElementById('ct-edit-field-note')?.value.trim() || null);
 
-            await updateEntry(ticket, entry.id, newType, newFields, newNote);
+            await withBusy(modal, () => updateEntry(ticket, entry.id, newType, newFields, newNote), 'Saving…');
             overlay.remove(); modal.remove();
             refreshLog(ticket);
             flashStatus('✓ Entry updated.');
@@ -21181,10 +21967,6 @@ Version 1.4.3:
         const ctTitle = css(Object.assign(mk('div'), { textContent:'✏️ Change Tracker' }), {
             fontSize:'16px', fontWeight:'bold', color:'#333', marginBottom:'4px', paddingRight:'30px'
         });
-        ctTitle.appendChild(css(Object.assign(mk('span'), { textContent:'BETA', title:'Change Tracker is in testing' }), {
-            display:'inline-block', marginLeft:'8px', padding:'1px 7px', borderRadius:'8px', background:'#ff8c00',
-            color:'#fff', fontSize:'10px', fontWeight:'bold', letterSpacing:'.5px', verticalAlign:'middle'
-        }));
         sidebar.appendChild(ctTitle);
 
         // ── Version row ──────────────────────────────────────────
@@ -21209,12 +21991,8 @@ Version 1.4.3:
             textDecoration:'underline', fontFamily:'Arial, sans-serif'
         });
         cfgBtn.textContent = '⚙ Configure';
-        cfgBtn.title       = 'Change the Worker URL or API token';
-        cfgBtn.onclick     = () => {
-            const previousToken = GM_getValue('changeTrackerToken', '');
-            const previousState = connState;
-            openSetupPrompt({ previousToken, previousState });
-        };
+        cfgBtn.title       = 'Change the SharePoint site or list';
+        cfgBtn.onclick     = () => openSetupPrompt({ previousState: connState });
         verRow.appendChild(cfgBtn);
 
         // Help pill: opens the Feature Guide
@@ -21459,53 +22237,52 @@ Version 1.4.3:
         const banner = document.getElementById('ct-conn-banner');
         if (!banner) return;
 
-        // Hide the banner outside of OFFLINE / INVALID_TOKEN
-        if (connState !== 'OFFLINE' && connState !== 'INVALID_TOKEN') {
+        if (!['OFFLINE', 'SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) {
             banner.style.display = 'none';
             banner.innerHTML     = '';
             return;
         }
-
         banner.innerHTML = '';
         banner.style.display = 'flex';
 
-        if (connState === 'OFFLINE') {
-            css(banner, {
-                background:'#fff3cd', border:'1px solid #ffc107', color:'#856404'
-            });
-            const waiting = pendingCount(getTicketNumber());
-            const msg = mk('span');
-            msg.textContent = waiting
-                ? `⚠ Offline · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync`
-                : (getOfflineAddEnabled() ? '⚠ Offline · new entries are saved locally' : '⚠ Offline — read only');
-            const btn = css(mk('button', { id:'ct-reconnect-btn' }), {
-                background:'#ffc107', color:'#333', border:'none', borderRadius:'3px',
-                cursor:'pointer', padding:'3px 10px', fontSize:'11px',
+        const button = (text, id, colors) => {
+            const b = css(mk('button', id ? { id, type:'button' } : { type:'button' }), Object.assign({
+                border:'none', borderRadius:'3px', cursor:'pointer', padding:'3px 10px', fontSize:'11px',
                 fontWeight:'bold', fontFamily:'Arial, sans-serif'
-            });
-            btn.textContent = '↺ Reconnect';
+            }, colors));
+            b.textContent = text;
+            return b;
+        };
+        const waiting = pendingCount(getTicketNumber());
+        const waitingText = waiting ? ` · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync` : '';
+        const msg = mk('span');
+
+        if (connState === 'OFFLINE') {
+            css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
+            msg.textContent = waiting ? `⚠ Offline${waitingText}`
+                : (getOfflineAddEnabled() ? '⚠ Offline · new entries are saved locally' : '⚠ Offline · read only');
+            const btn = button('↺ Reconnect', 'ct-reconnect-btn', { background:'#ffc107', color:'#333' });
             btn.onclick = () => attemptReconnect(getTicketNumber(), false);
             banner.append(msg, btn);
-
-        } else if (connState === 'INVALID_TOKEN') {
-            css(banner, {
-                background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24'
-            });
-            const msg = mk('span'); msg.textContent = '🔑 Token invalid';
-            const btn = css(mk('button'), {
-                background:'transparent', color:'#721c24', border:'none',
-                cursor:'pointer', padding:'2px 4px', fontSize:'12px',
-                textDecoration:'underline', fontFamily:'Arial, sans-serif',
-                fontWeight:'bold'
-            });
-            btn.textContent = 'Reset token';
-            btn.onclick = () => {
-                const previousToken = GM_getValue('changeTrackerToken', '');
-                const previousState = connState;
-                GM_deleteValue('changeTrackerToken');
-                openSetupPrompt({ previousToken, previousState });
-            };
-            banner.append(msg, btn);
+        } else if (connState === 'SESSION_EXPIRED') {
+            css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
+            msg.textContent = `🔒 SharePoint session expired${waitingText}`;
+            const open = button('Open SharePoint to sign in', 'ct-signin-btn', { background:'#ffc107', color:'#333' });
+            open.onclick = () => window.open(spClient.siteUrl(), '_blank');
+            const retry = button('↺', 'ct-reconnect-btn', { background:'transparent', color:'#856404' });
+            retry.title = 'Try again';
+            retry.onclick = () => attemptReconnect(getTicketNumber(), false);
+            const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
+            btns.append(open, retry);
+            banner.append(msg, btns);
+        } else {
+            css(banner, { background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24' });
+            msg.textContent = noAccessReason === 'notfound'
+                ? '⛔ The SharePoint list was not found. It may have been deleted, moved or renamed: check Site contents and the recycle bin, then open Configure.'
+                : '⛔ No access to the SharePoint list. Ask the site owner for access.';
+            const cfg = button('Configure', null, { background:'transparent', color:'#721c24', textDecoration:'underline' });
+            cfg.onclick = () => openSetupPrompt({ previousState: connState });
+            banner.append(msg, cfg);
         }
     }
 
@@ -21541,8 +22318,8 @@ Version 1.4.3:
         // Block adding when the API is not currently usable (offline adds
         // are allowed when the offline fallback setting is on)
         if (!canAddEntries()) {
-            if (connState === 'OFFLINE')           flashStatus('⚠️ Offline — adding new entries is disabled.', '#e67e22');
-            else if (connState === 'INVALID_TOKEN') flashStatus('🔑 Token invalid — reset to add entries.', '#dc3545');
+            if (connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') flashStatus('⚠️ Offline: adding new entries is turned off in the settings.', '#e67e22');
+            else if (connState === 'NO_ACCESS') flashStatus('⛔ No access to the SharePoint list.', '#dc3545');
             else                                    flashStatus('⚠️ Not connected yet.', '#e67e22');
             return;
         }
@@ -21566,7 +22343,7 @@ Version 1.4.3:
 
         const ticket    = getTicketNumber();
         const knownIds  = new Set(loadEntries(ticket).map(e => e.id));
-        const entries   = await addEntry(ticket, type, fields, note);
+        const entries   = await withBusy(document.getElementById('ct-input-area'), () => addEntry(ticket, type, fields, note), 'Saving…');
 
         // Reset
         select.value = '';
@@ -21587,7 +22364,7 @@ Version 1.4.3:
         }
 
         refreshLog(ticket);
-        if (isEntryPending(ticket, lastEntry.id)) flashStatus('⏳ Saved locally. It syncs with the server when the connection is back.', '#e67e22', 4000);
+        if (isEntryPending(ticket, lastEntry.id)) flashStatus('⏳ Saved locally. It syncs with SharePoint when the connection is back.', '#e67e22', 4000);
         else flashStatus(`✓ Entry added  (${entries.length} total)`);
 
         // Auto-write the equivalent text into the SNow worknote/comments
@@ -21802,7 +22579,7 @@ Version 1.4.3:
             `This wipes the log for EVERYONE on the team — including entries you didn't author.\n` +
             `This cannot be undone.`;
         confirmModal(msg, async () => {
-            await clearEntries(ticket);
+            await withBusy(document.getElementById('ct-log-container'), () => clearEntries(ticket), 'Deleting…');
             refreshLog(ticket);
             flashStatus('✓ All entries cleared.');
         });
@@ -21810,9 +22587,9 @@ Version 1.4.3:
 
     /* ==========================================================
      *  RECONNECT
-     *  Pings the Worker, then issues a real authenticated request to
-     *  prove the token is still valid. Routes through handleApiResponse
-     *  on failure so OFFLINE / INVALID_TOKEN are surfaced consistently.
+     *  Checks the SharePoint session, then reads the ticket from the
+     *  list. Routes through handleApiResponse on failure so OFFLINE,
+     *  SESSION_EXPIRED and NO_ACCESS are surfaced consistently.
      * ==========================================================*/
 
     async function attemptReconnect(ticket, silent = false) {
@@ -21826,24 +22603,28 @@ Version 1.4.3:
         const reachable = await api.ping();
 
         if (!reachable) {
-            setConnState('OFFLINE');
-            if (!silent) flashStatus('Still offline — try again later.', '#e67e22');
+            const f = api.lastFailure || { ok: false, kind: 'network' };
+            handleApiResponse(['session', 'forbidden'].includes(f.kind) ? f : { ok: false, kind: 'network' });
+            if (!silent) flashStatus(
+                connState === 'SESSION_EXPIRED' ? 'SharePoint session expired. Sign in to SharePoint, then try again.'
+                : connState === 'NO_ACCESS' ? 'No access to the SharePoint list.' : 'Still offline. Try again later.', '#e67e22');
             const b = document.getElementById('ct-reconnect-btn');
             if (b) { b.textContent = '↺ Reconnect'; b.disabled = false; b.style.opacity = '1'; }
             return;
         }
 
-        // Ping succeeded — verify token with a real request
+        // Signed in: read the ticket to make sure the list answers too
         const res = await api.fetchEntries(ticket);
         if (res.ok) {
             setConnState('ONLINE');
             // Send everything that was queued while offline (all tickets),
-            // then refresh this ticket from the server without losing
+            // then refresh this ticket from SharePoint without losing
             // anything that is still pending.
             const flushed = await flushAllPending();
             const fresh   = flushed.synced ? await api.fetchEntries(ticket) : res;
             _cacheEntries(ticket, mergeWithPending(ticket, (fresh.ok ? fresh : res).data.entries || []));
             refreshLog(ticket);
+            resolveFirstProblem(ticket);
             renderConnBanner();
             if (flushed.synced) {
                 flashStatus(`✓ Back online · ${flushed.synced} pending ${flushed.synced === 1 ? 'change' : 'changes'} synced`, '#28a745', 4000);
@@ -22094,8 +22875,8 @@ Version 1.4.3:
                     body.appendChild(p);
                     bullets(body, [
                         'Pick the change type, fill in its fields, then click "+ Add Entry" (Ctrl+Enter also works).',
-                        'Every entry is saved to the shared team log, so anyone opening this ticket sees the same history.',
-                        'Change Tracker is in beta. It is turned on in the toolbar Settings, under Tools, with an activation code from your administrator.'
+                        'Every entry is saved to your team\'s SharePoint list, so anyone opening this ticket sees the same history.',
+                        'Turn the Change Tracker on or off in the toolbar Settings, under Tools.'
                     ]);
                 }
             },
@@ -22197,7 +22978,7 @@ Version 1.4.3:
                 icon: '🔗',
                 title: 'Connection',
                 buildContent: (body) => {
-                    lead(body, 'The log syncs with the team server; a banner appears when it cannot.');
+                    lead(body, 'The log is kept in your team\'s SharePoint list; a banner appears when it cannot be reached.');
                     function banner(text, btnText, bg, border, color, btnBg, btnColor) {
                         const b = document.createElement('div');
                         Object.assign(b.style, {
@@ -22210,18 +22991,26 @@ Version 1.4.3:
                         return b;
                     }
                     body.appendChild(banner('⚠ Offline · 2 changes waiting to sync', '↺ Reconnect', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
-                    body.appendChild(banner('🔑 Token invalid', 'Reset token', '#f8d7da', '#f5c6cb', '#721c24', 'transparent', '#721c24'));
+                    body.appendChild(banner('🔒 SharePoint session expired · 1 change waiting to sync', 'Open SharePoint to sign in', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
+                    body.appendChild(banner('⛔ No access to the SharePoint list', 'Configure', '#f8d7da', '#f5c6cb', '#721c24', 'transparent', '#721c24'));
                     body.appendChild(hrow([
                         span('2026-10-13 14:05  ·  by Jane', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace' }),
                         chip('⏳ Not synced', '#fff3cd', { color: '#856404', border: '1px solid #ffc107', fontSize: '10px', padding: '1px 6px', radius: '8px' })
                     ], { margin: '6px 0 0 0' }));
-                    caption(body, 'Entries that have not reached the server yet show this tag at the bottom of their card.');
+                    caption(body, 'Entries that have not reached SharePoint yet show this tag at the bottom of their card.');
+                    body.appendChild(hrow([
+                        chip('⚠ Edit conflict', '#f8d7da', { color: '#721c24', border: '1px solid #f5c6cb', fontSize: '10px', padding: '1px 6px', radius: '8px' }),
+                        chip('⚠ Too large to sync', '#f8d7da', { color: '#721c24', border: '1px solid #f5c6cb', fontSize: '10px', padding: '1px 6px', radius: '8px' })
+                    ], { margin: '6px 0 0 0' }));
+                    caption(body, 'Edit conflict: someone else changed the entry while you edited it. A window shows both versions side by side, with the changed fields highlighted, so you can keep theirs or yours. "Copy mine" copies your text first, in case you want to redo part of it.');
                     bullets(body, [
-                        'Changes that cannot reach the server are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
+                        'Changes that cannot reach SharePoint are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
                         'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
                         'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
-                        'Token invalid: open the setup panel and enter a new API token.',
-                        'First setup: "Import from a backup file" restores your connection and settings from a toolbar backup.'
+                        'Session expired: open SharePoint in another tab and sign in. Your changes wait on this computer and are sent when you come back to the ticket.',
+                        'No access: ask the owner of the SharePoint site to give you access to the list.',
+                        'Each entry shows who created it and who edited it last.',
+                        'While SharePoint is saving, a spinning wheel covers the form, entry or window you are working on, so nothing is clicked twice.'
                     ]);
                 }
             },
@@ -22232,10 +23021,11 @@ Version 1.4.3:
                     lead(body, 'The links next to the version number open the setup panel and this guide.');
                     badgeRow(body, chip('⚙ Configure', 'transparent', { color: '#666', underline: true }), 'Opens the setup panel with the connection details and options below.');
                     badgeRow(body, chip('? Help', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0', radius: '3px' }), 'Opens this Feature Guide.');
+                    badgeRow(body, chip('✔ Check / prepare list', '#667eea'), 'In the setup panel: checks your access and adds the columns the list is missing. It shows which list it found, with its number of items and a link to open it. If no list has that name, it suggests similar lists and only creates a new one when you press "Create new list". The tracker never deletes a list.');
 
                     const pairs = [
-                        ['Worker URL', 'Address of the team server that stores the shared log.'],
-                        ['API token', 'Your personal access key, provided by your administrator.'],
+                        ['SharePoint site URL', 'The site where your team keeps the change log.'],
+                        ['List name', 'The list inside that site. ChangeTracker unless your team chose another name.'],
                         ['Local cache expiry', 'Days a ticket log stays cached in your browser (default 30).']
                     ];
                     const grid = document.createElement('div');
@@ -22248,7 +23038,7 @@ Version 1.4.3:
 
                     body.appendChild(toggle('Auto-write entries to ticket', true, 'Writes the worknote and comment as soon as you add an entry.'));
                     body.appendChild(toggle('Update short description on write', true, 'Sets today\'s date and the matching status whenever an entry is written.'));
-                    body.appendChild(toggle('Allow adding entries while offline', true, 'Keeps adding entries when the server is unreachable; they sync once it is back.'));
+                    body.appendChild(toggle('Allow adding entries while offline', true, 'Keeps adding entries when SharePoint is unreachable; they sync once it is back.'));
                     body.appendChild(toggle('Keep batch session after page reload', false, 'When on, an open batch session survives a page reload.'));
                     body.appendChild(toggle('Searchable change-type dropdown', true, 'Lets you type to filter the change types, including by group name.'));
                 }
@@ -22358,13 +23148,17 @@ Version 1.4.3:
 
     /* ==========================================================
      *  FIRST-RUN SETUP PROMPT
-     *  Modal overlay (independent of sidebar) for capturing the
-     *  Worker URL and bearer token. Reused by the "Reset token"
-     *  link in the INVALID_TOKEN banner.
+     *  Modal overlay (independent of sidebar) for the SharePoint site
+     *  and list, with the "Check / prepare list" button. Reused by
+     *  the Configure links.
      * ==========================================================*/
 
     function openSetupPrompt(options = {}) {
-        const { previousToken = null, previousState = null } = options;
+        const { previousState = null } = options;
+        const prevSite = GM_getValue(SP_SITE_KEY, '');
+        const prevList = GM_getValue(SP_LIST_KEY, '');
+        const prevOk   = GM_getValue(SP_SETUP_OK_KEY, false) === true;
+        const prevListId = GM_getValue(SP_LIST_ID_KEY, '');
 
         document.getElementById('ct-setup-overlay')?.remove();
         document.getElementById('ct-setup-modal')?.remove();
@@ -22389,7 +23183,7 @@ Version 1.4.3:
         const hTitle = css(mk('div'), {
             fontSize:'15px', fontWeight:'bold', color:'#333', fontFamily:'Arial, sans-serif'
         });
-        hTitle.textContent = '☁ Connect to Cloud Sync';
+        hTitle.textContent = '☁ Connect to SharePoint';
 
         const closeX = css(mk('button'), {
             background:'red', color:'#fff', border:'none', borderRadius:'4px',
@@ -22402,71 +23196,156 @@ Version 1.4.3:
         modal.appendChild(hdr);
         modal.appendChild(createBackupImportLink('changeTracker'));
 
-        // URL field
-        modal.appendChild(css(Object.assign(mk('label'), { textContent:'Worker URL', htmlFor:'ct-setup-url' }), {
-            display:'block', fontSize:'11px', fontWeight:'bold',
-            color:'#666', marginBottom:'4px', fontFamily:'Arial, sans-serif'
-        }));
-        const urlInput = css(mk('input', { id:'ct-setup-url', type:'text' }), {
-            width:'100%', padding:'7px 10px', border:'1px solid #ccc',
-            borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif',
-            background:'#fafafa', color:'#333', boxSizing:'border-box',
-            outline:'none', marginBottom:'12px'
+        const fieldLabel = (text, forId) => css(Object.assign(mk('label'), { textContent: text, htmlFor: forId }), {
+            display:'block', fontSize:'11px', fontWeight:'bold', color:'#666', marginBottom:'4px', fontFamily:'Arial, sans-serif'
         });
-        urlInput.placeholder = 'https://change-tracker-api.yourname.workers.dev';
-        urlInput.value       = GM_getValue('changeTrackerWorkerUrl', '');
-        modal.appendChild(urlInput);
+        const fieldInput = (id, placeholder, value) => {
+            const el = css(mk('input', { id, type:'text' }), {
+                width:'100%', padding:'7px 10px', border:'1px solid #ccc', borderRadius:'4px', fontSize:'12px',
+                fontFamily:'Arial, sans-serif', background:'#fafafa', color:'#333', boxSizing:'border-box',
+                outline:'none', marginBottom:'12px'
+            });
+            el.placeholder = placeholder;
+            el.value = value;
+            return el;
+        };
 
-        // Token field
-        modal.appendChild(css(Object.assign(mk('label'), { textContent:'Your API Token', htmlFor:'ct-setup-token' }), {
-            display:'block', fontSize:'11px', fontWeight:'bold',
-            color:'#666', marginBottom:'4px', fontFamily:'Arial, sans-serif'
-        }));
-        const tokenInput = css(mk('input', { id:'ct-setup-token', type:'password' }), {
-            width:'100%', padding:'7px 36px 7px 10px', border:'1px solid #ccc',
-            borderRadius:'4px', fontSize:'12px',
-            fontFamily:'"Courier New", Courier, monospace',
-            background:'#fafafa', color:'#333', boxSizing:'border-box',
-            outline:'none'
-        });
-        tokenInput.placeholder = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
-        tokenInput.value       = GM_getValue('changeTrackerToken', '');
+        modal.appendChild(fieldLabel('SharePoint site URL', 'ct-setup-site'));
+        const siteInput = fieldInput('ct-setup-site', 'https://contoso.sharepoint.com/sites/YourTeam', prevSite);
+        modal.appendChild(siteInput);
 
-        const EYE_OPEN   = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-        const EYE_CLOSED = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+        modal.appendChild(fieldLabel('List name', 'ct-setup-list'));
+        const listInput = fieldInput('ct-setup-list', SP_DEFAULT_LIST, prevList || SP_DEFAULT_LIST);
+        modal.appendChild(listInput);
 
-        const revealBtn = css(mk('button', { type:'button', title:'Show token' }), {
-            position:'absolute', right:'6px', top:'50%', transform:'translateY(-50%)',
-            background:'none', border:'none', cursor:'pointer', padding:'2px',
-            color:'#888', display:'flex', alignItems:'center', lineHeight:'1'
-        });
-        revealBtn.innerHTML = EYE_OPEN;
-        revealBtn.addEventListener('click', () => {
-            const show = tokenInput.type === 'password';
-            tokenInput.type     = show ? 'text' : 'password';
-            revealBtn.innerHTML = show ? EYE_CLOSED : EYE_OPEN;
-            revealBtn.title     = show ? 'Hide token' : 'Show token';
-        });
-
-        const tokenWrap = css(mk('div'), { position:'relative', marginBottom:'12px' });
-        tokenWrap.appendChild(tokenInput);
-        tokenWrap.appendChild(revealBtn);
-        modal.appendChild(tokenWrap);
-
-        // Help text
-        const help = css(mk('div'), {
-            fontSize:'11px', color:'#666', marginBottom:'14px',
-            lineHeight:'1.5', fontFamily:'Arial, sans-serif'
-        });
-        help.appendChild(document.createTextNode('Ask your administrator for both values. Contact '));
-        const mailto = css(mk('a'), {
-            color:'inherit', textDecoration:'underline'
-        });
-        mailto.href        = 'mailto:jrocarolvalls@deloitte.es';
-        mailto.textContent = 'jrocarolvalls@deloitte.es';
-        help.appendChild(mailto);
-        help.appendChild(document.createTextNode(' to request access.'));
+        const help = css(mk('div'), { fontSize:'11px', color:'#666', marginBottom:'10px', lineHeight:'1.5', fontFamily:'Arial, sans-serif' });
+        help.textContent = 'Use the SharePoint site where your team keeps the change log. Everyone who can open that site can see and edit the log. ' +
+            'If the list does not exist yet, "Check / prepare list" creates it with every column it needs.';
         modal.appendChild(help);
+
+        // Changes made while the old server was being retired, or while offline, are still queued here.
+        const waiting = ticketsWithPending().reduce((n, tk) => n + pendingCount(tk), 0);
+        if (waiting) {
+            const w = css(mk('div', { id:'ct-setup-waiting' }), {
+                fontSize:'12px', margin:'0 0 10px', padding:'7px 10px', background:'#fff3cd',
+                border:'1px solid #ffc107', color:'#856404', borderRadius:'4px', fontFamily:'Arial, sans-serif'
+            });
+            w.textContent = `You have ${waiting} ${waiting === 1 ? 'change' : 'changes'} from before waiting. ` +
+                `${waiting === 1 ? 'It is' : 'They are'} sent to SharePoint as soon as you connect.`;
+            modal.appendChild(w);
+        }
+
+        const checkBtn = css(mk('button', { id:'ct-setup-check', type:'button' }), {
+            padding:'7px 14px', background:'#667eea', color:'#fff', border:'none', borderRadius:'4px',
+            cursor:'pointer', fontWeight:'bold', fontSize:'12px', fontFamily:'Arial, sans-serif', marginBottom:'8px'
+        });
+        checkBtn.textContent = '✔ Check / prepare list';
+        modal.appendChild(checkBtn);
+
+        const checklist = css(mk('div', { id:'ct-setup-checklist' }), {
+            display:'none', marginBottom:'14px', padding:'8px 10px', background:'#f8f8ff', border:'1px solid #d0d0f0',
+            borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif', lineHeight:'1.6'
+        });
+        modal.appendChild(checklist);
+
+        let checkPassedFor = null;   // "site|list" of the last check that passed
+
+        function currentTarget() {
+            return { site: siteInput.value.trim().replace(/\/+$/, ''), list: listInput.value.trim() || SP_DEFAULT_LIST };
+        }
+
+        // Buttons that only appear when the check needs a decision from the user.
+        const actions = css(mk('div', { id:'ct-setup-actions' }), { display:'none', flexWrap:'wrap', gap:'6px', margin:'-6px 0 14px' });
+        checklist.after(actions);
+
+        function renderChecklist(steps) {
+            checklist.innerHTML = '';
+            checklist.style.display = 'block';
+            for (const s of steps) {
+                const row = mk('div', { className: 'ct-check-row' });
+                row.dataset.ok = s.ok ? '1' : '0';
+                const mark = css(mk('span'), { color: s.warn ? '#b36b00' : s.ok ? '#28a745' : '#dc3545', fontWeight:'bold', marginRight:'6px' });
+                mark.textContent = s.warn ? '⚠' : s.ok ? '✔' : '✖';
+                row.append(mark, document.createTextNode(s.label));
+                if (s.link) {
+                    const a = css(mk('a', { href: s.link, target: '_blank', rel: 'noopener', textContent: 'Open in SharePoint' }), {
+                        marginLeft:'8px', fontSize:'11px', color:'#667eea'
+                    });
+                    row.appendChild(a);
+                }
+                if (s.detail) {
+                    const d = css(mk('div'), { fontSize:'11px', color: s.warn ? '#856404' : s.ok ? '#666' : '#721c24', margin:'0 0 4px 18px' });
+                    d.textContent = s.detail;
+                    row.appendChild(d);
+                }
+                checklist.appendChild(row);
+            }
+        }
+
+        function actionButton(text, id, className, colors) {
+            const b = css(mk('button', { type:'button', textContent: text }), Object.assign({
+                padding:'6px 12px', border:'none', borderRadius:'4px', cursor:'pointer',
+                fontWeight:'bold', fontSize:'12px', fontFamily:'Arial, sans-serif'
+            }, colors));
+            if (id) b.id = id;
+            if (className) b.className = className;
+            return b;
+        }
+
+        function renderActions(result) {
+            actions.innerHTML = '';
+            const { list } = currentTarget();
+            if (result.needsCreate) {
+                for (const l of result.similar || []) {
+                    const b = actionButton(`Use "${l.title}" (${l.items} ${l.items === 1 ? 'item' : 'items'})`, null, 'ct-setup-suggest',
+                        { background:'#e8f0fe', color:'#333', border:'1px solid #667eea' });
+                    b.onclick = () => { listInput.value = l.title; runCheck(); };
+                    actions.appendChild(b);
+                }
+                const create = actionButton(`➕ Create new list "${list}"`, 'ct-setup-create', null, { background:'#28a745', color:'#fff' });
+                create.onclick = () => runCheck({ allowCreate: true });
+                actions.appendChild(create);
+            }
+            if (result.needsRemove && result.needsRemove.length) {
+                const n = result.needsRemove.length;
+                const rm = actionButton(`Replace ${n} ${n === 1 ? 'column' : 'columns'} (the list is empty)`, 'ct-setup-remove-cols', null,
+                    { background:'#f0ad4e', color:'#fff' });
+                rm.onclick = () => runCheck({ allowRemove: true });
+                actions.appendChild(rm);
+            }
+            actions.style.display = actions.children.length ? 'flex' : 'none';
+        }
+
+        async function runCheck(opts = {}) {
+            hideError();
+            const { site, list } = currentTarget();
+            if (!/^https:\/\/[^/]+\/.+/i.test(site)) { showError('Enter the full address of the SharePoint site, starting with https://'); return false; }
+            checkBtn.disabled = true;
+            checkBtn.textContent = 'Checking…';
+            actions.innerHTML = '';
+            actions.style.display = 'none';
+            GM_setValue(SP_SITE_KEY, site);
+            GM_setValue(SP_LIST_KEY, list);
+            GM_setValue(SP_SETUP_OK_KEY, false);
+            GM_deleteValue(SP_LIST_ID_KEY);   // look the list up by its name while checking
+            api._entityType = null;
+            const result = await withBusy(modal, () => listSchema.prepare(opts), 'Checking the list…');
+            // Same site and name as before, but another list: the old one was deleted, renamed or replaced.
+            if (result.listId && prevListId && result.listId !== prevListId && site === prevSite && list === (prevList || SP_DEFAULT_LIST)) {
+                const at = Math.max(1, result.steps.findIndex(x => /found:/.test(x.label)) + 1);
+                result.steps.splice(at, 0, { label: 'This is not the list you used before', ok: true, warn: true,
+                    detail: 'The list you set up earlier was deleted, renamed or replaced by another one with the same name. ' +
+                        'Entries of the old list are not shown here. Look for it in Site contents or in the recycle bin of the SharePoint site.' });
+            }
+            renderChecklist(result.steps);
+            renderActions(result);
+            if (result.ready && result.listId) GM_setValue(SP_LIST_ID_KEY, result.listId);
+            checkBtn.disabled = false;
+            checkBtn.textContent = '✔ Check / prepare list';
+            checkPassedFor = result.ready ? `${site}|${list}` : null;
+            return result.ready;
+        }
+        checkBtn.onclick = () => { runCheck(); };
 
         // Auto-write toggle — copies entry text into ticket worknote/comments
         const autoWriteRow = css(mk('label', { htmlFor:'ct-setup-autowrite' }), {
@@ -22516,7 +23395,7 @@ Version 1.4.3:
         shortDescRow.append(shortDescInput, shortDescText);
         modal.appendChild(shortDescRow);
 
-        // Offline fallback toggle: allow adding entries while the server is unreachable
+        // Offline fallback toggle: allow adding entries while SharePoint is unreachable
         const offlineRow = css(mk('label', { htmlFor:'ct-setup-offlineadd' }), {
             display:'flex', alignItems:'flex-start', gap:'8px',
             padding:'8px 10px', marginBottom:'14px',
@@ -22533,7 +23412,7 @@ Version 1.4.3:
         offlineTitle.textContent = 'Allow adding entries while offline';
         const offlineDesc  = css(mk('div'), { fontSize:'11px', color:'#666' });
         offlineDesc.textContent =
-            'When the server cannot be reached, keep adding entries: they are saved on this computer ' +
+            'When SharePoint cannot be reached, keep adding entries: they are saved on this computer ' +
             'and sent automatically when the connection is back. When off, the log is read only while offline.';
         offlineText.append(offlineTitle, offlineDesc);
 
@@ -22673,15 +23552,14 @@ Version 1.4.3:
         }
 
         function cancel() {
-            if (previousToken) {
-                // Restore previous token + state (Reset path)
-                GM_setValue('changeTrackerToken', previousToken);
-                setConnState(previousState || 'INVALID_TOKEN');
+            if (prevListId) GM_setValue(SP_LIST_ID_KEY, prevListId); else GM_deleteValue(SP_LIST_ID_KEY);
+            GM_setValue(SP_SITE_KEY, prevSite);
+            GM_setValue(SP_LIST_KEY, prevList);
+            GM_setValue(SP_SETUP_OK_KEY, prevOk);
+            api._entityType = null;
+            if (prevOk) {
+                setConnState(previousState || 'INIT');
             } else {
-                // First-time setup cancelled — clear anything save() may have
-                // already written so the next open re-prompts cleanly.
-                GM_deleteValue('changeTrackerWorkerUrl');
-                GM_deleteValue('changeTrackerToken');
                 setConnState('INIT');
                 hideSidebar();
             }
@@ -22690,16 +23568,17 @@ Version 1.4.3:
 
         async function save() {
             hideError();
-            const url   = urlInput.value.trim().replace(/\/+$/, '');
-            const token = tokenInput.value.trim();
-            if (!url)   { showError('Worker URL is required.');  return; }
-            if (!token) { showError('API token is required.');   return; }
-
+            const { site, list } = currentTarget();
             saveBtn.disabled    = true;
             saveBtn.textContent = 'Connecting…';
-
-            GM_setValue('changeTrackerWorkerUrl', url);
-            GM_setValue('changeTrackerToken',     token);
+            const ready = checkPassedFor === `${site}|${list}` ? true : await runCheck();
+            if (!ready) {
+                saveBtn.disabled    = false;
+                saveBtn.textContent = 'Save & Connect';
+                if (!errEl.textContent) showError('The list is not ready yet. Fix the items marked ✖ above, then try again.');
+                return;
+            }
+            GM_setValue(SP_SETUP_OK_KEY, true);
             setAutoWriteEnabled(autoWriteInput.checked);
             resetWriteChecks();
             setUpdateShortDescEnabled(shortDescInput.checked);
@@ -22708,22 +23587,17 @@ Version 1.4.3:
             setCacheTtlDays(ttlInput.value);
             setSearchableDropdown(searchableInput.checked);
 
-            // Try to connect using the current ticket
-            const ticket = getTicketNumber();
-            await attemptReconnect(ticket, /* silent */ true);
-
+            await withBusy(modal, () => attemptReconnect(getTicketNumber(), /* silent */ true), 'Connecting…');
             if (connState === 'ONLINE') {
                 close();
-                showSidebar();           // ensure sidebar slides in
+                showSidebar();
                 flashStatus('✓ Connected!');
-            } else if (connState === 'INVALID_TOKEN') {
-                saveBtn.disabled    = false;
-                saveBtn.textContent = 'Save & Connect';
-                showError('Token rejected. Double-check the token value.');
             } else {
                 saveBtn.disabled    = false;
                 saveBtn.textContent = 'Save & Connect';
-                showError('Could not reach the Worker. Check the URL and try again.');
+                showError(connState === 'SESSION_EXPIRED'
+                    ? 'Your SharePoint session has expired. Open the site in another tab, sign in, then try again.'
+                    : 'Could not reach SharePoint. Check the site address and try again.');
             }
         }
 
@@ -22733,7 +23607,7 @@ Version 1.4.3:
         saveBtn.onclick   = save;
 
         document.body.append(overlay, modal);
-        urlInput.focus();
+        siteInput.focus();
     }
 
     /* ==========================================================
@@ -22766,10 +23640,10 @@ Version 1.4.3:
         setTimeout(() => document.getElementById('ct-snippet-select')?.focus(), 310);
 
         // Background: attempt reconnect if offline, sync if online
-        if (connState === 'OFFLINE' || connState === 'INVALID_TOKEN') {
+        if (['OFFLINE', 'SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) {
             attemptReconnect(ticket, /* silent */ true);
         } else if (connState === 'ONLINE') {
-            syncTicket(ticket).then(() => refreshLog(ticket));
+            syncTicket(ticket).then(() => { refreshLog(ticket); resolveFirstProblem(ticket); });
         } else {
             // First open after config saved (connState still 'INIT' or 'SETUP') → go online
             attemptReconnect(ticket, /* silent */ true);
@@ -22835,12 +23709,28 @@ Version 1.4.3:
      *  EVENT LISTENERS + INIT
      * ==========================================================*/
 
-    document.addEventListener('toolbarToolClicked', (e) => { if (e.detail.id === 'changeTracker') toggleSidebar(); });
+    document.addEventListener('toolbarToolClicked', (e) => { if (e.detail.id === TOOL_ID) toggleSidebar(); });
+
+    // Coming back to the tab: reconnect if the session had expired, or
+    // reread the ticket after more than 2 minutes away to show teammates' entries.
+    let hiddenSince = 0;
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { hiddenSince = Date.now(); return; }
+        const away = hiddenSince ? Date.now() - hiddenSince : 0;
+        hiddenSince = 0;
+        if (!api.isConfigured()) return;
+        const ticket = getTicketNumber();
+        if (connState === 'SESSION_EXPIRED' || connState === 'OFFLINE') { attemptReconnect(ticket, /* silent */ true); return; }
+        if (sidebarVisible && connState === 'ONLINE' && away > 2 * 60 * 1000) syncTicket(ticket).then(() => { refreshLog(ticket); resolveFirstProblem(ticket); });
+    });
 
     function initialize() {
         if (!document.body) { setTimeout(initialize, 50); return; }
         if (isInitialized) return;
         isInitialized = true;
+        // The old team server is retired: its address and token are not needed any more.
+        GM_deleteValue('changeTrackerWorkerUrl');
+        GM_deleteValue('changeTrackerToken');
         document.head.appendChild(styleEl);
         initializeSidebar();
         console.log('✅ Change Tracker ready!');
@@ -22857,16 +23747,23 @@ Version 1.4.3:
 
         // While offline, retry the connection in the background every minute.
         setInterval(() => {
-            if (connState === 'OFFLINE' && api.isConfigured()) {
+            if ((connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') && api.isConfigured()) {
                 attemptReconnect(getTicketNumber(), /* silent */ true);
             }
         }, 60000);
     }
 
+        // Test only: the automated tests switch this on in their own storage.
+        if (GM_getValue('changeTrackerTestHooks', false) === true) {
+            unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk) };
+        }
+
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Change Tracker (Beta)', position: 7 }
+                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Change Tracker', position: 7 }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
