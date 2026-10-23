@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.5.0
+// @version      0.5.1
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,10 +91,13 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.5.0';
-    const CHANGELOG = `Version 0.5.0:
+    const SCRIPT_VERSION = '0.5.1';
+    const CHANGELOG = `Version 0.5.1:
+- Imported entries now show who imported them next to the original author, as "by <original author> (imported by <name>)", so the name that SharePoint recorded is always visible.
+
+Version 0.5.0:
 - New temporary "⇪ Import" button next to "? Help", for moving the team log from the old Change Tracker server to SharePoint. Pick the export file, see how many entries are new, and import them with a progress bar. Entries already in the list are skipped, so you can stop it and run it again at any time. At the end, a report compares every ticket with the file.
-- Imported entries show who wrote them originally, as "by <name> (imported)", and their Details in SharePoint start with the original author and date.
+- Imported entries show who wrote them originally, and their Details in SharePoint start with the original author and date.
 
 Version 0.4.1:
 - Fixed "Check / prepare list" showing 0 items for a list that has entries. The tracker now counts the entries itself.
@@ -4128,7 +4131,9 @@ Version 0.1.0:
         // only a later save by someone else counts as an edit.
         const savedBy = entry.imported ? entry.sp_author_label : author;
         const editedBy = entry.modified_by_label && entry.modified_by_label !== savedBy ? `  ·  edited by ${entry.modified_by_label}` : '';
-        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}${entry.imported ? ' (imported)' : ''}${editedBy}` }), {
+        // The imported name comes from the entry's own data, so the real SharePoint author is always shown next to it.
+        const importedBy = entry.imported ? ` (imported by ${entry.sp_author_label || 'unknown'})` : '';
+        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}${importedBy}${editedBy}` }), {
             fontSize:'10px', color:'#bbb', marginTop:'6px', fontFamily:'monospace'
         });
         if (isEntryPending(ticket, entry.id)) {
