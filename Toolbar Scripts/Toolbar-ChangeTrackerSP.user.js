@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-ChangeTrackerSP.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      0.4.1
+// @version      0.5.0
 // @description  Test version of the Change Tracker that keeps the team log in a SharePoint list
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -91,8 +91,12 @@
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '0.4.1';
-    const CHANGELOG = `Version 0.4.1:
+    const SCRIPT_VERSION = '0.5.0';
+    const CHANGELOG = `Version 0.5.0:
+- New temporary "⇪ Import" button next to "? Help", for moving the team log from the old Change Tracker server to SharePoint. Pick the export file, see how many entries are new, and import them with a progress bar. Entries already in the list are skipped, so you can stop it and run it again at any time. At the end, a report compares every ticket with the file.
+- Imported entries show who wrote them originally, as "by <name> (imported)", and their Details in SharePoint start with the original author and date.
+
+Version 0.4.1:
 - Fixed "Check / prepare list" showing 0 items for a list that has entries. The tracker now counts the entries itself.
 - "Replace columns" is now only offered after the tracker has checked that the list really has no entries, so it can never be offered for a list with data.
 
@@ -1063,6 +1067,10 @@ Version 0.1.0:
         @keyframes ctspSpin { to { transform: rotate(360deg); } }
         @keyframes ctspBusyIn { to { opacity: 1; } }
 
+        #ctsp-import-modal { background-color: #ffffff !important; color: #333333 !important; }
+        #ctsp-import-modal input { background-color: #ffffff !important; color: #333333 !important; }
+        #ctsp-import-modal button { color: #ffffff !important; }
+
         /* Feature Guide (? Help): above the sidebar and the edit / setup modals */
         #changeTrackerSpHelpModalOverlay { position: fixed !important; top: 0 !important; left: 0 !important;
             width: 100% !important; height: 100% !important; background: rgba(0,0,0,0.5) !important; z-index: 1060000 !important; }
@@ -1337,7 +1345,14 @@ Version 0.1.0:
             return { ...base, ok: false, kind: 'bad' };
         }
 
-        async function refreshDigest() {
+        // Parallel writes share one request for a new digest instead of each asking for its own.
+        let digestInFlight = null;
+        function refreshDigest() {
+            if (!digestInFlight) digestInFlight = fetchDigest().finally(() => { digestInFlight = null; });
+            return digestInFlight;
+        }
+
+        async function fetchDigest() {
             const res = classify(await raw('POST', `${siteUrl()}/_api/contextinfo`, { Accept: SP_ACCEPT }));
             if (res.ok && res.data && res.data.FormDigestValue) {
                 digest = res.data.FormDigestValue;
@@ -1416,11 +1431,13 @@ Version 0.1.0:
         }
 
         function details(entry) {
-            if (!entry.fields) return entry.note || '';
+            const origin = entry.imported
+                ? `Imported from Cloudflare, originally by ${entry.imported.author_label || 'unknown'} on ${entry.ts}.\n` : '';
+            if (!entry.fields) return origin + (entry.note || '');
             const skip = objectKey(entry.type);
             const rest = Object.fromEntries(Object.entries(entry.fields).filter(([k]) => k !== skip));
             const text = formatEntryContent({ ...entry, fields: rest });
-            return text === '(all fields empty)' ? '' : text;
+            return origin + (text === '(all fields empty)' ? '' : text);
         }
 
         function toItem(entry, ticket, entityType) {
@@ -1435,7 +1452,8 @@ Version 0.1.0:
                 CTDetails:   details(entry),
                 CTEntryId:   entry.id,
                 CTPayload:   JSON.stringify({ v: 1, id: entry.id, ts: entry.ts, type: entry.type,
-                                              fields: entry.fields || null, note: entry.note || null }),
+                                              fields: entry.fields || null, note: entry.note || null,
+                                              imported: entry.imported || undefined }),
             };
         }
 
@@ -1447,7 +1465,10 @@ Version 0.1.0:
                 id: p.id, ts: p.ts, type: p.type, fields: p.fields || null, note: p.note || null,
                 spId: item.Id,
                 etag: item['odata.etag'] || null,
-                author_label: (item.Author && item.Author.Title) || '',
+                // Imported entries keep the name of whoever wrote them on the old server.
+                author_label: (p.imported && p.imported.author_label) || (item.Author && item.Author.Title) || '',
+                sp_author_label: (item.Author && item.Author.Title) || '',
+                imported: p.imported || null,
                 modified_by_label: (item.Editor && item.Editor.Title) || '',
                 modified_at: item.Modified || '',
             };
@@ -4103,8 +4124,11 @@ Version 0.1.0:
 
         // Timestamp + author
         const author = entry.author_label || (entry.spId ? '(unknown)' : 'you');
-        const editedBy = entry.modified_by_label && entry.modified_by_label !== author ? `  ·  edited by ${entry.modified_by_label}` : '';
-        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}${editedBy}` }), {
+        // For imported entries SharePoint names the person who ran the import as author;
+        // only a later save by someone else counts as an edit.
+        const savedBy = entry.imported ? entry.sp_author_label : author;
+        const editedBy = entry.modified_by_label && entry.modified_by_label !== savedBy ? `  ·  edited by ${entry.modified_by_label}` : '';
+        const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}${entry.imported ? ' (imported)' : ''}${editedBy}` }), {
             fontSize:'10px', color:'#bbb', marginTop:'6px', fontFamily:'monospace'
         });
         if (isEntryPending(ticket, entry.id)) {
@@ -4394,6 +4418,23 @@ Version 0.1.0:
         helpBtn.onmouseout  = () => { helpBtn.style.backgroundColor = 'transparent'; };
         helpBtn.onclick     = () => showHelpModal();
         verRow.appendChild(helpBtn);
+
+        // Import pill (temporary, only while the old server's log is moved to SharePoint)
+        const importBtn = css(mk('span', { id:'ctsp-import-btn' }), {
+            color:'#1d7f47', cursor:'pointer', fontSize:'11px', display:'inline-flex',
+            alignItems:'center', padding:'1px 6px', borderRadius:'3px', marginLeft:'4px',
+            border:'1px solid #a5d6a7', fontWeight:'bold', userSelect:'none',
+            backgroundColor:'transparent', fontFamily:'Arial, sans-serif'
+        });
+        importBtn.textContent = '⇪ Import';
+        importBtn.title       = 'Import the entries of the old Change Tracker server (Cloudflare) into SharePoint';
+        importBtn.onmouseover = () => { importBtn.style.backgroundColor = '#e8f5e9'; };
+        importBtn.onmouseout  = () => { importBtn.style.backgroundColor = 'transparent'; };
+        importBtn.onclick     = () => {
+            if (!api.isConfigured() || connState !== 'ONLINE') { flashStatus('⚠️ Connect to the SharePoint list first.', '#e67e22'); return; }
+            openImportModal();
+        };
+        verRow.appendChild(importBtn);
 
         sidebar.appendChild(verRow);
 
@@ -5026,6 +5067,207 @@ Version 0.1.0:
     }
 
     /* ==========================================================
+     *  IMPORT FROM CLOUDFLARE  (temporary: remove once the team
+     *  log has moved from the old server to SharePoint)
+     *  Reads an export file of the old database and saves every
+     *  entry that is not in the list yet. Entries keep their id,
+     *  so running it again never creates duplicates.
+     * ==========================================================*/
+
+    const IMPORT_PARALLEL = 4;
+
+    function readImportFile(file) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                let d = null;
+                try { d = JSON.parse(reader.result); } catch (e) { d = null; }
+                if (!d || d.format !== 'change-tracker-cloudflare-export' || !Array.isArray(d.entries)) {
+                    resolve({ ok: false, message: 'This file is not a Change Tracker export from Cloudflare.' });
+                    return;
+                }
+                const valid = d.entries.filter(e => e && typeof e.id === 'string' && e.id &&
+                    typeof e.ticket === 'string' && e.ticket.trim() && typeof e.type === 'string' && e.type);
+                resolve({ ok: true, data: d, entries: valid, invalid: d.entries.length - valid.length });
+            };
+            reader.onerror = () => resolve({ ok: false, message: 'The file could not be read.' });
+            reader.readAsText(file);
+        });
+    }
+
+    function toImportEntry(e) {
+        return migrateEntry({
+            id: e.id, ticket: e.ticket.trim(), ts: e.ts, type: e.type,
+            fields: e.fields && typeof e.fields === 'object' ? e.fields : null,
+            note: e.note || null,
+            imported: { source: 'cloudflare', author_label: e.author_label || e.author_user_id || '',
+                        author_user_id: e.author_user_id || '', created_at: e.created_at || null },
+        });
+    }
+
+    // Every row of the list that came from an entry id, grouped by ticket.
+    async function listedEntryIds() {
+        const res = await api._allItems({ $select: 'CTEntryId,Title' });
+        if (!res.ok) return res;
+        const byId = new Map();
+        for (const it of res.data) if (it.CTEntryId) byId.set(it.CTEntryId, it.Title);
+        return { ok: true, data: byId };
+    }
+
+    async function runImport(list, onProgress, stopped) {
+        const out = { imported: 0, failed: [], stopped: false, blocked: null };
+        let next = 0, finished = 0;
+        async function worker() {
+            while (next < list.length) {
+                if (stopped() || out.blocked) { out.stopped = true; return; }
+                const e = list[next++];
+                const res = await api.saveEntry(toImportEntry(e));
+                if (res.ok) out.imported++;
+                else out.failed.push({ id: e.id, ticket: e.ticket, type: e.type, why: res.kind + (res.message ? ': ' + res.message : '') });
+                if (!res.ok && (res.kind === 'session' || res.kind === 'forbidden')) out.blocked = res.kind;
+                onProgress(++finished, list.length);
+            }
+        }
+        await Promise.all(Array.from({ length: IMPORT_PARALLEL }, worker));
+        return out;
+    }
+
+    function openImportModal() {
+        if (document.getElementById('ctsp-import-modal')) return;
+        const overlay = css(mk('div', { id:'ctsp-import-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.5)', zIndex:'1056000' });
+        const modal = css(mk('div', { id:'ctsp-import-modal' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1056001',
+            background:'#fff', border:'2px solid #667eea', borderRadius:'10px', padding:'18px', width:'600px', maxWidth:'94vw',
+            maxHeight:'86vh', overflowY:'auto', fontFamily:'Arial, sans-serif', color:'#333', boxShadow:'0 6px 24px rgba(0,0,0,.25)',
+            fontSize:'12px', lineHeight:'1.5', boxSizing:'border-box'
+        });
+        const p = (text, style) => { const d = css(mk('div'), Object.assign({ margin:'0 0 10px' }, style || {})); d.textContent = text; return d; };
+        const btnStyle = { padding:'7px 14px', border:'none', borderRadius:'5px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', color:'#fff', fontFamily:'Arial, sans-serif' };
+        const button = (id, text, bg) => css(mk('button', { id, type:'button', textContent: text }), Object.assign({ background: bg }, btnStyle));
+
+        const title = css(mk('div', { textContent:'⇪ Import from Cloudflare' }), { fontWeight:'bold', fontSize:'15px', marginBottom:'6px' });
+        const intro = p(`Moves the entries of the old Change Tracker server into the SharePoint list "${spClient.listTitle()}". ` +
+            'Entries already in the list are skipped, so it is safe to run it again. Keep this tab open until it finishes.', { color:'#555' });
+        const fileLabel = css(mk('label', { htmlFor:'ctsp-import-file', textContent:'Export file (.json)' }), { display:'block', fontWeight:'bold', margin:'0 0 4px' });
+        const fileInput = css(mk('input', { id:'ctsp-import-file', type:'file', accept:'.json,application/json' }), { marginBottom:'10px' });
+        const summary = css(mk('div', { id:'ctsp-import-summary' }), { margin:'0 0 10px' });
+        const checkLine = css(mk('div', { id:'ctsp-import-check' }), { margin:'0 0 10px', fontWeight:'bold' });
+        const barWrap = css(mk('div'), { display:'none', height:'8px', background:'#e8e8f0', borderRadius:'4px', overflow:'hidden', margin:'0 0 4px' });
+        const bar = css(mk('div'), { height:'100%', width:'0%', background:'#667eea', transition:'width .2s' });
+        barWrap.appendChild(bar);
+        const progress = css(mk('div', { id:'ctsp-import-progress' }), { color:'#555', margin:'0 0 10px', fontVariantNumeric:'tabular-nums' });
+        const btns = css(mk('div'), { display:'flex', flexWrap:'wrap', gap:'8px', margin:'0 0 12px' });
+        const run = button('ctsp-import-run', 'Import', '#28a745');
+        const recheck = button('ctsp-import-recheck', '↺ Check again', '#6c757d');
+        const stop = button('ctsp-import-stop', '■ Stop', '#dc3545');
+        const closeB = button('ctsp-import-close', 'Close', '#6c757d');
+        closeB.style.marginLeft = 'auto';
+        run.disabled = true; recheck.disabled = true; stop.style.display = 'none';
+        btns.append(run, recheck, stop, closeB);
+        const report = css(mk('div', { id:'ctsp-import-report' }), { borderTop:'1px solid #e8e8f0', paddingTop:'8px' });
+        modal.append(title, intro, fileLabel, fileInput, summary, checkLine, barWrap, progress, btns, report);
+        document.body.append(overlay, modal);
+
+        let file = null, pending = [], running = false, stopAsked = false, reportText = '';
+        const setRun = () => {
+            run.disabled = running || !pending.length;
+            run.textContent = pending.length ? `Import ${pending.length} ${pending.length === 1 ? 'entry' : 'entries'}` : 'Import';
+            recheck.disabled = running || !file;
+            fileInput.disabled = running;
+            closeB.disabled = running;
+            stop.style.display = running ? '' : 'none';
+        };
+        closeB.onclick = () => { if (!running) { overlay.remove(); modal.remove(); refreshLog(getTicketNumber()); } };
+
+        async function check() {
+            if (!file) return;
+            checkLine.textContent = '';
+            pending = [];
+            setRun();
+            const listed = await withBusy(modal, () => listedEntryIds(), 'Reading the SharePoint list…');
+            if (!listed.ok) { checkLine.textContent = '✖ ' + listSchema.describeFailure(listed); return; }
+            pending = file.entries.filter(e => !listed.data.has(e.id));
+            const already = file.entries.length - pending.length;
+            checkLine.textContent = `${pending.length} new, ${already} already in the list.`;
+            setRun();
+        }
+
+        fileInput.onchange = async () => {
+            const f = fileInput.files && fileInput.files[0];
+            summary.textContent = ''; checkLine.textContent = ''; report.textContent = ''; file = null; pending = []; setRun();
+            if (!f) return;
+            const res = await readImportFile(f);
+            if (!res.ok) { summary.style.color = '#721c24'; summary.textContent = '✖ ' + res.message; return; }
+            summary.style.color = '#333';
+            file = res;
+            const tickets = new Set(res.entries.map(e => e.ticket.trim()));
+            const authors = {};
+            res.entries.forEach(e => { const a = e.author_label || e.author_user_id || 'unknown'; authors[a] = (authors[a] || 0) + 1; });
+            const ts = res.entries.map(e => e.ts).filter(Boolean).sort();
+            summary.textContent = `${res.entries.length} entries · ${tickets.size} tickets · ${ts[0] || '?'} to ${ts[ts.length - 1] || '?'}` +
+                (res.invalid ? ` · ${res.invalid} unreadable entries left out` : '') +
+                '\nAuthors: ' + Object.entries(authors).sort((a, b) => b[1] - a[1]).map(([a, n]) => `${a} ${n}`).join(', ');
+            summary.style.whiteSpace = 'pre-line';
+            await check();
+        };
+        recheck.onclick = () => { report.textContent = ''; check(); };
+        stop.onclick = () => { stopAsked = true; stop.textContent = 'Stopping…'; };
+
+        run.onclick = async () => {
+            if (run.disabled) return;
+            running = true; stopAsked = false; stop.textContent = '■ Stop'; report.textContent = '';
+            setRun();
+            barWrap.style.display = 'block'; bar.style.width = '0%';
+            const t0 = Date.now();
+            const total = pending.length;
+            const out = await runImport(pending, (n) => {
+                bar.style.width = `${Math.round(n / total * 100)}%`;
+                const secs = (Date.now() - t0) / 1000;
+                const left = n ? Math.round(secs / n * (total - n)) : 0;
+                progress.textContent = `${n} of ${total} done${n < total ? `, about ${left < 60 ? left + ' s' : Math.round(left / 60) + ' min'} left` : ''}`;
+            }, () => stopAsked);
+
+            // Check the result against the list: every entry of the file, ticket by ticket.
+            const listed = await withBusy(modal, () => listedEntryIds(), 'Checking the result…');
+            const lines = [];
+            const already = file.entries.length - total;
+            lines.push(`Imported: ${out.imported} · Already there: ${already} · Failed: ${out.failed.length}` +
+                (out.stopped ? ` · Not tried: ${total - out.imported - out.failed.length}` : ''));
+            if (out.blocked) lines.push(out.blocked === 'session' ? 'Stopped: your SharePoint session expired. Sign in again and press "Check again".'
+                : 'Stopped: you do not have access to the list.');
+            else if (out.stopped) lines.push('Stopped on request. Press "Check again" and "Import" to continue.');
+            if (listed.ok) {
+                const want = {}, got = {};
+                file.entries.forEach(e => { const tk = e.ticket.trim(); want[tk] = (want[tk] || 0) + 1; if (listed.data.has(e.id)) got[tk] = (got[tk] || 0) + 1; });
+                const off = Object.keys(want).filter(tk => (got[tk] || 0) !== want[tk]);
+                lines.push(off.length ? `${off.length} of ${Object.keys(want).length} tickets are not complete yet: ` +
+                    off.slice(0, 20).map(tk => `${tk} (${got[tk] || 0} of ${want[tk]})`).join(', ') + (off.length > 20 ? ', …' : '')
+                    : `All ${Object.keys(want).length} tickets match the file.`);
+            } else {
+                lines.push('Could not read the list to check the result: ' + listSchema.describeFailure(listed));
+            }
+            if (out.failed.length) {
+                lines.push('', 'Failed entries:');
+                out.failed.slice(0, 50).forEach(f => lines.push(`  ${f.ticket}  ${f.type}  (${f.why})`));
+                if (out.failed.length > 50) lines.push(`  … and ${out.failed.length - 50} more`);
+                lines.push('Press "Check again" and "Import" to retry them.');
+            }
+            lines.push('', `Took ${Math.round((Date.now() - t0) / 1000)} s.`);
+            reportText = `Change Tracker (SharePoint) v${SCRIPT_VERSION}, import into "${spClient.listTitle()}"\n` + lines.join('\n');
+            report.textContent = '';
+            const pre = css(mk('div'), { whiteSpace:'pre-wrap', fontFamily:'Arial, sans-serif', margin:'0 0 8px' });
+            pre.textContent = lines.join('\n');
+            const copyB = button('ctsp-import-copy', '📋 Copy report', '#667eea');
+            copyB.onclick = () => copyToClipboard(reportText).then(() => { copyB.textContent = '✓ Copied'; });
+            report.append(pre, copyB);
+            running = false;
+            if (listed.ok) pending = file.entries.filter(e => !listed.data.has(e.id));
+            checkLine.textContent = listed.ok ? `${pending.length} new, ${file.entries.length - pending.length} already in the list.` : checkLine.textContent;
+            setRun();
+        };
+    }
+
+    /* ==========================================================
      *  FEATURE GUIDE  (? Help modal)
      * ==========================================================*/
 
@@ -5407,6 +5649,7 @@ Version 0.1.0:
                     lead(body, 'The links next to the version number open the setup panel and this guide.');
                     badgeRow(body, chip('⚙ Configure', 'transparent', { color: '#666', underline: true }), 'Opens the setup panel with the connection details and options below.');
                     badgeRow(body, chip('? Help', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0', radius: '3px' }), 'Opens this Feature Guide.');
+                    badgeRow(body, chip('⇪ Import', 'transparent', { color: '#1d7f47', border: '1px solid #a5d6a7', radius: '3px' }), 'Temporary, while the team moves to SharePoint: imports an export file of the old Change Tracker server into the list. Entries already in the list are skipped, so it is safe to run again, and every imported entry keeps the name of whoever wrote it.');
                     badgeRow(body, chip('✔ Check / prepare list', '#667eea'), 'In the setup panel: checks your access and adds the columns the list is missing. It shows which list it found, with its number of items and a link to open it. If no list has that name, it suggests similar lists and only creates a new one when you press "Create new list". The tracker never deletes a list.');
 
                     const pairs = [
@@ -6146,7 +6389,7 @@ Version 0.1.0:
         if (GM_getValue('changeTrackerSpTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
-                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk) };
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, openImportModal, isPending: (tk) => hasPending(tk) };
         }
 
         return function register() {
