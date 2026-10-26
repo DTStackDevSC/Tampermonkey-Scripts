@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.1.0
+// @version      4.1.1
 // @description  Ticket Helpers Suite: Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.1.0';
-    const CHANGELOG = `Version 4.1.0:
+    const SCRIPT_VERSION = '4.1.1';
+    const CHANGELOG = `Version 4.1.1:
+- Formatted Text Helper and Ticket Response Helper: mentions are now completed even when the @ comes right after a word or at the start of a line. A space is added before the @ when needed, since ServiceNow only looks up the name after a space.
+
+Version 4.1.0:
 - Formatted Text Helper: @mentions are completed for you when you insert, like in Quick Responses. Use the new @ Mention button or write @[Full Name].
 
 Version 4.0.1:
@@ -1003,6 +1006,10 @@ Version 4.0.0:
         textarea.focus();
         await mentionSleep(100);
 
+        // The picker only opens when the @ follows a space, a line break or the start of the field
+        const before = textarea.value.slice(0, textarea.selectionStart || 0);
+        if (before && !/\s$/.test(before)) insertTextDirectly(textarea, ' ');
+
         insertTextDirectly(textarea, '@');
         await mentionSleep(150);
 
@@ -1051,8 +1058,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.1.0';
-    const CHANGELOG = `Version 4.1.0:
+    const SCRIPT_VERSION = '4.1.1';
+    const CHANGELOG = `Version 4.1.1:
+- Formatted Text Helper and Ticket Response Helper: mentions are now completed even when the @ comes right after a word or at the start of a line. A space is added before the @ when needed, since ServiceNow only looks up the name after a space.
+
+Version 4.1.0:
 - Formatted Text Helper: @mentions are completed for you when you insert, like in Quick Responses. Use the new @ Mention button or write @[Full Name].
 
 Version 4.0.1:
@@ -8752,8 +8762,11 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.0';
-    const CHANGELOG = `Version 1.3.0:
+    const SCRIPT_VERSION = '1.3.1';
+    const CHANGELOG = `Version 1.3.1:
+- Fixed mentions not being completed when the @ came right after a word or at the start of a line, for example "Hi@[Name]". A space is now added before the @ when needed, since ServiceNow only looks up the name after a space.
+
+Version 1.3.0:
 - @mentions are now completed for you when you insert, just like in Quick Responses. Write @[Full Name] in the editor and the person is mentioned in the ticket automatically.
 - New @ Mention button in the toolbar that adds the name of the person who opened the ticket.
 - The Feature Guide has a new @Mentions section.
@@ -11769,7 +11782,19 @@ Version 1.0.3:
             sel.removeAllRanges();
             sel.addRange(range);
         }
-        document.execCommand('insertText', false, '@[' + (name || 'Full Name') + '] ');
+        // ServiceNow needs a space before the @, so add one when the caret follows a word
+        let prev = '';
+        if (sel.rangeCount) {
+            // Text from the start of the caret's paragraph up to the caret
+            const caret = sel.getRangeAt(0);
+            let block = caret.startContainer.nodeType === Node.TEXT_NODE ? caret.startContainer.parentNode : caret.startContainer;
+            while (block !== editor && block.parentNode && !/^(P|DIV|LI|H\d|BLOCKQUOTE|TD|TH)$/.test(block.nodeName)) block = block.parentNode;
+            const r = caret.cloneRange();
+            r.setStart(block, 0);
+            prev = r.toString().slice(-1);
+        }
+        const lead = prev && !/\s/.test(prev) ? ' ' : '';
+        document.execCommand('insertText', false, lead + '@[' + (name || 'Full Name') + '] ');
         if (!name && sel.rangeCount) {
             const node = sel.focusNode;
             const end = sel.focusOffset - 2; // before "] "
