@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.2.0
+// @version      2.2.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.2.0';
-    const CHANGELOG = `Version 2.2.0:
+   const SCRIPT_VERSION = '2.2.1';
+    const CHANGELOG = `Version 2.2.1:
+- NS Policies Toolkit: fixed the log buttons not appearing below the Definition field of Destination Profiles.
+
+Version 2.2.0:
 - NS Policies Toolkit: the Definition field of Destination Profiles now has the same log buttons as URL lists: "+ Log Entry", "🗑 Delete Selected" and "📜 View History".
 
 Version 2.1.2:
@@ -26158,8 +26161,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.28';
-    const CHANGELOG = `Version 1.28:
+    const SCRIPT_VERSION = '1.28.1';
+    const CHANGELOG = `Version 1.28.1:
+- Fixed the log buttons not appearing below the Definition field of Destination Profiles. They now work with Netskope's new Definition editor.
+
+Version 1.28:
 - Destination Profiles: the Definition field now has the same "+ Log Entry", "🗑 Delete Selected" and "📜 View History" buttons as URL lists, with the same #RITM | Date | Name log format. They can be turned off with the URL List History Buttons setting.
 
 Version 1.27.1:
@@ -28444,6 +28450,7 @@ Version 1.16:
     }
 
     function setAngularValue(textarea, value) {
+        if (textarea.isCodeMirror) { textarea.setValue(value); return; }
         const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
         setter.call(textarea, value);
         textarea.dispatchEvent(new Event('input',  { bubbles: true }));
@@ -29592,28 +29599,98 @@ Version 1.16:
         return [...seen];
     }
 
-    // Destination Profiles side panel: the Definition field (its description field is #dest-description).
-    // Found by its "Definition" label, so it works whatever ID Netskope gives the textarea.
-    function getDestinationDefinitionTextareas() {
-        const description = document.getElementById('dest-description');
-        if (!description && !/destination/i.test(window.location.hash || '')) return [];
-        const found = new Set();
-        document.querySelectorAll('textarea#dest-definition, textarea[id^="dest-def"]').forEach(el => found.add(el));
-        document.querySelectorAll('label, legend, [class*="label" i], [class*="title" i]').forEach(lbl => {
-            if (lbl.children.length > 2 || !/^\s*definitions?\s*\*?\s*$/i.test(lbl.textContent || '')) return;
-            const forId = lbl.getAttribute('for');
-            let ta = forId ? document.getElementById(forId) : null;
-            if (!ta || ta.tagName !== 'TEXTAREA') {
-                ta = null;
-                // The textarea of the same field block: the nearest one below the label
-                for (let box = lbl.parentElement, i = 0; box && i < 3 && !ta; box = box.parentElement, i++) {
-                    ta = [...box.querySelectorAll('textarea')].find(t => t.id !== 'dest-description' &&
-                        (lbl.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING)) || null;
+    // Destination Profiles side panel: the Definition field is a CodeMirror 6 editor, not a textarea.
+    // cmFieldFor wraps it in an object with the textarea members the URL list log tools use
+    // (value, selectionStart/End, setSelectionRange, focus, dataset), so those tools work unchanged.
+    const DEST_DEFINITION_SELECTOR = '[data-testid="destination-profile-definition-field"]';
+    const cmFields = new WeakMap();
+
+    // CodeMirror keeps its editor on the content element (cmTile in recent builds, cmView before)
+    function cmViewOf(block) {
+        const content = block.querySelector('.cm-content');
+        if (!content) return null;
+        for (const el of [content, content.wrappedJSObject]) {
+            const tile = el && (el.cmTile || el.cmView);
+            if (tile && tile.view && tile.view.state) return tile.view;
+        }
+        return null;
+    }
+
+    function cmFieldFor(block) {
+        if (cmFields.has(block)) return cmFields.get(block);
+        const field = {
+            isCodeMirror: true,
+            block,
+            dataset: block.dataset,
+            get view()  { return cmViewOf(block); },
+            get content() { return block.querySelector('.cm-content'); },
+            // Without the editor object only the lines on screen can be read (the editor renders lazily)
+            get value() {
+                const v = this.view;
+                return v ? v.state.doc.toString() : [...block.querySelectorAll('.cm-line')].map(l => l.textContent).join('\n');
+            },
+            get selectionStart() { const v = this.view; return v ? v.state.selection.main.from : 0; },
+            get selectionEnd()   { const v = this.view; return v ? v.state.selection.main.to : 0; },
+            setSelectionRange(from, to) {
+                const v = this.view;
+                if (v) v.dispatch({ selection: { anchor: from, head: to } });
+            },
+            focus() {
+                const v = this.view;
+                if (v) v.focus(); else if (this.content) this.content.focus();
+            },
+            setValue(text) {
+                const v = this.view;
+                if (!v) { cmUnreachable(); return; }
+                v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: text } });
+            },
+            // Without the editor object: the page selection inside the editor, kept when a log button
+            // is clicked, because typing in the log window moves the selection away from the editor
+            savedRange: null,
+            rememberSelection() {
+                const sel = window.getSelection();
+                this.savedRange = sel && sel.rangeCount && this.content && this.content.contains(sel.anchorNode)
+                    ? sel.getRangeAt(0).cloneRange() : null;
+                return this.savedRange ? this.savedRange.toString() : '';
+            },
+            // Types text over the remembered selection the way a user would; the editor takes it as normal input
+            async typeOverSelection(text) {
+                const content = this.content;
+                if (!content) return;
+                content.focus();
+                await new Promise(r => setTimeout(r, 30));   // the editor restores its own caret on focus
+                if (this.savedRange && content.contains(this.savedRange.startContainer)) {
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(this.savedRange);
+                    await new Promise(r => setTimeout(r, 30));   // let the editor see the restored selection
                 }
+                document.execCommand('insertText', false, text);
+            },
+            insertAdjacentElement(where, el) {
+                // Below the whole field, outside the editor, so neither CodeMirror nor React removes it
+                block.appendChild(el);
+                return el;
+            },
+        };
+        cmFields.set(block, field);
+        return field;
+    }
+
+    function cmUnreachable() {
+        alert('The Definition editor could not be changed directly. Reload the page and try again. If it keeps happening, use "+ Log Entry" with the cursor where the header should go.');
+    }
+
+    function getDestinationDefinitionTextareas() {
+        const found = [];
+        document.querySelectorAll(DEST_DEFINITION_SELECTOR).forEach(block => {
+            if (block.querySelector('.cm-content')) found.push(cmFieldFor(block));
+            else {
+                const ta = block.querySelector('textarea');
+                if (ta) found.push(ta);
             }
-            if (ta && ta.tagName === 'TEXTAREA' && ta.id !== 'dest-description') found.add(ta);
         });
-        return [...found].filter(el => !el.dataset.nstkLogInjected);
+        return found.filter(el => !el.dataset.nstkLogInjected);
     }
 
     function injectUrlListHistoryButtons() {
@@ -29729,13 +29806,19 @@ Version 1.16:
 
     /* ── Insert text at cursor position in a textarea ── */
     function insertAtCursor(textarea, text) {
+        if (textarea.isCodeMirror && !textarea.view) {
+            // The editor keeps the caret on a line of its own when the header is typed with line breaks around it
+            textarea.typeOverSelection('\n' + text + '\n');
+            return;
+        }
         const start  = textarea.selectionStart;
         const end    = textarea.selectionEnd;
         const value  = textarea.value;
         const before = value.slice(0, start);
         const after  = value.slice(end);
         const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
-        const suffix = (after  && !after.startsWith('\n')) ? '\n' : '';
+        // In the Definition editor the caret goes to a new line under the header, ready for the values
+        const suffix = textarea.isCodeMirror ? '\n' : (after && !after.startsWith('\n')) ? '\n' : '';
         setAngularValue(textarea, before + prefix + text + suffix + after);
         const newPos = before.length + prefix.length + text.length + suffix.length;
         textarea.setSelectionRange(newPos, newPos);
@@ -29745,6 +29828,7 @@ Version 1.16:
     /* ── Add URL Log Entry modal ── */
     function showAddUrlLogEntryModal(textarea) {
         if (document.getElementById('ns-url-log-add-modal')) return;
+        if (textarea.isCodeMirror && !textarea.view) textarea.rememberSelection();
 
         const overlay = document.createElement('div');
         overlay.id = 'ns-url-log-add-overlay';
@@ -29853,7 +29937,9 @@ Version 1.16:
     function showDeleteSelectionModal(textarea) {
         const start    = textarea.selectionStart;
         const end      = textarea.selectionEnd;
-        const selected = textarea.value.slice(start, end).trim();
+        const noView   = textarea.isCodeMirror && !textarea.view;
+        const rawSel   = noView ? textarea.rememberSelection() : textarea.value.slice(start, end);
+        const selected = rawSel.trim();
 
         if (!selected) {
             const msg = document.createElement('div');
@@ -29964,13 +30050,18 @@ Version 1.16:
             const logLine   = `${ritmClean} | ${date} | ${user || 'Unknown'} | Deleted`;
 
             // Comment out selected lines (skip blank lines and already-commented lines)
-            const selLines  = textarea.value.slice(start, end).split('\n');
+            const selLines  = rawSel.split('\n');
             const commented = selLines.map(l => {
                 const t = l.trim();
                 if (!t || /^#/.test(t)) return l;
                 return '# ' + l;
             }).join('\n');
 
+            if (noView) {
+                textarea.typeOverSelection(logLine + '\n' + commented);
+                overlay.remove(); modal.remove();
+                return;
+            }
             const before = textarea.value.slice(0, start);
             const after  = textarea.value.slice(end);
             const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
@@ -32787,7 +32878,8 @@ Version 1.16:
                     n.querySelector?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
                     n.matches?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
                     URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel)) ||
-                    (document.getElementById('dest-description') && (n.matches?.('textarea') || n.querySelector?.('textarea')))
+                    n.matches?.(DEST_DEFINITION_SELECTOR) || n.querySelector?.(DEST_DEFINITION_SELECTOR) ||
+                    n.classList?.contains('cm-editor') || n.querySelector?.('.cm-editor')
                 );
             })
         );
