@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.1.1
+// @version      2.1.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.1.1';
-    const CHANGELOG = `Version 2.1.1:
+   const SCRIPT_VERSION = '2.1.2';
+    const CHANGELOG = `Version 2.1.2:
+- Change Tracker: the change summary no longer writes "(no items recorded)". When the changes to a list or exception cancel each other out, it is simply left out.
+
+Version 2.1.1:
 - NS Policies Toolkit: safer display of steering configuration names and notes that contain quotes.
 
 Version 2.1.0:
@@ -17570,8 +17573,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.0';
-    const CHANGELOG = `Version 2.0.0:
+    const SCRIPT_VERSION = '2.0.1';
+    const CHANGELOG = `Version 2.0.1:
+- The change summary no longer writes "(no items recorded)". A list or exception whose changes cancel each other out, for example a domain added and then removed again, is now left out of the summary.
+
+Version 2.0.0:
 - The Change Tracker now keeps the team log in a SharePoint list of your team instead of the old team server. The first time you open it after this update, it asks for the SharePoint site and the list name once. No token is needed any more: everyone who can open the site can use the log.
 - Changes you made while the old server was being retired are kept and sent to SharePoint as soon as you connect.
 - "Check / prepare list" checks your access, shows which list it found with its number of entries and a link to it, and adds what the list is missing. It never creates or deletes a list on its own.
@@ -21135,20 +21141,18 @@ Version 1.4.3:
 
             if (reconcileConf) {
                 // ── Domain-list groups ──────────────────────────
-                const reconciled = reconcileEntityEntries(chronological, reconcileConf);
+                // An entity whose changes cancelled out is left out: nothing to report for it
+                const reconciled = reconcileEntityEntries(chronological, reconcileConf)
+                    .filter(({ items, deleted, isNew }) => items.length || deleted || isNew);
                 if (!reconciled.length) return;
 
                 lines.push(`[ ${label} ]`, '');
                 reconciled.forEach(({ name, items, deleted, isNew }) => {
                     const entityTag = deleted ? '  [REMOVED]' : isNew ? '  [CREATED]' : '';
                     lines.push(`  ${name}${entityTag}`);
-                    if (items.length) {
-                        items.forEach(({ display, op }) =>
-                            lines.push(`    • ${display}  ${op === '+' ? '[ADDED]' : '[REMOVED]'}`)
-                        );
-                    } else if (!deleted) {
-                        lines.push(`    • (no items recorded)`);
-                    }
+                    items.forEach(({ display, op }) =>
+                        lines.push(`    • ${display}  ${op === '+' ? '[ADDED]' : '[REMOVED]'}`)
+                    );
                     lines.push('');
                 });
 
