@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.1.0
+// @version      2.1.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.1.0';
-    const CHANGELOG = `Version 2.1.0:
+   const SCRIPT_VERSION = '2.1.1';
+    const CHANGELOG = `Version 2.1.1:
+- NS Policies Toolkit: safer display of steering configuration names and notes that contain quotes.
+
+Version 2.1.0:
 - NS Policies Toolkit: Bulk add domains can add the domains to the existing steering exception entry of a RITM, found by its notes, instead of creating a new entry.
 - NS Policies Toolkit: new "📋 Copy configurations" button after a bulk removal or addition, to copy the changed steering configurations as a comma separated list.
 - NS Policies Toolkit: the Bulk remove and Bulk add buttons now always sit side by side.
@@ -26148,8 +26151,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.27';
-    const CHANGELOG = `Version 1.27:
+    const SCRIPT_VERSION = '1.27.1';
+    const CHANGELOG = `Version 1.27.1:
+- Safer display of steering configuration names and notes that contain quotes in the Steering Exception Domain Tools windows.
+
+Version 1.27:
 - Bulk add domains can now add the domains to an existing exception entry instead of creating a new one. Tick "Add to the existing entry with this note", type the RITM in the notes, and Check finds the entry with that RITM in each configuration. Configurations without one get a new entry.
 - New "📋 Copy configurations" button when a removal or addition finishes. It copies the names of the steering configurations that changed, separated by commas.
 - The "🧹 Bulk remove domains" and "➕ Bulk add domains" buttons now always sit side by side on the page.
@@ -31896,10 +31902,10 @@ Version 1.16:
 
     const seEl = id => se.shadow.getElementById(id);
 
+    // Safe both as text and inside a quoted attribute
     function seEscape(text) {
-        const d = document.createElement('div');
-        d.textContent = String(text);
-        return d.innerHTML;
+        return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
     function seSetStatus(message, isError) {
