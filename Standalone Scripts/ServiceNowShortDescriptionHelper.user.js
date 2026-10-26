@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.0.1
+// @version      4.1.0
 // @description  Ticket Helpers Suite: Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.0.1';
-    const CHANGELOG = `Version 4.0.1:
+    const SCRIPT_VERSION = '4.1.0';
+    const CHANGELOG = `Version 4.1.0:
+- Formatted Text Helper: @mentions are completed for you when you insert, like in Quick Responses. Use the new @ Mention button or write @[Full Name].
+
+Version 4.0.1:
 - Fixed the Ticket Response Helper data not being imported: the import window said the data did not look right, even though it was fine.
 - If some data really cannot be imported, the warning now shows only once, and the Choose your tools window opens right after it.
 
@@ -797,6 +800,244 @@ Version 4.0.0:
             { label: 'Cancel' }
         ]);
     }
+
+    /* ==========================================================
+     *  SHARED: @MENTION INSERTION
+     *  Used by the Ticket Response and Formatted Text helpers to type a
+     *  name into the ServiceNow @mention picker and select it.
+     * ==========================================================*/
+
+    function mentionSleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    darkModeStyle.textContent += `
+        /* Mention blocker spinner */
+        @keyframes mentionSpin {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .mention-blocker-spinner { animation: mentionSpin 0.7s linear infinite; }
+        /* Slide-down entrance for the toast */
+        @keyframes mentionToastIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+            to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        #mention-blocker-toast { animation: mentionToastIn 0.2s ease forwards; }
+    `;
+
+    /* ==========================================================
+     *  MENTION INSERTION BLOCKER
+     *
+     *  While @mention picker interactions are in progress the page is
+     *  overlaid with a transparent pointer-events blocker so accidental
+     *  mouse clicks cannot dismiss the suggestion dropdown.
+     *
+     *  An animated toast is shown at the top of the viewport.
+     *  The blocker is ALWAYS removed via try/finally in insertTextWithMention.
+     * ==========================================================*/
+
+    let _mentionBlockerActive = false;
+    let _mentionFocusGuardTextarea = null;   // textarea being guarded
+    let _mentionFocusGuardHandler  = null;   // its focusout listener ref (for cleanup)
+
+    /**
+     * Show the blocker overlay + status toast.
+     *
+     * @param {number}          total     Total @ mentions to process
+     * @param {number}          current   1-based index of current mention
+     * @param {string}          fieldType 'work_notes' | 'comments'
+     * @param {HTMLTextAreaElement} textarea  The textarea receiving text — kept focused
+     */
+    function showMentionBlocker(total, current, fieldType, textarea) {
+        hideMentionBlocker();
+        _mentionBlockerActive = true;
+
+        // ── Full mouse-event blocker overlay ─────────────────────────────
+        // Intercepts in capture phase so nothing underneath ever sees these
+        // events.  stopImmediatePropagation ensures no other capture listeners
+        // on parent nodes can steal focus either.
+        const overlay = document.createElement('div');
+        overlay.id = 'mention-blocker-overlay';
+        Object.assign(overlay.style, {
+            position:      'fixed',
+            inset:         '0',
+            zIndex:        '2147483646',
+            pointerEvents: 'all',
+            cursor:        'not-allowed',
+            background:    'rgba(0, 0, 0, 0.10)',
+        });
+        const _eatEvent = e => { e.preventDefault(); e.stopImmediatePropagation(); };
+        ['mousedown', 'mouseup', 'click', 'pointerdown', 'pointerup'].forEach(type => {
+            overlay.addEventListener(type, _eatEvent, true);
+        });
+
+        // ── focusout guard on the textarea ───────────────────────────────
+        // Even with the overlay in place, some SN internal scripts can trigger
+        // a blur.  We immediately re-focus the textarea whenever it loses focus
+        // while the blocker is active.
+        if (textarea) {
+            _mentionFocusGuardTextarea = textarea;
+            _mentionFocusGuardHandler  = () => {
+                if (_mentionBlockerActive) {
+                    // Use a microtask so the blur finishes before we re-focus
+                    setTimeout(() => { if (_mentionBlockerActive) textarea.focus(); }, 0);
+                }
+            };
+            textarea.addEventListener('focusout', _mentionFocusGuardHandler, true);
+        }
+
+        // Status toast
+        const fieldLabel   = fieldType === 'work_notes' ? '\uD83D\uDD12 Work Notes' : '\uD83D\uDCAC Comments';
+        const progressText = total > 1 ? ` (1 of ${total})` : '';
+
+        const toast = document.createElement('div');
+        toast.id = 'mention-blocker-toast';
+        Object.assign(toast.style, {
+            position:     'fixed',
+            top:          '18px',
+            left:         '50%',
+            transform:    'translateX(-50%)',
+            zIndex:       '2147483647',
+            background:   'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+            color:        '#fff',
+            padding:      '12px 22px 15px',
+            borderRadius: '10px',
+            boxShadow:    '0 6px 24px rgba(0,0,0,0.5)',
+            fontFamily:   'Arial, sans-serif',
+            fontSize:     '13px',
+            display:      'flex',
+            alignItems:   'center',
+            gap:          '12px',
+            whiteSpace:   'nowrap',
+            userSelect:   'none',
+            pointerEvents:'none',
+            border:       '1px solid rgba(102,126,234,0.55)',
+            minWidth:     '320px',
+        });
+
+        const spinner = document.createElement('span');
+        spinner.className = 'mention-blocker-spinner';
+        Object.assign(spinner.style, {
+            display:      'inline-block',
+            width:        '16px',
+            height:       '16px',
+            border:       '2px solid rgba(255,255,255,0.2)',
+            borderTop:    '2px solid #818cf8',
+            borderRadius: '50%',
+            flexShrink:   '0',
+        });
+
+        const msg = document.createElement('span');
+        msg.id = 'mention-blocker-msg';
+        msg.innerHTML =
+            `Inserting @mention<strong id="mention-blocker-progress" style="color:#a5b4fc">${progressText}</strong>` +
+            ` \u2192 <span style="color:#67e8f9">${fieldLabel}</span>` +
+            `<span style="color:#fca5a5;margin-left:10px;font-size:12px">\u26D4 do not click</span>`;
+
+        const barTrack = document.createElement('div');
+        Object.assign(barTrack.style, {
+            position:     'absolute',
+            bottom:       '0',
+            left:         '0',
+            width:        '100%',
+            height:       '4px',
+            borderRadius: '0 0 10px 10px',
+            overflow:     'hidden',
+            background:   'rgba(255,255,255,0.08)',
+        });
+        const barFill = document.createElement('div');
+        barFill.id = 'mention-blocker-bar';
+        Object.assign(barFill.style, {
+            height:     '100%',
+            width:      total > 1 ? `${Math.round(((current - 1) / total) * 100)}%` : '0%',
+            background: 'linear-gradient(90deg,#667eea,#a5b4fc)',
+            transition: 'width 0.35s ease',
+        });
+        barTrack.appendChild(barFill);
+        toast.appendChild(spinner);
+        toast.appendChild(msg);
+        toast.appendChild(barTrack);
+        document.body.appendChild(overlay);
+        document.body.appendChild(toast);
+    }
+
+    /** Update progress bar / counter text between mentions. */
+    function updateMentionBlocker(total, current) {
+        const bar      = document.getElementById('mention-blocker-bar');
+        const progress = document.getElementById('mention-blocker-progress');
+        if (bar && total > 1)      bar.style.width = `${Math.round(((current - 1) / total) * 100)}%`;
+        if (progress && total > 1) progress.textContent = ` (${current} of ${total})`;
+    }
+
+    /** Remove the blocker overlay, toast, and focusout guard. Safe to call when already gone. */
+    function hideMentionBlocker() {
+        _mentionBlockerActive = false;
+        // Remove focusout guard from the textarea
+        if (_mentionFocusGuardTextarea && _mentionFocusGuardHandler) {
+            _mentionFocusGuardTextarea.removeEventListener('focusout', _mentionFocusGuardHandler, true);
+        }
+        _mentionFocusGuardTextarea = null;
+        _mentionFocusGuardHandler  = null;
+        document.getElementById('mention-blocker-overlay')?.remove();
+        document.getElementById('mention-blocker-toast')?.remove();
+    }
+
+    /* ==========================================================
+     *  TEXT INSERTION HELPERS
+     * ==========================================================*/
+
+    function insertTextDirectly(textarea, text) {
+        const start = textarea.selectionStart || 0;
+        const end   = textarea.selectionEnd   || 0;
+        const current = textarea.value;
+        textarea.value = current.substring(0, start) + text + current.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + text.length;
+        textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    }
+
+    async function triggerMentionPicker(textarea, name) {
+        console.log('🔔 Triggering @ mention picker for:', name);
+        textarea.focus();
+        await mentionSleep(100);
+
+        insertTextDirectly(textarea, '@');
+        await mentionSleep(150);
+
+        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: '@', inputType: 'insertText' }));
+        textarea.dispatchEvent(new KeyboardEvent('keyup', { key: '@', code: 'Digit2', keyCode: 50, which: 50, shiftKey: true, bubbles: true, cancelable: true }));
+        await mentionSleep(400);
+
+        for (const char of name) {
+            insertTextDirectly(textarea, char);
+            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: char, inputType: 'insertText' }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true, cancelable: true }));
+            await mentionSleep(50);
+        }
+
+        await mentionSleep(400);
+
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+        textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+        await mentionSleep(200);
+
+        const suggestionSelectors = ['.mention-suggestion', '.at-view-ul li', '[role="option"]', '.atwho-view li', '.atwho-view-ul li', '.mentions-autocomplete li', '[data-mention-item]'];
+        for (const selector of suggestionSelectors) {
+            const suggestion = document.querySelector(selector);
+            if (suggestion && suggestion.offsetParent !== null) {
+                console.log('✓ Found mention suggestion, clicking:', selector);
+                suggestion.click();
+                await mentionSleep(200);
+                return true;
+            }
+        }
+
+        console.warn('⚠️ No mention suggestion found to click');
+        return false;
+    }
+
     appendStyleWhenReady(darkModeStyle);
 
     /* === TOOL: SHORT DESCRIPTION HELPER === */
@@ -810,8 +1051,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.0.1';
-    const CHANGELOG = `Version 4.0.1:
+    const SCRIPT_VERSION = '4.1.0';
+    const CHANGELOG = `Version 4.1.0:
+- Formatted Text Helper: @mentions are completed for you when you insert, like in Quick Responses. Use the new @ Mention button or write @[Full Name].
+
+Version 4.0.1:
 - Fixed the Ticket Response Helper data not being imported: the import window said the data did not look right, even though it was fine.
 - If some data really cannot be imported, the warning now shows only once, and the Choose your tools window opens right after it.
 
@@ -5487,163 +5731,6 @@ Regards.`,
 
 
     /* ==========================================================
-     *  MENTION INSERTION BLOCKER
-     *
-     *  While @mention picker interactions are in progress the page is
-     *  overlaid with a transparent pointer-events blocker so accidental
-     *  mouse clicks cannot dismiss the suggestion dropdown.
-     *
-     *  An animated toast is shown at the top of the viewport.
-     *  The blocker is ALWAYS removed via try/finally in insertTextWithMention.
-     * ==========================================================*/
-
-    let _mentionBlockerActive = false;
-    let _mentionFocusGuardTextarea = null;   // textarea being guarded
-    let _mentionFocusGuardHandler  = null;   // its focusout listener ref (for cleanup)
-
-    /**
-     * Show the blocker overlay + status toast.
-     *
-     * @param {number}          total     Total @ mentions to process
-     * @param {number}          current   1-based index of current mention
-     * @param {string}          fieldType 'work_notes' | 'comments'
-     * @param {HTMLTextAreaElement} textarea  The textarea receiving text — kept focused
-     */
-    function showMentionBlocker(total, current, fieldType, textarea) {
-        hideMentionBlocker();
-        _mentionBlockerActive = true;
-
-        // ── Full mouse-event blocker overlay ─────────────────────────────
-        // Intercepts in capture phase so nothing underneath ever sees these
-        // events.  stopImmediatePropagation ensures no other capture listeners
-        // on parent nodes can steal focus either.
-        const overlay = document.createElement('div');
-        overlay.id = 'mention-blocker-overlay';
-        Object.assign(overlay.style, {
-            position:      'fixed',
-            inset:         '0',
-            zIndex:        '2147483646',
-            pointerEvents: 'all',
-            cursor:        'not-allowed',
-            background:    'rgba(0, 0, 0, 0.10)',
-        });
-        const _eatEvent = e => { e.preventDefault(); e.stopImmediatePropagation(); };
-        ['mousedown', 'mouseup', 'click', 'pointerdown', 'pointerup'].forEach(type => {
-            overlay.addEventListener(type, _eatEvent, true);
-        });
-
-        // ── focusout guard on the textarea ───────────────────────────────
-        // Even with the overlay in place, some SN internal scripts can trigger
-        // a blur.  We immediately re-focus the textarea whenever it loses focus
-        // while the blocker is active.
-        if (textarea) {
-            _mentionFocusGuardTextarea = textarea;
-            _mentionFocusGuardHandler  = () => {
-                if (_mentionBlockerActive) {
-                    // Use a microtask so the blur finishes before we re-focus
-                    setTimeout(() => { if (_mentionBlockerActive) textarea.focus(); }, 0);
-                }
-            };
-            textarea.addEventListener('focusout', _mentionFocusGuardHandler, true);
-        }
-
-        // Status toast
-        const fieldLabel   = fieldType === 'work_notes' ? '\uD83D\uDD12 Work Notes' : '\uD83D\uDCAC Comments';
-        const progressText = total > 1 ? ` (1 of ${total})` : '';
-
-        const toast = document.createElement('div');
-        toast.id = 'mention-blocker-toast';
-        Object.assign(toast.style, {
-            position:     'fixed',
-            top:          '18px',
-            left:         '50%',
-            transform:    'translateX(-50%)',
-            zIndex:       '2147483647',
-            background:   'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-            color:        '#fff',
-            padding:      '12px 22px 15px',
-            borderRadius: '10px',
-            boxShadow:    '0 6px 24px rgba(0,0,0,0.5)',
-            fontFamily:   'Arial, sans-serif',
-            fontSize:     '13px',
-            display:      'flex',
-            alignItems:   'center',
-            gap:          '12px',
-            whiteSpace:   'nowrap',
-            userSelect:   'none',
-            pointerEvents:'none',
-            border:       '1px solid rgba(102,126,234,0.55)',
-            minWidth:     '320px',
-        });
-
-        const spinner = document.createElement('span');
-        spinner.className = 'mention-blocker-spinner';
-        Object.assign(spinner.style, {
-            display:      'inline-block',
-            width:        '16px',
-            height:       '16px',
-            border:       '2px solid rgba(255,255,255,0.2)',
-            borderTop:    '2px solid #818cf8',
-            borderRadius: '50%',
-            flexShrink:   '0',
-        });
-
-        const msg = document.createElement('span');
-        msg.id = 'mention-blocker-msg';
-        msg.innerHTML =
-            `Inserting @mention<strong id="mention-blocker-progress" style="color:#a5b4fc">${progressText}</strong>` +
-            ` \u2192 <span style="color:#67e8f9">${fieldLabel}</span>` +
-            `<span style="color:#fca5a5;margin-left:10px;font-size:12px">\u26D4 do not click</span>`;
-
-        const barTrack = document.createElement('div');
-        Object.assign(barTrack.style, {
-            position:     'absolute',
-            bottom:       '0',
-            left:         '0',
-            width:        '100%',
-            height:       '4px',
-            borderRadius: '0 0 10px 10px',
-            overflow:     'hidden',
-            background:   'rgba(255,255,255,0.08)',
-        });
-        const barFill = document.createElement('div');
-        barFill.id = 'mention-blocker-bar';
-        Object.assign(barFill.style, {
-            height:     '100%',
-            width:      total > 1 ? `${Math.round(((current - 1) / total) * 100)}%` : '0%',
-            background: 'linear-gradient(90deg,#667eea,#a5b4fc)',
-            transition: 'width 0.35s ease',
-        });
-        barTrack.appendChild(barFill);
-        toast.appendChild(spinner);
-        toast.appendChild(msg);
-        toast.appendChild(barTrack);
-        document.body.appendChild(overlay);
-        document.body.appendChild(toast);
-    }
-
-    /** Update progress bar / counter text between mentions. */
-    function updateMentionBlocker(total, current) {
-        const bar      = document.getElementById('mention-blocker-bar');
-        const progress = document.getElementById('mention-blocker-progress');
-        if (bar && total > 1)      bar.style.width = `${Math.round(((current - 1) / total) * 100)}%`;
-        if (progress && total > 1) progress.textContent = ` (${current} of ${total})`;
-    }
-
-    /** Remove the blocker overlay, toast, and focusout guard. Safe to call when already gone. */
-    function hideMentionBlocker() {
-        _mentionBlockerActive = false;
-        // Remove focusout guard from the textarea
-        if (_mentionFocusGuardTextarea && _mentionFocusGuardHandler) {
-            _mentionFocusGuardTextarea.removeEventListener('focusout', _mentionFocusGuardHandler, true);
-        }
-        _mentionFocusGuardTextarea = null;
-        _mentionFocusGuardHandler  = null;
-        document.getElementById('mention-blocker-overlay')?.remove();
-        document.getElementById('mention-blocker-toast')?.remove();
-    }
-
-    /* ==========================================================
      *  SECTION STATE MANAGEMENT (GM_getValue/GM_setValue)
      * ==========================================================*/
 
@@ -6187,61 +6274,6 @@ Regards.`,
             console.warn('⚠️ API insertion failed:', error);
             return false;
         }
-        return false;
-    }
-
-    /* ==========================================================
-     *  TEXT INSERTION HELPERS
-     * ==========================================================*/
-
-    function insertTextDirectly(textarea, text) {
-        const start = textarea.selectionStart || 0;
-        const end   = textarea.selectionEnd   || 0;
-        const current = textarea.value;
-        textarea.value = current.substring(0, start) + text + current.substring(end);
-        textarea.selectionStart = textarea.selectionEnd = start + text.length;
-        textarea.dispatchEvent(new Event('input',  { bubbles: true }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-    }
-
-    async function triggerMentionPicker(textarea, name) {
-        console.log('🔔 Triggering @ mention picker for:', name);
-        textarea.focus();
-        await sleep(100);
-
-        insertTextDirectly(textarea, '@');
-        await sleep(150);
-
-        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: '@', inputType: 'insertText' }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup', { key: '@', code: 'Digit2', keyCode: 50, which: 50, shiftKey: true, bubbles: true, cancelable: true }));
-        await sleep(400);
-
-        for (const char of name) {
-            insertTextDirectly(textarea, char);
-            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: char, inputType: 'insertText' }));
-            textarea.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true, cancelable: true }));
-            await sleep(50);
-        }
-
-        await sleep(400);
-
-        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-        await sleep(200);
-
-        const suggestionSelectors = ['.mention-suggestion', '.at-view-ul li', '[role="option"]', '.atwho-view li', '.atwho-view-ul li', '.mentions-autocomplete li', '[data-mention-item]'];
-        for (const selector of suggestionSelectors) {
-            const suggestion = document.querySelector(selector);
-            if (suggestion && suggestion.offsetParent !== null) {
-                console.log('✓ Found mention suggestion, clicking:', selector);
-                suggestion.click();
-                await sleep(200);
-                return true;
-            }
-        }
-
-        console.warn('⚠️ No mention suggestion found to click');
         return false;
     }
 
@@ -8527,18 +8559,6 @@ Regards.`,
             0%   { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        /* Mention blocker spinner */
-        @keyframes mentionSpin {
-            0%   { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .mention-blocker-spinner { animation: mentionSpin 0.7s linear infinite; }
-        /* Slide-down entrance for the toast */
-        @keyframes mentionToastIn {
-            from { opacity: 0; transform: translateX(-50%) translateY(-14px); }
-            to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-        #mention-blocker-toast { animation: mentionToastIn 0.2s ease forwards; }
         .notification-dot { animation: colorPulse 1s ease-in-out infinite; }
         #ticket-response-dropdown::-webkit-scrollbar       { width: 8px; }
         #ticket-response-dropdown::-webkit-scrollbar-track { background: #f1f1f1; }
@@ -8732,8 +8752,13 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.6';
-    const CHANGELOG = `Version 1.2.6:
+    const SCRIPT_VERSION = '1.3.0';
+    const CHANGELOG = `Version 1.3.0:
+- @mentions are now completed for you when you insert, just like in Quick Responses. Write @[Full Name] in the editor and the person is mentioned in the ticket automatically.
+- New @ Mention button in the toolbar that adds the name of the person who opened the ticket.
+- The Feature Guide has a new @Mentions section.
+
+Version 1.2.6:
 - Safer pasting: content pasted from other pages can no longer run code in ServiceNow, and links or images with unsafe addresses are removed. Only web (http and https) and email links are kept.
 
 Version 1.2.5:
@@ -10278,7 +10303,7 @@ Version 1.0.3:
                             chip("📋 What's New", '#ff8c00', { fontSize: '10px' })
                         ], { margin: '0 0 8px 0', gap: '6px' }),
                         tb(['B', 'I', 'U', 'S', 'Size ▾', 'A', 'A', 'H', 'Aa', 'Del', 'Ins', 'X₂', 'X²']),
-                        tb(['</>', '"', '🔗', '🖼️', '▦ Table', '• List', '1. List', 'H1', 'H2', 'P', '✕ Selection', '✕ All Format', '🗑 Clear']),
+                        tb(['</>', '"', '🔗', '🖼️', '▦ Table', '@ Mention', '• List', '1. List', 'H1', 'H2', 'P', '✕ Selection', '✕ All Format', '🗑 Clear']),
                         area,
                         hrow([
                             chip('👁 Preview HTML', '#6c757d'),
@@ -10346,6 +10371,21 @@ Version 1.0.3:
                     body.appendChild(hrow([grid, span('3 × 4 Table', { fontSize: '11px', color: '#555' })], { alignItems: 'flex-start' }));
                     body.appendChild(toggle('Make the first row a header', true));
                     caption(body, 'Hover the grid and click, or type Rows and Columns for bigger tables (up to 50).');
+                }
+            },
+            {
+                icon: '👤', title: '@Mentions',
+                buildContent: (body) => {
+                    lead(body, 'Mentions are completed for you when you insert, just like in Quick Responses.');
+                    badgeRow(body, { bg: '#fff', color: '#333', border: '1px solid #ccc', label: '@ Mention', desc: 'Adds the name of the person who opened the ticket at your cursor.' });
+                    beforeAfter(body, [
+                        ['Editor', 'Hi @[Jane Doe], the policy is now live.', false],
+                        ['Ticket', 'Hi @Jane Doe, the policy is now live.', true]
+                    ]);
+                    bullets(body, [
+                        'To mention someone else, type @[Full Name] yourself, without formatting inside the brackets.',
+                        'While the names are added a banner shows the progress. Do not click until it closes.'
+                    ]);
                 }
             },
             {
@@ -10968,7 +11008,7 @@ Version 1.0.3:
             maxWidth: '700px',
             lineHeight: '1.4'
         });
-        hintText.innerHTML = '💡 <strong>Tip:</strong> To mention someone, type <code style="background: #f4f4f4; padding: 2px 4px; border-radius: 3px;">@</code> without giving it any formatting, then complete the name after inserting the text into ServiceNow.';
+        hintText.innerHTML = '💡 <strong>Tip:</strong> To mention someone, click <strong>@ Mention</strong> or type <code style="background: #f4f4f4; padding: 2px 4px; border-radius: 3px;">@[Full Name]</code> without formatting. The mention is completed for you when you insert.';
 
         // Container for utility buttons
         const utilityButtonsContainer = document.createElement('div');
@@ -10998,6 +11038,7 @@ Version 1.0.3:
             { type: 'link', command: 'link', icon: '🔗', title: 'Insert Link' },
             { type: 'image', command: 'image', icon: '🖼️', title: 'Insert Image' },   // ← NEW
             { type: 'table', command: 'table', icon: '▦ Table', title: 'Insert Table' },
+            { type: 'mention', command: 'mention', icon: '@ Mention', title: 'Mention the person who opened the ticket' },
             { command: 'insertUnorderedList', icon: '• List', title: 'Bullet List' },
             { command: 'insertOrderedList', icon: '1. List', title: 'Numbered List' },
             { command: 'formatBlock', value: 'h3', icon: 'H1', title: 'Heading 1 (H3)' },
@@ -11312,6 +11353,12 @@ Version 1.0.3:
                 // Open the dedicated link modal
                 if (btn.type === 'link') {
                     showLinkModal();
+                    return false;
+                }
+
+                // Add an @[Name] placeholder that becomes a real mention on insert
+                if (btn.type === 'mention') {
+                    insertMentionPlaceholder(editor);
                     return false;
                 }
 
@@ -11682,6 +11729,100 @@ Version 1.0.3:
         textarea.focus();
     }
 
+    /* ==========================================================
+     *  @MENTIONS
+     *  @[Full Name] in the editor is typed into the ServiceNow mention
+     *  picker on insert, the same way Quick Responses do it.
+     * ==========================================================*/
+
+    const MENTION_TOKEN = /@\[([^\]<>]+)\]/g;
+
+    // Name of the person who opened the ticket (caller on incidents), or '' when not found.
+    function getOpenerName() {
+        if (window.g_form) {
+            for (const field of ['opened_by', 'caller_id']) {
+                try {
+                    const val = window.g_form.getDisplayValue(field);
+                    if (val && val.trim()) return val.trim();
+                } catch (e) { /* field not on this form */ }
+            }
+        }
+        const ids = ['sys_display.sc_req_item.opened_by', 'sys_display.incident.opened_by',
+                     'sys_display.sc_req_item.caller_id', 'sys_display.incident.caller_id'];
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            const val = el && (el.value || el.textContent);
+            if (val && val.trim()) return val.trim();
+        }
+        return '';
+    }
+
+    // Puts @[Opener Name] at the caret. Without a known name, @[Full Name] is selected so it can be typed over.
+    function insertMentionPlaceholder(editor) {
+        const name = getOpenerName();
+        const sel = window.getSelection();
+        if (!sel.rangeCount || !editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+            editor.focus();
+            const range = document.createRange();
+            range.selectNodeContents(editor);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+        document.execCommand('insertText', false, '@[' + (name || 'Full Name') + '] ');
+        if (!name && sel.rangeCount) {
+            const node = sel.focusNode;
+            const end = sel.focusOffset - 2; // before "] "
+            if (node && node.nodeType === Node.TEXT_NODE && end >= 9) {
+                const range = document.createRange();
+                range.setStart(node, end - 9);
+                range.setEnd(node, end);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+        editor.focus();
+    }
+
+    function decodeEntities(text) {
+        const ta = document.createElement('textarea');
+        ta.innerHTML = text;
+        return ta.value;
+    }
+
+    // Writes the wrapped HTML into each textarea, turning every @[Name] into a real mention.
+    async function writeWithMentions(targets, wrappedHTML) {
+        const parts = wrappedHTML.split(MENTION_TOKEN); // text, name, text, name, ..., text
+        const total = (parts.length - 1) / 2;
+        for (const ta of targets) {
+            const fieldType = ta.id.includes('work_notes') ? 'work_notes' : 'comments';
+            showMentionBlocker(total, 1, fieldType, ta);
+            try {
+                const existing = ta.value.trim();
+                ta.value = existing ? existing + '\n\n' : '';
+                ta.selectionStart = ta.selectionEnd = ta.value.length;
+                ta.focus();
+                await mentionSleep(100);
+                for (let i = 0; i < parts.length; i++) {
+                    if (i % 2 === 0) {
+                        let text = parts[i];
+                        // The picker usually adds a space after the name already
+                        if (i > 0 && /[ \u00a0]$/.test(ta.value.slice(0, ta.selectionStart))) text = text.replace(/^( |&nbsp;)/, '');
+                        if (text) insertTextDirectly(ta, text);
+                        continue;
+                    }
+                    updateMentionBlocker(total, (i + 1) / 2);
+                    await triggerMentionPicker(ta, decodeEntities(parts[i]).replace(/\u00a0/g, ' ').trim());
+                    await mentionSleep(200);
+                }
+                ta.dispatchEvent(new Event('input',  { bubbles: true }));
+                ta.dispatchEvent(new Event('change', { bubbles: true }));
+            } finally {
+                hideMentionBlocker();
+            }
+        }
+    }
+
     // target is 'comments', 'work_notes', 'both', or 'auto'. Returns true if inserted.
     function insertFormattedText(editor, target) {
         const commentsEl  = document.getElementById('activity-stream-comments-textarea');
@@ -11724,7 +11865,12 @@ Version 1.0.3:
         }
 
         const wrappedHTML = `[code]${html}[/code]`;
-        targets.forEach(ta => writeToTextarea(ta, wrappedHTML));
+        MENTION_TOKEN.lastIndex = 0;
+        if (MENTION_TOKEN.test(wrappedHTML)) {
+            writeWithMentions(targets, wrappedHTML).catch(err => console.error('❌ Mention insertion failed:', err));
+        } else {
+            targets.forEach(ta => writeToTextarea(ta, wrappedHTML));
+        }
 
         console.log('✓ Formatted text inserted successfully (' + target + ')');
         return true;
