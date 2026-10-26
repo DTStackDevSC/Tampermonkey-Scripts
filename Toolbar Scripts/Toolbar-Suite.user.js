@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.1.2
+// @version      2.2.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.1.2';
-    const CHANGELOG = `Version 2.1.2:
+   const SCRIPT_VERSION = '2.2.0';
+    const CHANGELOG = `Version 2.2.0:
+- NS Policies Toolkit: the Definition field of Destination Profiles now has the same log buttons as URL lists: "+ Log Entry", "🗑 Delete Selected" and "📜 View History".
+
+Version 2.1.2:
 - Change Tracker: the change summary no longer writes "(no items recorded)". When the changes to a list or exception cancel each other out, it is simply left out.
 
 Version 2.1.1:
@@ -26155,8 +26158,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.27.1';
-    const CHANGELOG = `Version 1.27.1:
+    const SCRIPT_VERSION = '1.28';
+    const CHANGELOG = `Version 1.28:
+- Destination Profiles: the Definition field now has the same "+ Log Entry", "🗑 Delete Selected" and "📜 View History" buttons as URL lists, with the same #RITM | Date | Name log format. They can be turned off with the URL List History Buttons setting.
+
+Version 1.27.1:
 - Safer display of steering configuration names and notes that contain quotes in the Steering Exception Domain Tools windows.
 
 Version 1.27:
@@ -26609,7 +26615,7 @@ Version 1.16:
         {
             key:         'urlListHistory',
             label:       '📜 URL List History Buttons',
-            description: 'On URL list edit pages, adds "+ Log Entry", "Delete Selected", and "View History" buttons. Log format: #RITM | Date | Name. Deleted domains are commented out.',
+            description: 'On URL list edit pages and in the Definition field of Destination Profiles, adds "+ Log Entry", "Delete Selected", and "View History" buttons. Log format: #RITM | Date | Name. Deleted entries are commented out.',
         },
         {
             key:         'sslDomainLog',
@@ -27511,7 +27517,7 @@ Version 1.16:
                 icon: '📜',
                 title: 'URL List History Buttons',
                 buildContent(body) {
-                    lead(body, 'On URL list edit pages, three buttons appear below the URL textarea for tracking domain changes over time.');
+                    lead(body, 'Three buttons appear below the URL textarea of URL lists and below the Definition field of Destination Profiles, for tracking changes over time.');
 
                     const btnRowEl = document.createElement('div');
                     Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
@@ -27524,6 +27530,7 @@ Version 1.16:
                         '"+ Log Entry" inserts a #RITM | Date | Name header at your cursor position. Add the domains below it.',
                         '"Delete Selected" comments out the highlighted domains with a # prefix and inserts a Deleted log header above them.',
                         '"View History" shows all change groups with their domains, filterable by RITM and date range.',
+                        'Destination Profiles get the same three buttons below the Definition field, with the same log format.',
                     ]);
                 },
             },
@@ -27825,7 +27832,7 @@ Version 1.16:
                     });
                     logGroup.appendChild(logGroupLabel);
                     logGroup.appendChild(toggle('📝 Description Log Buttons', true, 'Add Log Entry and View Log on policy descriptions.'));
-                    logGroup.appendChild(toggle('📜 URL List History Buttons', true, 'Log entry, delete, and view history on URL list pages.'));
+                    logGroup.appendChild(toggle('📜 URL List History Buttons', true, 'Log entry, delete, and view history on URL lists and Destination Profile definitions.'));
                     logGroup.appendChild(toggle('🔒 SSL Decryption Removal Entry', true, 'Add Removal Entry button on SSL Decryption pages.'));
                     togglesWrap.appendChild(logGroup);
                     body.appendChild(togglesWrap);
@@ -29585,10 +29592,36 @@ Version 1.16:
         return [...seen];
     }
 
+    // Destination Profiles side panel: the Definition field (its description field is #dest-description).
+    // Found by its "Definition" label, so it works whatever ID Netskope gives the textarea.
+    function getDestinationDefinitionTextareas() {
+        const description = document.getElementById('dest-description');
+        if (!description && !/destination/i.test(window.location.hash || '')) return [];
+        const found = new Set();
+        document.querySelectorAll('textarea#dest-definition, textarea[id^="dest-def"]').forEach(el => found.add(el));
+        document.querySelectorAll('label, legend, [class*="label" i], [class*="title" i]').forEach(lbl => {
+            if (lbl.children.length > 2 || !/^\s*definitions?\s*\*?\s*$/i.test(lbl.textContent || '')) return;
+            const forId = lbl.getAttribute('for');
+            let ta = forId ? document.getElementById(forId) : null;
+            if (!ta || ta.tagName !== 'TEXTAREA') {
+                ta = null;
+                // The textarea of the same field block: the nearest one below the label
+                for (let box = lbl.parentElement, i = 0; box && i < 3 && !ta; box = box.parentElement, i++) {
+                    ta = [...box.querySelectorAll('textarea')].find(t => t.id !== 'dest-description' &&
+                        (lbl.compareDocumentPosition(t) & Node.DOCUMENT_POSITION_FOLLOWING)) || null;
+                }
+            }
+            if (ta && ta.tagName === 'TEXTAREA' && ta.id !== 'dest-description') found.add(ta);
+        });
+        return [...found].filter(el => !el.dataset.nstkLogInjected);
+    }
+
     function injectUrlListHistoryButtons() {
         if (!getSetting('urlListHistory')) return;
 
-        getUrlListTextareas().forEach(textarea => {
+        const definitions = getDestinationDefinitionTextareas();
+        definitions.forEach(ta => { ta.dataset.nstkLogKind = 'destination'; });
+        getUrlListTextareas().concat(definitions).forEach(textarea => {
             if (textarea.dataset.nstkUrlLogInjected) return;
             textarea.dataset.nstkUrlLogInjected = '1';
 
@@ -29748,7 +29781,7 @@ Version 1.16:
         };
 
         const titleEl = document.createElement('div');
-        titleEl.textContent = '📜 Add URL List Log Entry';
+        titleEl.textContent = textarea.dataset.nstkLogKind === 'destination' ? '📜 Add Destination Profile Log Entry' : '📜 Add URL List Log Entry';
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '16px' });
 
         const ritmLbl  = mkLbl('RITM Number');
@@ -29763,7 +29796,7 @@ Version 1.16:
             background: '#e8f4fd', border: '1px solid #90caf9', borderRadius: '6px',
             padding: '8px 12px', marginBottom: '16px', fontSize: '12px', color: '#1a4f7a',
         });
-        tipEl.textContent = 'The log header (#RITM | Date | Name) will be inserted at the current cursor position. Type your domains below it.';
+        tipEl.textContent = `The log header (#RITM | Date | Name) will be inserted at the current cursor position. Type your ${textarea.dataset.nstkLogKind === 'destination' ? 'values' : 'domains'} below it.`;
 
         const btnRow = document.createElement('div');
         Object.assign(btnRow.style, { display: 'flex', gap: '10px' });
@@ -29990,7 +30023,8 @@ Version 1.16:
         });
 
         const titleEl = document.createElement('div');
-        titleEl.textContent = `📜 URL List Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
+        const isDestination = textarea.dataset.nstkLogKind === 'destination';
+        titleEl.textContent = `📜 ${isDestination ? 'Destination Profile' : 'URL List'} Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
         modal.appendChild(titleEl);
 
@@ -30134,7 +30168,7 @@ Version 1.16:
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
                 empty.textContent = allGroups.length === 0
-                    ? 'No log entries found in this URL list.'
+                    ? `No log entries found in this ${isDestination ? 'destination profile' : 'URL list'}.`
                     : 'No entries match the current filters.';
                 Object.assign(empty.style, {
                     fontSize: '13px', color: '#999', textAlign: 'center',
@@ -32752,7 +32786,8 @@ Version 1.16:
                     DESCRIPTION_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel)) ||
                     n.querySelector?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
                     n.matches?.('input[placeholder*="Add a regex, keyword or predefined data identifier"]') ||
-                    URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel))
+                    URL_LIST_TA_SELECTORS.some(sel => n.matches?.(sel) || n.querySelector?.(sel)) ||
+                    (document.getElementById('dest-description') && (n.matches?.('textarea') || n.querySelector?.('textarea')))
                 );
             })
         );
