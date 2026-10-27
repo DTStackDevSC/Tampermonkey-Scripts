@@ -6,3 +6,6 @@ temp_text.txt
 
 # Local secrets (activation codes), never published
 .local-secrets/
+
+# Claude Code migration bundle (skills, memory, settings), local only
+.claude-migration/
