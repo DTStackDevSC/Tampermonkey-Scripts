@@ -26170,6 +26170,7 @@ Version 0.9.1:
 - New 👥 Manage Source button next to Source on Real-time Protection policies.
 - Export downloads every user, group and OU in Source as a CSV.
 - Check looks up each user or group and shows whether it exists and whether it is already in the policy. Groups can be given by their short name.
+- Add puts the found users or groups into Source. Nothing is saved until you click Apply Changes.
 
 Version 1.28.1:
 - Fixed the log buttons not appearing below the Definition field of Destination Profiles. They now work with Netskope's new Definition editor.
@@ -33159,6 +33160,190 @@ Version 1.16:
         }
     }
 
+    /* ── Add and Remove: the Netskope form itself, nothing is saved until Apply Changes ── */
+
+    const SM_GONE = 'Source field not found. The run stopped.';
+    const SM_SECTION_ICON = { user: 'netskope-icon-user', group: 'netskope-icon-user-group' };
+
+    function smPickerOrStop() {
+        const found = smFindPicker();
+        if (!found) throw new Error(SM_GONE);
+        return found;
+    }
+
+    // The type is an accordion inside the open dropdown: the active section's title sits in the header.
+    async function smOpenSection(select, mode) {
+        const icon = SM_SECTION_ICON[mode];
+        const isActive = () => !!select.querySelector(`.ng-dropdown-header .sub-criterion-title i.${icon}`);
+        if (isActive()) return true;
+        const title = [...select.querySelectorAll('ng-dropdown-panel .sub-criterion-title')]
+            .find(t => t.querySelector(`i.${icon}`));
+        if (!title) return false;
+        title.click();
+        for (let i = 0; i < 10 && !isActive(); i++) await smWait(100);
+        return isActive();
+    }
+
+    const smIsLoading = select => select.classList.contains('ng-select-loading') || !!select.querySelector('.ng-spinner-loader');
+
+    async function smAddValue(mode, value, cfg) {
+        const type = mode === 'group' ? 'group' : 'user';
+        let { select } = smPickerOrStop();
+        if (!(await smOpenDropdown(select))) return 'failed';
+        if (smTagsOf(select).some(t => t.type === type && smKey(t.name) === smKey(value))) return 'already';
+        if (!(await smOpenSection(select, mode))) return 'failed';
+        for (let attempt = 0; attempt <= cfg.retries; attempt++) {
+            const input = select.querySelector('.ng-input input');
+            // Empty first, so Netskope runs a new lookup even when the text did not change
+            smSetSearch(input, '');
+            await smWait(300);
+            smSetSearch(input, value);
+            const t0 = Date.now();
+            let sawSpinner = false;
+            while (Date.now() - t0 < cfg.timeout) {
+                await smWait(200);
+                select = smPickerOrStop().select;
+                if (smIsLoading(select)) { sawSpinner = true; continue; }
+                // The lookup is debounced: until its spinner showed, the list may still be the previous one
+                if (!sawSpinner && Date.now() - t0 < 4000) continue;
+                const option = [...select.querySelectorAll('ng-dropdown-panel .ng-option:not(.ng-option-disabled)')]
+                    .find(o => smKey((o.querySelector('.label-title') || o).textContent) === smKey(value));
+                if (option) {
+                    if (option.classList.contains('ng-option-selected')) return 'already';
+                    option.click();
+                    await smWait(400);
+                    select = smPickerOrStop().select;
+                    return smTagsOf(select).some(t => t.type === type && smKey(t.name) === smKey(value)) ? 'added' : 'failed';
+                }
+                if (select.querySelector('ng-dropdown-panel .ng-option-disabled')) return 'missing';
+            }
+        }
+        return 'timeout';
+    }
+
+    function smRunConfig() {
+        const num = (id, fallback) => { const v = parseFloat(smEl(id).value); return isNaN(v) ? fallback : v; };
+        return {
+            timeout: Math.max(5, num('sm-timeout', 30)) * 1000,
+            retries: Math.max(0, Math.round(num('sm-retries', 1))),
+            pause:   Math.max(0, num('sm-pause', 1)) * 1000,
+        };
+    }
+
+    const SM_REASON = {
+        timeout: 'Netskope did not answer in time',
+        missing: 'Netskope did not list it',
+        failed:  'could not select it',
+    };
+
+    // items: [{ value, row }]. Returns what happened, and shows the summary.
+    async function smRun(kind, items) {
+        const cfg = smRunConfig();
+        const result = { done: 0, already: 0, failed: [], unprocessed: 0 };
+        const verb = kind === 'add' ? 'Added' : 'Removed';
+        sm.busy = true;
+        sm.stop = false;
+        smEl('sm-summary').hidden = true;
+        smProgress(0, items.length);
+        smUpdateButtons();
+        let processed = 0;
+        let select = null;
+        try {
+            for (const item of items) {
+                if (sm.stop) break;
+                select = smPickerOrStop().select;
+                let outcome;
+                try {
+                    outcome = kind === 'add' ? await smAddValue(sm.mode, item.value, cfg) : await smRemoveValue(item.value);
+                } catch (e) {
+                    if (e.message === SM_GONE) throw e;
+                    outcome = 'failed';
+                }
+                processed++;
+                if (outcome === 'added' || outcome === 'removed') {
+                    result.done++;
+                    smLog(`✔ ${verb} ${item.value}`, 'ok');
+                    if (item.row) {
+                        if (kind === 'add') item.row.inPolicy = [item.value];
+                        else item.row.inPolicy = item.row.inPolicy.filter(n => smKey(n) !== smKey(item.value));
+                        if (kind === 'remove') item.row.removeChoice = null;
+                    }
+                } else if (outcome === 'already') {
+                    result.already++;
+                    smLog(`= ${item.value} (${kind === 'add' ? 'already in the policy' : 'not in the policy'})`, 'warn');
+                    if (item.row && kind === 'add') item.row.inPolicy = [item.value];
+                } else {
+                    result.failed.push({ value: item.value, reason: SM_REASON[outcome] || outcome });
+                    smLog(`✖ ${item.value} (${SM_REASON[outcome] || outcome})`, 'err');
+                }
+                smProgress(processed, items.length);
+                if (cfg.pause && processed < items.length && !sm.stop) await smWait(cfg.pause);
+            }
+        } catch (e) {
+            smLog(e.message, 'err');
+        } finally {
+            result.unprocessed = items.length - processed;
+            const found = smFindPicker();
+            if (found) await smCloseDropdown(found.select);
+            if (result.done) smLog('Review the changes and click Apply Changes to save them.', 'ok');
+            smShowRunSummary(kind, result);
+            sm.busy = false;
+            smRenderRows();
+            smUpdateButtons();
+        }
+        return result;
+    }
+
+    function smShowRunSummary(kind, result) {
+        const summary = smEl('sm-summary');
+        summary.textContent = '';
+        const line = document.createElement('div');
+        line.textContent = `Completed: ${result.done + result.already} (${result.done} ${kind === 'add' ? 'added' : 'removed'}, ` +
+            `${result.already} ${kind === 'add' ? 'already there' : 'already gone'}). Failed: ${result.failed.length}.` +
+            (result.unprocessed ? ` Not processed: ${result.unprocessed}.` : '');
+        summary.appendChild(line);
+        if (result.failed.length) {
+            const list = document.createElement('div');
+            list.className = 'muted';
+            list.textContent = result.failed.map(f => `${f.value}: ${f.reason}`).join('\n');
+            list.style.whiteSpace = 'pre-wrap';
+            list.style.margin = '6px 0';
+            summary.appendChild(list);
+            const copy = document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'link-btn';
+            copy.textContent = '📋 Copy failed';
+            copy.addEventListener('click', () => smCopy(result.failed.map(f => f.value).join('\n'), copy));
+            const csv = document.createElement('button');
+            csv.type = 'button';
+            csv.className = 'link-btn';
+            csv.textContent = '⬇ CSV of failed';
+            csv.style.marginLeft = '6px';
+            csv.addEventListener('click', () => {
+                const q = v => '"' + String(/^[=+\-@\t\r]/.test(String(v).trim()) ? "'" + v : v).replace(/"/g, '""') + '"';
+                smDownload(['value', 'reason'].map(q).join(';') + '\n' + result.failed.map(f => [f.value, f.reason].map(q).join(';')).join('\n') + '\n',
+                    `source_${kind}_failed_${smPolicyId()}.csv`);
+            });
+            summary.append(copy, csv);
+        }
+        summary.hidden = false;
+    }
+
+    async function smRunAdd() {
+        if (sm.busy || !sm.rows) return;
+        const items = sm.rows.filter(r => r.chosen && !r.inPolicy.length).map(r => ({ value: r.chosen, row: r }));
+        const skipped = {
+            'already in the policy':        sm.rows.filter(r => r.inPolicy.length).length,
+            'not found':                    sm.rows.filter(r => r.status === 'notfound').length,
+            'ambiguous without a choice':   sm.rows.filter(r => r.status === 'ambiguous' && !r.chosen && !r.inPolicy.length).length,
+            'could not check':              sm.rows.filter(r => r.status === 'error' && !r.inPolicy.length).length,
+        };
+        const skipText = Object.entries(skipped).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(', ');
+        smLog(`Adding ${items.length} ${SM_NOUN[sm.mode][items.length === 1 ? 0 : 1]}${skipText ? '. Skipped: ' + skipText : ''}.`);
+        if (!items.length) return;
+        await smRun('add', items);
+    }
+
     /* ── Panel (shadow DOM keeps Netskope styles out; adoptedStyleSheets passes the CSP) ── */
 
     const smEl = id => sm.shadow.getElementById(id);
@@ -33291,6 +33476,7 @@ Version 1.16:
         smEl('sm-stop').addEventListener('click', () => { sm.stop = true; smLog('Stopping after the current item…', 'warn'); });
         smEl('sm-export').addEventListener('click', smExport);
         smEl('sm-check').addEventListener('click', smRunCheck);
+        smEl('sm-add').addEventListener('click', smRunAdd);
         smSetMode(sm.mode);
     }
 
