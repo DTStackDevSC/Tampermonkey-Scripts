@@ -26168,6 +26168,7 @@ Version 0.9.1:
     const SCRIPT_VERSION = '1.29.0';
     const CHANGELOG = `Version 1.29:
 - New 👥 Manage Source button next to Source on Real-time Protection policies.
+- Export downloads every user, group and OU in Source as a CSV.
 
 Version 1.28.1:
 - Fixed the log buttons not appearing below the Definition field of Destination Profiles. They now work with Netskope's new Definition editor.
@@ -32867,6 +32868,120 @@ Version 1.16:
         sm.host = sm.shadow = null;
     }
 
+    /* ── Reading the Source field ── */
+
+    const SM_ICON_TYPE = [['netskope-icon-user-group', 'group'], ['netskope-icon-ou', 'ou'], ['netskope-icon-user', 'user']];
+
+    const smShortName = name => String(name || '').split('/').pop().trim();
+
+    async function smOpenDropdown(select) {
+        if (select.classList.contains('ng-select-opened') && select.querySelector('ng-dropdown-panel')) return true;
+        select.querySelector('.ng-select-container')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        for (let i = 0; i < 20; i++) {
+            await smWait(150);
+            if (select.querySelector('ng-dropdown-panel')) return true;
+        }
+        return false;
+    }
+
+    // Leaves the field as the user had it: empty search box and the dropdown closed.
+    async function smCloseDropdown(select) {
+        if (!select || !select.isConnected) return;
+        const input = select.querySelector('.ng-input input');
+        if (input && input.value) smSetSearch(input, '');
+        if (!select.classList.contains('ng-select-opened')) return;
+        input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+        for (let i = 0; i < 10 && select.classList.contains('ng-select-opened'); i++) await smWait(100);
+        // Netskope also closes it on a click outside the field
+        if (select.classList.contains('ng-select-opened')) {
+            document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            await smWait(200);
+        }
+    }
+
+    function smSetSearch(input, value) {
+        input.focus();
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function smTagsOf(select) {
+        return [...select.querySelectorAll('.ng-value-container .ns-picker-tag')].map(tag => {
+            const icon = tag.querySelector('i[class*="netskope-icon-"]');
+            const type = (SM_ICON_TYPE.find(([cls]) => icon && icon.classList.contains(cls)) || [, 'user'])[1];
+            const label = tag.querySelector('.ng-value-label');
+            return { type, name: (label ? label.textContent : '').trim(), el: tag };
+        }).filter(t => t.name);
+    }
+
+    // With the dropdown closed Netskope only renders 5 tags, so it is opened for the read.
+    async function smReadSource() {
+        const found = smFindPicker();
+        if (!found) throw new Error('Source field not found. Open a policy in edit mode first.');
+        await smOpenDropdown(found.select);
+        const tags = smTagsOf(found.select).map(({ type, name }) => ({ type, name }));
+        await smCloseDropdown(found.select);
+        return tags;
+    }
+
+    /* ── Export ── */
+
+    function smExportCsv(items) {
+        const cell = v => /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        return ['type;name;short_name']
+            .concat(items.map(i => [i.type, i.name, i.type === 'user' ? i.name : smShortName(i.name)].map(cell).join(';')))
+            .join('\n') + '\n';
+    }
+
+    function smDownload(text, fileName) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    async function smCopy(text, button) {
+        try { await navigator.clipboard.writeText(text); }
+        catch (e) { if (typeof GM_setClipboard === 'function') GM_setClipboard(text); }
+        const old = button.textContent;
+        button.textContent = '✔ Copied';
+        setTimeout(() => { button.textContent = old; }, 1500);
+    }
+
+    const smPolicyId = () => (location.hash.match(/[?&]id=(\d+)/) || [, 'policy'])[1];
+
+    async function smExport() {
+        if (sm.busy) return;
+        sm.busy = true;
+        smUpdateButtons();
+        try {
+            const items = await smReadSource();
+            const date = new Date().toISOString().slice(0, 10);
+            smDownload(smExportCsv(items), `source_${smPolicyId()}_${date}.csv`);
+            const names = items.filter(i => i.type === sm.mode).map(i => i.name);
+            const counts = ['user', 'group', 'ou'].map(t => `${items.filter(i => i.type === t).length} ${{ user: 'users', group: 'groups', ou: 'OUs' }[t]}`);
+            smLog(`Exported ${items.length} items from Source: ${counts.join(', ')}.`, 'ok');
+            const summary = smEl('sm-summary');
+            summary.textContent = `Source holds ${counts.join(', ')}. `;
+            const copy = document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'link-btn';
+            copy.textContent = `📋 Copy the ${SM_NOUN[sm.mode][1]} (${names.length})`;
+            copy.disabled = !names.length;
+            copy.addEventListener('click', () => smCopy(names.join('\n'), copy));
+            summary.appendChild(copy);
+            summary.hidden = false;
+        } catch (e) {
+            smLog(e.message, 'err');
+        } finally {
+            sm.busy = false;
+            smUpdateButtons();
+        }
+    }
+
     /* ── Panel (shadow DOM keeps Netskope styles out; adoptedStyleSheets passes the CSP) ── */
 
     const smEl = id => sm.shadow.getElementById(id);
@@ -32997,6 +33112,7 @@ Version 1.16:
             reader.readAsText(file);
         });
         smEl('sm-stop').addEventListener('click', () => { sm.stop = true; smLog('Stopping after the current item…', 'warn'); });
+        smEl('sm-export').addEventListener('click', smExport);
         smSetMode(sm.mode);
     }
 
