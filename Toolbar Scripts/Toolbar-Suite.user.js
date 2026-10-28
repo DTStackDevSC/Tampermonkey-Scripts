@@ -26172,6 +26172,8 @@ Version 0.9.1:
     const SCRIPT_VERSION = '1.30.0';
     const CHANGELOG = `Version 1.30:
 - New 📋 Copy policy button on Real-time Protection policies: copies the saved policy as readable text for a support case.
+- Copy policy: choose the sections to copy. Metadata is off unless you tick it.
+- Names are shown instead of ids for templates, constraint profiles, email templates, schedules and AI Guardrails profiles.
 
 Version 1.29:
 - New 👥 Manage Source button next to Source on Real-time Protection policies.
@@ -34016,17 +34018,255 @@ Version 1.16:
         ];
     }
 
+    const PC_ACTION_NAMES = { block: 'Block', alert: 'Alert', useralert: 'User Alert', add_headers: 'Add SMTP header', allow: 'Allow' };
+    const PC_TYPE_NAMES = {
+        'category': 'Category', 'public-app': 'Application', 'email-outbound-app': 'Email Outbound App',
+        'app-instance': 'App Instance', 'any_category': 'Any category', 'dst-profile': 'Destination Profile',
+    };
+    const PC_CONSTRAINT_NAMES = { to_user: 'To user', from_user: 'From user' };
+    const pcYesNo = v => v ? 'Yes' : 'No';
+    const pcList = v => (Array.isArray(v) ? v : [v]).filter(x => x !== '' && x != null).join(', ');
+
+    // Name resolvers: "Name (raw)", or "raw (name not available)" when the lookup failed or does not know it.
+    function pcResolve(data, kind, raw) {
+        if (raw == null || raw === '') return '';
+        const name = data.names[kind].get(String(raw));
+        return name ? `${name} (${raw})` : `${raw} (name not available)`;
+    }
+    const pcTemplateName       = (data, file) => pcResolve(data, 'templates', file);
+    const pcEmailTemplateName  = (data, id)   => pcResolve(data, 'email', id);
+    const pcConstraintName     = (data, id)   => pcResolve(data, 'constraints', id);
+    const pcScheduleName       = (data, id)   => pcResolve(data, 'schedules', id);
+    const pcAisecName          = (data, uuid) => pcResolve(data, 'aisec', uuid);
+    // No known name lookup yet for these: the ids are shown (follow-up agreed with the user).
+    const pcTssProfile         = (data, id) => String(id);
+    const pcFileProfile        = (data, id) => String(id);
+    const pcHttpHeader         = (data, id) => String(id);
+    const pcDestinationProfile = (data, id) => String(id);
+
+    function pcItems(lines, depth, label, values, fmt) {
+        const list = (values || []).filter(v => v !== '' && v != null);
+        if (!list.length) return;
+        lines.push(pcPad(depth, `${label} (${list.length}):`));
+        list.forEach(v => lines.push(pcPad(depth + 1, '• ' + (fmt ? fmt(v) : v))));
+    }
+
+    const pcHeaders = h => Object.entries(h || {}).map(([k, v]) => `${k}: ${v}`).join('; ');
+
+    // One action of match_criteria_action, dlp_actions, tss_actions or aisec_actions.
+    function pcActionLines(data, a, depth) {
+        const out = [];
+        if (!a || typeof a !== 'object') return out;
+        let line = 'Action: ' + (PC_ACTION_NAMES[a.action_name] || a.action_name || 'none');
+        if (a.smtp_headers) line += ': ' + pcHeaders(a.smtp_headers);
+        if (a.severity) line += `, severity ${a.severity}`;
+        out.push(pcPad(depth, line));
+        if (a.template) out.push(pcPad(depth, 'Template: ' + pcTemplateName(data, a.template)));
+        if ('emit_alert' in a) out.push(pcPad(depth, a.emit_alert ? 'Alerts: generated' : "Alerts: not generated (Don't generate Alerts)"));
+        if (a.forward_to_purview_dlp_instance) out.push(pcPad(depth, 'Forward to Purview DLP instance: ' + (a.forward_to_purview_dlp_instance.name || JSON.stringify(a.forward_to_purview_dlp_instance))));
+        return out;
+    }
+
+    function pcActivityLines(data, activities, depth) {
+        const out = [];
+        const acts = activities || [];
+        if (!acts.length) return out;
+        out.push(pcPad(depth, 'Activities: ' + acts.map(a => a.activity).join(', ')));
+        acts.forEach(a => (a.list_of_constraints || []).forEach(c => {
+            out.push(pcPad(depth, `Constraints: ${PC_CONSTRAINT_NAMES[c.constraints_type] || c.constraints_type}: ${pcConstraintName(data, c.constraints_profile)}` +
+                (acts.length > 1 ? ` [${a.activity}]` : '')));
+        }));
+        return out;
+    }
+
+    function pcSizeText(list) {
+        return (list || []).map(s => `${{ gt: '>', lt: '<' }[s.operator] || s.operator} ${s.size} ${s.unit || ''}`.trim()).join(', ');
+    }
+
+    // Keys each section renders. Anything else in rule_data goes to Other settings.
+    const PC_MAP = {
+        source:      ['users', 'userGroups', 'userGroupObjects', 'excludedUsers', 'excludedGroups', 'excludedUserGroupObjects',
+                      'os_family', 'browsers', 'access_method', 'http_header_obj'],
+        destination: ['policy_type', 'categories', 'apps', 'emailOutboundApps', 'appInstances', 'file_size', 'filefilter_file_size',
+                      'filefilter_fileTypes', 'filefilter_profiles', 'b_negate_filefilter_profiles', 'ccl', 'app_tags',
+                      'destinationProfiles', 'b_negateDestinationProfiles'],
+        action:      ['match_criteria_action', 'match_criteria_plugin_action', 'dlp_actions', 'dlp_profile', 'tss_actions', 'tss_profile',
+                      'aisec_actions', 'aisec_profile', 'show_dlp_profile_action_table', 'external_dlp', 'continue_policy_evaluation'],
+        name:        ['description', 'notify'],
+        status:      ['schedule'],
+        metadata:    ['userType', 'json_version', 'version', 'show_aisec_profile_action_table'],
+    };
+    const PC_MAPPED = new Set([].concat(...Object.values(PC_MAP)));
+
+    function pcRenderSource(data) {
+        const rd = data.policy.rule_data, lines = [];
+        const groups = (rd.userGroups && rd.userGroups.length) ? rd.userGroups : (rd.userGroupObjects || []).map(o => o.name);
+        if (!(rd.users || []).length && !groups.length) lines.push('User: All users');
+        pcItems(lines, 0, 'Users', rd.users);
+        pcItems(lines, 0, 'User groups', groups);
+        const exGroups = (rd.excludedGroups && rd.excludedGroups.length) ? rd.excludedGroups : (rd.excludedUserGroupObjects || []).map(o => o.name);
+        if ((rd.excludedUsers || []).length || exGroups.length) {
+            lines.push('Exclusions:');
+            pcItems(lines, 1, 'Users', rd.excludedUsers);
+            pcItems(lines, 1, 'User groups', exGroups);
+        }
+        if ((rd.os_family || []).length) lines.push('OS family: ' + pcList(rd.os_family));
+        if ((rd.browsers || []).length) lines.push('Browsers: ' + pcList(rd.browsers));
+        if ((rd.access_method || []).length) lines.push('Access method: ' + pcList(rd.access_method));
+        if ((rd.http_header_obj || []).length) lines.push('HTTP header (ids): ' + rd.http_header_obj.map(id => pcHttpHeader(data, id)).join(', '));
+        return lines;
+    }
+
+    function pcRenderDestination(data) {
+        const p = data.policy, rd = p.rule_data, lines = [];
+        const type = rd.policy_type || p.policy_type;
+        lines.push('Type: ' + (PC_TYPE_NAMES[type] || type));
+        const block = (label, list, title) => {
+            if (!(list || []).length) return;
+            lines.push(`${label} (${list.length}):`);
+            list.forEach(item => {
+                lines.push(pcPad(1, '• ' + title(item)));
+                lines.push(...pcActivityLines(data, item.activities, 2));
+            });
+        };
+        block('Categories', rd.categories, c => c.appCategory);
+        block('Applications', rd.apps, a => a.appName);
+        block('Email outbound apps', rd.emailOutboundApps, a => a.appName);
+        block('App instances', rd.appInstances, a => `${a.appInstanceName} / ${a.instanceName}` + (a.instance_type ? ` (${a.instance_type})` : '') +
+            (a.all_connected_instances ? ', all connected instances' : ''));
+        if ((rd.file_size || []).length) lines.push('File size: ' + pcSizeText(rd.file_size));
+        if ((rd.filefilter_file_size || []).length) lines.push('File filter size: ' + pcSizeText(rd.filefilter_file_size));
+        if (rd.filefilter_fileTypes) {
+            const ft = rd.filefilter_fileTypes;
+            lines.push('File types: ' + [ft.categories && ft.categories.length ? 'categories ' + pcList(ft.categories) : '',
+                ft.types && ft.types.length ? 'types ' + pcList(ft.types) : ''].filter(Boolean).join('; '));
+        }
+        if ((rd.filefilter_profiles || []).length) {
+            lines.push('File profiles (ids)' + (rd.b_negate_filefilter_profiles ? ', NOT matching' : '') + ': ' +
+                rd.filefilter_profiles.map(id => pcFileProfile(data, id)).join(', '));
+        }
+        if ((rd.ccl || []).length) lines.push('CCL: ' + pcList(rd.ccl));
+        if ((rd.app_tags || []).length) lines.push('CCI app tags: ' + pcList(rd.app_tags));
+        if ((rd.destinationProfiles || []).length) {
+            lines.push('Destination profiles (ids)' + (rd.b_negateDestinationProfiles ? ', NOT matching' : '') + ': ' +
+                rd.destinationProfiles.map(id => pcDestinationProfile(data, id)).join(', '));
+        }
+        return lines;
+    }
+
+    function pcRenderAction(data) {
+        const rd = data.policy.rule_data, lines = [];
+        if (rd.match_criteria_action) lines.push(...pcActionLines(data, rd.match_criteria_action, 0));
+        if (rd.match_criteria_plugin_action) {
+            const a = rd.match_criteria_plugin_action;
+            lines.push('Plugin action: ' + (PC_ACTION_NAMES[a.action_name] || a.action_name) + (a.template ? ', template ' + pcTemplateName(data, a.template) : ''));
+        }
+        const profiles = (label, list, key, title, actionsKey) => {
+            if (!(list || []).length) return;
+            lines.push(`${label} (${list.length}):`);
+            list.forEach(item => {
+                lines.push(pcPad(1, '• ' + title(item[key])));
+                (item[actionsKey] || []).forEach(a => lines.push(...pcActionLines(data, a, 2)));
+                (item.plugin_actions || []).forEach(a => lines.push(pcPad(2, 'Plugin action: ' + (PC_ACTION_NAMES[a.action_name] || a.action_name) +
+                    (a.template ? ', template ' + pcTemplateName(data, a.template) : ''))));
+            });
+        };
+        if ((rd.dlp_actions || []).length) profiles('DLP profiles', rd.dlp_actions, 'dlp_profile', v => v, 'actions');
+        else pcItems(lines, 0, 'DLP profiles', rd.dlp_profile);
+        if ((rd.tss_actions || []).length) profiles('Threat protection profiles', rd.tss_actions, 'tss_profile', v => pcTssProfile(data, v), 'actions');
+        else pcItems(lines, 0, 'Threat protection profiles', rd.tss_profile, v => pcTssProfile(data, v));
+        if ((rd.aisec_actions || []).length) profiles('AI Guardrails profiles', rd.aisec_actions, 'aisec_profile_id', v => pcAisecName(data, v), 'actions');
+        else pcItems(lines, 0, 'AI Guardrails profiles', rd.aisec_profile, v => pcAisecName(data, v));
+        if ('show_dlp_profile_action_table' in rd) lines.push('Set action for each profile: ' + pcYesNo(rd.show_dlp_profile_action_table));
+        if ('external_dlp' in rd) lines.push('Send content for external DLP inspection: ' + pcYesNo(rd.external_dlp));
+        if ('continue_policy_evaluation' in rd) lines.push('Continue policy evaluation: ' + pcYesNo(rd.continue_policy_evaluation));
+        if (!lines.length) lines.push('Action: none');
+        return lines;
+    }
+
     function pcRenderName(data) {
         const p = data.policy, rd = p.rule_data;
         const lines = [`Name: ${p.rule_name}`];
         if (p.groupName) lines.push(`Group: ${p.groupName}`);
         if (rd.description) lines.push('Description:', ...String(rd.description).split(/\r?\n/).map(l => pcPad(1, l)));
+        const n = rd.notify;
+        if (!n) lines.push('Email notification: none');
+        else {
+            const every = String(n.interval) === '0' || !n.interval ? 'after each event' : `every ${n.interval} minutes`;
+            lines.push('Email notification: ' + every);
+            const to = [].concat(n.to_users || [], n.emails || []);
+            if (to.length) lines.push(pcPad(1, 'To: ' + pcList(to)));
+            if (n.from_user) lines.push(pcPad(1, 'From: ' + n.from_user));
+            const tpl = [];
+            (n.templates || []).forEach(t => Object.values(t || {}).forEach(id => tpl.push(pcEmailTemplateName(data, id))));
+            if (tpl.length) lines.push(pcPad(1, 'Templates: ' + tpl.join(', ')));
+        }
         return lines;
     }
 
+    function pcRenderStatus(data) {
+        const p = data.policy, rd = p.rule_data;
+        const ids = [].concat(...(rd.schedule || []).map(s => s.time_interval_obj || []));
+        return [
+            'Enabled: ' + pcYesNo(String(p.enabled) === '1'),
+            'Schedule: ' + (ids.length ? ids.map(id => pcScheduleName(data, id)).join(', ') : 'none'),
+        ];
+    }
+
+    function pcOtherKeys(rd) {
+        return Object.keys(rd).filter(k => !PC_MAPPED.has(k));
+    }
+
+    function pcRenderOther(data) {
+        const rd = data.policy.rule_data;
+        return pcOtherKeys(rd).map(k => `${k}: ${JSON.stringify(rd[k])}`);
+    }
+
+    function pcRenderMetadata(data) {
+        const p = data.policy, rd = p.rule_data, pl = data.place, listed = pl && pl.listed;
+        const na = data.missing.has('list') ? 'not available' : 'unknown';
+        const lines = [
+            `Rule id: ${p.rule_id}`,
+            `Policy type: ${p.policy_type || rd.policy_type}`,
+            `Group: ${p.groupName || (pl && pl.groupName) || na}` + (p.groupId || (pl && pl.groupId) ? ` (id ${p.groupId || pl.groupId})` : ''),
+            `Group order: ${pl && pl.groupOrder != null ? pl.groupOrder : na}`,
+            `Position in group: ${pl && pl.position ? pl.position : na}`,
+            `Global order: ${listed && listed.rule_order != null ? listed.rule_order : na}`,
+            `Version: ${rd.version != null ? rd.version : 'unknown'}, JSON version: ${rd.json_version != null ? rd.json_version : 'unknown'}`,
+            `Last change: ${p.modify_type || 'unknown'} by ${p.modify_by || 'unknown'} at ${p.modify_time || 'unknown'}`,
+            `Pending: ${pcYesNo(String(p.pending) === '1')}`,
+            `User type: ${rd.userType || 'unknown'}`,
+        ];
+        if ('isLicenseExpired' in p) lines.push('License expired: ' + pcYesNo(p.isLicenseExpired) +
+            ((p.expiredLicenseCategories || []).length ? ' (' + pcList(p.expiredLicenseCategories) + ')' : ''));
+        if (listed && (listed.removed || []).length) lines.push('Removed apps: ' + pcList(listed.removed));
+        if (listed && 'viewOnly' in listed) lines.push('View only: ' + pcYesNo(listed.viewOnly));
+        if ('show_aisec_profile_action_table' in rd) lines.push('Set action for each AI Guardrails profile: ' + pcYesNo(rd.show_aisec_profile_action_table));
+        pcItems(lines, 0, 'User group ids', (rd.userGroupObjects || []).map(o => `${o.name} (id ${o.id}${o.disabled ? ', disabled' : ''})`));
+        pcItems(lines, 0, 'Excluded group ids', (rd.excludedUserGroupObjects || []).map(o => `${o.name} (id ${o.id}${o.disabled ? ', disabled' : ''})`));
+        pcItems(lines, 0, 'Category ids', (rd.categories || []).map(c => `${c.appCategory}: ${pcList(c.category)}`));
+        return lines;
+    }
+
+    const PC_RENDER = {
+        source: ['Source', pcRenderSource],
+        destination: ['Destination', pcRenderDestination],
+        action: ['Profile & Action', pcRenderAction],
+        name: ['Policy Name', pcRenderName],
+        status: ['Status', pcRenderStatus],
+        other: ['Other settings', pcRenderOther],
+        metadata: ['Metadata', pcRenderMetadata],
+    };
+
     function pcRender(data, wanted) {
         const blocks = [pcHeader(data.policy)];
-        if (wanted.name) blocks.push(pcSection('Policy Name', pcRenderName(data)));
+        PC_SECTIONS.forEach(([key]) => {
+            if (!wanted[key]) return;
+            const [title, render] = PC_RENDER[key];
+            const lines = render(data);
+            if (key === 'other' && !lines.length) return;
+            blocks.push(pcSection(title, lines));
+        });
         return blocks.map(b => b.join('\n')).join('\n\n') + '\n';
     }
 
@@ -34039,6 +34279,9 @@ Version 1.16:
         try {
             const wanted = pcGetSections();
             const data = await pcLoad(id, wanted);
+            pc.hasOther = pcOtherKeys(data.policy.rule_data).length > 0;
+            const otherRow = pc.shadow && pc.shadow.querySelector('label[data-row="other"]');
+            if (otherRow) otherRow.hidden = !pc.hasOther;
             const text = pcRender(data, wanted);
             try {
                 await navigator.clipboard.writeText(text);
