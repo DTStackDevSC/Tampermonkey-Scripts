@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.3.0
+// @version      2.4.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.3.0';
-    const CHANGELOG = `Version 2.3.0:
+   const SCRIPT_VERSION = '2.4.0';
+    const CHANGELOG = `Version 2.4.0:
+- NS Policies Toolkit: new 📋 Copy policy button on Real-time Protection policies: copies the saved policy as readable text for a support case.
+
+Version 2.3.0:
 - NS Policies Toolkit: new 👥 Manage Source button next to Source on Real-time Protection policies.
 
 Version 2.2.1:
@@ -26156,6 +26159,7 @@ Version 0.9.1:
         bulkConstraints: 'toolkit_bulkConstraints',
         steeringRemover: 'toolkit_steeringRemover',
         sourceManager:   'toolkit_sourceManager',
+        policyCopy:      'toolkit_policyCopy',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -26165,8 +26169,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.29.0';
-    const CHANGELOG = `Version 1.29:
+    const SCRIPT_VERSION = '1.30.0';
+    const CHANGELOG = `Version 1.30:
+- New 📋 Copy policy button on Real-time Protection policies: copies the saved policy as readable text for a support case.
+
+Version 1.29:
 - New 👥 Manage Source button next to Source on Real-time Protection policies.
 - Export downloads every user, group and OU in Source as a CSV.
 - Check looks up each user or group and shows whether it exists and whether it is already in the policy. Groups can be given by their short name.
@@ -26660,6 +26667,11 @@ Version 1.16:
             label:       '👥 Source Manager',
             description: 'On Real-time Protection policy pages, adds a "Manage Source" button next to Source: check, add, remove and export users or AD groups from a pasted list or a CSV.',
         },
+        {
+            key:         'policyCopy',
+            label:       '📋 Copy Policy',
+            description: 'On Real-time Protection policy pages, adds a "Copy policy" button that copies the saved policy as readable text, section by section, for a support case or a ticket.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -26905,6 +26917,7 @@ Version 1.16:
                     if (key === 'bulkConstraints') cleanupBulkConstraintTools();
                     if (key === 'steeringRemover') cleanupSteeringRemover();
                     if (key === 'sourceManager') cleanupSourceManager();
+                    if (key === 'policyCopy') cleanupPolicyCopy();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -26956,7 +26969,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -31249,8 +31262,9 @@ Version 1.16:
     };
 
     // Source Manager state. Declared here because the request sniffer below fills its session fields.
-    // The page calls these with or without a leading slash
-    const SM_API_RE = /(^|\/)(inline_policies|completions)\//;
+    // The page calls these with or without a leading slash. Source Manager uses the first two
+    // families, Copy policy all of them.
+    const SM_API_RE = /(^|\/)(inline_policies|inline_policy_groups|completions|notification_template|emailNotification|time_interval|constraints)\//;
     const sm = {
         token:          null,
         resource:       null,   // "resource" header of the policy page's own lookups
@@ -31263,6 +31277,9 @@ Version 1.16:
         mode:           'user',     // 'user' or 'group'
         entries:        [],
         rows:           null,       // Check results for the current list, null when there are none
+        resources:      {},         // path family → latest "resource" header the page sent for it
+        lastBodies:     {},         // path → latest JSON body the page sent (token removed)
+        policyList:     null,       // data of the latest policy list the page loaded
         confirmTimer:   null,       // Remove waits for a second click while this runs
     };
 
@@ -31296,7 +31313,29 @@ Version 1.16:
         } catch (e) { /* not JSON */ }
     }
 
-    // Shared by the Steering tools and the Source Manager: both reuse the page's session token.
+    const smPathOf = url => String(url || '').replace(/^https?:\/\/[^/]+/, '').replace(/^\/+/, '').split(/[?#]/)[0];
+
+    // Remembers what the page asks for, so Copy policy can ask the same way and reuse a loaded policy list.
+    function smLearnFromRequest(xhr, url, body) {
+        if (!SM_API_RE.test(url)) return;
+        const path = smPathOf(url);
+        if (typeof body === 'string') {
+            try {
+                const json = JSON.parse(body);
+                if (json && typeof json === 'object') { delete json.token; sm.lastBodies[path] = json; }
+            } catch (e) { /* not JSON */ }
+        }
+        if (/getPolicyGroupsWithAssociatedPolicies/.test(path)) {
+            xhr.addEventListener('load', () => {
+                try {
+                    const json = xhr.responseType === 'json' ? xhr.response : JSON.parse(xhr.responseText);
+                    if (json && Array.isArray(json.data)) sm.policyList = json.data;
+                } catch (e) { /* not JSON */ }
+            });
+        }
+    }
+
+    // Shared by the Steering tools, the Source Manager and Copy policy: all reuse the page's session token.
     function nsInstallSniffer() {
         const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         const proto = w.XMLHttpRequest && w.XMLHttpRequest.prototype;
@@ -31314,8 +31353,12 @@ Version 1.16:
             if (n === 'x-netskope-client-request-id' && /steering/i.test(this.__nstkUrl || '')) {
                 se.clientIdPrefix = String(value).split('.')[0];
             }
-            if (SM_API_RE.test(this.__nstkUrl || '')) {
-                if (n === 'resource') sm.resource = String(value);
+            const family = (String(this.__nstkUrl || '').match(SM_API_RE) || [])[2];
+            if (family) {
+                if (n === 'resource') {
+                    sm.resources[family] = String(value);
+                    if (family === 'inline_policies' || family === 'completions') sm.resource = String(value);
+                }
                 if (n === 'x-netskope-client-request-id') sm.clientIdPrefix = String(value).split('.')[0];
             }
             return origHeader.apply(this, arguments);
@@ -31323,6 +31366,7 @@ Version 1.16:
         proto.send = function (body) {
             const url = this.__nstkUrl || '';
             seLearnFromRequest(url, body);
+            smLearnFromRequest(this, url, body);
             if (/steering/i.test(url)) {
                 this.addEventListener('load', () => {
                     try {
@@ -31346,7 +31390,7 @@ Version 1.16:
     }
 
     // Must run before the console app starts so its first requests are seen
-    if (getSetting('steeringRemover') || getSetting('sourceManager')) nsInstallSniffer();
+    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -33086,7 +33130,8 @@ Version 1.16:
             'X-Requested-With': 'XMLHttpRequest',
             'Netskope-req-id': reqId,
         };
-        if (sm.resource) headers.resource = sm.resource;
+        const resource = sm.resources[smPathOf(path).split('/')[0]] || sm.resource;
+        if (resource) headers.resource = resource;
         if (sm.clientIdPrefix) headers['X-Netskope-Client-Request-Id'] = sm.clientIdPrefix + '.' + reqId;
         const res = await fetch(path, {
             method: 'POST', credentials: 'same-origin', headers,
@@ -33647,6 +33692,224 @@ Version 1.16:
 
 
     // ─────────────────────────────────────────────────────────────
+    // COPY POLICY
+    // Copies the saved configuration of the open Real-time Protection policy
+    // as readable text, section by section, for a support case or a ticket.
+    // ─────────────────────────────────────────────────────────────
+
+    const PC_HOST_ID     = 'nstk-policy-copy-host';
+    const PC_BUTTON_ID   = 'nstk-policy-copy-button';
+    const PC_SECTIONS_KEY = 'toolkit_policyCopySections';
+    const PC_SECTIONS = [
+        ['source',      'Source'],
+        ['destination', 'Destination'],
+        ['action',      'Profile & Action'],
+        ['name',        'Policy Name'],
+        ['status',      'Status'],
+        ['other',       'Other settings'],
+        ['metadata',    'Metadata'],
+    ];
+    const pc = { host: null, shadow: null, timer: null, busy: false, hasOther: false, pageSheet: false };
+
+    function pcGetSections() {
+        const out = {};
+        PC_SECTIONS.forEach(([key]) => { out[key] = key !== 'metadata'; });
+        try { Object.assign(out, JSON.parse(GM_getValue(PC_SECTIONS_KEY, '{}')) || {}); } catch (e) { /* defaults */ }
+        return out;
+    }
+    function pcSaveSections(obj) { GM_setValue(PC_SECTIONS_KEY, JSON.stringify(obj)); }
+
+    function pcPolicyId() {
+        const hash = location.hash || '';
+        if (!/[?&]mode=edit(&|$)/.test(hash)) return null;
+        const m = hash.match(/[?&]id=(\d+)(&|$)/);
+        return m ? m[1] : null;
+    }
+
+    /* ── Page button ── */
+
+    function pcTitleButtons() {
+        return document.querySelector('.ns-policy-container > .ns-policy-title > .ns-right');
+    }
+
+    function pcSyncButton() {
+        const right = pcPolicyId() ? pcTitleButtons() : null;
+        const btn = document.getElementById(PC_BUTTON_ID);
+        if (!right) { btn?.remove(); if (pc.host) pc.host.dataset.open = 'false'; return; }
+        if (btn && btn.parentElement === right) return;
+        btn?.remove();
+        const b = document.createElement('button');
+        b.id = PC_BUTTON_ID;
+        b.type = 'button';
+        b.className = 'ns-btn ns-btn-secondary ns-left';
+        b.title = 'Copy the saved policy as readable text (NS Policies Toolkit)';
+        b.appendChild(document.createTextNode('📋 Copy policy'));
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); pcToggleMenu(); });
+        right.insertBefore(b, right.firstElementChild);
+        const next = b.nextElementSibling;
+        if (next) next.classList.add('ns-margin-left-small');
+        if (pc.busy) pcSetBusy(true);
+    }
+
+    function initPolicyCopy() {
+        if (!getSetting('policyCopy') || pc.timer) return;
+        pc.timer = setInterval(pcSyncButton, 1000);
+        pcSyncButton();
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pc.host) pc.host.dataset.open = 'false'; });
+        document.addEventListener('mousedown', (e) => {
+            if (!pc.host || pc.host.dataset.open !== 'true') return;
+            const path = e.composedPath ? e.composedPath() : [];
+            if (path.includes(pc.host) || path.includes(document.getElementById(PC_BUTTON_ID))) return;
+            pc.host.dataset.open = 'false';
+        }, true);
+    }
+
+    function cleanupPolicyCopy() {
+        clearInterval(pc.timer);
+        pc.timer = null;
+        removeAll('#' + PC_BUTTON_ID);
+        pc.host?.remove();
+        pc.host = pc.shadow = null;
+    }
+
+    /* ── Menu (shadow DOM; adoptedStyleSheets passes the page CSP) ── */
+
+    const pcEl = id => pc.shadow.getElementById(id);
+
+    function pcCreateHost() {
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        host.id = PC_HOST_ID;
+        host.dataset.open = 'false';
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; z-index: 2147483646 !important; font-family: Arial, sans-serif; }
+            :host([data-open="false"]) { display: none !important; }
+            .menu { width: 250px; box-sizing: border-box; padding: 12px 14px; color: #282728; background: #fff;
+                border: 1px solid #d5d5d5; border-top: 4px solid #005587; border-radius: 6px; box-shadow: 0 6px 22px rgba(0, 0, 0, .25); }
+            .title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+            label { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; cursor: pointer; }
+            label[hidden] { display: none; }
+            .hint { color: #63666a; font-size: 11px; margin-left: auto; }
+            button { margin-top: 10px; width: 100%; padding: 7px 12px; border-radius: 4px; border: 1px solid #005587;
+                color: #fff; background: #005587; font-weight: 600; font-size: 13px; cursor: pointer;
+                display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+            button:disabled { cursor: progress; opacity: .75; }
+            .pc-wheel { width: 12px; height: 12px; box-sizing: border-box; border: 2px solid currentColor;
+                border-right-color: transparent; border-radius: 50%; animation: pc-spin .8s linear infinite; }
+            @keyframes pc-spin { to { transform: rotate(360deg); } }
+            .status { min-height: 16px; margin-top: 8px; font-size: 12px; color: #26890d; line-height: 1.4; }
+            .status.error { color: #da291c; }
+            .status.warn { color: #8a5a00; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        const menu = document.createElement('div');
+        menu.className = 'menu';
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = 'Copy these sections';
+        menu.appendChild(title);
+        const chosen = pcGetSections();
+        PC_SECTIONS.forEach(([key, label]) => {
+            const row = document.createElement('label');
+            row.dataset.row = key;
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.dataset.pcSection = key;
+            box.checked = !!chosen[key];
+            box.addEventListener('change', () => {
+                const now = pcGetSections();
+                now[key] = box.checked;
+                pcSaveSections(now);
+            });
+            row.append(box, document.createTextNode(label));
+            if (key === 'metadata') {
+                const hint = document.createElement('span');
+                hint.className = 'hint';
+                hint.textContent = 'ids, versions';
+                row.appendChild(hint);
+            }
+            if (key === 'other') row.hidden = !pc.hasOther;
+            menu.appendChild(row);
+        });
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.id = 'pc-copy';
+        copy.textContent = 'Copy';
+        copy.addEventListener('click', () => pcCopy());
+        const status = document.createElement('div');
+        status.className = 'status';
+        status.id = 'pc-status';
+        menu.append(copy, status);
+        shadow.appendChild(menu);
+        document.documentElement.appendChild(host);
+        pc.host = host;
+        pc.shadow = shadow;
+        if (pc.busy) pcSetBusy(true);
+    }
+
+    function pcToggleMenu() {
+        if (!pc.host || !pc.host.isConnected) pcCreateHost();
+        const open = pc.host.dataset.open !== 'true';
+        pc.host.dataset.open = open ? 'true' : 'false';
+        const btn = document.getElementById(PC_BUTTON_ID);
+        if (open && btn) {
+            const r = btn.getBoundingClientRect();
+            pc.host.style.top = Math.round(r.bottom + 6) + 'px';
+            pc.host.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 258))) + 'px';
+        }
+    }
+
+    function pcStatus(text, kind) {
+        if (!pc.shadow) return;
+        const el = pcEl('pc-status');
+        el.textContent = text;
+        el.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    // The wheel on the page button needs its own sheet: Netskope blocks injected <style> tags.
+    function pcEnsurePageSheet() {
+        if (pc.pageSheet) return;
+        try {
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(`@keyframes nstk-pc-spin { to { transform: rotate(360deg); } }
+                .nstk-pc-wheel { display: inline-block; width: 11px; height: 11px; margin-right: 6px; box-sizing: border-box;
+                    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+                    vertical-align: -1px; animation: nstk-pc-spin .8s linear infinite; }`);
+            document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+            pc.pageSheet = true;
+        } catch (e) { /* the label still says Copying… */ }
+    }
+
+    function pcSetBusy(busy) {
+        pc.busy = busy;
+        const btn = document.getElementById(PC_BUTTON_ID);
+        if (btn) {
+            btn.querySelector('.nstk-pc-wheel')?.remove();
+            if (busy) {
+                pcEnsurePageSheet();
+                const wheel = document.createElement('span');
+                wheel.className = 'nstk-pc-wheel';
+                btn.insertBefore(wheel, btn.firstChild);
+            }
+            btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+        }
+        if (pc.shadow) {
+            const copy = pcEl('pc-copy');
+            copy.disabled = busy;
+            copy.textContent = '';
+            if (busy) {
+                const wheel = document.createElement('span');
+                wheel.className = 'pc-wheel';
+                copy.append(wheel, document.createTextNode(' Copying…'));
+            } else copy.textContent = 'Copy';
+        }
+    }
+
+    async function pcCopy() { /* filled in by the copy flow */ }
+
+
+    // ─────────────────────────────────────────────────────────────
     // FIRST-BOOT USERNAME PROMPT
     // ─────────────────────────────────────────────────────────────
 
@@ -33812,6 +34075,7 @@ Version 1.16:
         initBulkConstraintTools();
         initSteeringRemover();
         initSourceManager();
+        initPolicyCopy();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
