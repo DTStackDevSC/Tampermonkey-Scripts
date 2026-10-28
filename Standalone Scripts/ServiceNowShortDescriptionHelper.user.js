@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         Short Description Helper
+// @name         || Ticket Helpers ||
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.1.1
-// @description  Ticket Helpers Suite: Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
+// @version      4.2.0
+// @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
 // @match        https://*.goskope.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.1.1';
-    const CHANGELOG = `Version 4.1.1:
+    const SCRIPT_VERSION = '4.2.0';
+    const CHANGELOG = `Version 4.2.0:
+- The script is now called || Ticket Helpers || in Tampermonkey, instead of Short Description Helper. It is the same script: your helpers, settings and saved data stay as they are, and nothing needs to be reinstalled.
+
+Version 4.1.1:
 - Formatted Text Helper and Ticket Response Helper: mentions are now completed even when the @ comes right after a word or at the start of a line. A space is added before the @ when needed, since ServiceNow only looks up the name after a space.
 
 Version 4.1.0:
@@ -75,10 +78,10 @@ Version 4.0.0:
     // Which tool owns each stored key. The suite entry is listed first so its exact keys win.
     // pages are the @match rules of each tool's old separate script: it only runs there.
     const DATA_REGISTRY = [
-        { id: 'suite', name: 'Ticket Helpers', site: 'all', script: 'Short Description Helper',
+        { id: 'suite', name: 'Ticket Helpers', site: 'all', script: '|| Ticket Helpers ||',
           pages: ['https://*.service-now.com/*', 'https://*.goskope.com/*', 'https://*.netskope.com/*'],
           exact: ['shortDescTeam'], prefixes: ['ticketHelpers', 'tenantURL_'] },
-        { id: 'shortDescription', name: 'Short Description Helper', site: 'servicenow', script: 'Short Description Helper',
+        { id: 'shortDescription', name: 'Short Description Helper', site: 'servicenow', script: '|| Ticket Helpers ||',
           description: 'Build and update the short description in the team format',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*'],
           exact: [], prefixes: ['shortDesc'], setupKeys: ['shortDescTeam'] },
@@ -1058,8 +1061,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.1.1';
-    const CHANGELOG = `Version 4.1.1:
+    const SCRIPT_VERSION = '4.2.0';
+    const CHANGELOG = `Version 4.2.0:
+- The script is now called || Ticket Helpers || in Tampermonkey, instead of Short Description Helper. It is the same script: your helpers, settings and saved data stay as they are, and nothing needs to be reinstalled.
+
+Version 4.1.1:
 - Formatted Text Helper and Ticket Response Helper: mentions are now completed even when the @ comes right after a word or at the start of a line. A space is added before the @ when needed, since ServiceNow only looks up the name after a space.
 
 Version 4.1.0:

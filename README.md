@@ -8,7 +8,7 @@ Scripts are split into two categories: standalone scripts that run independently
 
 ## Ticket Helpers Suite
 
-`ServiceNowShortDescriptionHelper.user.js` is the **Ticket Helpers Suite** (it appears in Tampermonkey as "Short Description Helper"): one script with every ticket helper. Each helper only runs on its own pages, and you choose which ones you want.
+`ServiceNowShortDescriptionHelper.user.js` is the **Ticket Helpers Suite** (it appears in Tampermonkey as "|| Ticket Helpers ||", called "Short Description Helper" before version 4.2.0): one script with every ticket helper. Each helper only runs on its own pages, and you choose which ones you want.
 
 | Helper | Pages | Description |
 |---|---|---|
@@ -23,15 +23,15 @@ The **⚙ Suite** button next to Help in every helper (and **⚙ Ticket Helpers 
 
 ## Moving to the Ticket Helpers Suite
 
-**If you have the Short Description Helper installed**
+**If you have || Ticket Helpers || (or the Short Description Helper) installed**
 1. Let Tampermonkey update it (or use "Check for userscript updates"). Tampermonkey may open a tab to confirm the update, because the script now also runs on Netskope pages: click **Update**. Do the same for the other helper scripts if tabs open for them.
 2. Open a ServiceNow ticket. When asked "Bring your data into Ticket Helpers", click **Import**, then **Reload now**. Then tick your helpers in "Choose your tools" and click **Save**.
 3. If you used the Policy Naming Helper, open a Netskope tenant; if you used the Ticket Subject Helper, open the Netskope support portal. Import there too.
-4. When everything works, uninstall the old helper scripts that show version 99.0.0.
+4. When everything works, uninstall the old helper scripts that show version 99.0.0 or 99.0.1.
 
 Do not uninstall the old scripts before importing: their saved data is deleted with them.
 
-**If you did not have the Short Description Helper:** install it from the script installer page (it is the Ticket Helpers Suite), then follow steps 2 to 4.
+**If you did not have the Short Description Helper:** install || Ticket Helpers || from the script installer page (card "Ticket Helpers Suite"), then follow steps 2 to 4.
 
 ### Configuration Editors
 

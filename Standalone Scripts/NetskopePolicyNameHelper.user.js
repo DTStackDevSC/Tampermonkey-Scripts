@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/NetskopePolicyNameHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      99.0.0
+// @version      99.0.1
 // @description  Now part of the Ticket Helpers Suite. Keeps your saved data until the suite imports it.
 // @author       J.R.
 // @match        https://*.goskope.com/*
@@ -17,7 +17,8 @@
 (function () {
     'use strict';
 
-    // This tool now lives in the Ticket Helpers Suite (the Short Description Helper script). This script only
+    // This tool now lives in the Ticket Helpers Suite (the || Ticket Helpers || script, called
+    // Short Description Helper before version 4.2.0). This script only
     // hands its saved data to the suite and, when the suite is missing, tells the user once where the tool went.
 
     const TOOL_ID  = 'policyNaming';
@@ -54,7 +55,7 @@
         title.textContent = '🧩 Script merged';
         Object.assign(title.style, { fontWeight: 'bold', marginBottom: '6px', color: '#667eea' });
         const text = document.createElement('div');
-        text.textContent = 'Policy Naming Helper is now part of the Ticket Helpers Suite. If you use the Short Description Helper, it updates into the suite by itself and offers to import your Policy Naming Helper data: nothing else to do. Otherwise install the Short Description Helper from the script installer page, import your data when asked, then uninstall this script.';
+        text.textContent = 'Policy Naming Helper is now part of the Ticket Helpers Suite. If you use || Ticket Helpers || (called Short Description Helper before it updates), it updates into the suite by itself and offers to import your Policy Naming Helper data: nothing else to do. Otherwise install || Ticket Helpers || from the script installer page, import your data when asked, then uninstall this script.';
         text.style.marginBottom = '10px';
         const ok = document.createElement('button');
         ok.type = 'button';
