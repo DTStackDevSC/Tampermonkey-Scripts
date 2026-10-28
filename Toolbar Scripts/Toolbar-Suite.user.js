@@ -32927,7 +32927,11 @@ Version 1.16:
     /* ── Export ── */
 
     function smExportCsv(items) {
-        const cell = v => /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        // A name that starts like a formula is prefixed with ' so a spreadsheet shows it as text
+        const cell = v => {
+            if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+            return /[;"\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+        };
         return ['type;name;short_name']
             .concat(items.map(i => [i.type, i.name, i.type === 'user' ? i.name : smShortName(i.name)].map(cell).join(';')))
             .join('\n') + '\n';
