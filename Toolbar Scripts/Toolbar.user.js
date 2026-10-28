@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.3.0
+// @version      2.4.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.3.0';
-    const CHANGELOG = `Version 2.3.0:
+   const SCRIPT_VERSION = '2.4.0';
+    const CHANGELOG = `Version 2.4.0:
+- NS Policies Toolkit: new 📋 Copy policy button on Real-time Protection policies: copies the saved policy as readable text for a support case.
+
+Version 2.3.0:
 - NS Policies Toolkit: new 👥 Manage Source button next to Source on Real-time Protection policies.
 
 Version 2.2.1:
@@ -26156,6 +26159,7 @@ Version 0.9.1:
         bulkConstraints: 'toolkit_bulkConstraints',
         steeringRemover: 'toolkit_steeringRemover',
         sourceManager:   'toolkit_sourceManager',
+        policyCopy:      'toolkit_policyCopy',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -26165,8 +26169,13 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.29.0';
-    const CHANGELOG = `Version 1.29:
+    const SCRIPT_VERSION = '1.30.0';
+    const CHANGELOG = `Version 1.30:
+- New 📋 Copy policy button on Real-time Protection policies: copies the saved policy as readable text for a support case.
+- Copy policy: choose the sections to copy. Metadata is off unless you tick it.
+- Names are shown instead of ids for templates, constraint profiles, email templates, schedules and AI Guardrails profiles.
+
+Version 1.29:
 - New 👥 Manage Source button next to Source on Real-time Protection policies.
 - Export downloads every user, group and OU in Source as a CSV.
 - Check looks up each user or group and shows whether it exists and whether it is already in the policy. Groups can be given by their short name.
@@ -26660,6 +26669,11 @@ Version 1.16:
             label:       '👥 Source Manager',
             description: 'On Real-time Protection policy pages, adds a "Manage Source" button next to Source: check, add, remove and export users or AD groups from a pasted list or a CSV.',
         },
+        {
+            key:         'policyCopy',
+            label:       '📋 Copy Policy',
+            description: 'On Real-time Protection policy pages, adds a "Copy policy" button that copies the saved policy as readable text, section by section, for a support case or a ticket.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -26905,6 +26919,7 @@ Version 1.16:
                     if (key === 'bulkConstraints') cleanupBulkConstraintTools();
                     if (key === 'steeringRemover') cleanupSteeringRemover();
                     if (key === 'sourceManager') cleanupSourceManager();
+                    if (key === 'policyCopy') cleanupPolicyCopy();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -26956,7 +26971,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -27849,6 +27864,56 @@ Version 1.16:
                 },
             },
             {
+                icon: '📋',
+                title: 'Copy Policy',
+                buildContent(body) {
+                    lead(body, 'On a Real-time Protection policy in edit mode, copy the whole saved policy as readable text, section by section, to paste into a Netskope support case or a ticket.');
+
+                    body.appendChild(hrow([
+                        chip('📋 Copy policy', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                        chip('Cancel', '#fff', { color: '#555', border: '1px solid #ccc' }),
+                        chip('Save', '#0073e6'),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits in the title bar, before Cancel. It opens a small menu.');
+
+                    const menu = document.createElement('div');
+                    Object.assign(menu.style, { border: '1px solid #e0e0e0', borderTop: '4px solid #005587', borderRadius: '6px',
+                        padding: '8px 12px', margin: '10px 0 4px 0', maxWidth: '260px', fontFamily: 'Arial, sans-serif' });
+                    [['Source', true], ['Destination', true], ['Profile & Action', true], ['Policy Name', true], ['Status', true], ['Metadata', false]].forEach(([label, on]) => {
+                        menu.appendChild(hrow([
+                            span(on ? '☑' : '☐', { fontSize: '13px', color: '#005587' }),
+                            span(label, { fontSize: '12px', color: '#333' }),
+                        ], { margin: '2px 0', flexWrap: 'nowrap' }));
+                    });
+                    body.appendChild(menu);
+                    caption(body, 'Tick the sections you want. Your choice is remembered. Metadata (ids, versions, order) is off unless you tick it.');
+
+                    const sample = document.createElement('pre');
+                    sample.textContent = [
+                        'Netskope Real-time Protection policy: Block risky categories',
+                        'Tenant: tenant.goskope.com',
+                        'Saved configuration, copied 2026-10-28 15:40',
+                        '',
+                        'PROFILE & ACTION',
+                        '================',
+                        'Action: Block',
+                        'Template: Block Page Default (93.html)',
+                    ].join('\n');
+                    Object.assign(sample.style, { background: '#f6f8fa', border: '1px solid #e1e4e8', borderRadius: '4px', padding: '8px 10px',
+                        fontSize: '11px', fontFamily: 'Consolas, monospace', whiteSpace: 'pre-wrap', margin: '10px 0 4px 0', color: '#333' });
+                    body.appendChild(sample);
+                    caption(body, 'A part of the copied text. Each section has a title, lists show how many items they hold and are never cut.');
+
+                    bullets(body, [
+                        'It copies the saved configuration. Unsaved edits in the form are not included: click Save first if you need them.',
+                        'Names replace ids for templates, constraint profiles, email templates, schedules and AI Guardrails profiles. When a name cannot be loaded, the id is shown with "(name not available)".',
+                        'Threat protection, file, HTTP header and destination profiles are shown by their ids for now.',
+                        'Settings the toolkit does not know yet appear under Other settings, so nothing is left out.',
+                        'A spinning wheel shows while the policy loads. Nothing in the policy changes.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -27910,6 +27975,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
                     togglesWrap.appendChild(toggle('🧹 Steering Exception Domain Tools', true, 'Bulk remove and bulk add domains across steering exceptions, with backups to undo.'));
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
+                    togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
@@ -31249,8 +31315,9 @@ Version 1.16:
     };
 
     // Source Manager state. Declared here because the request sniffer below fills its session fields.
-    // The page calls these with or without a leading slash
-    const SM_API_RE = /(^|\/)(inline_policies|completions)\//;
+    // The page calls these with or without a leading slash. Source Manager uses the first two
+    // families, Copy policy all of them.
+    const SM_API_RE = /(^|\/)(inline_policies|inline_policy_groups|completions|notification_template|emailNotification|time_interval|constraints)\//;
     const sm = {
         token:          null,
         resource:       null,   // "resource" header of the policy page's own lookups
@@ -31263,6 +31330,9 @@ Version 1.16:
         mode:           'user',     // 'user' or 'group'
         entries:        [],
         rows:           null,       // Check results for the current list, null when there are none
+        resources:      {},         // path family → latest "resource" header the page sent for it
+        lastBodies:     {},         // path → latest JSON body the page sent (token removed)
+        policyList:     null,       // data of the latest policy list the page loaded
         confirmTimer:   null,       // Remove waits for a second click while this runs
     };
 
@@ -31296,7 +31366,29 @@ Version 1.16:
         } catch (e) { /* not JSON */ }
     }
 
-    // Shared by the Steering tools and the Source Manager: both reuse the page's session token.
+    const smPathOf = url => String(url || '').replace(/^https?:\/\/[^/]+/, '').replace(/^\/+/, '').split(/[?#]/)[0];
+
+    // Remembers what the page asks for, so Copy policy can ask the same way and reuse a loaded policy list.
+    function smLearnFromRequest(xhr, url, body) {
+        if (!SM_API_RE.test(url)) return;
+        const path = smPathOf(url);
+        if (typeof body === 'string') {
+            try {
+                const json = JSON.parse(body);
+                if (json && typeof json === 'object') { delete json.token; sm.lastBodies[path] = json; }
+            } catch (e) { /* not JSON */ }
+        }
+        if (/getPolicyGroupsWithAssociatedPolicies/.test(path)) {
+            xhr.addEventListener('load', () => {
+                try {
+                    const json = xhr.responseType === 'json' ? xhr.response : JSON.parse(xhr.responseText);
+                    if (json && Array.isArray(json.data)) sm.policyList = json.data;
+                } catch (e) { /* not JSON */ }
+            });
+        }
+    }
+
+    // Shared by the Steering tools, the Source Manager and Copy policy: all reuse the page's session token.
     function nsInstallSniffer() {
         const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         const proto = w.XMLHttpRequest && w.XMLHttpRequest.prototype;
@@ -31314,8 +31406,12 @@ Version 1.16:
             if (n === 'x-netskope-client-request-id' && /steering/i.test(this.__nstkUrl || '')) {
                 se.clientIdPrefix = String(value).split('.')[0];
             }
-            if (SM_API_RE.test(this.__nstkUrl || '')) {
-                if (n === 'resource') sm.resource = String(value);
+            const family = (String(this.__nstkUrl || '').match(SM_API_RE) || [])[2];
+            if (family) {
+                if (n === 'resource') {
+                    sm.resources[family] = String(value);
+                    if (family === 'inline_policies' || family === 'completions') sm.resource = String(value);
+                }
                 if (n === 'x-netskope-client-request-id') sm.clientIdPrefix = String(value).split('.')[0];
             }
             return origHeader.apply(this, arguments);
@@ -31323,6 +31419,7 @@ Version 1.16:
         proto.send = function (body) {
             const url = this.__nstkUrl || '';
             seLearnFromRequest(url, body);
+            smLearnFromRequest(this, url, body);
             if (/steering/i.test(url)) {
                 this.addEventListener('load', () => {
                     try {
@@ -31346,7 +31443,7 @@ Version 1.16:
     }
 
     // Must run before the console app starts so its first requests are seen
-    if (getSetting('steeringRemover') || getSetting('sourceManager')) nsInstallSniffer();
+    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -33086,7 +33183,8 @@ Version 1.16:
             'X-Requested-With': 'XMLHttpRequest',
             'Netskope-req-id': reqId,
         };
-        if (sm.resource) headers.resource = sm.resource;
+        const resource = sm.resources[smPathOf(path).split('/')[0]] || sm.resource;
+        if (resource) headers.resource = resource;
         if (sm.clientIdPrefix) headers['X-Netskope-Client-Request-Id'] = sm.clientIdPrefix + '.' + reqId;
         const res = await fetch(path, {
             method: 'POST', credentials: 'same-origin', headers,
@@ -33647,6 +33745,612 @@ Version 1.16:
 
 
     // ─────────────────────────────────────────────────────────────
+    // COPY POLICY
+    // Copies the saved configuration of the open Real-time Protection policy
+    // as readable text, section by section, for a support case or a ticket.
+    // ─────────────────────────────────────────────────────────────
+
+    const PC_HOST_ID     = 'nstk-policy-copy-host';
+    const PC_BUTTON_ID   = 'nstk-policy-copy-button';
+    const PC_SECTIONS_KEY = 'toolkit_policyCopySections';
+    const PC_SECTIONS = [
+        ['source',      'Source'],
+        ['destination', 'Destination'],
+        ['action',      'Profile & Action'],
+        ['name',        'Policy Name'],
+        ['status',      'Status'],
+        ['other',       'Other settings'],
+        ['metadata',    'Metadata'],
+    ];
+    const pc = { host: null, shadow: null, timer: null, busy: false, hasOther: false, pageSheet: false, listCache: null };
+
+    function pcGetSections() {
+        const out = {};
+        PC_SECTIONS.forEach(([key]) => { out[key] = key !== 'metadata'; });
+        try { Object.assign(out, JSON.parse(GM_getValue(PC_SECTIONS_KEY, '{}')) || {}); } catch (e) { /* defaults */ }
+        return out;
+    }
+    function pcSaveSections(obj) { GM_setValue(PC_SECTIONS_KEY, JSON.stringify(obj)); }
+
+    function pcPolicyId() {
+        const hash = location.hash || '';
+        if (!/[?&]mode=edit(&|$)/.test(hash)) return null;
+        const m = hash.match(/[?&]id=(\d+)(&|$)/);
+        return m ? m[1] : null;
+    }
+
+    /* ── Page button ── */
+
+    function pcTitleButtons() {
+        return document.querySelector('.ns-policy-container > .ns-policy-title > .ns-right');
+    }
+
+    function pcSyncButton() {
+        const right = pcPolicyId() ? pcTitleButtons() : null;
+        const btn = document.getElementById(PC_BUTTON_ID);
+        if (!right) { btn?.remove(); if (pc.host) pc.host.dataset.open = 'false'; return; }
+        if (btn && btn.parentElement === right) return;
+        btn?.remove();
+        const b = document.createElement('button');
+        b.id = PC_BUTTON_ID;
+        b.type = 'button';
+        b.className = 'ns-btn ns-btn-secondary ns-left';
+        b.title = 'Copy the saved policy as readable text (NS Policies Toolkit)';
+        b.appendChild(document.createTextNode('📋 Copy policy'));
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); pcToggleMenu(); });
+        right.insertBefore(b, right.firstElementChild);
+        const next = b.nextElementSibling;
+        if (next) next.classList.add('ns-margin-left-small');
+        if (pc.busy) pcSetBusy(true);
+    }
+
+    function initPolicyCopy() {
+        if (!getSetting('policyCopy') || pc.timer) return;
+        pc.timer = setInterval(pcSyncButton, 1000);
+        pcSyncButton();
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pc.host) pc.host.dataset.open = 'false'; });
+        document.addEventListener('mousedown', (e) => {
+            if (!pc.host || pc.host.dataset.open !== 'true') return;
+            const path = e.composedPath ? e.composedPath() : [];
+            if (path.includes(pc.host) || path.includes(document.getElementById(PC_BUTTON_ID))) return;
+            pc.host.dataset.open = 'false';
+        }, true);
+    }
+
+    function cleanupPolicyCopy() {
+        clearInterval(pc.timer);
+        pc.timer = null;
+        removeAll('#' + PC_BUTTON_ID);
+        pc.host?.remove();
+        pc.host = pc.shadow = null;
+    }
+
+    /* ── Menu (shadow DOM; adoptedStyleSheets passes the page CSP) ── */
+
+    const pcEl = id => pc.shadow.getElementById(id);
+
+    function pcCreateHost() {
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        host.id = PC_HOST_ID;
+        host.dataset.open = 'false';
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; z-index: 2147483646 !important; font-family: Arial, sans-serif; }
+            :host([data-open="false"]) { display: none !important; }
+            .menu { width: 250px; box-sizing: border-box; padding: 12px 14px; color: #282728; background: #fff;
+                border: 1px solid #d5d5d5; border-top: 4px solid #005587; border-radius: 6px; box-shadow: 0 6px 22px rgba(0, 0, 0, .25); }
+            .title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+            label { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; cursor: pointer; }
+            label[hidden] { display: none; }
+            .hint { color: #63666a; font-size: 11px; margin-left: auto; }
+            button { margin-top: 10px; width: 100%; padding: 7px 12px; border-radius: 4px; border: 1px solid #005587;
+                color: #fff; background: #005587; font-weight: 600; font-size: 13px; cursor: pointer;
+                display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+            button:disabled { cursor: progress; opacity: .75; }
+            .pc-wheel { width: 12px; height: 12px; box-sizing: border-box; border: 2px solid currentColor;
+                border-right-color: transparent; border-radius: 50%; animation: pc-spin .8s linear infinite; }
+            @keyframes pc-spin { to { transform: rotate(360deg); } }
+            .status { min-height: 16px; margin-top: 8px; font-size: 12px; color: #26890d; line-height: 1.4; }
+            .status.error { color: #da291c; }
+            .status.warn { color: #8a5a00; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        const menu = document.createElement('div');
+        menu.className = 'menu';
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = 'Copy these sections';
+        menu.appendChild(title);
+        const chosen = pcGetSections();
+        PC_SECTIONS.forEach(([key, label]) => {
+            const row = document.createElement('label');
+            row.dataset.row = key;
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.dataset.pcSection = key;
+            box.checked = !!chosen[key];
+            box.addEventListener('change', () => {
+                const now = pcGetSections();
+                now[key] = box.checked;
+                pcSaveSections(now);
+            });
+            row.append(box, document.createTextNode(label));
+            if (key === 'metadata') {
+                const hint = document.createElement('span');
+                hint.className = 'hint';
+                hint.textContent = 'ids, versions';
+                row.appendChild(hint);
+            }
+            if (key === 'other') row.hidden = !pc.hasOther;
+            menu.appendChild(row);
+        });
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.id = 'pc-copy';
+        copy.textContent = 'Copy';
+        copy.addEventListener('click', () => pcCopy());
+        const status = document.createElement('div');
+        status.className = 'status';
+        status.id = 'pc-status';
+        menu.append(copy, status);
+        shadow.appendChild(menu);
+        document.documentElement.appendChild(host);
+        pc.host = host;
+        pc.shadow = shadow;
+        if (pc.busy) pcSetBusy(true);
+    }
+
+    function pcToggleMenu() {
+        if (!pc.host || !pc.host.isConnected) pcCreateHost();
+        const open = pc.host.dataset.open !== 'true';
+        pc.host.dataset.open = open ? 'true' : 'false';
+        const btn = document.getElementById(PC_BUTTON_ID);
+        if (open && btn) {
+            const r = btn.getBoundingClientRect();
+            pc.host.style.top = Math.round(r.bottom + 6) + 'px';
+            pc.host.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 258))) + 'px';
+        }
+    }
+
+    function pcStatus(text, kind) {
+        if (!pc.shadow) return;
+        const el = pcEl('pc-status');
+        el.textContent = text;
+        el.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    // The wheel on the page button needs its own sheet: Netskope blocks injected <style> tags.
+    function pcEnsurePageSheet() {
+        if (pc.pageSheet) return;
+        try {
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(`@keyframes nstk-pc-spin { to { transform: rotate(360deg); } }
+                .nstk-pc-wheel { display: inline-block; width: 11px; height: 11px; margin-right: 6px; box-sizing: border-box;
+                    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+                    vertical-align: -1px; animation: nstk-pc-spin .8s linear infinite; }`);
+            document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+            pc.pageSheet = true;
+        } catch (e) { /* the label still says Copying… */ }
+    }
+
+    function pcSetBusy(busy) {
+        pc.busy = busy;
+        const btn = document.getElementById(PC_BUTTON_ID);
+        if (btn) {
+            btn.querySelector('.nstk-pc-wheel')?.remove();
+            if (busy) {
+                pcEnsurePageSheet();
+                const wheel = document.createElement('span');
+                wheel.className = 'nstk-pc-wheel';
+                btn.insertBefore(wheel, btn.firstChild);
+            }
+            btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+        }
+        if (pc.shadow) {
+            const copy = pcEl('pc-copy');
+            copy.disabled = busy;
+            copy.textContent = '';
+            if (busy) {
+                const wheel = document.createElement('span');
+                wheel.className = 'pc-wheel';
+                copy.append(wheel, document.createTextNode(' Copying…'));
+            } else copy.textContent = 'Copy';
+        }
+    }
+
+    /* ── Loading: the saved policy and only the name lookups it needs ── */
+
+    const PC_LOOKUPS = {
+        templates:   { path: '/notification_template/readAllTemplates', body: { offset: 0, fetch_firewall_template: false },
+                       id: d => d.file_name, name: d => d.template_name },
+        email:       { path: '/emailNotification/readAllEmailNotificationTemplates', body: {},
+                       id: d => d.template_id, name: d => d.template_name },
+        constraints: { path: 'constraints/readAllConstraintProfiles', body: {},
+                       id: d => d.profile_id, name: d => d.profile_name },
+        schedules:   { path: '/time_interval/getAll', body: {},
+                       id: d => d.id, name: d => d.name },
+    };
+    const PC_AISEC_PATH = '/api/v2/profiles/aiguardrails';
+    const PC_LIST_PATH  = 'inline_policy_groups/getPolicyGroupsWithAssociatedPolicies';
+
+    // Which lookups this policy needs, from the values it holds.
+    function pcNeededLookups(ruleData) {
+        const need = new Set();
+        (function walk(v, key) {
+            if (!v || typeof v !== 'object') {
+                if (key === 'template' && v) need.add('templates');
+                return;
+            }
+            if (Array.isArray(v)) { v.forEach(x => walk(x, key)); return; }
+            Object.entries(v).forEach(([k, x]) => walk(x, k));
+        })(ruleData, '');
+        if (ruleData.notify && (ruleData.notify.templates || []).length) need.add('email');
+        if (JSON.stringify(ruleData).includes('"constraints_profile"')) need.add('constraints');
+        if ((ruleData.schedule || []).length) need.add('schedules');
+        if ((ruleData.aisec_profile || []).length || (ruleData.aisec_actions || []).length) need.add('aisec');
+        return need;
+    }
+
+    async function pcLookup(kind) {
+        if (kind === 'aisec') {
+            const res = await fetch(PC_AISEC_PATH, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+            if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${PC_AISEC_PATH}.`);
+            const json = await res.json();
+            const map = new Map();
+            (function walk(v) {
+                if (!v || typeof v !== 'object') return;
+                if (Array.isArray(v)) { v.forEach(walk); return; }
+                const id = v.id || v.uuid || v.profile_id;
+                const name = v.name || v.profile_name;
+                if (id && typeof name === 'string') map.set(String(id), name);
+                Object.values(v).forEach(walk);
+            })(json && json.data);
+            return map;
+        }
+        const def = PC_LOOKUPS[kind];
+        const body = sm.lastBodies[smPathOf(def.path)] || def.body;
+        const data = await smPost(def.path, body);
+        const map = new Map();
+        (Array.isArray(data) ? data : []).forEach(d => {
+            const id = def.id(d);
+            if (id != null && def.name(d) != null) map.set(String(id), String(def.name(d)));
+        });
+        return map;
+    }
+
+    // Group order and position in the group, from the policy list the page loaded or one request.
+    async function pcPlace(id) {
+        if (!pc.listCache) pc.listCache = sm.policyList || await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        if (sm.policyList) pc.listCache = sm.policyList;
+        const groups = Array.isArray(pc.listCache) ? pc.listCache : [];
+        for (const g of groups) {
+            const ids = String(g.rule_ids || '').split(',').map(x => x.trim()).filter(Boolean);
+            const listed = (g.policies || []).find(x => String(x.rule_id) === id);
+            const index = ids.indexOf(id);
+            if (index >= 0 || listed) {
+                return { groupOrder: g.group_order, groupName: g.group_name, groupId: g.group_id,
+                    position: index >= 0 ? index + 1 : null, ruleOrder: listed ? listed.rule_order : null, listed: listed || null };
+            }
+        }
+        return null;
+    }
+
+    async function pcLoad(id, wanted) {
+        const policy = await smPost('inline_policies/getPolicy', { id });
+        if (!policy || typeof policy !== 'object' || !policy.rule_data) throw new Error('Netskope did not send this policy.');
+        const names = { templates: new Map(), email: new Map(), constraints: new Map(), schedules: new Map(), aisec: new Map() };
+        const missing = new Set();
+        const jobs = [...pcNeededLookups(policy.rule_data)].map(kind =>
+            pcLookup(kind).then(map => { names[kind] = map; }, () => { missing.add(kind); }));
+        let place = null;
+        if (wanted.metadata) jobs.push(pcPlace(id).then(p => { place = p; }, () => { missing.add('list'); }));
+        await Promise.all(jobs);
+        return { policy, names, missing, place };
+    }
+
+    /* ── Text ── */
+
+    const pcPad = (n, s) => '  '.repeat(n) + s;
+
+    function pcSection(title, lines) {
+        const head = title.toUpperCase();
+        return [head, '='.repeat(head.length)].concat(lines);
+    }
+
+    function pcHeader(policy) {
+        const d = new Date();
+        const two = n => String(n).padStart(2, '0');
+        const stamp = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+        return [
+            `Netskope Real-time Protection policy: ${policy.rule_name}`,
+            `Tenant: ${location.hostname}`,
+            `Saved configuration, copied ${stamp} (unsaved edits in the form are not included)`,
+        ];
+    }
+
+    const PC_ACTION_NAMES = { block: 'Block', alert: 'Alert', useralert: 'User Alert', add_headers: 'Add SMTP header', allow: 'Allow' };
+    const PC_TYPE_NAMES = {
+        'category': 'Category', 'public-app': 'Application', 'email-outbound-app': 'Email Outbound App',
+        'app-instance': 'App Instance', 'any_category': 'Any category', 'dst-profile': 'Destination Profile',
+    };
+    const PC_CONSTRAINT_NAMES = { to_user: 'To user', from_user: 'From user' };
+    const pcYesNo = v => v ? 'Yes' : 'No';
+    const pcList = v => (Array.isArray(v) ? v : [v]).filter(x => x !== '' && x != null).join(', ');
+
+    // Name resolvers: "Name (raw)", or "raw (name not available)" when the lookup failed or does not know it.
+    function pcResolve(data, kind, raw) {
+        if (raw == null || raw === '') return '';
+        const name = data.names[kind].get(String(raw));
+        return name ? `${name} (${raw})` : `${raw} (name not available)`;
+    }
+    const pcTemplateName       = (data, file) => pcResolve(data, 'templates', file);
+    const pcEmailTemplateName  = (data, id)   => pcResolve(data, 'email', id);
+    const pcConstraintName     = (data, id)   => pcResolve(data, 'constraints', id);
+    const pcScheduleName       = (data, id)   => pcResolve(data, 'schedules', id);
+    const pcAisecName          = (data, uuid) => pcResolve(data, 'aisec', uuid);
+    // No known name lookup yet for these: the ids are shown (follow-up agreed with the user).
+    const pcTssProfile         = (data, id) => String(id);
+    const pcFileProfile        = (data, id) => String(id);
+    const pcHttpHeader         = (data, id) => String(id);
+    const pcDestinationProfile = (data, id) => String(id);
+
+    function pcItems(lines, depth, label, values, fmt) {
+        const list = (values || []).filter(v => v !== '' && v != null);
+        if (!list.length) return;
+        lines.push(pcPad(depth, `${label} (${list.length}):`));
+        list.forEach(v => lines.push(pcPad(depth + 1, '• ' + (fmt ? fmt(v) : v))));
+    }
+
+    const pcHeaders = h => Object.entries(h || {}).map(([k, v]) => `${k}: ${v}`).join('; ');
+
+    // One action of match_criteria_action, dlp_actions, tss_actions or aisec_actions.
+    function pcActionLines(data, a, depth) {
+        const out = [];
+        if (!a || typeof a !== 'object') return out;
+        let line = 'Action: ' + (PC_ACTION_NAMES[a.action_name] || a.action_name || 'none');
+        if (a.smtp_headers) line += ': ' + pcHeaders(a.smtp_headers);
+        if (a.severity) line += `, severity ${a.severity}`;
+        out.push(pcPad(depth, line));
+        if (a.template) out.push(pcPad(depth, 'Template: ' + pcTemplateName(data, a.template)));
+        if ('emit_alert' in a) out.push(pcPad(depth, a.emit_alert ? 'Alerts: generated' : "Alerts: not generated (Don't generate Alerts)"));
+        if (a.forward_to_purview_dlp_instance) out.push(pcPad(depth, 'Forward to Purview DLP instance: ' + (a.forward_to_purview_dlp_instance.name || JSON.stringify(a.forward_to_purview_dlp_instance))));
+        return out;
+    }
+
+    function pcActivityLines(data, activities, depth) {
+        const out = [];
+        const acts = activities || [];
+        if (!acts.length) return out;
+        out.push(pcPad(depth, 'Activities: ' + acts.map(a => a.activity).join(', ')));
+        acts.forEach(a => (a.list_of_constraints || []).forEach(c => {
+            out.push(pcPad(depth, `Constraints: ${PC_CONSTRAINT_NAMES[c.constraints_type] || c.constraints_type}: ${pcConstraintName(data, c.constraints_profile)}` +
+                (acts.length > 1 ? ` [${a.activity}]` : '')));
+        }));
+        return out;
+    }
+
+    function pcSizeText(list) {
+        return (list || []).map(s => `${{ gt: '>', lt: '<' }[s.operator] || s.operator} ${s.size} ${s.unit || ''}`.trim()).join(', ');
+    }
+
+    // Keys each section renders. Anything else in rule_data goes to Other settings.
+    const PC_MAP = {
+        source:      ['users', 'userGroups', 'userGroupObjects', 'excludedUsers', 'excludedGroups', 'excludedUserGroupObjects',
+                      'os_family', 'browsers', 'access_method', 'http_header_obj'],
+        destination: ['policy_type', 'categories', 'apps', 'emailOutboundApps', 'appInstances', 'file_size', 'filefilter_file_size',
+                      'filefilter_fileTypes', 'filefilter_profiles', 'b_negate_filefilter_profiles', 'ccl', 'app_tags',
+                      'destinationProfiles', 'b_negateDestinationProfiles'],
+        action:      ['match_criteria_action', 'match_criteria_plugin_action', 'dlp_actions', 'dlp_profile', 'tss_actions', 'tss_profile',
+                      'aisec_actions', 'aisec_profile', 'show_dlp_profile_action_table', 'external_dlp', 'continue_policy_evaluation'],
+        name:        ['description', 'notify'],
+        status:      ['schedule'],
+        metadata:    ['userType', 'json_version', 'version', 'show_aisec_profile_action_table'],
+    };
+    const PC_MAPPED = new Set([].concat(...Object.values(PC_MAP)));
+
+    function pcRenderSource(data) {
+        const rd = data.policy.rule_data, lines = [];
+        const groups = (rd.userGroups && rd.userGroups.length) ? rd.userGroups : (rd.userGroupObjects || []).map(o => o.name);
+        if (!(rd.users || []).length && !groups.length) lines.push('User: All users');
+        pcItems(lines, 0, 'Users', rd.users);
+        pcItems(lines, 0, 'User groups', groups);
+        const exGroups = (rd.excludedGroups && rd.excludedGroups.length) ? rd.excludedGroups : (rd.excludedUserGroupObjects || []).map(o => o.name);
+        if ((rd.excludedUsers || []).length || exGroups.length) {
+            lines.push('Exclusions:');
+            pcItems(lines, 1, 'Users', rd.excludedUsers);
+            pcItems(lines, 1, 'User groups', exGroups);
+        }
+        if ((rd.os_family || []).length) lines.push('OS family: ' + pcList(rd.os_family));
+        if ((rd.browsers || []).length) lines.push('Browsers: ' + pcList(rd.browsers));
+        if ((rd.access_method || []).length) lines.push('Access method: ' + pcList(rd.access_method));
+        if ((rd.http_header_obj || []).length) lines.push('HTTP header (ids): ' + rd.http_header_obj.map(id => pcHttpHeader(data, id)).join(', '));
+        return lines;
+    }
+
+    function pcRenderDestination(data) {
+        const p = data.policy, rd = p.rule_data, lines = [];
+        const type = rd.policy_type || p.policy_type;
+        lines.push('Type: ' + (PC_TYPE_NAMES[type] || type));
+        const block = (label, list, title) => {
+            if (!(list || []).length) return;
+            lines.push(`${label} (${list.length}):`);
+            list.forEach(item => {
+                lines.push(pcPad(1, '• ' + title(item)));
+                lines.push(...pcActivityLines(data, item.activities, 2));
+            });
+        };
+        block('Categories', rd.categories, c => c.appCategory);
+        block('Applications', rd.apps, a => a.appName);
+        block('Email outbound apps', rd.emailOutboundApps, a => a.appName);
+        block('App instances', rd.appInstances, a => `${a.appInstanceName} / ${a.instanceName}` + (a.instance_type ? ` (${a.instance_type})` : '') +
+            (a.all_connected_instances ? ', all connected instances' : ''));
+        if ((rd.file_size || []).length) lines.push('File size: ' + pcSizeText(rd.file_size));
+        if ((rd.filefilter_file_size || []).length) lines.push('File filter size: ' + pcSizeText(rd.filefilter_file_size));
+        if (rd.filefilter_fileTypes) {
+            const ft = rd.filefilter_fileTypes;
+            lines.push('File types: ' + [ft.categories && ft.categories.length ? 'categories ' + pcList(ft.categories) : '',
+                ft.types && ft.types.length ? 'types ' + pcList(ft.types) : ''].filter(Boolean).join('; '));
+        }
+        if ((rd.filefilter_profiles || []).length) {
+            lines.push('File profiles (ids)' + (rd.b_negate_filefilter_profiles ? ', NOT matching' : '') + ': ' +
+                rd.filefilter_profiles.map(id => pcFileProfile(data, id)).join(', '));
+        }
+        if ((rd.ccl || []).length) lines.push('CCL: ' + pcList(rd.ccl));
+        if ((rd.app_tags || []).length) lines.push('CCI app tags: ' + pcList(rd.app_tags));
+        if ((rd.destinationProfiles || []).length) {
+            lines.push('Destination profiles (ids)' + (rd.b_negateDestinationProfiles ? ', NOT matching' : '') + ': ' +
+                rd.destinationProfiles.map(id => pcDestinationProfile(data, id)).join(', '));
+        }
+        return lines;
+    }
+
+    function pcRenderAction(data) {
+        const rd = data.policy.rule_data, lines = [];
+        if (rd.match_criteria_action) lines.push(...pcActionLines(data, rd.match_criteria_action, 0));
+        if (rd.match_criteria_plugin_action) {
+            const a = rd.match_criteria_plugin_action;
+            lines.push('Plugin action: ' + (PC_ACTION_NAMES[a.action_name] || a.action_name) + (a.template ? ', template ' + pcTemplateName(data, a.template) : ''));
+        }
+        const profiles = (label, list, key, title, actionsKey) => {
+            if (!(list || []).length) return;
+            lines.push(`${label} (${list.length}):`);
+            list.forEach(item => {
+                lines.push(pcPad(1, '• ' + title(item[key])));
+                (item[actionsKey] || []).forEach(a => lines.push(...pcActionLines(data, a, 2)));
+                (item.plugin_actions || []).forEach(a => lines.push(pcPad(2, 'Plugin action: ' + (PC_ACTION_NAMES[a.action_name] || a.action_name) +
+                    (a.template ? ', template ' + pcTemplateName(data, a.template) : ''))));
+            });
+        };
+        if ((rd.dlp_actions || []).length) profiles('DLP profiles', rd.dlp_actions, 'dlp_profile', v => v, 'actions');
+        else pcItems(lines, 0, 'DLP profiles', rd.dlp_profile);
+        if ((rd.tss_actions || []).length) profiles('Threat protection profiles', rd.tss_actions, 'tss_profile', v => pcTssProfile(data, v), 'actions');
+        else pcItems(lines, 0, 'Threat protection profiles', rd.tss_profile, v => pcTssProfile(data, v));
+        if ((rd.aisec_actions || []).length) profiles('AI Guardrails profiles', rd.aisec_actions, 'aisec_profile_id', v => pcAisecName(data, v), 'actions');
+        else pcItems(lines, 0, 'AI Guardrails profiles', rd.aisec_profile, v => pcAisecName(data, v));
+        if ('show_dlp_profile_action_table' in rd) lines.push('Set action for each profile: ' + pcYesNo(rd.show_dlp_profile_action_table));
+        if ('external_dlp' in rd) lines.push('Send content for external DLP inspection: ' + pcYesNo(rd.external_dlp));
+        if ('continue_policy_evaluation' in rd) lines.push('Continue policy evaluation: ' + pcYesNo(rd.continue_policy_evaluation));
+        if (!lines.length) lines.push('Action: none');
+        return lines;
+    }
+
+    function pcRenderName(data) {
+        const p = data.policy, rd = p.rule_data;
+        const lines = [`Name: ${p.rule_name}`];
+        if (p.groupName) lines.push(`Group: ${p.groupName}`);
+        if (rd.description) lines.push('Description:', ...String(rd.description).split(/\r?\n/).map(l => pcPad(1, l)));
+        const n = rd.notify;
+        if (!n) lines.push('Email notification: none');
+        else {
+            const every = String(n.interval) === '0' || !n.interval ? 'after each event' : `every ${n.interval} minutes`;
+            lines.push('Email notification: ' + every);
+            const to = [].concat(n.to_users || [], n.emails || []);
+            if (to.length) lines.push(pcPad(1, 'To: ' + pcList(to)));
+            if (n.from_user) lines.push(pcPad(1, 'From: ' + n.from_user));
+            const tpl = [];
+            (n.templates || []).forEach(t => Object.values(t || {}).forEach(id => tpl.push(pcEmailTemplateName(data, id))));
+            if (tpl.length) lines.push(pcPad(1, 'Templates: ' + tpl.join(', ')));
+        }
+        return lines;
+    }
+
+    function pcRenderStatus(data) {
+        const p = data.policy, rd = p.rule_data;
+        const ids = [].concat(...(rd.schedule || []).map(s => s.time_interval_obj || []));
+        return [
+            'Enabled: ' + pcYesNo(String(p.enabled) === '1'),
+            'Schedule: ' + (ids.length ? ids.map(id => pcScheduleName(data, id)).join(', ') : 'none'),
+        ];
+    }
+
+    function pcOtherKeys(rd) {
+        return Object.keys(rd).filter(k => !PC_MAPPED.has(k));
+    }
+
+    function pcRenderOther(data) {
+        const rd = data.policy.rule_data;
+        return pcOtherKeys(rd).map(k => `${k}: ${JSON.stringify(rd[k])}`);
+    }
+
+    function pcRenderMetadata(data) {
+        const p = data.policy, rd = p.rule_data, pl = data.place, listed = pl && pl.listed;
+        const na = data.missing.has('list') ? 'not available' : 'unknown';
+        const lines = [
+            `Rule id: ${p.rule_id}`,
+            `Policy type: ${p.policy_type || rd.policy_type}`,
+            `Group: ${p.groupName || (pl && pl.groupName) || na}` + (p.groupId || (pl && pl.groupId) ? ` (id ${p.groupId || pl.groupId})` : ''),
+            `Group order: ${pl && pl.groupOrder != null ? pl.groupOrder : na}`,
+            `Position in group: ${pl && pl.position ? pl.position : na}`,
+            `Global order: ${listed && listed.rule_order != null ? listed.rule_order : na}`,
+            `Version: ${rd.version != null ? rd.version : 'unknown'}, JSON version: ${rd.json_version != null ? rd.json_version : 'unknown'}`,
+            `Last change: ${p.modify_type || 'unknown'} by ${p.modify_by || 'unknown'} at ${p.modify_time || 'unknown'}`,
+            `Pending: ${pcYesNo(String(p.pending) === '1')}`,
+            `User type: ${rd.userType || 'unknown'}`,
+        ];
+        if ('isLicenseExpired' in p) lines.push('License expired: ' + pcYesNo(p.isLicenseExpired) +
+            ((p.expiredLicenseCategories || []).length ? ' (' + pcList(p.expiredLicenseCategories) + ')' : ''));
+        if (listed && (listed.removed || []).length) lines.push('Removed apps: ' + pcList(listed.removed));
+        if (listed && 'viewOnly' in listed) lines.push('View only: ' + pcYesNo(listed.viewOnly));
+        if ('show_aisec_profile_action_table' in rd) lines.push('Set action for each AI Guardrails profile: ' + pcYesNo(rd.show_aisec_profile_action_table));
+        pcItems(lines, 0, 'User group ids', (rd.userGroupObjects || []).map(o => `${o.name} (id ${o.id}${o.disabled ? ', disabled' : ''})`));
+        pcItems(lines, 0, 'Excluded group ids', (rd.excludedUserGroupObjects || []).map(o => `${o.name} (id ${o.id}${o.disabled ? ', disabled' : ''})`));
+        pcItems(lines, 0, 'Category ids', (rd.categories || []).map(c => `${c.appCategory}: ${pcList(c.category)}`));
+        return lines;
+    }
+
+    const PC_RENDER = {
+        source: ['Source', pcRenderSource],
+        destination: ['Destination', pcRenderDestination],
+        action: ['Profile & Action', pcRenderAction],
+        name: ['Policy Name', pcRenderName],
+        status: ['Status', pcRenderStatus],
+        other: ['Other settings', pcRenderOther],
+        metadata: ['Metadata', pcRenderMetadata],
+    };
+
+    function pcRender(data, wanted) {
+        const blocks = [pcHeader(data.policy)];
+        PC_SECTIONS.forEach(([key]) => {
+            if (!wanted[key]) return;
+            const [title, render] = PC_RENDER[key];
+            const lines = render(data);
+            if (key === 'other' && !lines.length) return;
+            blocks.push(pcSection(title, lines));
+        });
+        return blocks.map(b => b.join('\n')).join('\n\n') + '\n';
+    }
+
+    async function pcCopy() {
+        if (pc.busy) return;
+        const id = pcPolicyId();
+        if (!id) { pcStatus('Open a policy in edit mode first.', 'error'); return; }
+        pcSetBusy(true);
+        pcStatus('');
+        try {
+            const wanted = pcGetSections();
+            const data = await pcLoad(id, wanted);
+            pc.hasOther = pcOtherKeys(data.policy.rule_data).length > 0;
+            const otherRow = pc.shadow && pc.shadow.querySelector('label[data-row="other"]');
+            if (otherRow) otherRow.hidden = !pc.hasOther;
+            const text = pcRender(data, wanted);
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (e) {
+                if (typeof GM_setClipboard !== 'function') throw new Error('The browser refused to copy the text.');
+                GM_setClipboard(text);
+            }
+            if (data.missing.size) pcStatus('✔ Copied. Some names could not be loaded, their ids are shown.', 'warn');
+            else pcStatus(`✔ Copied ${text.trimEnd().split('\n').length} lines.`);
+        } catch (e) {
+            pcStatus(e.message, 'error');
+        } finally {
+            pcSetBusy(false);
+        }
+    }
+
+
+    // ─────────────────────────────────────────────────────────────
     // FIRST-BOOT USERNAME PROMPT
     // ─────────────────────────────────────────────────────────────
 
@@ -33812,6 +34516,7 @@ Version 1.16:
         initBulkConstraintTools();
         initSteeringRemover();
         initSourceManager();
+        initPolicyCopy();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 

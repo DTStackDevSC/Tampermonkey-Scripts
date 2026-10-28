@@ -27864,6 +27864,56 @@ Version 1.16:
                 },
             },
             {
+                icon: '📋',
+                title: 'Copy Policy',
+                buildContent(body) {
+                    lead(body, 'On a Real-time Protection policy in edit mode, copy the whole saved policy as readable text, section by section, to paste into a Netskope support case or a ticket.');
+
+                    body.appendChild(hrow([
+                        chip('📋 Copy policy', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                        chip('Cancel', '#fff', { color: '#555', border: '1px solid #ccc' }),
+                        chip('Save', '#0073e6'),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits in the title bar, before Cancel. It opens a small menu.');
+
+                    const menu = document.createElement('div');
+                    Object.assign(menu.style, { border: '1px solid #e0e0e0', borderTop: '4px solid #005587', borderRadius: '6px',
+                        padding: '8px 12px', margin: '10px 0 4px 0', maxWidth: '260px', fontFamily: 'Arial, sans-serif' });
+                    [['Source', true], ['Destination', true], ['Profile & Action', true], ['Policy Name', true], ['Status', true], ['Metadata', false]].forEach(([label, on]) => {
+                        menu.appendChild(hrow([
+                            span(on ? '☑' : '☐', { fontSize: '13px', color: '#005587' }),
+                            span(label, { fontSize: '12px', color: '#333' }),
+                        ], { margin: '2px 0', flexWrap: 'nowrap' }));
+                    });
+                    body.appendChild(menu);
+                    caption(body, 'Tick the sections you want. Your choice is remembered. Metadata (ids, versions, order) is off unless you tick it.');
+
+                    const sample = document.createElement('pre');
+                    sample.textContent = [
+                        'Netskope Real-time Protection policy: Block risky categories',
+                        'Tenant: tenant.goskope.com',
+                        'Saved configuration, copied 2026-10-28 15:40',
+                        '',
+                        'PROFILE & ACTION',
+                        '================',
+                        'Action: Block',
+                        'Template: Block Page Default (93.html)',
+                    ].join('\n');
+                    Object.assign(sample.style, { background: '#f6f8fa', border: '1px solid #e1e4e8', borderRadius: '4px', padding: '8px 10px',
+                        fontSize: '11px', fontFamily: 'Consolas, monospace', whiteSpace: 'pre-wrap', margin: '10px 0 4px 0', color: '#333' });
+                    body.appendChild(sample);
+                    caption(body, 'A part of the copied text. Each section has a title, lists show how many items they hold and are never cut.');
+
+                    bullets(body, [
+                        'It copies the saved configuration. Unsaved edits in the form are not included: click Save first if you need them.',
+                        'Names replace ids for templates, constraint profiles, email templates, schedules and AI Guardrails profiles. When a name cannot be loaded, the id is shown with "(name not available)".',
+                        'Threat protection, file, HTTP header and destination profiles are shown by their ids for now.',
+                        'Settings the toolkit does not know yet appear under Other settings, so nothing is left out.',
+                        'A spinning wheel shows while the policy loads. Nothing in the policy changes.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -27925,6 +27975,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
                     togglesWrap.appendChild(toggle('🧹 Steering Exception Domain Tools', true, 'Bulk remove and bulk add domains across steering exceptions, with backups to undo.'));
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
+                    togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
