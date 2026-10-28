@@ -26169,6 +26169,7 @@ Version 0.9.1:
     const CHANGELOG = `Version 1.29:
 - New 👥 Manage Source button next to Source on Real-time Protection policies.
 - Export downloads every user, group and OU in Source as a CSV.
+- Check looks up each user or group and shows whether it exists and whether it is already in the policy. Groups can be given by their short name.
 
 Version 1.28.1:
 - Fixed the log buttons not appearing below the Definition field of Destination Profiles. They now work with Netskope's new Definition editor.
@@ -32927,12 +32928,14 @@ Version 1.16:
     /* ── Export ── */
 
     function smExportCsv(items) {
-        // A name that starts like a formula is prefixed with ' so a spreadsheet shows it as text
+        // Every field is quoted, so a spreadsheet never splits a name on , or ;. A name that starts
+        // like a formula is prefixed with ' so the spreadsheet shows it as text.
         const cell = v => {
-            if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
-            return /[;"\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+            v = String(v);
+            if (/^[=+\-@\t\r]/.test(v.trim())) v = "'" + v;
+            return '"' + v.replace(/"/g, '""') + '"';
         };
-        return ['type;name;short_name']
+        return [['type', 'name', 'short_name'].map(cell).join(';')]
             .concat(items.map(i => [i.type, i.name, i.type === 'user' ? i.name : smShortName(i.name)].map(cell).join(';')))
             .join('\n') + '\n';
     }
@@ -32982,6 +32985,176 @@ Version 1.16:
             smLog(e.message, 'err');
         } finally {
             sm.busy = false;
+            smUpdateButtons();
+        }
+    }
+
+    /* ── Check: the page's own lookups, nothing in the form changes ── */
+
+    const SM_SEARCH = {
+        user:  { path: '/inline_policies/getAllUsers',           value: d => d.email },
+        group: { path: '/completions/getAllUserGroupObjects',    value: d => d.name },
+    };
+    const SM_STATUS = {
+        found:     'Found',
+        ambiguous: 'Ambiguous',
+        notfound:  'Not found',
+        error:     'Could not check',
+    };
+
+    async function smPost(path, payload) {
+        if (!sm.token) {
+            throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
+        }
+        const reqId = seRandomId();
+        const headers = {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Netskope-req-id': reqId,
+        };
+        if (sm.resource) headers.resource = sm.resource;
+        if (sm.clientIdPrefix) headers['X-Netskope-Client-Request-Id'] = sm.clientIdPrefix + '.' + reqId;
+        const res = await fetch(path, {
+            method: 'POST', credentials: 'same-origin', headers,
+            body: JSON.stringify(Object.assign({}, payload, { token: sm.token })),
+        });
+        if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${path}. Your session may have expired: reload the page.`);
+        let json;
+        try { json = await res.json(); } catch (e) { throw new Error(`Netskope sent an unexpected answer to ${path}.`); }
+        if (!json || json.status !== 'success') throw new Error(`Netskope refused ${path}: ${(json && json.msg) || 'no reason given'}`);
+        return json.data;
+    }
+
+    async function smSearch(mode, prefix) {
+        const data = await smPost(SM_SEARCH[mode].path, { limit: 100, prefix, pageName: 'Real-time Protection' });
+        return (Array.isArray(data) ? data : []).map(SM_SEARCH[mode].value).filter(Boolean);
+    }
+
+    // Users and full group paths match exactly; a short group name matches the last path segment only.
+    function smEntryMatches(entry, value, mode) {
+        if (mode === 'group' && !entry.includes('/')) return smKey(smShortName(value)) === smKey(entry);
+        return smKey(value) === smKey(entry);
+    }
+
+    async function smCheckEntry(entry, mode, policyNames) {
+        const row = { entry, status: 'error', matches: [], chosen: null, inPolicy: [], reason: '' };
+        row.inPolicy = policyNames.filter(n => smEntryMatches(entry, n, mode));
+        try {
+            const prefix = mode === 'group' ? smShortName(entry) : entry.trim();
+            const results = await smSearch(mode, prefix);
+            row.matches = [...new Set(results.filter(v => smEntryMatches(entry, v, mode)))];
+            if (row.matches.length === 1) { row.status = 'found'; row.chosen = row.matches[0]; }
+            else if (row.matches.length > 1) row.status = 'ambiguous';
+            else if (results.length >= 100) row.reason = 'Too many results: give the full path';
+            else row.status = 'notfound';
+        } catch (e) {
+            row.reason = e.message;
+        }
+        return row;
+    }
+
+    async function smCheck(entries, mode) {
+        if (!sm.token) {
+            throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
+        }
+        const type = mode === 'group' ? 'group' : 'user';
+        const policyNames = (await smReadSource()).filter(t => t.type === type).map(t => t.name);
+        const rows = new Array(entries.length);
+        let next = 0, doneCount = 0;
+        const worker = async () => {
+            while (next < entries.length && !sm.stop) {
+                const i = next++;
+                rows[i] = await smCheckEntry(entries[i], mode, policyNames);
+                smProgress(++doneCount, entries.length);
+            }
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        return rows.filter(Boolean);
+    }
+
+    function smProgress(doneCount, total) {
+        smEl('sm-bar').style.width = (total ? doneCount / total * 100 : 0) + '%';
+    }
+
+    function smRenderRows() {
+        const box = smEl('sm-results');
+        box.textContent = '';
+        if (!sm.rows || !sm.rows.length) return;
+        const table = document.createElement('table');
+        table.className = 'table';
+        table.innerHTML = '<thead><tr><th>Entry</th><th>Result</th><th>In policy</th></tr></thead><tbody></tbody>';
+        const tbody = table.querySelector('tbody');
+        const cell = (tr, text, cls) => {
+            const td = document.createElement('td');
+            if (text) td.textContent = text;
+            if (cls) td.className = cls;
+            tr.appendChild(td);
+            return td;
+        };
+        const muted = (td, text) => {
+            const div = document.createElement('div');
+            div.className = 'muted';
+            div.textContent = text;
+            td.appendChild(div);
+        };
+        const picker = (td, kind, values, chosen, onPick) => {
+            const select = document.createElement('select');
+            select.dataset.pick = kind;
+            select.appendChild(new Option('Choose the path…', ''));
+            values.forEach(v => select.appendChild(new Option(v, v, false, v === chosen)));
+            select.addEventListener('change', () => onPick(select.value || null));
+            td.appendChild(select);
+        };
+        sm.rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.dataset.entry = row.entry;
+            tr.dataset.status = row.status;
+            cell(tr, row.entry);
+            const result = cell(tr);
+            const chip = document.createElement('span');
+            chip.className = 'chip ' + row.status;
+            chip.textContent = SM_STATUS[row.status];
+            result.appendChild(chip);
+            if (row.status === 'found' && row.chosen !== row.entry) muted(result, row.chosen);
+            if (row.status === 'ambiguous') picker(result, 'match', row.matches, row.chosen, v => { row.chosen = v; });
+            if (row.status === 'error') muted(result, row.reason);
+            const policy = cell(tr);
+            policy.dataset.col = 'policy';
+            policy.appendChild(document.createTextNode(row.inPolicy.length ? 'Yes' : 'No'));
+            if (row.inPolicy.length === 1 && smKey(row.inPolicy[0]) !== smKey(row.entry)) muted(policy, row.inPolicy[0]);
+            if (row.inPolicy.length > 1) {
+                if (!row.removeChoice) row.removeChoice = null;
+                picker(policy, 'policy', row.inPolicy, row.removeChoice, v => { row.removeChoice = v; });
+            }
+            tbody.appendChild(tr);
+        });
+        box.appendChild(table);
+    }
+
+    async function smRunCheck() {
+        if (sm.busy) return;
+        if (!sm.entries.length) { smLog(`No ${SM_NOUN[sm.mode][1]} in the list.`, 'err'); return; }
+        sm.busy = true;
+        sm.stop = false;
+        sm.rows = null;
+        smEl('sm-summary').hidden = true;
+        smProgress(0, 1);
+        smRenderRows();
+        smUpdateButtons();
+        try {
+            smLog(`Checking ${smCountText()}…`);
+            const rows = await smCheck(sm.entries, sm.mode);
+            sm.rows = rows;
+            const n = s => rows.filter(r => r.status === s).length;
+            smLog(`Check: ${n('found')} found, ${n('ambiguous')} ambiguous, ${n('notfound')} not found, ${n('error')} could not check. ` +
+                `${rows.filter(r => r.inPolicy.length).length} already in the policy.${sm.stop ? ' Stopped before the end.' : ''}`, 'ok');
+            rows.filter(r => r.status === 'error').slice(0, 1).forEach(r => smLog(r.reason, 'err'));
+        } catch (e) {
+            smLog(e.message, 'err');
+        } finally {
+            sm.busy = false;
+            smRenderRows();
             smUpdateButtons();
         }
     }
@@ -33117,6 +33290,7 @@ Version 1.16:
         });
         smEl('sm-stop').addEventListener('click', () => { sm.stop = true; smLog('Stopping after the current item…', 'warn'); });
         smEl('sm-export').addEventListener('click', smExport);
+        smEl('sm-check').addEventListener('click', smRunCheck);
         smSetMode(sm.mode);
     }
 
