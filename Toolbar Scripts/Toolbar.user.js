@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.2.1
+// @version      2.3.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.2.1';
-    const CHANGELOG = `Version 2.2.1:
+   const SCRIPT_VERSION = '2.3.0';
+    const CHANGELOG = `Version 2.3.0:
+- NS Policies Toolkit: new 👥 Manage Source button next to Source on Real-time Protection policies.
+
+Version 2.2.1:
 - NS Policies Toolkit: fixed the log buttons not appearing below the Definition field of Destination Profiles.
 
 Version 2.2.0:
@@ -26152,6 +26155,7 @@ Version 0.9.1:
         dlpCharCounter:  'toolkit_dlpCharCounter',
         bulkConstraints: 'toolkit_bulkConstraints',
         steeringRemover: 'toolkit_steeringRemover',
+        sourceManager:   'toolkit_sourceManager',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -26161,8 +26165,15 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.28.1';
-    const CHANGELOG = `Version 1.28.1:
+    const SCRIPT_VERSION = '1.29.0';
+    const CHANGELOG = `Version 1.29:
+- New 👥 Manage Source button next to Source on Real-time Protection policies.
+- Export downloads every user, group and OU in Source as a CSV.
+- Check looks up each user or group and shows whether it exists and whether it is already in the policy. Groups can be given by their short name.
+- Add puts the found users or groups into Source. Nothing is saved until you click Apply Changes.
+- Remove takes the listed users or groups out of Source. Click twice to confirm.
+
+Version 1.28.1:
 - Fixed the log buttons not appearing below the Definition field of Destination Profiles. They now work with Netskope's new Definition editor.
 
 Version 1.28:
@@ -26644,6 +26655,11 @@ Version 1.16:
             label:       '🧹 Steering Exception Domain Tools',
             description: 'On the Steering Configuration page, adds "Bulk remove domains" and "Bulk add domains" buttons. Paste domains, pick the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
         },
+        {
+            key:         'sourceManager',
+            label:       '👥 Source Manager',
+            description: 'On Real-time Protection policy pages, adds a "Manage Source" button next to Source: check, add, remove and export users or AD groups from a pasted list or a CSV.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -26888,6 +26904,7 @@ Version 1.16:
                     }
                     if (key === 'bulkConstraints') cleanupBulkConstraintTools();
                     if (key === 'steeringRemover') cleanupSteeringRemover();
+                    if (key === 'sourceManager') cleanupSourceManager();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -26939,7 +26956,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -27764,6 +27781,74 @@ Version 1.16:
                 },
             },
             {
+                icon: '👥',
+                title: 'Source Manager',
+                buildContent(body) {
+                    lead(body, 'On a Real-time Protection policy in edit mode, check, add, remove or export many users or AD groups in the Source field at once.');
+
+                    body.appendChild(hrow([
+                        chip('User = ana@example.com  + 12 more', '#fff', { color: '#333', border: '1px solid #ccc' }),
+                    ], { marginBottom: '4px' }));
+                    body.appendChild(hrow([
+                        chip('👥 Manage Source', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits right below the Source field. Choose Users or Groups, then paste a list or load a CSV.');
+
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0', fontFamily: 'Arial, sans-serif' });
+                    [
+                        { entry: 'GROUP-10', kind: 'Found',     bg: '#26890d', note: 'example.com/.../Security Groups/GROUP-10', policy: 'No' },
+                        { entry: 'GROUP-1',  kind: 'Ambiguous', bg: '#e08a00', note: 'Two groups end in /GROUP-1: choose the path.', policy: 'No' },
+                        { entry: 'GROUP-2',  kind: 'Found',     bg: '#26890d', note: 'example.com/.../Security Groups/GROUP-2', policy: 'Yes' },
+                    ].forEach((r, i) => {
+                        const text = document.createElement('div');
+                        text.appendChild(span(r.entry, { fontSize: '12px', fontWeight: 'bold', color: '#333', display: 'block' }));
+                        text.appendChild(span(r.note, { fontSize: '11px', color: '#777', display: 'block' }));
+                        card.appendChild(hrow([
+                            chip(r.kind, r.bg),
+                            text,
+                            span('In policy: ' + r.policy, { fontSize: '11px', color: '#555', marginLeft: 'auto', whiteSpace: 'nowrap' }),
+                        ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', borderTop: i ? '1px solid #f0f0f0' : 'none' }));
+                    });
+                    body.appendChild(card);
+                    caption(body, 'After Check: one row per user or group, with the result and whether it is already in the policy.');
+
+                    const steps = [
+                        { bg: '#005587', label: 'Check',  desc: 'Looks up each one with the same search as the Source field, and reads what the policy already holds. Nothing changes.' },
+                        { bg: '#26890d', label: 'Add',    desc: 'Adds the ones found that are not in the policy yet.' },
+                        { bg: '#da291c', label: 'Remove', desc: 'Click twice to confirm. Takes out the ones that are in the policy.' },
+                        { bg: 'transparent', color: '#333', border: '1px solid #a7a8aa', label: 'Export', desc: 'Downloads every user, group and OU in Source as a CSV. No Check needed.' },
+                    ];
+                    for (const st of steps) {
+                        body.appendChild(hrow([
+                            chip(st.label, st.bg, st.color ? { color: st.color, border: st.border } : undefined),
+                            span(st.desc, { fontSize: '12px', color: '#555' }),
+                        ], { flexWrap: 'nowrap', margin: '8px 0 0 0' }));
+                    }
+
+                    const states = [
+                        { bg: '#26890d', label: 'Found',           desc: 'Exactly one user or group matches.' },
+                        { bg: '#e08a00', label: 'Ambiguous',       desc: 'Several groups end in that name. Choose the path, or it is skipped.' },
+                        { bg: '#da291c', label: 'Not found',       desc: 'Netskope does not know it. Check the spelling.' },
+                        { bg: '#75787b', label: 'Could not check', desc: 'The lookup failed, or too many groups contain the name: give the full path.' },
+                    ];
+                    for (const st of states) {
+                        body.appendChild(hrow([
+                            chip(st.label, st.bg),
+                            span(st.desc, { fontSize: '12px', color: '#555' }),
+                        ], { flexWrap: 'nowrap', margin: '8px 0 0 0' }));
+                    }
+
+                    bullets(body, [
+                        'Nothing is saved until you click Apply Changes. Review the Source field first.',
+                        'A group can be given by its short name: GROUP-1 only matches a group whose path ends in /GROUP-1, never GROUP-10.',
+                        'Add and Remove need a Check of the current list. Editing the list or switching between Users and Groups asks for a new Check.',
+                        'Exclusions are never read or changed.',
+                        'Stop ends the run after the current item. The summary lists what failed, to copy or download.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -27824,6 +27909,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
                     togglesWrap.appendChild(toggle('🧹 Steering Exception Domain Tools', true, 'Bulk remove and bulk add domains across steering exceptions, with backups to undo.'));
+                    togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
@@ -31162,6 +31248,24 @@ Version 1.16:
         lastConfigs:    [],         // names of the configurations the last run changed
     };
 
+    // Source Manager state. Declared here because the request sniffer below fills its session fields.
+    // The page calls these with or without a leading slash
+    const SM_API_RE = /(^|\/)(inline_policies|completions)\//;
+    const sm = {
+        token:          null,
+        resource:       null,   // "resource" header of the policy page's own lookups
+        clientIdPrefix: null,
+        host:           null,
+        shadow:         null,
+        timer:          null,
+        busy:           false,
+        stop:           false,
+        mode:           'user',     // 'user' or 'group'
+        entries:        [],
+        rows:           null,       // Check results for the current list, null when there are none
+        confirmTimer:   null,       // Remove waits for a second click while this runs
+    };
+
     /* ── Learning from the page's own requests ── */
 
     function seGetConfigs() {
@@ -31187,12 +31291,13 @@ Version 1.16:
         if (typeof body !== 'string' || body.indexOf('"token"') === -1) return;
         try {
             const json = JSON.parse(body);
-            if (json.token) se.token = json.token;
+            if (json.token) se.token = sm.token = json.token;
             if (/steering/i.test(url) && json.config_id != null) se.currentConfig = String(json.config_id);
         } catch (e) { /* not JSON */ }
     }
 
-    function seInstallSniffer() {
+    // Shared by the Steering tools and the Source Manager: both reuse the page's session token.
+    function nsInstallSniffer() {
         const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         const proto = w.XMLHttpRequest && w.XMLHttpRequest.prototype;
         if (!proto || proto.__nstkSteering) return;
@@ -31208,6 +31313,10 @@ Version 1.16:
             if (n === 'resource') se.resource = String(value);
             if (n === 'x-netskope-client-request-id' && /steering/i.test(this.__nstkUrl || '')) {
                 se.clientIdPrefix = String(value).split('.')[0];
+            }
+            if (SM_API_RE.test(this.__nstkUrl || '')) {
+                if (n === 'resource') sm.resource = String(value);
+                if (n === 'x-netskope-client-request-id') sm.clientIdPrefix = String(value).split('.')[0];
             }
             return origHeader.apply(this, arguments);
         };
@@ -31237,7 +31346,7 @@ Version 1.16:
     }
 
     // Must run before the console app starts so its first requests are seen
-    if (getSetting('steeringRemover')) seInstallSniffer();
+    if (getSetting('steeringRemover') || getSetting('sourceManager')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -32737,6 +32846,807 @@ Version 1.16:
     }
 
     // ─────────────────────────────────────────────────────────────
+    // SOURCE MANAGER
+    // Checks, adds, removes and exports users or AD groups in the Source field
+    // of the Real-time Protection policy open in the edit page.
+    // ─────────────────────────────────────────────────────────────
+
+    const SM_HOST_ID   = 'nstk-source-manager-host';
+    const SM_BUTTON_ID = 'nstk-source-manager-button';
+    const SM_NOUN      = { user: ['user', 'users'], group: ['group', 'groups'] };
+
+    const smWait = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const smKey  = value => String(value || '').trim().toLowerCase();
+
+    // Same rules as the old standalone bulk script: BOM, quotes, and ; , or tab, whichever the first line uses most.
+    function smParseRows(text) {
+        text = String(text || '').replace(/^﻿/, '');
+        const firstLine = text.split(/\r?\n/)[0] || '';
+        const delim = [';', ',', '\t'].map(d => [d, firstLine.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+        const rows = [];
+        let row = [], cur = '', quoted = false;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (quoted) {
+                if (c === '"' && text[i + 1] === '"') { cur += '"'; i++; }
+                else if (c === '"') quoted = false;
+                else cur += c;
+            } else if (c === '"') quoted = true;
+            else if (c === delim) { row.push(cur); cur = ''; }
+            else if (c === '\n' || c === '\r') {
+                if (c === '\r' && text[i + 1] === '\n') i++;
+                row.push(cur); rows.push(row); row = []; cur = '';
+            } else cur += c;
+        }
+        if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+        return rows.map(r => r.map(x => x.trim())).filter(r => r.some(x => x));
+    }
+
+    function smParseList(text, mode) {
+        const rows = smParseRows(text);
+        if (!rows.length) return [];
+        const header = mode === 'group'
+            ? /^(group|grupo|groupname|group name|name|cn|samaccountname)$/
+            : /^(e-?mail|mail|user|usuario|username|upn|userprincipalname|correo)$/;
+        const col = rows[0].map(smKey).findIndex(h => header.test(h));
+        const seen = new Set();
+        const out = [];
+        const push = (v) => {
+            v = String(v || '').trim();
+            if (v && !seen.has(smKey(v))) { seen.add(smKey(v)); out.push(v); }
+        };
+        if (col >= 0) rows.slice(1).forEach(r => push(r[col]));
+        else if (mode === 'group') rows.forEach(r => r.forEach(push));
+        else rows.forEach(r => r.forEach(c => { if (c.includes('@')) push(c); }));
+        return out;
+    }
+
+    // The visible Source picker and its main ng-select. The second ng-select is Exclusions: never touched.
+    function smFindPicker() {
+        const picker = [...document.querySelectorAll('ns-user-criteria-picker')].find(p => p.getClientRects().length);
+        const select = picker && picker.querySelector('.ns-picker > ng-select, ng-select');
+        return select ? { picker, select } : null;
+    }
+
+    /* ── Page button ── */
+
+    function smSyncButton() {
+        const found = smFindPicker();
+        const btn = document.getElementById(SM_BUTTON_ID);
+        if (!found) { btn?.remove(); return; }
+        if (btn && btn.previousElementSibling === found.picker) return;
+        btn?.remove();
+        const b = document.createElement('button');
+        b.id = SM_BUTTON_ID;
+        b.type = 'button';
+        b.className = 'ns-btn ns-btn-secondary';
+        b.textContent = '👥 Manage Source';
+        b.title = 'Check, add, remove or export users and groups in Source (NS Policies Toolkit)';
+        Object.assign(b.style, { marginTop: '6px', whiteSpace: 'nowrap' });
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); smOpen(); });
+        found.picker.insertAdjacentElement('afterend', b);
+    }
+
+    function initSourceManager() {
+        if (!getSetting('sourceManager') || sm.timer) return;
+        sm.timer = setInterval(smSyncButton, 1000);
+        smSyncButton();
+    }
+
+    function cleanupSourceManager() {
+        clearInterval(sm.timer);
+        sm.timer = null;
+        sm.stop = true;
+        removeAll('#' + SM_BUTTON_ID);
+        sm.host?.remove();
+        sm.host = sm.shadow = null;
+    }
+
+    /* ── Reading the Source field ── */
+
+    const SM_ICON_TYPE = [['netskope-icon-user-group', 'group'], ['netskope-icon-ou', 'ou'], ['netskope-icon-user', 'user']];
+
+    const smShortName = name => String(name || '').split('/').pop().trim();
+
+    async function smOpenDropdown(select) {
+        if (select.classList.contains('ng-select-opened') && select.querySelector('ng-dropdown-panel')) return true;
+        select.querySelector('.ng-select-container')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        for (let i = 0; i < 20; i++) {
+            await smWait(150);
+            if (select.querySelector('ng-dropdown-panel')) return true;
+        }
+        return false;
+    }
+
+    // Leaves the field as the user had it: empty search box and the dropdown closed.
+    async function smCloseDropdown(select) {
+        if (!select || !select.isConnected) return;
+        const input = select.querySelector('.ng-input input');
+        if (input && input.value) smSetSearch(input, '');
+        if (!select.classList.contains('ng-select-opened')) return;
+        input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+        for (let i = 0; i < 10 && select.classList.contains('ng-select-opened'); i++) await smWait(100);
+        // Netskope also closes it on a click outside the field
+        if (select.classList.contains('ng-select-opened')) {
+            document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            await smWait(200);
+        }
+    }
+
+    function smSetSearch(input, value) {
+        input.focus();
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function smTagsOf(select) {
+        return [...select.querySelectorAll('.ng-value-container .ns-picker-tag')].map(tag => {
+            const icon = tag.querySelector('i[class*="netskope-icon-"]');
+            const type = (SM_ICON_TYPE.find(([cls]) => icon && icon.classList.contains(cls)) || [, 'user'])[1];
+            const label = tag.querySelector('.ng-value-label');
+            return { type, name: (label ? label.textContent : '').trim(), el: tag };
+        }).filter(t => t.name);
+    }
+
+    // With the dropdown closed Netskope only renders 5 tags, so it is opened for the read.
+    async function smReadSource() {
+        const found = smFindPicker();
+        if (!found) throw new Error('Source field not found. Open a policy in edit mode first.');
+        await smOpenDropdown(found.select);
+        const tags = smTagsOf(found.select).map(({ type, name }) => ({ type, name }));
+        await smCloseDropdown(found.select);
+        return tags;
+    }
+
+    /* ── Export ── */
+
+    function smExportCsv(items) {
+        // Every field is quoted, so a spreadsheet never splits a name on , or ;. A name that starts
+        // like a formula is prefixed with ' so the spreadsheet shows it as text.
+        const cell = v => {
+            v = String(v);
+            if (/^[=+\-@\t\r]/.test(v.trim())) v = "'" + v;
+            return '"' + v.replace(/"/g, '""') + '"';
+        };
+        return [['type', 'name', 'short_name'].map(cell).join(';')]
+            .concat(items.map(i => [i.type, i.name, i.type === 'user' ? i.name : smShortName(i.name)].map(cell).join(';')))
+            .join('\n') + '\n';
+    }
+
+    function smDownload(text, fileName) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }));
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    async function smCopy(text, button) {
+        try { await navigator.clipboard.writeText(text); }
+        catch (e) { if (typeof GM_setClipboard === 'function') GM_setClipboard(text); }
+        const old = button.textContent;
+        button.textContent = '✔ Copied';
+        setTimeout(() => { button.textContent = old; }, 1500);
+    }
+
+    const smPolicyId = () => (location.hash.match(/[?&]id=(\d+)/) || [, 'policy'])[1];
+
+    async function smExport() {
+        if (sm.busy) return;
+        sm.busy = true;
+        smUpdateButtons();
+        try {
+            const items = await smReadSource();
+            const date = new Date().toISOString().slice(0, 10);
+            smDownload(smExportCsv(items), `source_${smPolicyId()}_${date}.csv`);
+            const names = items.filter(i => i.type === sm.mode).map(i => i.name);
+            const counts = ['user', 'group', 'ou'].map(t => `${items.filter(i => i.type === t).length} ${{ user: 'users', group: 'groups', ou: 'OUs' }[t]}`);
+            smLog(`Exported ${items.length} items from Source: ${counts.join(', ')}.`, 'ok');
+            const summary = smEl('sm-summary');
+            summary.textContent = `Source holds ${counts.join(', ')}. `;
+            const copy = document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'link-btn';
+            copy.textContent = `📋 Copy the ${SM_NOUN[sm.mode][1]} (${names.length})`;
+            copy.disabled = !names.length;
+            copy.addEventListener('click', () => smCopy(names.join('\n'), copy));
+            summary.appendChild(copy);
+            summary.hidden = false;
+        } catch (e) {
+            smLog(e.message, 'err');
+        } finally {
+            sm.busy = false;
+            smUpdateButtons();
+        }
+    }
+
+    /* ── Check: the page's own lookups, nothing in the form changes ── */
+
+    const SM_SEARCH = {
+        user:  { path: '/inline_policies/getAllUsers',           value: d => d.email },
+        group: { path: '/completions/getAllUserGroupObjects',    value: d => d.name },
+    };
+    const SM_STATUS = {
+        found:     'Found',
+        ambiguous: 'Ambiguous',
+        notfound:  'Not found',
+        error:     'Could not check',
+    };
+
+    async function smPost(path, payload) {
+        if (!sm.token) {
+            throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
+        }
+        const reqId = seRandomId();
+        const headers = {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Netskope-req-id': reqId,
+        };
+        if (sm.resource) headers.resource = sm.resource;
+        if (sm.clientIdPrefix) headers['X-Netskope-Client-Request-Id'] = sm.clientIdPrefix + '.' + reqId;
+        const res = await fetch(path, {
+            method: 'POST', credentials: 'same-origin', headers,
+            body: JSON.stringify(Object.assign({}, payload, { token: sm.token })),
+        });
+        if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${path}. Your session may have expired: reload the page.`);
+        let json;
+        try { json = await res.json(); } catch (e) { throw new Error(`Netskope sent an unexpected answer to ${path}.`); }
+        if (!json || json.status !== 'success') throw new Error(`Netskope refused ${path}: ${(json && json.msg) || 'no reason given'}`);
+        return json.data;
+    }
+
+    async function smSearch(mode, prefix) {
+        const data = await smPost(SM_SEARCH[mode].path, { limit: 100, prefix, pageName: 'Real-time Protection' });
+        return (Array.isArray(data) ? data : []).map(SM_SEARCH[mode].value).filter(Boolean);
+    }
+
+    // Users and full group paths match exactly; a short group name matches the last path segment only.
+    function smEntryMatches(entry, value, mode) {
+        if (mode === 'group' && !entry.includes('/')) return smKey(smShortName(value)) === smKey(entry);
+        return smKey(value) === smKey(entry);
+    }
+
+    async function smCheckEntry(entry, mode, policyNames) {
+        const row = { entry, status: 'error', matches: [], chosen: null, inPolicy: [], reason: '' };
+        row.inPolicy = policyNames.filter(n => smEntryMatches(entry, n, mode));
+        try {
+            const prefix = mode === 'group' ? smShortName(entry) : entry.trim();
+            const results = await smSearch(mode, prefix);
+            row.matches = [...new Set(results.filter(v => smEntryMatches(entry, v, mode)))];
+            if (row.matches.length === 1) { row.status = 'found'; row.chosen = row.matches[0]; }
+            else if (row.matches.length > 1) row.status = 'ambiguous';
+            else if (results.length >= 100) row.reason = 'Too many results: give the full path';
+            else row.status = 'notfound';
+        } catch (e) {
+            row.reason = e.message;
+        }
+        return row;
+    }
+
+    async function smCheck(entries, mode) {
+        if (!sm.token) {
+            throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
+        }
+        const type = mode === 'group' ? 'group' : 'user';
+        const policyNames = (await smReadSource()).filter(t => t.type === type).map(t => t.name);
+        const rows = new Array(entries.length);
+        let next = 0, doneCount = 0;
+        const worker = async () => {
+            while (next < entries.length && !sm.stop) {
+                const i = next++;
+                rows[i] = await smCheckEntry(entries[i], mode, policyNames);
+                smProgress(++doneCount, entries.length);
+            }
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        return rows.filter(Boolean);
+    }
+
+    function smProgress(doneCount, total) {
+        smEl('sm-bar').style.width = (total ? doneCount / total * 100 : 0) + '%';
+    }
+
+    function smRenderRows() {
+        const box = smEl('sm-results');
+        box.textContent = '';
+        if (!sm.rows || !sm.rows.length) return;
+        const table = document.createElement('table');
+        table.className = 'table';
+        table.innerHTML = '<thead><tr><th>Entry</th><th>Result</th><th>In policy</th></tr></thead><tbody></tbody>';
+        const tbody = table.querySelector('tbody');
+        const cell = (tr, text, cls) => {
+            const td = document.createElement('td');
+            if (text) td.textContent = text;
+            if (cls) td.className = cls;
+            tr.appendChild(td);
+            return td;
+        };
+        const muted = (td, text) => {
+            const div = document.createElement('div');
+            div.className = 'muted';
+            div.textContent = text;
+            td.appendChild(div);
+        };
+        const picker = (td, kind, values, chosen, onPick) => {
+            const select = document.createElement('select');
+            select.dataset.pick = kind;
+            select.appendChild(new Option('Choose the path…', ''));
+            values.forEach(v => select.appendChild(new Option(v, v, false, v === chosen)));
+            select.addEventListener('change', () => onPick(select.value || null));
+            td.appendChild(select);
+        };
+        sm.rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.dataset.entry = row.entry;
+            tr.dataset.status = row.status;
+            cell(tr, row.entry);
+            const result = cell(tr);
+            const chip = document.createElement('span');
+            chip.className = 'chip ' + row.status;
+            chip.textContent = SM_STATUS[row.status];
+            result.appendChild(chip);
+            if (row.status === 'found' && row.chosen !== row.entry) muted(result, row.chosen);
+            if (row.status === 'ambiguous') picker(result, 'match', row.matches, row.chosen, v => { row.chosen = v; });
+            if (row.status === 'error') muted(result, row.reason);
+            const policy = cell(tr);
+            policy.dataset.col = 'policy';
+            policy.appendChild(document.createTextNode(row.inPolicy.length ? 'Yes' : 'No'));
+            if (row.inPolicy.length === 1 && smKey(row.inPolicy[0]) !== smKey(row.entry)) muted(policy, row.inPolicy[0]);
+            if (row.inPolicy.length > 1) {
+                if (!row.removeChoice) row.removeChoice = null;
+                picker(policy, 'policy', row.inPolicy, row.removeChoice, v => { row.removeChoice = v; });
+            }
+            tbody.appendChild(tr);
+        });
+        box.appendChild(table);
+    }
+
+    async function smRunCheck() {
+        if (sm.busy) return;
+        if (!sm.entries.length) { smLog(`No ${SM_NOUN[sm.mode][1]} in the list.`, 'err'); return; }
+        sm.busy = true;
+        sm.stop = false;
+        sm.rows = null;
+        smEl('sm-summary').hidden = true;
+        smProgress(0, 1);
+        smRenderRows();
+        smUpdateButtons();
+        try {
+            smLog(`Checking ${smCountText()}…`);
+            const rows = await smCheck(sm.entries, sm.mode);
+            sm.rows = rows;
+            const n = s => rows.filter(r => r.status === s).length;
+            smLog(`Check: ${n('found')} found, ${n('ambiguous')} ambiguous, ${n('notfound')} not found, ${n('error')} could not check. ` +
+                `${rows.filter(r => r.inPolicy.length).length} already in the policy.${sm.stop ? ' Stopped before the end.' : ''}`, 'ok');
+            rows.filter(r => r.status === 'error').slice(0, 1).forEach(r => smLog(r.reason, 'err'));
+        } catch (e) {
+            smLog(e.message, 'err');
+        } finally {
+            sm.busy = false;
+            smRenderRows();
+            smUpdateButtons();
+        }
+    }
+
+    /* ── Add and Remove: the Netskope form itself, nothing is saved until Apply Changes ── */
+
+    const SM_GONE = 'Source field not found. The run stopped.';
+    const SM_SECTION_ICON = { user: 'netskope-icon-user', group: 'netskope-icon-user-group' };
+
+    function smPickerOrStop() {
+        const found = smFindPicker();
+        if (!found) throw new Error(SM_GONE);
+        return found;
+    }
+
+    // The type is an accordion inside the open dropdown: the active section's title sits in the header.
+    async function smOpenSection(select, mode) {
+        const icon = SM_SECTION_ICON[mode];
+        const isActive = () => !!select.querySelector(`.ng-dropdown-header .sub-criterion-title i.${icon}`);
+        if (isActive()) return true;
+        const title = [...select.querySelectorAll('ng-dropdown-panel .sub-criterion-title')]
+            .find(t => t.querySelector(`i.${icon}`));
+        if (!title) return false;
+        title.click();
+        for (let i = 0; i < 10 && !isActive(); i++) await smWait(100);
+        return isActive();
+    }
+
+    const smIsLoading = select => select.classList.contains('ng-select-loading') || !!select.querySelector('.ng-spinner-loader');
+
+    async function smAddValue(mode, value, cfg) {
+        const type = mode === 'group' ? 'group' : 'user';
+        let { select } = smPickerOrStop();
+        if (!(await smOpenDropdown(select))) return 'failed';
+        if (smTagsOf(select).some(t => t.type === type && smKey(t.name) === smKey(value))) return 'already';
+        if (!(await smOpenSection(select, mode))) return 'failed';
+        for (let attempt = 0; attempt <= cfg.retries; attempt++) {
+            const input = select.querySelector('.ng-input input');
+            // Empty first, so Netskope runs a new lookup even when the text did not change
+            smSetSearch(input, '');
+            await smWait(300);
+            smSetSearch(input, value);
+            const t0 = Date.now();
+            let sawSpinner = false;
+            while (Date.now() - t0 < cfg.timeout) {
+                await smWait(200);
+                select = smPickerOrStop().select;
+                if (smIsLoading(select)) { sawSpinner = true; continue; }
+                // The lookup is debounced: until its spinner showed, the list may still be the previous one
+                if (!sawSpinner && Date.now() - t0 < 4000) continue;
+                const option = [...select.querySelectorAll('ng-dropdown-panel .ng-option:not(.ng-option-disabled)')]
+                    .find(o => smKey((o.querySelector('.label-title') || o).textContent) === smKey(value));
+                if (option) {
+                    if (option.classList.contains('ng-option-selected')) return 'already';
+                    option.click();
+                    await smWait(400);
+                    select = smPickerOrStop().select;
+                    return smTagsOf(select).some(t => t.type === type && smKey(t.name) === smKey(value)) ? 'added' : 'failed';
+                }
+                if (select.querySelector('ng-dropdown-panel .ng-option-disabled')) return 'missing';
+            }
+        }
+        return 'timeout';
+    }
+
+    function smRunConfig() {
+        const num = (id, fallback) => { const v = parseFloat(smEl(id).value); return isNaN(v) ? fallback : v; };
+        return {
+            timeout: Math.max(5, num('sm-timeout', 30)) * 1000,
+            retries: Math.max(0, Math.round(num('sm-retries', 1))),
+            pause:   Math.max(0, num('sm-pause', 1)) * 1000,
+        };
+    }
+
+    const SM_REASON = {
+        timeout: 'Netskope did not answer in time',
+        missing: 'Netskope did not list it',
+        failed:  'could not select it',
+    };
+
+    // items: [{ value, row }]. Returns what happened, and shows the summary.
+    async function smRun(kind, items) {
+        const cfg = smRunConfig();
+        const result = { done: 0, already: 0, failed: [], unprocessed: 0 };
+        const verb = kind === 'add' ? 'Added' : 'Removed';
+        sm.busy = true;
+        sm.stop = false;
+        smEl('sm-summary').hidden = true;
+        smProgress(0, items.length);
+        smUpdateButtons();
+        let processed = 0;
+        let select = null;
+        try {
+            for (const item of items) {
+                if (sm.stop) break;
+                select = smPickerOrStop().select;
+                let outcome;
+                try {
+                    outcome = kind === 'add' ? await smAddValue(sm.mode, item.value, cfg) : await smRemoveValue(item.value);
+                } catch (e) {
+                    if (e.message === SM_GONE) throw e;
+                    outcome = 'failed';
+                }
+                processed++;
+                if (outcome === 'added' || outcome === 'removed') {
+                    result.done++;
+                    smLog(`✔ ${verb} ${item.value}`, 'ok');
+                    if (item.row) {
+                        if (kind === 'add') item.row.inPolicy = [item.value];
+                        else item.row.inPolicy = item.row.inPolicy.filter(n => smKey(n) !== smKey(item.value));
+                        if (kind === 'remove') item.row.removeChoice = null;
+                    }
+                } else if (outcome === 'already') {
+                    result.already++;
+                    smLog(`= ${item.value} (${kind === 'add' ? 'already in the policy' : 'not in the policy'})`, 'warn');
+                    if (item.row && kind === 'add') item.row.inPolicy = [item.value];
+                } else {
+                    result.failed.push({ value: item.value, reason: SM_REASON[outcome] || outcome });
+                    smLog(`✖ ${item.value} (${SM_REASON[outcome] || outcome})`, 'err');
+                }
+                smProgress(processed, items.length);
+                if (cfg.pause && processed < items.length && !sm.stop) await smWait(cfg.pause);
+            }
+        } catch (e) {
+            smLog(e.message, 'err');
+        } finally {
+            result.unprocessed = items.length - processed;
+            const found = smFindPicker();
+            if (found) await smCloseDropdown(found.select);
+            if (result.done) smLog('Review the changes and click Apply Changes to save them.', 'ok');
+            smShowRunSummary(kind, result);
+            sm.busy = false;
+            smRenderRows();
+            smUpdateButtons();
+        }
+        return result;
+    }
+
+    function smShowRunSummary(kind, result) {
+        const summary = smEl('sm-summary');
+        summary.textContent = '';
+        const line = document.createElement('div');
+        line.textContent = `Completed: ${result.done + result.already} (${result.done} ${kind === 'add' ? 'added' : 'removed'}, ` +
+            `${result.already} ${kind === 'add' ? 'already there' : 'already gone'}). Failed: ${result.failed.length}.` +
+            (result.unprocessed ? ` Not processed: ${result.unprocessed}.` : '');
+        summary.appendChild(line);
+        if (result.failed.length) {
+            const list = document.createElement('div');
+            list.className = 'muted';
+            list.textContent = result.failed.map(f => `${f.value}: ${f.reason}`).join('\n');
+            list.style.whiteSpace = 'pre-wrap';
+            list.style.margin = '6px 0';
+            summary.appendChild(list);
+            const copy = document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'link-btn';
+            copy.textContent = '📋 Copy failed';
+            copy.addEventListener('click', () => smCopy(result.failed.map(f => f.value).join('\n'), copy));
+            const csv = document.createElement('button');
+            csv.type = 'button';
+            csv.className = 'link-btn';
+            csv.textContent = '⬇ CSV of failed';
+            csv.style.marginLeft = '6px';
+            csv.addEventListener('click', () => {
+                const q = v => '"' + String(/^[=+\-@\t\r]/.test(String(v).trim()) ? "'" + v : v).replace(/"/g, '""') + '"';
+                smDownload(['value', 'reason'].map(q).join(';') + '\n' + result.failed.map(f => [f.value, f.reason].map(q).join(';')).join('\n') + '\n',
+                    `source_${kind}_failed_${smPolicyId()}.csv`);
+            });
+            summary.append(copy, csv);
+        }
+        summary.hidden = false;
+    }
+
+    async function smRunAdd() {
+        if (sm.busy || !sm.rows) return;
+        const items = sm.rows.filter(r => r.chosen && !r.inPolicy.length).map(r => ({ value: r.chosen, row: r }));
+        const skipped = {
+            'already in the policy':        sm.rows.filter(r => r.inPolicy.length).length,
+            'not found':                    sm.rows.filter(r => r.status === 'notfound').length,
+            'ambiguous without a choice':   sm.rows.filter(r => r.status === 'ambiguous' && !r.chosen && !r.inPolicy.length).length,
+            'could not check':              sm.rows.filter(r => r.status === 'error' && !r.inPolicy.length).length,
+        };
+        const skipText = Object.entries(skipped).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(', ');
+        smLog(`Adding ${items.length} ${SM_NOUN[sm.mode][items.length === 1 ? 0 : 1]}${skipText ? '. Skipped: ' + skipText : ''}.`);
+        if (!items.length) return;
+        await smRun('add', items);
+    }
+
+    async function smRemoveValue(value) {
+        const type = sm.mode === 'group' ? 'group' : 'user';
+        let { select } = smPickerOrStop();
+        if (!(await smOpenDropdown(select))) return 'failed';
+        const tag = smTagsOf(select).find(t => t.type === type && smKey(t.name) === smKey(value));
+        if (!tag) return 'already';
+        tag.el.querySelector('.ng-value-icon')?.click();
+        await smWait(300);
+        select = smPickerOrStop().select;
+        return smTagsOf(select).some(t => t.type === type && smKey(t.name) === smKey(value)) ? 'failed' : 'removed';
+    }
+
+    // Each row removes its single match in the policy, or the path picked when several match.
+    function smRemoveItems() {
+        return (sm.rows || [])
+            .map(r => ({ value: r.inPolicy.length === 1 ? r.inPolicy[0] : r.removeChoice, row: r }))
+            .filter(i => i.value);
+    }
+
+    function smResetRemoveConfirm() {
+        clearTimeout(sm.confirmTimer);
+        sm.confirmTimer = null;
+        if (sm.shadow) smEl('sm-remove').textContent = 'Remove';
+    }
+
+    async function smRunRemove() {
+        if (sm.busy || !sm.rows) return;
+        const items = smRemoveItems();
+        if (!sm.confirmTimer) {
+            const ambiguous = sm.rows.filter(r => r.inPolicy.length > 1 && !r.removeChoice).length;
+            if (!items.length) {
+                smLog(`Nothing to remove: none of these ${SM_NOUN[sm.mode][1]} is in the policy` +
+                    (ambiguous ? `, or the path is not chosen for ${ambiguous}.` : '.'), 'warn');
+                return;
+            }
+            if (ambiguous) smLog(`${ambiguous} match several ${SM_NOUN[sm.mode][1]} in the policy and are skipped until you choose the path.`, 'warn');
+            smEl('sm-remove').textContent = `Click again to remove ${items.length}`;
+            sm.confirmTimer = setTimeout(smResetRemoveConfirm, 4000);
+            return;
+        }
+        smResetRemoveConfirm();
+        smLog(`Removing ${items.length} ${SM_NOUN[sm.mode][items.length === 1 ? 0 : 1]}.`);
+        await smRun('remove', items);
+    }
+
+    /* ── Panel (shadow DOM keeps Netskope styles out; adoptedStyleSheets passes the CSP) ── */
+
+    const smEl = id => sm.shadow.getElementById(id);
+
+    function smCreateHost() {
+        const host   = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet  = new CSSStyleSheet();
+        host.id = SM_HOST_ID;
+        host.dataset.open = 'false';
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; inset: 0 !important;
+                z-index: 2147483647 !important; display: block !important; font-family: Arial, sans-serif; }
+            :host([data-open="false"]) { display: none !important; }
+            .backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+                padding: 24px; box-sizing: border-box; background: rgba(0, 0, 0, .48); }
+            .sm-panel { display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px));
+                max-height: calc(100vh - 48px); overflow: hidden; box-sizing: border-box;
+                color: #282728; background: #fff; border: 1px solid #d5d5d5; border-top: 5px solid #005587;
+                border-radius: 6px; box-shadow: 0 8px 28px rgba(0, 0, 0, .3); }
+            .header, .footer { display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+                padding: 14px 20px; box-sizing: border-box; }
+            .header { justify-content: space-between; border-bottom: 1px solid #e6e6e6; }
+            .header h2 { margin: 0; color: #1a1a1a; font-size: 18px; font-weight: 700; }
+            .close { padding: 2px 8px; color: #53565a; background: transparent; border: 0;
+                font-size: 24px; line-height: 1; cursor: pointer; }
+            .body { overflow: auto; padding: 16px 20px; box-sizing: border-box; }
+            .modes { display: inline-flex; border: 1px solid #005587; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+            .modes button { padding: 6px 16px; border: 0; background: #fff; color: #005587; font-weight: 600;
+                font-size: 13px; cursor: pointer; }
+            .modes button.on { background: #005587; color: #fff; }
+            .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+            textarea { display: block; width: 100%; box-sizing: border-box; padding: 8px; min-height: 130px;
+                border: 1px solid #a7a8aa; border-radius: 4px; color: #282728; background: #fff; resize: vertical;
+                font: 13px Consolas, "Courier New", monospace; }
+            .line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+            .count { font-weight: 700; margin-right: auto; }
+            .line input[type="number"] { width: 56px; padding: 4px; border: 1px solid #a7a8aa; border-radius: 4px;
+                font: 13px Arial, sans-serif; color: #282728; background: #fff; }
+            .help { margin-top: 6px; color: #63666a; font-size: 12px; line-height: 1.4; }
+            .link-btn { padding: 5px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;
+                color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .results { margin-top: 14px; }
+            .table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            .table th, .table td { text-align: left; padding: 6px 8px; border-top: 1px solid #f0f0f0; vertical-align: top; }
+            .table th { background: #f7f7f7; font-weight: 700; }
+            .table select { max-width: 100%; padding: 3px; border: 1px solid #a7a8aa; border-radius: 4px;
+                font: 12px Arial, sans-serif; color: #282728; background: #fff; }
+            .chip { font-size: 11px; font-weight: 700; color: #fff; border-radius: 3px; padding: 2px 7px; white-space: nowrap; }
+            .chip.found { background: #26890d; }
+            .chip.ambiguous { background: #e08a00; }
+            .chip.notfound { background: #da291c; }
+            .chip.error { background: #75787b; }
+            .muted { color: #63666a; font-size: 11px; word-break: break-all; }
+            .bar { height: 6px; margin-top: 12px; background: #e6e6e6; border-radius: 3px; overflow: hidden; }
+            .bar > div { height: 100%; width: 0; background: #26890d; transition: width .2s; }
+            .log { margin-top: 8px; max-height: 140px; overflow: auto; padding: 6px 8px; background: #f6f8fa;
+                border: 1px solid #e1e4e8; border-radius: 4px; font: 11px Consolas, monospace; white-space: pre-wrap; }
+            .log:empty { display: none; }
+            .log .ok { color: #26890d; } .log .warn { color: #8a5a00; } .log .err { color: #da291c; }
+            .summary { margin-top: 10px; padding: 10px 12px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; }
+            .summary[hidden] { display: none; }
+            .footer { border-top: 1px solid #e6e6e6; }
+            .spacer { flex: 1; }
+            .footer button { padding: 8px 16px; border-radius: 4px; font-weight: 600; cursor: pointer;
+                font-size: 13px; color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .footer .primary { color: #fff; background: #005587; border-color: #005587; }
+            .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
+            .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
+            button:disabled { cursor: not-allowed; opacity: .5; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <div class="backdrop">
+                <section class="sm-panel" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+                    <header class="header">
+                        <h2 id="sm-title">👥 Manage Source</h2>
+                        <button type="button" class="close" id="sm-close" aria-label="Close">×</button>
+                    </header>
+                    <main class="body">
+                        <div class="modes"><button type="button" data-sm-mode="user" class="on">Users</button><button type="button" data-sm-mode="group">Groups</button></div>
+                        <label class="label" for="sm-list" id="sm-list-label"></label>
+                        <textarea id="sm-list"></textarea>
+                        <div class="line">
+                            <span class="count" id="sm-count"></span>
+                            <button type="button" class="link-btn" id="sm-load">Load CSV</button>
+                            <input type="file" id="sm-file" accept=".csv,.txt" hidden>
+                        </div>
+                        <div class="help" id="sm-help"></div>
+                        <div class="line">
+                            <label>Timeout (s) <input type="number" id="sm-timeout" value="30" min="5"></label>
+                            <label>Retries <input type="number" id="sm-retries" value="1" min="0" max="5"></label>
+                            <label>Pause (s) <input type="number" id="sm-pause" value="1" min="0" step="0.5"></label>
+                        </div>
+                        <div class="results" id="sm-results"></div>
+                        <div class="bar"><div id="sm-bar"></div></div>
+                        <div class="log" id="sm-log"></div>
+                        <div class="summary" id="sm-summary" hidden></div>
+                    </main>
+                    <footer class="footer">
+                        <button type="button" class="primary" id="sm-check">Check</button>
+                        <button type="button" class="success" id="sm-add" disabled>Add</button>
+                        <button type="button" class="danger" id="sm-remove" disabled>Remove</button>
+                        <button type="button" id="sm-export">Export</button>
+                        <span class="spacer"></span>
+                        <button type="button" id="sm-stop" disabled>Stop</button>
+                    </footer>
+                </section>
+            </div>`;
+        document.documentElement.appendChild(host);
+        sm.host = host;
+        sm.shadow = shadow;
+
+        smEl('sm-close').addEventListener('click', () => { host.dataset.open = 'false'; });
+        shadow.querySelectorAll('[data-sm-mode]').forEach(b => b.addEventListener('click', () => smSetMode(b.dataset.smMode)));
+        smEl('sm-list').addEventListener('input', smRefreshList);
+        smEl('sm-load').addEventListener('click', () => smEl('sm-file').click());
+        smEl('sm-file').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                smEl('sm-list').value = smParseList(String(reader.result), sm.mode).join('\n');
+                smRefreshList();
+                smLog(`Loaded ${file.name}: ${smCountText()}.`);
+                e.target.value = '';
+            };
+            reader.readAsText(file);
+        });
+        smEl('sm-stop').addEventListener('click', () => { sm.stop = true; smLog('Stopping after the current item…', 'warn'); });
+        smEl('sm-export').addEventListener('click', smExport);
+        smEl('sm-check').addEventListener('click', smRunCheck);
+        smEl('sm-add').addEventListener('click', smRunAdd);
+        smEl('sm-remove').addEventListener('click', smRunRemove);
+        smSetMode(sm.mode);
+    }
+
+    function smOpen() {
+        if (!sm.host || !sm.host.isConnected) smCreateHost();
+        sm.host.dataset.open = 'true';
+    }
+
+    function smLog(msg, cls) {
+        const line = document.createElement('div');
+        if (cls) line.className = cls;
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        smEl('sm-log').appendChild(line);
+        smEl('sm-log').scrollTop = smEl('sm-log').scrollHeight;
+    }
+
+    const smCountText = () => `${sm.entries.length} ${SM_NOUN[sm.mode][sm.entries.length === 1 ? 0 : 1]}`;
+
+    function smSetMode(mode) {
+        sm.mode = mode;
+        sm.shadow.querySelectorAll('[data-sm-mode]').forEach(b => b.classList.toggle('on', b.dataset.smMode === mode));
+        smEl('sm-list-label').textContent = mode === 'group' ? 'Groups' : 'Users';
+        smEl('sm-list').placeholder = mode === 'group'
+            ? 'GROUP-1\nGROUP-2\nexample.com/.../Security Groups/GROUP-3'
+            : 'user1@example.com\nuser2@example.com';
+        smEl('sm-help').textContent = mode === 'group'
+            ? 'One group per line, or a CSV with a group or name column. The short name is enough: GROUP-1 matches only a group whose path ends in /GROUP-1.'
+            : 'One email per line, or a CSV with an email, user or upn column.';
+        smRefreshList();
+    }
+
+    // Any change to the list or the mode makes earlier Check results stale.
+    function smRefreshList() {
+        sm.entries = smParseList(smEl('sm-list').value, sm.mode);
+        sm.rows = null;
+        smResetRemoveConfirm();
+        smEl('sm-count').textContent = smCountText();
+        smEl('sm-results').textContent = '';
+        smUpdateButtons();
+    }
+
+    function smUpdateButtons() {
+        smEl('sm-check').disabled  = sm.busy;
+        smEl('sm-export').disabled = sm.busy;
+        smEl('sm-add').disabled    = sm.busy || !sm.rows;
+        smEl('sm-remove').disabled = sm.busy || !sm.rows;
+        smEl('sm-stop').disabled   = !sm.busy;
+        sm.shadow.querySelectorAll('[data-sm-mode], #sm-list, #sm-load').forEach(el => { el.disabled = sm.busy; });
+    }
+
+
+    // ─────────────────────────────────────────────────────────────
     // FIRST-BOOT USERNAME PROMPT
     // ─────────────────────────────────────────────────────────────
 
@@ -32901,6 +33811,7 @@ Version 1.16:
         buildSettingsModal();
         initBulkConstraintTools();
         initSteeringRemover();
+        initSourceManager();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 

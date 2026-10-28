@@ -27781,6 +27781,74 @@ Version 1.16:
                 },
             },
             {
+                icon: '👥',
+                title: 'Source Manager',
+                buildContent(body) {
+                    lead(body, 'On a Real-time Protection policy in edit mode, check, add, remove or export many users or AD groups in the Source field at once.');
+
+                    body.appendChild(hrow([
+                        chip('User = ana@example.com  + 12 more', '#fff', { color: '#333', border: '1px solid #ccc' }),
+                    ], { marginBottom: '4px' }));
+                    body.appendChild(hrow([
+                        chip('👥 Manage Source', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits right below the Source field. Choose Users or Groups, then paste a list or load a CSV.');
+
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0', fontFamily: 'Arial, sans-serif' });
+                    [
+                        { entry: 'GROUP-10', kind: 'Found',     bg: '#26890d', note: 'example.com/.../Security Groups/GROUP-10', policy: 'No' },
+                        { entry: 'GROUP-1',  kind: 'Ambiguous', bg: '#e08a00', note: 'Two groups end in /GROUP-1: choose the path.', policy: 'No' },
+                        { entry: 'GROUP-2',  kind: 'Found',     bg: '#26890d', note: 'example.com/.../Security Groups/GROUP-2', policy: 'Yes' },
+                    ].forEach((r, i) => {
+                        const text = document.createElement('div');
+                        text.appendChild(span(r.entry, { fontSize: '12px', fontWeight: 'bold', color: '#333', display: 'block' }));
+                        text.appendChild(span(r.note, { fontSize: '11px', color: '#777', display: 'block' }));
+                        card.appendChild(hrow([
+                            chip(r.kind, r.bg),
+                            text,
+                            span('In policy: ' + r.policy, { fontSize: '11px', color: '#555', marginLeft: 'auto', whiteSpace: 'nowrap' }),
+                        ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', borderTop: i ? '1px solid #f0f0f0' : 'none' }));
+                    });
+                    body.appendChild(card);
+                    caption(body, 'After Check: one row per user or group, with the result and whether it is already in the policy.');
+
+                    const steps = [
+                        { bg: '#005587', label: 'Check',  desc: 'Looks up each one with the same search as the Source field, and reads what the policy already holds. Nothing changes.' },
+                        { bg: '#26890d', label: 'Add',    desc: 'Adds the ones found that are not in the policy yet.' },
+                        { bg: '#da291c', label: 'Remove', desc: 'Click twice to confirm. Takes out the ones that are in the policy.' },
+                        { bg: 'transparent', color: '#333', border: '1px solid #a7a8aa', label: 'Export', desc: 'Downloads every user, group and OU in Source as a CSV. No Check needed.' },
+                    ];
+                    for (const st of steps) {
+                        body.appendChild(hrow([
+                            chip(st.label, st.bg, st.color ? { color: st.color, border: st.border } : undefined),
+                            span(st.desc, { fontSize: '12px', color: '#555' }),
+                        ], { flexWrap: 'nowrap', margin: '8px 0 0 0' }));
+                    }
+
+                    const states = [
+                        { bg: '#26890d', label: 'Found',           desc: 'Exactly one user or group matches.' },
+                        { bg: '#e08a00', label: 'Ambiguous',       desc: 'Several groups end in that name. Choose the path, or it is skipped.' },
+                        { bg: '#da291c', label: 'Not found',       desc: 'Netskope does not know it. Check the spelling.' },
+                        { bg: '#75787b', label: 'Could not check', desc: 'The lookup failed, or too many groups contain the name: give the full path.' },
+                    ];
+                    for (const st of states) {
+                        body.appendChild(hrow([
+                            chip(st.label, st.bg),
+                            span(st.desc, { fontSize: '12px', color: '#555' }),
+                        ], { flexWrap: 'nowrap', margin: '8px 0 0 0' }));
+                    }
+
+                    bullets(body, [
+                        'Nothing is saved until you click Apply Changes. Review the Source field first.',
+                        'A group can be given by its short name: GROUP-1 only matches a group whose path ends in /GROUP-1, never GROUP-10.',
+                        'Add and Remove need a Check of the current list. Editing the list or switching between Users and Groups asks for a new Check.',
+                        'Exclusions are never read or changed.',
+                        'Stop ends the run after the current item. The summary lists what failed, to copy or download.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -27841,6 +27909,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
                     togglesWrap.appendChild(toggle('🧹 Steering Exception Domain Tools', true, 'Bulk remove and bulk add domains across steering exceptions, with backups to undo.'));
+                    togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
@@ -31180,7 +31249,8 @@ Version 1.16:
     };
 
     // Source Manager state. Declared here because the request sniffer below fills its session fields.
-    const SM_API_RE = /\/(inline_policies|completions)\//;
+    // The page calls these with or without a leading slash
+    const SM_API_RE = /(^|\/)(inline_policies|completions)\//;
     const sm = {
         token:          null,
         resource:       null,   // "resource" header of the policy page's own lookups
