@@ -33709,7 +33709,7 @@ Version 1.16:
         ['other',       'Other settings'],
         ['metadata',    'Metadata'],
     ];
-    const pc = { host: null, shadow: null, timer: null, busy: false, hasOther: false, pageSheet: false };
+    const pc = { host: null, shadow: null, timer: null, busy: false, hasOther: false, pageSheet: false, listCache: null };
 
     function pcGetSections() {
         const out = {};
@@ -33906,7 +33906,154 @@ Version 1.16:
         }
     }
 
-    async function pcCopy() { /* filled in by the copy flow */ }
+    /* ── Loading: the saved policy and only the name lookups it needs ── */
+
+    const PC_LOOKUPS = {
+        templates:   { path: '/notification_template/readAllTemplates', body: { offset: 0, fetch_firewall_template: false },
+                       id: d => d.file_name, name: d => d.template_name },
+        email:       { path: '/emailNotification/readAllEmailNotificationTemplates', body: {},
+                       id: d => d.template_id, name: d => d.template_name },
+        constraints: { path: 'constraints/readAllConstraintProfiles', body: {},
+                       id: d => d.profile_id, name: d => d.profile_name },
+        schedules:   { path: '/time_interval/getAll', body: {},
+                       id: d => d.id, name: d => d.name },
+    };
+    const PC_AISEC_PATH = '/api/v2/profiles/aiguardrails';
+    const PC_LIST_PATH  = 'inline_policy_groups/getPolicyGroupsWithAssociatedPolicies';
+
+    // Which lookups this policy needs, from the values it holds.
+    function pcNeededLookups(ruleData) {
+        const need = new Set();
+        (function walk(v, key) {
+            if (!v || typeof v !== 'object') {
+                if (key === 'template' && v) need.add('templates');
+                return;
+            }
+            if (Array.isArray(v)) { v.forEach(x => walk(x, key)); return; }
+            Object.entries(v).forEach(([k, x]) => walk(x, k));
+        })(ruleData, '');
+        if (ruleData.notify && (ruleData.notify.templates || []).length) need.add('email');
+        if (JSON.stringify(ruleData).includes('"constraints_profile"')) need.add('constraints');
+        if ((ruleData.schedule || []).length) need.add('schedules');
+        if ((ruleData.aisec_profile || []).length || (ruleData.aisec_actions || []).length) need.add('aisec');
+        return need;
+    }
+
+    async function pcLookup(kind) {
+        if (kind === 'aisec') {
+            const res = await fetch(PC_AISEC_PATH, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
+            if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${PC_AISEC_PATH}.`);
+            const json = await res.json();
+            const map = new Map();
+            (function walk(v) {
+                if (!v || typeof v !== 'object') return;
+                if (Array.isArray(v)) { v.forEach(walk); return; }
+                const id = v.id || v.uuid || v.profile_id;
+                const name = v.name || v.profile_name;
+                if (id && typeof name === 'string') map.set(String(id), name);
+                Object.values(v).forEach(walk);
+            })(json && json.data);
+            return map;
+        }
+        const def = PC_LOOKUPS[kind];
+        const body = sm.lastBodies[smPathOf(def.path)] || def.body;
+        const data = await smPost(def.path, body);
+        const map = new Map();
+        (Array.isArray(data) ? data : []).forEach(d => {
+            const id = def.id(d);
+            if (id != null && def.name(d) != null) map.set(String(id), String(def.name(d)));
+        });
+        return map;
+    }
+
+    // Group order and position in the group, from the policy list the page loaded or one request.
+    async function pcPlace(id) {
+        if (!pc.listCache) pc.listCache = sm.policyList || await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        if (sm.policyList) pc.listCache = sm.policyList;
+        const groups = Array.isArray(pc.listCache) ? pc.listCache : [];
+        for (const g of groups) {
+            const ids = String(g.rule_ids || '').split(',').map(x => x.trim()).filter(Boolean);
+            const listed = (g.policies || []).find(x => String(x.rule_id) === id);
+            const index = ids.indexOf(id);
+            if (index >= 0 || listed) {
+                return { groupOrder: g.group_order, groupName: g.group_name, groupId: g.group_id,
+                    position: index >= 0 ? index + 1 : null, ruleOrder: listed ? listed.rule_order : null, listed: listed || null };
+            }
+        }
+        return null;
+    }
+
+    async function pcLoad(id, wanted) {
+        const policy = await smPost('inline_policies/getPolicy', { id });
+        if (!policy || typeof policy !== 'object' || !policy.rule_data) throw new Error('Netskope did not send this policy.');
+        const names = { templates: new Map(), email: new Map(), constraints: new Map(), schedules: new Map(), aisec: new Map() };
+        const missing = new Set();
+        const jobs = [...pcNeededLookups(policy.rule_data)].map(kind =>
+            pcLookup(kind).then(map => { names[kind] = map; }, () => { missing.add(kind); }));
+        let place = null;
+        if (wanted.metadata) jobs.push(pcPlace(id).then(p => { place = p; }, () => { missing.add('list'); }));
+        await Promise.all(jobs);
+        return { policy, names, missing, place };
+    }
+
+    /* ── Text ── */
+
+    const pcPad = (n, s) => '  '.repeat(n) + s;
+
+    function pcSection(title, lines) {
+        const head = title.toUpperCase();
+        return [head, '='.repeat(head.length)].concat(lines);
+    }
+
+    function pcHeader(policy) {
+        const d = new Date();
+        const two = n => String(n).padStart(2, '0');
+        const stamp = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+        return [
+            `Netskope Real-time Protection policy: ${policy.rule_name}`,
+            `Tenant: ${location.hostname}`,
+            `Saved configuration, copied ${stamp} (unsaved edits in the form are not included)`,
+        ];
+    }
+
+    function pcRenderName(data) {
+        const p = data.policy, rd = p.rule_data;
+        const lines = [`Name: ${p.rule_name}`];
+        if (p.groupName) lines.push(`Group: ${p.groupName}`);
+        if (rd.description) lines.push('Description:', ...String(rd.description).split(/\r?\n/).map(l => pcPad(1, l)));
+        return lines;
+    }
+
+    function pcRender(data, wanted) {
+        const blocks = [pcHeader(data.policy)];
+        if (wanted.name) blocks.push(pcSection('Policy Name', pcRenderName(data)));
+        return blocks.map(b => b.join('\n')).join('\n\n') + '\n';
+    }
+
+    async function pcCopy() {
+        if (pc.busy) return;
+        const id = pcPolicyId();
+        if (!id) { pcStatus('Open a policy in edit mode first.', 'error'); return; }
+        pcSetBusy(true);
+        pcStatus('');
+        try {
+            const wanted = pcGetSections();
+            const data = await pcLoad(id, wanted);
+            const text = pcRender(data, wanted);
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (e) {
+                if (typeof GM_setClipboard !== 'function') throw new Error('The browser refused to copy the text.');
+                GM_setClipboard(text);
+            }
+            if (data.missing.size) pcStatus('✔ Copied. Some names could not be loaded, their ids are shown.', 'warn');
+            else pcStatus(`✔ Copied ${text.trimEnd().split('\n').length} lines.`);
+        } catch (e) {
+            pcStatus(e.message, 'error');
+        } finally {
+            pcSetBusy(false);
+        }
+    }
 
 
     // ─────────────────────────────────────────────────────────────
