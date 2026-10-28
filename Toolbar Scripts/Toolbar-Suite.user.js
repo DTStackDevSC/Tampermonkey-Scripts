@@ -26171,6 +26171,7 @@ Version 0.9.1:
 - Export downloads every user, group and OU in Source as a CSV.
 - Check looks up each user or group and shows whether it exists and whether it is already in the policy. Groups can be given by their short name.
 - Add puts the found users or groups into Source. Nothing is saved until you click Apply Changes.
+- Remove takes the listed users or groups out of Source. Click twice to confirm.
 
 Version 1.28.1:
 - Fixed the log buttons not appearing below the Definition field of Destination Profiles. They now work with Netskope's new Definition editor.
@@ -31192,6 +31193,7 @@ Version 1.16:
         mode:           'user',     // 'user' or 'group'
         entries:        [],
         rows:           null,       // Check results for the current list, null when there are none
+        confirmTimer:   null,       // Remove waits for a second click while this runs
     };
 
     /* ── Learning from the page's own requests ── */
@@ -33344,6 +33346,51 @@ Version 1.16:
         await smRun('add', items);
     }
 
+    async function smRemoveValue(value) {
+        const type = sm.mode === 'group' ? 'group' : 'user';
+        let { select } = smPickerOrStop();
+        if (!(await smOpenDropdown(select))) return 'failed';
+        const tag = smTagsOf(select).find(t => t.type === type && smKey(t.name) === smKey(value));
+        if (!tag) return 'already';
+        tag.el.querySelector('.ng-value-icon')?.click();
+        await smWait(300);
+        select = smPickerOrStop().select;
+        return smTagsOf(select).some(t => t.type === type && smKey(t.name) === smKey(value)) ? 'failed' : 'removed';
+    }
+
+    // Each row removes its single match in the policy, or the path picked when several match.
+    function smRemoveItems() {
+        return (sm.rows || [])
+            .map(r => ({ value: r.inPolicy.length === 1 ? r.inPolicy[0] : r.removeChoice, row: r }))
+            .filter(i => i.value);
+    }
+
+    function smResetRemoveConfirm() {
+        clearTimeout(sm.confirmTimer);
+        sm.confirmTimer = null;
+        if (sm.shadow) smEl('sm-remove').textContent = 'Remove';
+    }
+
+    async function smRunRemove() {
+        if (sm.busy || !sm.rows) return;
+        const items = smRemoveItems();
+        if (!sm.confirmTimer) {
+            const ambiguous = sm.rows.filter(r => r.inPolicy.length > 1 && !r.removeChoice).length;
+            if (!items.length) {
+                smLog(`Nothing to remove: none of these ${SM_NOUN[sm.mode][1]} is in the policy` +
+                    (ambiguous ? `, or the path is not chosen for ${ambiguous}.` : '.'), 'warn');
+                return;
+            }
+            if (ambiguous) smLog(`${ambiguous} match several ${SM_NOUN[sm.mode][1]} in the policy and are skipped until you choose the path.`, 'warn');
+            smEl('sm-remove').textContent = `Click again to remove ${items.length}`;
+            sm.confirmTimer = setTimeout(smResetRemoveConfirm, 4000);
+            return;
+        }
+        smResetRemoveConfirm();
+        smLog(`Removing ${items.length} ${SM_NOUN[sm.mode][items.length === 1 ? 0 : 1]}.`);
+        await smRun('remove', items);
+    }
+
     /* ── Panel (shadow DOM keeps Netskope styles out; adoptedStyleSheets passes the CSP) ── */
 
     const smEl = id => sm.shadow.getElementById(id);
@@ -33477,6 +33524,7 @@ Version 1.16:
         smEl('sm-export').addEventListener('click', smExport);
         smEl('sm-check').addEventListener('click', smRunCheck);
         smEl('sm-add').addEventListener('click', smRunAdd);
+        smEl('sm-remove').addEventListener('click', smRunRemove);
         smSetMode(sm.mode);
     }
 
@@ -33512,6 +33560,7 @@ Version 1.16:
     function smRefreshList() {
         sm.entries = smParseList(smEl('sm-list').value, sm.mode);
         sm.rows = null;
+        smResetRemoveConfirm();
         smEl('sm-count').textContent = smCountText();
         smEl('sm-results').textContent = '';
         smUpdateButtons();
