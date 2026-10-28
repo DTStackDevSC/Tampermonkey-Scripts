@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.2.1
+// @version      2.3.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.2.1';
-    const CHANGELOG = `Version 2.2.1:
+   const SCRIPT_VERSION = '2.3.0';
+    const CHANGELOG = `Version 2.3.0:
+- NS Policies Toolkit: new 👥 Manage Source button next to Source on Real-time Protection policies.
+
+Version 2.2.1:
 - NS Policies Toolkit: fixed the log buttons not appearing below the Definition field of Destination Profiles.
 
 Version 2.2.0:
@@ -26152,6 +26155,7 @@ Version 0.9.1:
         dlpCharCounter:  'toolkit_dlpCharCounter',
         bulkConstraints: 'toolkit_bulkConstraints',
         steeringRemover: 'toolkit_steeringRemover',
+        sourceManager:   'toolkit_sourceManager',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -26161,8 +26165,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.28.1';
-    const CHANGELOG = `Version 1.28.1:
+    const SCRIPT_VERSION = '1.29.0';
+    const CHANGELOG = `Version 1.29:
+- New 👥 Manage Source button next to Source on Real-time Protection policies.
+
+Version 1.28.1:
 - Fixed the log buttons not appearing below the Definition field of Destination Profiles. They now work with Netskope's new Definition editor.
 
 Version 1.28:
@@ -26644,6 +26651,11 @@ Version 1.16:
             label:       '🧹 Steering Exception Domain Tools',
             description: 'On the Steering Configuration page, adds "Bulk remove domains" and "Bulk add domains" buttons. Paste domains, pick the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
         },
+        {
+            key:         'sourceManager',
+            label:       '👥 Source Manager',
+            description: 'On Real-time Protection policy pages, adds a "Manage Source" button next to Source: check, add, remove and export users or AD groups from a pasted list or a CSV.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -26888,6 +26900,7 @@ Version 1.16:
                     }
                     if (key === 'bulkConstraints') cleanupBulkConstraintTools();
                     if (key === 'steeringRemover') cleanupSteeringRemover();
+                    if (key === 'sourceManager') cleanupSourceManager();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -26939,7 +26952,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -31162,6 +31175,22 @@ Version 1.16:
         lastConfigs:    [],         // names of the configurations the last run changed
     };
 
+    // Source Manager state. Declared here because the request sniffer below fills its session fields.
+    const SM_API_RE = /\/(inline_policies|completions)\//;
+    const sm = {
+        token:          null,
+        resource:       null,   // "resource" header of the policy page's own lookups
+        clientIdPrefix: null,
+        host:           null,
+        shadow:         null,
+        timer:          null,
+        busy:           false,
+        stop:           false,
+        mode:           'user',     // 'user' or 'group'
+        entries:        [],
+        rows:           null,       // Check results for the current list, null when there are none
+    };
+
     /* ── Learning from the page's own requests ── */
 
     function seGetConfigs() {
@@ -31187,12 +31216,13 @@ Version 1.16:
         if (typeof body !== 'string' || body.indexOf('"token"') === -1) return;
         try {
             const json = JSON.parse(body);
-            if (json.token) se.token = json.token;
+            if (json.token) se.token = sm.token = json.token;
             if (/steering/i.test(url) && json.config_id != null) se.currentConfig = String(json.config_id);
         } catch (e) { /* not JSON */ }
     }
 
-    function seInstallSniffer() {
+    // Shared by the Steering tools and the Source Manager: both reuse the page's session token.
+    function nsInstallSniffer() {
         const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
         const proto = w.XMLHttpRequest && w.XMLHttpRequest.prototype;
         if (!proto || proto.__nstkSteering) return;
@@ -31208,6 +31238,10 @@ Version 1.16:
             if (n === 'resource') se.resource = String(value);
             if (n === 'x-netskope-client-request-id' && /steering/i.test(this.__nstkUrl || '')) {
                 se.clientIdPrefix = String(value).split('.')[0];
+            }
+            if (SM_API_RE.test(this.__nstkUrl || '')) {
+                if (n === 'resource') sm.resource = String(value);
+                if (n === 'x-netskope-client-request-id') sm.clientIdPrefix = String(value).split('.')[0];
             }
             return origHeader.apply(this, arguments);
         };
@@ -31237,7 +31271,7 @@ Version 1.16:
     }
 
     // Must run before the console app starts so its first requests are seen
-    if (getSetting('steeringRemover')) seInstallSniffer();
+    if (getSetting('steeringRemover') || getSetting('sourceManager')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -32737,6 +32771,283 @@ Version 1.16:
     }
 
     // ─────────────────────────────────────────────────────────────
+    // SOURCE MANAGER
+    // Checks, adds, removes and exports users or AD groups in the Source field
+    // of the Real-time Protection policy open in the edit page.
+    // ─────────────────────────────────────────────────────────────
+
+    const SM_HOST_ID   = 'nstk-source-manager-host';
+    const SM_BUTTON_ID = 'nstk-source-manager-button';
+    const SM_NOUN      = { user: ['user', 'users'], group: ['group', 'groups'] };
+
+    const smWait = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const smKey  = value => String(value || '').trim().toLowerCase();
+
+    // Same rules as the old standalone bulk script: BOM, quotes, and ; , or tab, whichever the first line uses most.
+    function smParseRows(text) {
+        text = String(text || '').replace(/^﻿/, '');
+        const firstLine = text.split(/\r?\n/)[0] || '';
+        const delim = [';', ',', '\t'].map(d => [d, firstLine.split(d).length]).sort((a, b) => b[1] - a[1])[0][0];
+        const rows = [];
+        let row = [], cur = '', quoted = false;
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (quoted) {
+                if (c === '"' && text[i + 1] === '"') { cur += '"'; i++; }
+                else if (c === '"') quoted = false;
+                else cur += c;
+            } else if (c === '"') quoted = true;
+            else if (c === delim) { row.push(cur); cur = ''; }
+            else if (c === '\n' || c === '\r') {
+                if (c === '\r' && text[i + 1] === '\n') i++;
+                row.push(cur); rows.push(row); row = []; cur = '';
+            } else cur += c;
+        }
+        if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+        return rows.map(r => r.map(x => x.trim())).filter(r => r.some(x => x));
+    }
+
+    function smParseList(text, mode) {
+        const rows = smParseRows(text);
+        if (!rows.length) return [];
+        const header = mode === 'group'
+            ? /^(group|grupo|groupname|group name|name|cn|samaccountname)$/
+            : /^(e-?mail|mail|user|usuario|username|upn|userprincipalname|correo)$/;
+        const col = rows[0].map(smKey).findIndex(h => header.test(h));
+        const seen = new Set();
+        const out = [];
+        const push = (v) => {
+            v = String(v || '').trim();
+            if (v && !seen.has(smKey(v))) { seen.add(smKey(v)); out.push(v); }
+        };
+        if (col >= 0) rows.slice(1).forEach(r => push(r[col]));
+        else if (mode === 'group') rows.forEach(r => r.forEach(push));
+        else rows.forEach(r => r.forEach(c => { if (c.includes('@')) push(c); }));
+        return out;
+    }
+
+    // The visible Source picker and its main ng-select. The second ng-select is Exclusions: never touched.
+    function smFindPicker() {
+        const picker = [...document.querySelectorAll('ns-user-criteria-picker')].find(p => p.getClientRects().length);
+        const select = picker && picker.querySelector('.ns-picker > ng-select, ng-select');
+        return select ? { picker, select } : null;
+    }
+
+    /* ── Page button ── */
+
+    function smSyncButton() {
+        const found = smFindPicker();
+        const btn = document.getElementById(SM_BUTTON_ID);
+        if (!found) { btn?.remove(); return; }
+        if (btn && btn.previousElementSibling === found.picker) return;
+        btn?.remove();
+        const b = document.createElement('button');
+        b.id = SM_BUTTON_ID;
+        b.type = 'button';
+        b.className = 'ns-btn ns-btn-secondary';
+        b.textContent = '👥 Manage Source';
+        b.title = 'Check, add, remove or export users and groups in Source (NS Policies Toolkit)';
+        Object.assign(b.style, { marginTop: '6px', whiteSpace: 'nowrap' });
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); smOpen(); });
+        found.picker.insertAdjacentElement('afterend', b);
+    }
+
+    function initSourceManager() {
+        if (!getSetting('sourceManager') || sm.timer) return;
+        sm.timer = setInterval(smSyncButton, 1000);
+        smSyncButton();
+    }
+
+    function cleanupSourceManager() {
+        clearInterval(sm.timer);
+        sm.timer = null;
+        sm.stop = true;
+        removeAll('#' + SM_BUTTON_ID);
+        sm.host?.remove();
+        sm.host = sm.shadow = null;
+    }
+
+    /* ── Panel (shadow DOM keeps Netskope styles out; adoptedStyleSheets passes the CSP) ── */
+
+    const smEl = id => sm.shadow.getElementById(id);
+
+    function smCreateHost() {
+        const host   = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet  = new CSSStyleSheet();
+        host.id = SM_HOST_ID;
+        host.dataset.open = 'false';
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; inset: 0 !important;
+                z-index: 2147483647 !important; display: block !important; font-family: Arial, sans-serif; }
+            :host([data-open="false"]) { display: none !important; }
+            .backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+                padding: 24px; box-sizing: border-box; background: rgba(0, 0, 0, .48); }
+            .sm-panel { display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px));
+                max-height: calc(100vh - 48px); overflow: hidden; box-sizing: border-box;
+                color: #282728; background: #fff; border: 1px solid #d5d5d5; border-top: 5px solid #005587;
+                border-radius: 6px; box-shadow: 0 8px 28px rgba(0, 0, 0, .3); }
+            .header, .footer { display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+                padding: 14px 20px; box-sizing: border-box; }
+            .header { justify-content: space-between; border-bottom: 1px solid #e6e6e6; }
+            .header h2 { margin: 0; color: #1a1a1a; font-size: 18px; font-weight: 700; }
+            .close { padding: 2px 8px; color: #53565a; background: transparent; border: 0;
+                font-size: 24px; line-height: 1; cursor: pointer; }
+            .body { overflow: auto; padding: 16px 20px; box-sizing: border-box; }
+            .modes { display: inline-flex; border: 1px solid #005587; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+            .modes button { padding: 6px 16px; border: 0; background: #fff; color: #005587; font-weight: 600;
+                font-size: 13px; cursor: pointer; }
+            .modes button.on { background: #005587; color: #fff; }
+            .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+            textarea { display: block; width: 100%; box-sizing: border-box; padding: 8px; min-height: 130px;
+                border: 1px solid #a7a8aa; border-radius: 4px; color: #282728; background: #fff; resize: vertical;
+                font: 13px Consolas, "Courier New", monospace; }
+            .line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; }
+            .count { font-weight: 700; margin-right: auto; }
+            .line input[type="number"] { width: 56px; padding: 4px; border: 1px solid #a7a8aa; border-radius: 4px;
+                font: 13px Arial, sans-serif; color: #282728; background: #fff; }
+            .help { margin-top: 6px; color: #63666a; font-size: 12px; line-height: 1.4; }
+            .link-btn { padding: 5px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;
+                color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .results { margin-top: 14px; }
+            .table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            .table th, .table td { text-align: left; padding: 6px 8px; border-top: 1px solid #f0f0f0; vertical-align: top; }
+            .table th { background: #f7f7f7; font-weight: 700; }
+            .table select { max-width: 100%; padding: 3px; border: 1px solid #a7a8aa; border-radius: 4px;
+                font: 12px Arial, sans-serif; color: #282728; background: #fff; }
+            .chip { font-size: 11px; font-weight: 700; color: #fff; border-radius: 3px; padding: 2px 7px; white-space: nowrap; }
+            .chip.found { background: #26890d; }
+            .chip.ambiguous { background: #e08a00; }
+            .chip.notfound { background: #da291c; }
+            .chip.error { background: #75787b; }
+            .muted { color: #63666a; font-size: 11px; word-break: break-all; }
+            .bar { height: 6px; margin-top: 12px; background: #e6e6e6; border-radius: 3px; overflow: hidden; }
+            .bar > div { height: 100%; width: 0; background: #26890d; transition: width .2s; }
+            .log { margin-top: 8px; max-height: 140px; overflow: auto; padding: 6px 8px; background: #f6f8fa;
+                border: 1px solid #e1e4e8; border-radius: 4px; font: 11px Consolas, monospace; white-space: pre-wrap; }
+            .log:empty { display: none; }
+            .log .ok { color: #26890d; } .log .warn { color: #8a5a00; } .log .err { color: #da291c; }
+            .summary { margin-top: 10px; padding: 10px 12px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; }
+            .summary[hidden] { display: none; }
+            .footer { border-top: 1px solid #e6e6e6; }
+            .spacer { flex: 1; }
+            .footer button { padding: 8px 16px; border-radius: 4px; font-weight: 600; cursor: pointer;
+                font-size: 13px; color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .footer .primary { color: #fff; background: #005587; border-color: #005587; }
+            .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
+            .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
+            button:disabled { cursor: not-allowed; opacity: .5; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <div class="backdrop">
+                <section class="sm-panel" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+                    <header class="header">
+                        <h2 id="sm-title">👥 Manage Source</h2>
+                        <button type="button" class="close" id="sm-close" aria-label="Close">×</button>
+                    </header>
+                    <main class="body">
+                        <div class="modes"><button type="button" data-sm-mode="user" class="on">Users</button><button type="button" data-sm-mode="group">Groups</button></div>
+                        <label class="label" for="sm-list" id="sm-list-label"></label>
+                        <textarea id="sm-list"></textarea>
+                        <div class="line">
+                            <span class="count" id="sm-count"></span>
+                            <button type="button" class="link-btn" id="sm-load">Load CSV</button>
+                            <input type="file" id="sm-file" accept=".csv,.txt" hidden>
+                        </div>
+                        <div class="help" id="sm-help"></div>
+                        <div class="line">
+                            <label>Timeout (s) <input type="number" id="sm-timeout" value="30" min="5"></label>
+                            <label>Retries <input type="number" id="sm-retries" value="1" min="0" max="5"></label>
+                            <label>Pause (s) <input type="number" id="sm-pause" value="1" min="0" step="0.5"></label>
+                        </div>
+                        <div class="results" id="sm-results"></div>
+                        <div class="bar"><div id="sm-bar"></div></div>
+                        <div class="log" id="sm-log"></div>
+                        <div class="summary" id="sm-summary" hidden></div>
+                    </main>
+                    <footer class="footer">
+                        <button type="button" class="primary" id="sm-check">Check</button>
+                        <button type="button" class="success" id="sm-add" disabled>Add</button>
+                        <button type="button" class="danger" id="sm-remove" disabled>Remove</button>
+                        <button type="button" id="sm-export">Export</button>
+                        <span class="spacer"></span>
+                        <button type="button" id="sm-stop" disabled>Stop</button>
+                    </footer>
+                </section>
+            </div>`;
+        document.documentElement.appendChild(host);
+        sm.host = host;
+        sm.shadow = shadow;
+
+        smEl('sm-close').addEventListener('click', () => { host.dataset.open = 'false'; });
+        shadow.querySelectorAll('[data-sm-mode]').forEach(b => b.addEventListener('click', () => smSetMode(b.dataset.smMode)));
+        smEl('sm-list').addEventListener('input', smRefreshList);
+        smEl('sm-load').addEventListener('click', () => smEl('sm-file').click());
+        smEl('sm-file').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                smEl('sm-list').value = smParseList(String(reader.result), sm.mode).join('\n');
+                smRefreshList();
+                smLog(`Loaded ${file.name}: ${smCountText()}.`);
+                e.target.value = '';
+            };
+            reader.readAsText(file);
+        });
+        smEl('sm-stop').addEventListener('click', () => { sm.stop = true; smLog('Stopping after the current item…', 'warn'); });
+        smSetMode(sm.mode);
+    }
+
+    function smOpen() {
+        if (!sm.host || !sm.host.isConnected) smCreateHost();
+        sm.host.dataset.open = 'true';
+    }
+
+    function smLog(msg, cls) {
+        const line = document.createElement('div');
+        if (cls) line.className = cls;
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        smEl('sm-log').appendChild(line);
+        smEl('sm-log').scrollTop = smEl('sm-log').scrollHeight;
+    }
+
+    const smCountText = () => `${sm.entries.length} ${SM_NOUN[sm.mode][sm.entries.length === 1 ? 0 : 1]}`;
+
+    function smSetMode(mode) {
+        sm.mode = mode;
+        sm.shadow.querySelectorAll('[data-sm-mode]').forEach(b => b.classList.toggle('on', b.dataset.smMode === mode));
+        smEl('sm-list-label').textContent = mode === 'group' ? 'Groups' : 'Users';
+        smEl('sm-list').placeholder = mode === 'group'
+            ? 'GROUP-1\nGROUP-2\nexample.com/.../Security Groups/GROUP-3'
+            : 'user1@example.com\nuser2@example.com';
+        smEl('sm-help').textContent = mode === 'group'
+            ? 'One group per line, or a CSV with a group or name column. The short name is enough: GROUP-1 matches only a group whose path ends in /GROUP-1.'
+            : 'One email per line, or a CSV with an email, user or upn column.';
+        smRefreshList();
+    }
+
+    // Any change to the list or the mode makes earlier Check results stale.
+    function smRefreshList() {
+        sm.entries = smParseList(smEl('sm-list').value, sm.mode);
+        sm.rows = null;
+        smEl('sm-count').textContent = smCountText();
+        smEl('sm-results').textContent = '';
+        smUpdateButtons();
+    }
+
+    function smUpdateButtons() {
+        smEl('sm-check').disabled  = sm.busy;
+        smEl('sm-export').disabled = sm.busy;
+        smEl('sm-add').disabled    = sm.busy || !sm.rows;
+        smEl('sm-remove').disabled = sm.busy || !sm.rows;
+        smEl('sm-stop').disabled   = !sm.busy;
+        sm.shadow.querySelectorAll('[data-sm-mode], #sm-list, #sm-load').forEach(el => { el.disabled = sm.busy; });
+    }
+
+
+    // ─────────────────────────────────────────────────────────────
     // FIRST-BOOT USERNAME PROMPT
     // ─────────────────────────────────────────────────────────────
 
@@ -32901,6 +33212,7 @@ Version 1.16:
         buildSettingsModal();
         initBulkConstraintTools();
         initSteeringRemover();
+        initSourceManager();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
