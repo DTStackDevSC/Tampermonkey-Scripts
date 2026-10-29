@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.8.0
+// @version      2.9.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.8.0';
-    const CHANGELOG = `Version 2.8.0:
+   const SCRIPT_VERSION = '2.9.0';
+    const CHANGELOG = `Version 2.9.0:
+- Change Tracker: copy the domains and IPs to check, for the whole ticket (net result) or for one entry, separated by spaces or in quotes.
+
+Version 2.8.0:
 - Change Tracker: SSL Decryption entries have Destination Profiles and Category fields under Domains, and the change summary lists them too.
 
 Version 2.7.0:
@@ -17604,8 +17607,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.2.0';
-    const CHANGELOG = `Version 2.2.0:
+    const SCRIPT_VERSION = '2.3.0';
+    const CHANGELOG = `Version 2.3.0:
+- New "🌐 Copy domains / IPs" button above the log: copies the domains and IPs that stay added in the ticket (Network Locations, Destination Profiles, SSL Decryption, Steering Exceptions), each once. Choose a.com b.com or "a.com" "b.com" in the dropdown next to it.
+- Entries with domains or IPs have a small copy button for their own values.
+
+Version 2.2.0:
 - SSL Decryption entries have two new fields under Domains: Destination Profiles and Category, for the names.
 - The change summary lists the destination profiles and categories added or removed, like the domains.
 
@@ -22210,6 +22217,28 @@ Version 1.4.3:
             if (clickable) ptag.onclick = () => resolveEntryProblem(ticket, entry.id);
             footer.appendChild(ptag);
         }
+        // Small copy button under entries that hold domains or IPs: this entry's values only
+        const copyConf = ctCopyConfigFor(entry.type);
+        const copyValues = copyConf ? parseDomains(entry.fields?.[copyConf.domainKey] || '') : [];
+        if (copyValues.length) {
+            const cb = css(mk('button', { type:'button' }), {
+                display:'block', margin:'4px 0 0 auto', padding:'1px 7px', fontSize:'10px', fontWeight:'bold',
+                fontFamily:'Arial, sans-serif', color:'#17a2b8', background:'#fff', border:'1px solid #17a2b8',
+                borderRadius:'3px', cursor:'pointer'
+            });
+            cb.dataset.ctCopyEntry = '1';
+            const what = copyConf.domainKey === 'ips' ? 'IPs' : 'domains';
+            cb.textContent = `📋 Copy ${what}`;
+            cb.title = `Copy the ${copyValues.length} ${what} of this entry`;
+            cb.onclick = async (e) => {
+                e.stopPropagation();
+                (await copyToClipboard(ctFormatValues(copyValues)))
+                    ? flashStatus(`✓ ${copyValues.length} ${copyValues.length === 1 ? 'value' : 'values'} copied!`)
+                    : flashStatus('✗ Copy failed.', '#dc3545');
+            };
+            card.appendChild(cb);
+        }
+
         card.appendChild(footer);
 
         return card;
@@ -22592,6 +22621,27 @@ Version 1.4.3:
             ['📝 Worknote',     '#5a6268', handleGroupedSummary,'Copy all ticket changes as a closing worknote summary'],
             ['🗑️ Clear',       '#dc3545', handleClearAll,      'Delete all entries for this ticket (everyone)'],
         ]));
+
+        // Domains / IPs to check: net result of the ticket, in the chosen format
+        const copyRow = css(mk('div'), { display:'flex', gap:'5px', marginBottom:'4px' });
+        const copyBtn = css(mk('button', { id:'ct-copy-domains-btn', type:'button' }), {
+            flex:'1', padding:'5px 4px', background:'#17a2b8', color:'#fff', border:'none', borderRadius:'3px',
+            cursor:'pointer', fontSize:'10px', fontWeight:'bold', fontFamily:'Arial, sans-serif', whiteSpace:'nowrap'
+        });
+        copyBtn.textContent = '🌐 Copy domains / IPs';
+        copyBtn.title = 'Copy the domains and IPs that stay added in this ticket (Network Locations, Destination Profiles, SSL Decryption, Steering Exceptions)';
+        copyBtn.onclick = handleCopyDomains;
+        const formatSel = css(mk('select', { id:'ct-copy-format', title:'How the copied values are separated' }), {
+            flex:'0 0 auto', padding:'3px 4px', fontSize:'10px', border:'1px solid #ccc', borderRadius:'3px',
+            fontFamily:'Arial, sans-serif', background:'#fff', color:'#333', cursor:'pointer'
+        });
+        [['space', 'a.com b.com'], ['quotes', '"a.com" "b.com"']].forEach(([v, label]) => {
+            const o = mk('option'); o.value = v; o.textContent = label; formatSel.appendChild(o);
+        });
+        formatSel.value = ctCopyFormat();
+        formatSel.onchange = () => GM_setValue(CT_COPY_FORMAT_KEY, formatSel.value);
+        copyRow.append(copyBtn, formatSel);
+        logHeader.appendChild(copyRow);
 
         sidebar.appendChild(logHeader);
 
@@ -23038,6 +23088,52 @@ Version 1.4.3:
             : flashStatus('✗ Copy failed.', '#dc3545');
     }
 
+    /* ── Copy the domains / IPs to check ── */
+
+    // The groups whose values are domains or IPs, in the order they are copied
+    const CT_COPY_GROUPS = ['Network Locations', 'Destination Profiles', 'SSL Decryption Policies', 'Steering Exceptions'];
+    const CT_COPY_FORMAT_KEY = 'changeTrackerCopyFormat';   // 'space' or 'quotes'
+
+    function ctCopyFormat() { return GM_getValue(CT_COPY_FORMAT_KEY, 'space') === 'quotes' ? 'quotes' : 'space'; }
+    function ctFormatValues(values) {
+        return ctCopyFormat() === 'quotes' ? values.map(v => `"${v.replace(/"/g, '')}"`).join(' ') : values.join(' ');
+    }
+
+    // The group config of an entry type, when that type holds domains or IPs
+    function ctCopyConfigFor(type) {
+        for (const label of CT_COPY_GROUPS) {
+            const c = RECONCILE_CONFIG[label];
+            if ([...(c.createTypes || []), ...c.addTypes, ...c.removeTypes, ...c.deleteTypes].includes(type)) return c;
+        }
+        return null;
+    }
+
+    // Net result of the ticket, like the worknote summary: only what stays added, each value once.
+    function ctNetDomains(entries) {
+        const seen = new Set(), out = [];
+        CT_COPY_GROUPS.forEach(label => {
+            const conf = Object.assign({}, RECONCILE_CONFIG[label], { extraKeys: [] });
+            const types = new Set([...(conf.createTypes || []), ...conf.addTypes, ...conf.removeTypes, ...conf.deleteTypes]);
+            const chronological = entries.filter(e => types.has(e.type)).sort((a, b) => a.ts.localeCompare(b.ts));
+            reconcileEntityEntries(chronological, conf).forEach(({ items, deleted }) => {
+                if (deleted) return;
+                items.filter(i => i.op === '+').forEach(({ display }) => {
+                    const k = display.toLowerCase();
+                    if (!seen.has(k)) { seen.add(k); out.push(display); }
+                });
+            });
+        });
+        return out;
+    }
+
+    async function handleCopyDomains() {
+        const values = ctNetDomains(loadEntries(getTicketNumber()));
+        if (!values.length) { flashStatus('⚠️ No domains or IPs left added in this ticket.', '#e67e22'); return; }
+        (await copyToClipboard(ctFormatValues(values)))
+            ? flashStatus(`✓ ${values.length} ${values.length === 1 ? 'value' : 'values'} copied!`)
+            : flashStatus('✗ Copy failed.', '#dc3545');
+    }
+
     async function handleGroupedSummary() {
         const ticket = getTicketNumber(), entries = loadEntries(ticket);
         if (!entries.length) { flashStatus('⚠️ No entries to summarize.', '#e67e22'); return; }
@@ -23380,7 +23476,8 @@ Version 1.4.3:
                         '↪ Write writes this entry into the ticket again. It only shows on types that have a ticket note.',
                         '× deletes the entry: click it twice to confirm.',
                         'Entries longer than 50 lines show a short preview; click "⤢ Show full entry" to read the whole entry in a separate window.',
-                        'Some types show "+ Add fields" in the form to record optional extra details.'
+                        'Some types show "+ Add fields" in the form to record optional extra details.',
+                        'Entries with domains or IPs have a small "📋 Copy domains" (or "Copy IPs") button that copies only that entry\'s values, in the format chosen above the log.'
                     ]);
                 }
             },
@@ -23469,6 +23566,7 @@ Version 1.4.3:
                     badgeRow(body, chip('📋 Copy All', '#667eea', { padding: '5px 8px', radius: '3px' }), 'Copies the full log as text to the clipboard.');
                     badgeRow(body, chip('📝 Worknote', '#5a6268', { padding: '5px 8px', radius: '3px' }), 'Copies a closing worknote that summarizes the net result of all changes, grouped by category.');
                     badgeRow(body, chip('🗑️ Clear', '#dc3545', { padding: '5px 8px', radius: '3px' }), 'Deletes every entry of this ticket for the whole team, after a confirmation.');
+                    badgeRow(body, chip('🌐 Copy domains / IPs', '#17a2b8', { padding: '5px 8px', radius: '3px' }), 'Copies the domains and IPs that stay added in this ticket (Network Locations, Destination Profiles, SSL Decryption, Steering Exceptions), each once. The dropdown next to it chooses a.com b.com or "a.com" "b.com".');
                 }
             },
             {
