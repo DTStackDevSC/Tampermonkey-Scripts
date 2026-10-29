@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.6.0
+// @version      2.6.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.6.0';
-    const CHANGELOG = `Version 2.6.0:
+   const SCRIPT_VERSION = '2.6.1';
+    const CHANGELOG = `Version 2.6.1:
+- NS Policies Toolkit: fixed the log buttons not appearing below the description of SSL Decryption policies in Netskope's new policy editor.
+
+Version 2.6.0:
 - Change Tracker: new 📋 Paste policy button on Policy and DLP Policy entries fills every field from the last Copy policy, and asks before replacing a field that already has text.
 - NS Policies Toolkit: Copy policy keeps the copied policy for the Change Tracker, and destination profile policies now show their activities.
 
@@ -26598,8 +26601,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.32.0';
-    const CHANGELOG = `Version 1.32:
+    const SCRIPT_VERSION = '1.32.1';
+    const CHANGELOG = `Version 1.32.1:
+- Fixed the log buttons not appearing below the description of SSL Decryption policies in Netskope's new policy editor. The old editor keeps working as before.
+
+Version 1.32:
 - Copy policy: destination profile policies now show their activities.
 - Copy policy also keeps the copied policy for the Change Tracker Paste policy button.
 
@@ -29371,6 +29377,7 @@ Version 1.16:
         'textarea.policy-description-container.ns-form-textarea',
         'textarea#category-description',
         'textarea#dest-description',            // Destination Profiles side panel (aria-label is just "textarea")
+        'textarea[data-testid="wizard-description"]', // new SSL Decryption policy wizard (React), on the tenants that have it
         'textarea[aria-label*="description" i]',
     ];
 
@@ -29403,6 +29410,11 @@ Version 1.16:
 
         const isSSL = /ssl-decryption/i.test(window.location.hash || window.location.pathname || '');
 
+        // The new editors (React) remove the field when it is hidden: drop buttons left without their field
+        document.querySelectorAll('.' + LOG_BTN_CONTAINER_CLASS).forEach(c => {
+            if (c.nstkFor && !c.nstkFor.isConnected) c.remove();
+        });
+
         getDescriptionTextareas().forEach(textarea => {
             // Per-textarea guard — skip if buttons already injected for this element
             if (textarea.dataset.nstkLogInjected) return;
@@ -29410,6 +29422,7 @@ Version 1.16:
 
             const container = document.createElement('div');
             container.className = LOG_BTN_CONTAINER_CLASS;
+            container.nstkFor = textarea;
             Object.assign(container.style, {
                 display:   'flex',
                 gap:       '8px',
