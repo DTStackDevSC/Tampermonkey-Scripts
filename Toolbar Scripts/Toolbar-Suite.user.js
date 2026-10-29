@@ -26172,8 +26172,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.31.0';
-    const CHANGELOG = `Version 1.31:
+    const SCRIPT_VERSION = '1.32.0';
+    const CHANGELOG = `Version 1.32:
+- Copy policy: destination profile policies now show their activities.
+- Copy policy also keeps the copied policy for the Change Tracker Paste policy button.
+
+Version 1.31:
 - Copy policy: new Position option, ticked by default. It shows the group order and the place in the group, for example 19.5. The global order stays in Metadata.
 - Copy policy: threat protection profiles, HTTP header profiles and destination profiles now show their names, like the policy editor.
 - Copy policy: file constraints are described like the editor (file should match or not match, size and file types). The file profile ids moved to Metadata.
@@ -34227,7 +34231,10 @@ Version 1.16:
                 lines.push(...pcActivityLines(data, item.activities, 2));
             });
         };
-        block('Categories', rd.categories, c => c.appCategory);
+        // Destination profile policies keep their activities in a category entry without a name
+        const named = (rd.categories || []).filter(c => c.appCategory);
+        const unnamedActs = [].concat(...(rd.categories || []).filter(c => !c.appCategory).map(c => c.activities || []));
+        block('Categories', named, c => c.appCategory);
         block('Applications', rd.apps, a => a.appName);
         block('Email outbound apps', rd.emailOutboundApps, a => a.appName);
         block('App instances', rd.appInstances, a => `${a.appInstanceName} / ${a.instanceName}` + (a.instance_type ? ` (${a.instance_type})` : '') +
@@ -34246,7 +34253,8 @@ Version 1.16:
         if ((rd.destinationProfiles || []).length) {
             lines.push(`Destination profiles (${rd.destinationProfiles.length}): ` + (rd.b_negateDestinationProfiles ? 'does not match' : 'matches'));
             rd.destinationProfiles.forEach(id => lines.push(pcPad(1, '• ' + pcDestinationProfile(data, id))));
-        }
+            lines.push(...pcActivityLines(data, unnamedActs, 1));
+        } else lines.push(...pcActivityLines(data, unnamedActs, 0));
         return lines;
     }
 
@@ -34374,6 +34382,20 @@ Version 1.16:
         return blocks.map(b => b.join('\n')).join('\n\n') + '\n';
     }
 
+    // The last copied policy, for the Change Tracker "Paste policy" button (the suite shares its storage across sites).
+    const PC_HANDOFF_KEY = 'toolkit_policyHandoff';
+    function pcSaveHandoff(data) {
+        const names = {};
+        Object.entries(data.names).forEach(([kind, map]) => { names[kind] = Object.fromEntries(map); });
+        const place = data.place ? { groupOrder: data.place.groupOrder, position: data.place.position } : null;
+        try {
+            GM_setValue(PC_HANDOFF_KEY, JSON.stringify({
+                v: 1, copiedAt: Date.now(), tenant: location.hostname, ruleId: String(data.policy.rule_id),
+                policyName: data.policy.rule_name, policy: data.policy, names, place,
+            }));
+        } catch (e) { /* the copy itself already worked */ }
+    }
+
     async function pcCopy() {
         if (pc.busy) return;
         const id = pcPolicyId();
@@ -34393,6 +34415,7 @@ Version 1.16:
                 if (typeof GM_setClipboard !== 'function') throw new Error('The browser refused to copy the text.');
                 GM_setClipboard(text);
             }
+            pcSaveHandoff(data);
             if (data.missing.size) pcStatus('✔ Copied. Some names could not be loaded, their ids are shown.', 'warn');
             else pcStatus(`✔ Copied ${text.trimEnd().split('\n').length} lines.`);
         } catch (e) {
