@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.4.0
+// @version      2.5.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.4.0';
-    const CHANGELOG = `Version 2.4.0:
+   const SCRIPT_VERSION = '2.5.0';
+    const CHANGELOG = `Version 2.5.0:
+- NS Policies Toolkit: Copy policy now shows names instead of ids for threat protection profiles, HTTP header profiles and destination profiles, and has a Position option (for example 19.5).
+
+Version 2.4.0:
 - NS Policies Toolkit: new 📋 Copy policy button on Real-time Protection policies: copies the saved policy as readable text for a support case.
 
 Version 2.3.0:
@@ -26169,8 +26172,14 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.30.0';
-    const CHANGELOG = `Version 1.30:
+    const SCRIPT_VERSION = '1.31.0';
+    const CHANGELOG = `Version 1.31:
+- Copy policy: new Position option, ticked by default. It shows the group order and the place in the group, for example 19.5. The global order stays in Metadata.
+- Copy policy: threat protection profiles, HTTP header profiles and destination profiles now show their names, like the policy editor.
+- Copy policy: file constraints are described like the editor (file should match or not match, size and file types). The file profile ids moved to Metadata.
+- Copy policy: Netskope's default templates and "No Notification (Mute)" are named too.
+
+Version 1.30:
 - New 📋 Copy policy button on Real-time Protection policies: copies the saved policy as readable text for a support case.
 - Copy policy: choose the sections to copy. Metadata is off unless you tick it.
 - Names are shown instead of ids for templates, constraint profiles, email templates, schedules and AI Guardrails profiles.
@@ -27879,14 +27888,14 @@ Version 1.16:
                     const menu = document.createElement('div');
                     Object.assign(menu.style, { border: '1px solid #e0e0e0', borderTop: '4px solid #005587', borderRadius: '6px',
                         padding: '8px 12px', margin: '10px 0 4px 0', maxWidth: '260px', fontFamily: 'Arial, sans-serif' });
-                    [['Source', true], ['Destination', true], ['Profile & Action', true], ['Policy Name', true], ['Status', true], ['Metadata', false]].forEach(([label, on]) => {
+                    [['Position', true], ['Source', true], ['Destination', true], ['Profile & Action', true], ['Policy Name', true], ['Status', true], ['Metadata', false]].forEach(([label, on]) => {
                         menu.appendChild(hrow([
                             span(on ? '☑' : '☐', { fontSize: '13px', color: '#005587' }),
                             span(label, { fontSize: '12px', color: '#333' }),
                         ], { margin: '2px 0', flexWrap: 'nowrap' }));
                     });
                     body.appendChild(menu);
-                    caption(body, 'Tick the sections you want. Your choice is remembered. Metadata (ids, versions, order) is off unless you tick it.');
+                    caption(body, 'Tick the sections you want. Your choice is remembered. Position shows the group order and the place in the group, for example 19.5. Metadata (ids, versions, global order) is off unless you tick it.');
 
                     const sample = document.createElement('pre');
                     sample.textContent = [
@@ -27906,8 +27915,8 @@ Version 1.16:
 
                     bullets(body, [
                         'It copies the saved configuration. Unsaved edits in the form are not included: click Save first if you need them.',
-                        'Names replace ids for templates, constraint profiles, email templates, schedules and AI Guardrails profiles. When a name cannot be loaded, the id is shown with "(name not available)".',
-                        'Threat protection, file, HTTP header and destination profiles are shown by their ids for now.',
+                        'Names replace ids for templates, constraint profiles, email templates, schedules, threat protection, HTTP header, destination and AI Guardrails profiles. When a name cannot be loaded, the id is shown with "(name not available)".',
+                        'File constraints are described like the policy editor: the file should match or not match, with its size and file types.',
                         'Settings the toolkit does not know yet appear under Other settings, so nothing is left out.',
                         'A spinning wheel shows while the policy loads. Nothing in the policy changes.',
                     ]);
@@ -31317,7 +31326,7 @@ Version 1.16:
     // Source Manager state. Declared here because the request sniffer below fills its session fields.
     // The page calls these with or without a leading slash. Source Manager uses the first two
     // families, Copy policy all of them.
-    const SM_API_RE = /(^|\/)(inline_policies|inline_policy_groups|completions|notification_template|emailNotification|time_interval|constraints)\//;
+    const SM_API_RE = /(^|\/)(inline_policies|inline_policy_groups|completions|notification_template|emailNotification|time_interval|constraints|http_header|file_filter)\//;
     const sm = {
         token:          null,
         resource:       null,   // "resource" header of the policy page's own lookups
@@ -33754,6 +33763,7 @@ Version 1.16:
     const PC_BUTTON_ID   = 'nstk-policy-copy-button';
     const PC_SECTIONS_KEY = 'toolkit_policyCopySections';
     const PC_SECTIONS = [
+        ['position',    'Position'],
         ['source',      'Source'],
         ['destination', 'Destination'],
         ['action',      'Profile & Action'],
@@ -33970,7 +33980,15 @@ Version 1.16:
                        id: d => d.profile_id, name: d => d.profile_name },
         schedules:   { path: '/time_interval/getAll', body: {},
                        id: d => d.id, name: d => d.name },
+        // Shown like the policy editor: "PROFILE-1 (custom)", "Default Malware Scan (predefined)"
+        tss:         { path: '/completions/getTSSDetectionProfileList', body: { applied_only: false },
+                       id: d => d.profile_id, name: d => d.obj_loc ? `${d.profile_name} (${d.obj_loc})` : d.profile_name },
+        http:        { path: '/http_header/getAll', body: {},
+                       id: d => d.id, name: d => d.name },
     };
+    const PC_DEST_PATH = '/api/v2/profiles/destinations';
+    // Not returned by any request: the editor names it itself
+    const PC_FIXED_TEMPLATES = { 'silent_block.html': 'No Notification (Mute)' };
     const PC_AISEC_PATH = '/api/v2/profiles/aiguardrails';
     const PC_LIST_PATH  = 'inline_policy_groups/getPolicyGroupsWithAssociatedPolicies';
 
@@ -33989,10 +34007,31 @@ Version 1.16:
         if (JSON.stringify(ruleData).includes('"constraints_profile"')) need.add('constraints');
         if ((ruleData.schedule || []).length) need.add('schedules');
         if ((ruleData.aisec_profile || []).length || (ruleData.aisec_actions || []).length) need.add('aisec');
+        if ((ruleData.tss_profile || []).length || (ruleData.tss_actions || []).length) need.add('tss');
+        if ((ruleData.http_header_obj || []).length) need.add('http');
+        if ((ruleData.destinationProfiles || []).length) need.add('dest');
         return need;
     }
 
-    async function pcLookup(kind) {
+    // Destination profiles come from the REST API, 100 ids per request at most.
+    async function pcDestinations(ids) {
+        const map = new Map();
+        const headers = { 'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest' };
+        if (sm.resource) headers.resource = sm.resource;
+        for (let i = 0; i < ids.length; i += 100) {
+            const chunk = ids.slice(i, i + 100);
+            const filter = 'id in (' + chunk.map(id => '"' + String(id).replace(/"/g, '') + '"').join(',') + ')';
+            const url = `${PC_DEST_PATH}?limit=100&filter=${encodeURIComponent(filter)}&fields=id,name,label_ids`;
+            const res = await fetch(url, { credentials: 'same-origin', headers });
+            if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${PC_DEST_PATH}.`);
+            const json = await res.json();
+            ((json && json.elements) || []).forEach(e => { if (e.id && e.name) map.set(String(e.id), String(e.name)); });
+        }
+        return map;
+    }
+
+    async function pcLookup(kind, ruleData) {
+        if (kind === 'dest') return pcDestinations([...new Set((ruleData.destinationProfiles || []).map(String))]);
         if (kind === 'aisec') {
             const res = await fetch(PC_AISEC_PATH, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } });
             if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${PC_AISEC_PATH}.`);
@@ -34009,7 +34048,9 @@ Version 1.16:
             return map;
         }
         const def = PC_LOOKUPS[kind];
-        const body = sm.lastBodies[smPathOf(def.path)] || def.body;
+        let body = sm.lastBodies[smPathOf(def.path)] || def.body;
+        // offset is not a page cursor: anything above 0 leaves out Netskope's default templates
+        if (kind === 'templates') body = Object.assign({}, body, { offset: 0 });
         const data = await smPost(def.path, body);
         const map = new Map();
         (Array.isArray(data) ? data : []).forEach(d => {
@@ -34039,12 +34080,13 @@ Version 1.16:
     async function pcLoad(id, wanted) {
         const policy = await smPost('inline_policies/getPolicy', { id });
         if (!policy || typeof policy !== 'object' || !policy.rule_data) throw new Error('Netskope did not send this policy.');
-        const names = { templates: new Map(), email: new Map(), constraints: new Map(), schedules: new Map(), aisec: new Map() };
+        const names = { templates: new Map(), email: new Map(), constraints: new Map(), schedules: new Map(), aisec: new Map(),
+            tss: new Map(), http: new Map(), dest: new Map() };
         const missing = new Set();
         const jobs = [...pcNeededLookups(policy.rule_data)].map(kind =>
-            pcLookup(kind).then(map => { names[kind] = map; }, () => { missing.add(kind); }));
+            pcLookup(kind, policy.rule_data).then(map => { names[kind] = map; }, () => { missing.add(kind); }));
         let place = null;
-        if (wanted.metadata) jobs.push(pcPlace(id).then(p => { place = p; }, () => { missing.add('list'); }));
+        if (wanted.metadata || wanted.position) jobs.push(pcPlace(id).then(p => { place = p; }, () => { missing.add('list'); }));
         await Promise.all(jobs);
         return { policy, names, missing, place };
     }
@@ -34079,21 +34121,26 @@ Version 1.16:
     const pcList = v => (Array.isArray(v) ? v : [v]).filter(x => x !== '' && x != null).join(', ');
 
     // Name resolvers: "Name (raw)", or "raw (name not available)" when the lookup failed or does not know it.
-    function pcResolve(data, kind, raw) {
+    function pcResolve(data, kind, raw, idLabel) {
         if (raw == null || raw === '') return '';
         const name = data.names[kind].get(String(raw));
-        return name ? `${name} (${raw})` : `${raw} (name not available)`;
+        if (!name) return `${raw} (name not available)`;
+        // A default profile is stored by its name: do not repeat it
+        if (name === String(raw) || name.startsWith(String(raw) + ' (')) return name;
+        if (idLabel && /\)$/.test(name)) return name.replace(/\)$/, `, id ${raw})`);
+        return `${name} (${raw})`;
     }
-    const pcTemplateName       = (data, file) => pcResolve(data, 'templates', file);
+    const pcTemplateName = (data, file) => PC_FIXED_TEMPLATES[file] && !data.names.templates.has(String(file))
+        ? `${PC_FIXED_TEMPLATES[file]} (${file})` : pcResolve(data, 'templates', file);
     const pcEmailTemplateName  = (data, id)   => pcResolve(data, 'email', id);
     const pcConstraintName     = (data, id)   => pcResolve(data, 'constraints', id);
     const pcScheduleName       = (data, id)   => pcResolve(data, 'schedules', id);
     const pcAisecName          = (data, uuid) => pcResolve(data, 'aisec', uuid);
-    // No known name lookup yet for these: the ids are shown (follow-up agreed with the user).
-    const pcTssProfile         = (data, id) => String(id);
+    const pcTssProfile         = (data, id) => pcResolve(data, 'tss', id, true);
+    const pcHttpHeader         = (data, id) => pcResolve(data, 'http', id);
+    const pcDestinationProfile = (data, id) => pcResolve(data, 'dest', id);
+    // File profiles have no name anywhere: Netskope builds them from the file constraints, shown instead.
     const pcFileProfile        = (data, id) => String(id);
-    const pcHttpHeader         = (data, id) => String(id);
-    const pcDestinationProfile = (data, id) => String(id);
 
     function pcItems(lines, depth, label, values, fmt) {
         const list = (values || []).filter(v => v !== '' && v != null);
@@ -34131,7 +34178,7 @@ Version 1.16:
     }
 
     function pcSizeText(list) {
-        return (list || []).map(s => `${{ gt: '>', lt: '<' }[s.operator] || s.operator} ${s.size} ${s.unit || ''}`.trim()).join(', ');
+        return (list || []).map(s => `${{ gt: 'greater than', lt: 'less than' }[s.operator] || s.operator} ${s.size} ${s.unit || ''}`.trim()).join(', ');
     }
 
     // Keys each section renders. Anything else in rule_data goes to Other settings.
@@ -34164,7 +34211,7 @@ Version 1.16:
         if ((rd.os_family || []).length) lines.push('OS family: ' + pcList(rd.os_family));
         if ((rd.browsers || []).length) lines.push('Browsers: ' + pcList(rd.browsers));
         if ((rd.access_method || []).length) lines.push('Access method: ' + pcList(rd.access_method));
-        if ((rd.http_header_obj || []).length) lines.push('HTTP header (ids): ' + rd.http_header_obj.map(id => pcHttpHeader(data, id)).join(', '));
+        pcItems(lines, 0, 'HTTP header', rd.http_header_obj, id => pcHttpHeader(data, id));
         return lines;
     }
 
@@ -34186,21 +34233,19 @@ Version 1.16:
         block('App instances', rd.appInstances, a => `${a.appInstanceName} / ${a.instanceName}` + (a.instance_type ? ` (${a.instance_type})` : '') +
             (a.all_connected_instances ? ', all connected instances' : ''));
         if ((rd.file_size || []).length) lines.push('File size: ' + pcSizeText(rd.file_size));
-        if ((rd.filefilter_file_size || []).length) lines.push('File filter size: ' + pcSizeText(rd.filefilter_file_size));
-        if (rd.filefilter_fileTypes) {
-            const ft = rd.filefilter_fileTypes;
-            lines.push('File types: ' + [ft.categories && ft.categories.length ? 'categories ' + pcList(ft.categories) : '',
-                ft.types && ft.types.length ? 'types ' + pcList(ft.types) : ''].filter(Boolean).join('; '));
-        }
-        if ((rd.filefilter_profiles || []).length) {
-            lines.push('File profiles (ids)' + (rd.b_negate_filefilter_profiles ? ', NOT matching' : '') + ': ' +
-                rd.filefilter_profiles.map(id => pcFileProfile(data, id)).join(', '));
+        // Like the editor: "File should not match: File Size ..., File Type ..."
+        const ft = rd.filefilter_fileTypes || {};
+        if ((rd.filefilter_profiles || []).length || (rd.filefilter_file_size || []).length || (ft.categories || []).length || (ft.types || []).length) {
+            lines.push('File constraints: file should ' + (rd.b_negate_filefilter_profiles ? 'not match' : 'match'));
+            if ((rd.filefilter_file_size || []).length) lines.push(pcPad(1, 'File size: ' + pcSizeText(rd.filefilter_file_size)));
+            if ((ft.categories || []).length) lines.push(pcPad(1, `File type categories (${ft.categories.length}): ` + pcList(ft.categories)));
+            if ((ft.types || []).length) lines.push(pcPad(1, `File types (${ft.types.length}): ` + pcList(ft.types)));
         }
         if ((rd.ccl || []).length) lines.push('CCL: ' + pcList(rd.ccl));
         if ((rd.app_tags || []).length) lines.push('CCI app tags: ' + pcList(rd.app_tags));
         if ((rd.destinationProfiles || []).length) {
-            lines.push('Destination profiles (ids)' + (rd.b_negateDestinationProfiles ? ', NOT matching' : '') + ': ' +
-                rd.destinationProfiles.map(id => pcDestinationProfile(data, id)).join(', '));
+            lines.push(`Destination profiles (${rd.destinationProfiles.length}): ` + (rd.b_negateDestinationProfiles ? 'does not match' : 'matches'));
+            rd.destinationProfiles.forEach(id => lines.push(pcPad(1, '• ' + pcDestinationProfile(data, id))));
         }
         return lines;
     }
@@ -34280,8 +34325,6 @@ Version 1.16:
             `Rule id: ${p.rule_id}`,
             `Policy type: ${p.policy_type || rd.policy_type}`,
             `Group: ${p.groupName || (pl && pl.groupName) || na}` + (p.groupId || (pl && pl.groupId) ? ` (id ${p.groupId || pl.groupId})` : ''),
-            `Group order: ${pl && pl.groupOrder != null ? pl.groupOrder : na}`,
-            `Position in group: ${pl && pl.position ? pl.position : na}`,
             `Global order: ${listed && listed.rule_order != null ? listed.rule_order : na}`,
             `Version: ${rd.version != null ? rd.version : 'unknown'}, JSON version: ${rd.json_version != null ? rd.json_version : 'unknown'}`,
             `Last change: ${p.modify_type || 'unknown'} by ${p.modify_by || 'unknown'} at ${p.modify_time || 'unknown'}`,
@@ -34296,10 +34339,20 @@ Version 1.16:
         pcItems(lines, 0, 'User group ids', (rd.userGroupObjects || []).map(o => `${o.name} (id ${o.id}${o.disabled ? ', disabled' : ''})`));
         pcItems(lines, 0, 'Excluded group ids', (rd.excludedUserGroupObjects || []).map(o => `${o.name} (id ${o.id}${o.disabled ? ', disabled' : ''})`));
         pcItems(lines, 0, 'Category ids', (rd.categories || []).map(c => `${c.appCategory}: ${pcList(c.category)}`));
+        if ((rd.filefilter_profiles || []).length) lines.push('File profile ids: ' + pcList(rd.filefilter_profiles));
         return lines;
     }
 
+    function pcRenderPosition(data) {
+        const pl = data.place;
+        if (!pl || pl.groupOrder == null || !pl.position) {
+            return ['Position: ' + (data.missing.has('list') ? 'not available (the policy list could not be loaded)' : 'unknown')];
+        }
+        return [`Position: ${pl.groupOrder}.${pl.position}`];
+    }
+
     const PC_RENDER = {
+        position: ['Position', pcRenderPosition],
         source: ['Source', pcRenderSource],
         destination: ['Destination', pcRenderDestination],
         action: ['Profile & Action', pcRenderAction],
