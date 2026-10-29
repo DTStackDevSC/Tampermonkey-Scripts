@@ -20817,6 +20817,7 @@ Version 1.4.3:
         if (schema) {
             buildFieldInputs(schema, values || {}, prefix, container);
             buildOptionalNoteInput(note || '', prefix, container);
+            if (ctSchemaName(type)) buildPasteBar(type, prefix, container);
         } else {
             buildFreeformInput(note || '', prefix, container);
         }
@@ -20837,6 +20838,186 @@ Version 1.4.3:
         });
         return vals;
     }
+
+    /* ==========================================================
+     *  PASTE POLICY
+     *  Fills Policy and DLP Policy entries from the last NS Policies Toolkit
+     *  "Copy policy" (handed over through the suite's shared storage), or from
+     *  a pasted Copy policy text.
+     * ==========================================================*/
+
+    const CT_HANDOFF_KEY = 'toolkit_policyHandoff';
+    const CT_PASTE_SCHEMAS = ['policy_full', 'dlp_policy_full'];
+    const CT_ACTION_NAMES = { block: 'Block', alert: 'Alert', useralert: 'User Alert', add_headers: 'Add SMTP header', allow: 'Allow' };
+    const CT_CONSTRAINT_NAMES = { to_user: 'To user', from_user: 'From user' };
+
+    function ctPolicyHandoff() {
+        try {
+            const h = JSON.parse(GM_getValue(CT_HANDOFF_KEY, 'null'));
+            return h && h.v === 1 && h.policy && h.policy.rule_data ? h : null;
+        } catch (e) { return null; }
+    }
+
+    function ctAge(ms) {
+        const min = Math.floor((Date.now() - ms) / 60000);
+        if (min < 1) return 'just now';
+        if (min < 60) return `${min} min ago`;
+        const h = Math.floor(min / 60);
+        if (h < 24) return `${h} h ago`;
+        if (h < 48) return 'yesterday';
+        const d = new Date(ms);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    const ctUnique = list => [...new Set(list.filter(v => v !== '' && v != null).map(String))];
+    const ctShortName = name => String(name || '').split('/').pop().trim();
+    const ctActionName = a => (a && (CT_ACTION_NAMES[a.action_name] || a.action_name)) || '';
+
+    // Entry field values from a Copy policy handoff, in the formats agreed with the user.
+    function ctPolicyValues(h, schemaName) {
+        const rd = h.policy.rule_data || {};
+        const names = h.names || {};
+        const named = (kind, id) => (names[kind] && names[kind][String(id)]) || String(id);
+        const v = {}, notes = [];
+
+        v.policyName = h.policy.rule_name || h.policyName || '';
+
+        const groups = ((rd.userGroups && rd.userGroups.length) ? rd.userGroups : (rd.userGroupObjects || []).map(o => o.name)).map(ctShortName);
+        const exGroups = ((rd.excludedGroups && rd.excludedGroups.length) ? rd.excludedGroups : (rd.excludedUserGroupObjects || []).map(o => o.name)).map(ctShortName);
+        const except = ctUnique([...exGroups, ...(rd.excludedUsers || [])]);
+        v.source = (ctUnique([...groups, ...(rd.users || [])]).join(', ') || 'All users') + (except.length ? ` (except ${except.join(', ')})` : '');
+
+        const parts = [
+            ...(rd.categories || []).filter(c => c.appCategory).map(c => c.appCategory),
+            ...(rd.apps || []).map(a => a.appName),
+            ...(rd.emailOutboundApps || []).map(a => a.appName),
+            ...(rd.appInstances || []).map(a => `${a.appInstanceName} / ${a.instanceName}`),
+        ];
+        const dests = (rd.destinationProfiles || []).map(id => named('dest', id));
+        if (dests.length) parts.push((rd.b_negateDestinationProfiles ? 'NOT ' : '') + dests.join(', '));
+        if (!parts.length && (rd.policy_type || h.policy.policy_type) === 'any_category') parts.push('Any category');
+        const activityLists = [rd.categories, rd.apps, rd.emailOutboundApps, rd.appInstances].map(l => l || []);
+        const activities = [].concat(...activityLists.map(l => [].concat(...l.map(x => x.activities || []))));
+        const acts = ctUnique(activities.map(a => a.activity));
+        v.destination = ctUnique(parts).join(', ') + (acts.length ? ` [${acts.join(', ')}]` : '');
+
+        v.description = rd.description || '';
+        if (h.place && h.place.groupOrder != null && h.place.position) v.groupPosition = `${h.place.groupOrder}.${h.place.position}`;
+        else { v.groupPosition = ''; notes.push('Group position left empty: Position was not copied.'); }
+        v.action = ctActionName(rd.match_criteria_action);
+
+        if (schemaName === 'dlp_policy_full') {
+            v.activities = acts.join(', ');
+            v.dlpProfile = ctUnique((rd.dlp_profile && rd.dlp_profile.length) ? rd.dlp_profile : (rd.dlp_actions || []).map(d => d.dlp_profile)).join(', ');
+            v.profileAction = (rd.dlp_actions || []).map(d => `${d.dlp_profile}: ${ctUnique((d.actions || []).map(ctActionName)).join(', ')}`).join('; ');
+        }
+
+        // "+ Add fields" extras; only the ones the entry type has are used
+        v.osFamily = ctUnique(rd.os_family || []).join(', ');
+        v.browsers = ctUnique(rd.browsers || []).join(', ');
+        v.accessMethod = ctUnique(rd.access_method || []).join(', ');
+        v.httpHeader = ctUnique((rd.http_header_obj || []).map(id => named('http', id))).join(', ');
+        v.appInstance = ctUnique((rd.appInstances || []).map(a => `${a.appInstanceName} / ${a.instanceName}`)).join(', ');
+        v.activityConstraints = ctUnique([].concat(...activities.map(a => (a.list_of_constraints || []).map(c =>
+            `${CT_CONSTRAINT_NAMES[c.constraints_type] || c.constraints_type}: ${named('constraints', c.constraints_profile)}`)))).join('; ');
+        const ft = rd.filefilter_fileTypes || {};
+        const size = (rd.filefilter_file_size || []).map(s => `${{ gt: 'greater than', lt: 'less than' }[s.operator] || s.operator} ${s.size} ${s.unit || ''}`.trim());
+        const fileBits = [
+            size.length ? 'size ' + size.join(', ') : '',
+            (ft.categories || []).length ? 'categories ' + ft.categories.join(', ') : '',
+            (ft.types || []).length ? 'types ' + ft.types.join(', ') : '',
+        ].filter(Boolean);
+        v.fileConstraints = ((rd.filefilter_profiles || []).length || fileBits.length)
+            ? `should ${rd.b_negate_filefilter_profiles ? 'not match' : 'match'}` + (fileBits.length ? ': ' + fileBits.join('; ') : '') : '';
+        return { values: v, notes };
+    }
+
+    function ctSchemaName(type) {
+        const schema = getSchema(type);
+        return CT_PASTE_SCHEMAS.find(n => FIELD_SCHEMAS[n] === schema) || null;
+    }
+
+    function ctSchemaLabels(schema) {
+        const labels = {};
+        schema.forEach(f => [f, ...(f.extraFields || [])].forEach(x => { labels[x.key] = x.label; }));
+        return labels;
+    }
+
+    // Fills the form with the values; a field that already holds other text is asked about first.
+    function ctApplyPolicyValues(type, prefix, container, values, notes, policyName) {
+        const schema = getSchema(type);
+        const labels = ctSchemaLabels(schema);
+        const current = collectFieldValues(schema, prefix);
+        const noteEl = document.getElementById(`${prefix}-note`);
+        const note = noteEl ? noteEl.value : '';
+        const keys = Object.keys(values).filter(k => labels[k] && values[k] !== '');
+        const conflicts = keys.filter(k => current[k] && current[k] !== values[k])
+            .map(k => ({ key: k, label: labels[k], current: current[k], next: values[k] }));
+        const finish = (replace) => {
+            const merged = Object.assign({}, current);
+            let filled = 0, kept = 0;
+            keys.forEach(k => {
+                if (!current[k]) { merged[k] = values[k]; filled++; }
+                else if (current[k] !== values[k]) {
+                    if (replace.has(k)) { merged[k] = values[k]; filled++; } else kept++;
+                }
+            });
+            rebuildInputFields(type, merged, note, prefix, container);
+            const status = container.querySelector('.ct-paste-status');
+            if (status) {
+                status.textContent = [`Filled ${filled} field${filled === 1 ? '' : 's'} from "${policyName}".`,
+                    kept ? `${kept} kept as ${kept === 1 ? 'it was' : 'they were'}.` : '', ...notes].filter(Boolean).join(' ');
+            }
+        };
+        if (conflicts.length) ctPolicyConflicts(conflicts, finish);
+        else finish(new Set());
+    }
+
+    function ctPasteFromHandoff(type, prefix, container) {
+        const h = ctPolicyHandoff();
+        if (!h) { ctOpenPasteBox(type, prefix, container); return; }
+        const { values, notes } = ctPolicyValues(h, ctSchemaName(type));
+        ctApplyPolicyValues(type, prefix, container, values, notes, h.policyName || h.policy.rule_name);
+    }
+
+    function buildPasteBar(type, prefix, container) {
+        const h = ctPolicyHandoff();
+        const bar = css(mk('div', { className: 'ct-paste-bar' }), {
+            margin: '0 0 8px', padding: '6px 8px', background: '#f3f4ff', border: '1px solid #d6daf5',
+            borderRadius: '4px', fontFamily: 'Arial, sans-serif',
+        });
+        const row = css(mk('div'), { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' });
+        const btn = css(mk('button', { type: 'button' }), {
+            padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', border: 'none', borderRadius: '4px',
+            background: '#667eea', color: '#fff', cursor: 'pointer', fontFamily: 'Arial, sans-serif',
+        });
+        btn.dataset.ctPaste = '1';
+        btn.textContent = h ? '📋 Paste policy' : '📋 Paste policy text';
+        btn.title = h ? 'Fill these fields from the last Copy policy of NS Policies Toolkit' : 'Paste the text of a Copy policy to fill these fields';
+        btn.onclick = (e) => { e.preventDefault(); ctPasteFromHandoff(type, prefix, container); };
+        row.appendChild(btn);
+        if (h) {
+            const link = css(mk('button', { type: 'button' }), {
+                fontSize: '11px', color: '#0066cc', background: 'none', border: 'none', padding: '0',
+                cursor: 'pointer', textDecoration: 'underline', fontFamily: 'Arial, sans-serif',
+            });
+            link.dataset.ctPasteText = '1';
+            link.textContent = 'Paste text instead';
+            link.onclick = (e) => { e.preventDefault(); ctOpenPasteBox(type, prefix, container); };
+            row.appendChild(link);
+        }
+        bar.appendChild(row);
+        if (h) {
+            const from = css(mk('div', { className: 'ct-paste-from' }), { fontSize: '11px', color: '#555', marginTop: '3px' });
+            from.textContent = `${h.policyName || h.policy.rule_name}, copied ${ctAge(h.copiedAt)}`;
+            bar.appendChild(from);
+        }
+        bar.appendChild(css(mk('div', { className: 'ct-paste-status' }), { fontSize: '11px', color: '#26890d', marginTop: '3px' }));
+        container.insertBefore(bar, container.firstChild);
+    }
+
+    function ctPolicyConflicts(rows, onApply) { onApply(new Set()); }
+    function ctOpenPasteBox(type, prefix, container) { /* paste box comes with the conflicts dialog */ }
 
     /* ==========================================================
      *  ENTRY CONTENT FORMATTER  (for card display + export text)
