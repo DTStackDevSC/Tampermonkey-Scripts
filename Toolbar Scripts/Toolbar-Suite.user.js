@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.7.0
+// @version      2.8.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.7.0';
-    const CHANGELOG = `Version 2.7.0:
+   const SCRIPT_VERSION = '2.8.0';
+    const CHANGELOG = `Version 2.8.0:
+- Change Tracker: SSL Decryption entries have Destination Profiles and Category fields under Domains, and the change summary lists them too.
+
+Version 2.7.0:
 - NS Policies Toolkit: Bulk remove and Bulk add domains have a "Match case" option for the steering configuration filter.
 
 Version 2.6.2:
@@ -17601,8 +17604,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.1';
-    const CHANGELOG = `Version 2.1.1:
+    const SCRIPT_VERSION = '2.2.0';
+    const CHANGELOG = `Version 2.2.0:
+- SSL Decryption entries have two new fields under Domains: Destination Profiles and Category, for the names.
+- The change summary lists the destination profiles and categories added or removed, like the domains.
+
+Version 2.1.1:
 - When SharePoint refuses the list, the warning now explains that the sign in may have expired: it has an "Open SharePoint to sign in" button and ↺ to try again, and says to ask the site owner only if it still fails. Before, it only said to ask the site owner, even when signing in again was enough.
 
 Version 2.1.0:
@@ -17846,8 +17853,10 @@ Version 1.4.3:
             { key: 'groupPosition', label: 'Group position',     type: 'text'     },
         ],
         ssl_policy: [
-            { key: 'sslPolicyName', label: 'SSL Policy name', type: 'text'     },
-            { key: 'domains',       label: 'Domains',          type: 'textarea' },
+            { key: 'sslPolicyName',       label: 'SSL Policy name',      type: 'text'     },
+            { key: 'domains',             label: 'Domains',              type: 'textarea' },
+            { key: 'destinationProfiles', label: 'Destination Profiles', type: 'text'     },
+            { key: 'category',            label: 'Category',             type: 'text'     },
         ],
         steering_exception: [
             { key: 'urlsOrNetwork',   label: 'URLs / Network Location', type: 'textarea' },
@@ -21326,6 +21335,8 @@ Version 1.4.3:
         'SSL Decryption Policies': {
             nameKey:     'sslPolicyName',
             domainKey:   'domains',
+            // Also reconciled, each shown with its label: "Destination Profile: X  [ADDED]"
+            extraKeys:   [{ key: 'destinationProfiles', label: 'Destination Profile' }, { key: 'category', label: 'Category' }],
             createTypes: ['SSL Decryption Policy Created'],
             addTypes:    ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added'],
             removeTypes: ['SSL Decryption — URLs Removed'],
@@ -21469,25 +21480,27 @@ Version 1.4.3:
             }
 
             const rec   = entityMap[name];
-            const items = parseDomains(entry.fields?.[config.domainKey] || '');
+            // Items of every reconciled field; an extra field's items carry its label so they never mix
+            const items = [{ key: config.domainKey, label: '' }, ...(config.extraKeys || [])].flatMap(({ key, label }) =>
+                parseDomains(entry.fields?.[key] || '').map(d => ({ id: (label ? label + '|' : '') + d.toLowerCase(), display: label ? `${label}: ${d}` : d })));
 
             if (config.createTypes?.includes(entry.type)) rec.isNew = true;
 
             if (config.addTypes.includes(entry.type)) {
-                items.forEach(d => {
-                    const key = d.toLowerCase(), ex = rec.ops.get(key);
-                    rec.ops.set(key, ex
+                items.forEach(({ id, display }) => {
+                    const ex = rec.ops.get(id);
+                    rec.ops.set(id, ex
                         ? { ...ex, lastOp: '+' }
-                        : { display: d, firstOp: '+', lastOp: '+' });
+                        : { display, firstOp: '+', lastOp: '+' });
                 });
                 rec.deleted = false;
 
             } else if (config.removeTypes.includes(entry.type)) {
-                items.forEach(d => {
-                    const key = d.toLowerCase(), ex = rec.ops.get(key);
-                    rec.ops.set(key, ex
+                items.forEach(({ id, display }) => {
+                    const ex = rec.ops.get(id);
+                    rec.ops.set(id, ex
                         ? { ...ex, lastOp: '-' }
-                        : { display: d, firstOp: '-', lastOp: '-' });
+                        : { display, firstOp: '-', lastOp: '-' });
                 });
 
             } else if (config.deleteTypes.includes(entry.type)) {
@@ -24241,7 +24254,7 @@ Version 1.4.3:
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
-                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk) };
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary };
         }
 
         return function register() {
