@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.2.0
+// @version      4.3.0
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.2.0';
-    const CHANGELOG = `Version 4.2.0:
+    const SCRIPT_VERSION = '4.3.0';
+    const CHANGELOG = `Version 4.3.0:
+- Formatted Text Helper: paste a picture with Ctrl+V straight into the editor, and click any image to change its size in 5% steps or remove it. Insert Image uses the same size control.
+
+Version 4.2.0:
 - The script is now called || Ticket Helpers || in Tampermonkey, instead of Short Description Helper. It is the same script: your helpers, settings and saved data stay as they are, and nothing needs to be reinstalled.
 
 Version 4.1.1:
@@ -1061,8 +1064,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.2.0';
-    const CHANGELOG = `Version 4.2.0:
+    const SCRIPT_VERSION = '4.3.0';
+    const CHANGELOG = `Version 4.3.0:
+- Formatted Text Helper: paste a picture with Ctrl+V straight into the editor, and click any image to change its size in 5% steps or remove it. Insert Image uses the same size control.
+
+Version 4.2.0:
 - The script is now called || Ticket Helpers || in Tampermonkey, instead of Short Description Helper. It is the same script: your helpers, settings and saved data stay as they are, and nothing needs to be reinstalled.
 
 Version 4.1.1:
@@ -8768,8 +8774,13 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.3.1';
-    const CHANGELOG = `Version 1.3.1:
+    const SCRIPT_VERSION = '1.4.0';
+    const CHANGELOG = `Version 1.4.0:
+- Paste a picture: press Ctrl+V with a screenshot or a copied picture and it goes into the editor. ServiceNow keeps it with the comment or work note. Big pictures are made smaller first.
+- Click an image in the editor to change its size, from 5% to 100% in 5% steps, or to remove it.
+- Insert Image uses the same size control instead of the four fixed sizes.
+
+Version 1.3.1:
 - Fixed mentions not being completed when the @ came right after a word or at the start of a line, for example "Hi@[Name]". A space is now added before the @ when needed, since ServiceNow only looks up the name after a space.
 
 Version 1.3.0:
@@ -9152,6 +9163,174 @@ Version 1.0.3:
         sel.addRange(savedRange);
     }
 
+    /* ==========================================================
+     *  IMAGE SIZE CONTROL  ([-] 25% [+] and a slider, 5% steps)
+     *  Used by Insert Image and by the bar shown on a clicked image.
+     * ==========================================================*/
+
+    function makeImageSizeControl(initial) {
+        const clamp = v => {
+            const n = Number(v);
+            return Math.min(100, Math.max(5, Math.round((Number.isFinite(n) ? n : 25) / 5) * 5));
+        };
+        let value = clamp(initial);
+        const ctl = { onchange: null };
+        const wrap = document.createElement('div');
+        Object.assign(wrap.style, { display: 'flex', alignItems: 'center', gap: '6px', flex: '1' });
+        const stepBtn = (sign) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.dataset.sizeStep = sign;
+            b.textContent = sign === '+' ? '+' : '−';
+            b.title = sign === '+' ? 'Bigger (5%)' : 'Smaller (5%)';
+            Object.assign(b.style, { width: '26px', height: '26px', padding: '0', border: '1px solid #ccc', borderRadius: '4px',
+                background: '#fff', color: '#333', cursor: 'pointer', fontSize: '15px', lineHeight: '1', fontWeight: 'bold' });
+            b.onmousedown = (e) => e.preventDefault();   // keep the editor selection
+            b.onclick = (e) => { e.preventDefault(); set(value + (sign === '+' ? 5 : -5)); };
+            return b;
+        };
+        const range = document.createElement('input');
+        range.type = 'range';
+        range.min = '5'; range.max = '100'; range.step = '5';
+        Object.assign(range.style, { flex: '1', minWidth: '90px', cursor: 'pointer', accentColor: '#28a745' });
+        range.oninput = () => set(range.value);
+        const badge = document.createElement('span');
+        Object.assign(badge.style, { fontSize: '13px', fontWeight: 'bold', color: '#28a745', minWidth: '40px', textAlign: 'center' });
+        function set(v) {
+            value = clamp(v);
+            range.value = String(value);
+            badge.textContent = value + '%';
+            if (typeof ctl.onchange === 'function') ctl.onchange(value);
+        }
+        wrap.append(stepBtn('-'), range, badge, stepBtn('+'));
+        range.value = String(value);
+        badge.textContent = value + '%';
+        ctl.el = wrap;
+        Object.defineProperty(ctl, 'value', { get: () => String(value), set: v => set(v) });
+        return ctl;
+    }
+
+    /* ── Size bar on a clicked image in the editor ── */
+    let imageBar = null;
+    function hideImageBar() { if (imageBar) imageBar.style.display = 'none'; }
+    function showImageBar(img) {
+        if (!imageBar) {
+            imageBar = document.createElement('div');
+            imageBar.id = 'formatted-text-image-bar';
+            Object.assign(imageBar.style, {
+                position: 'fixed', zIndex: '1000002', display: 'none', alignItems: 'center', gap: '8px',
+                padding: '6px 8px', background: '#fff', border: '1px solid #ccc', borderRadius: '6px',
+                boxShadow: '0 2px 10px rgba(0,0,0,.2)', fontFamily: 'Arial, sans-serif', width: '300px', boxSizing: 'border-box'
+            });
+            imageBar.addEventListener('mousedown', (e) => { if (e.target.type !== 'range') e.preventDefault(); });
+            document.addEventListener('mousedown', (e) => {
+                if (!imageBar || imageBar.style.display === 'none') return;
+                if (imageBar.contains(e.target) || (e.target.tagName === 'IMG' && e.target.closest('#formatted-text-editor'))) return;
+                hideImageBar();
+            }, true);
+            document.body.appendChild(imageBar);
+        }
+        imageBar.textContent = '';
+        const ctl = makeImageSizeControl(parseInt(img.style.width, 10) || 25);
+        ctl.onchange = (v) => { img.style.width = v + '%'; img.style.maxWidth = '100%'; place(); };
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.dataset.imageRemove = '1';
+        remove.textContent = '✕ Remove';
+        Object.assign(remove.style, { border: 'none', background: 'none', color: '#dc3545', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap' });
+        remove.onclick = (e) => { e.preventDefault(); img.remove(); hideImageBar(); };
+        imageBar.append(ctl.el, remove);
+        function place() {
+            const r = img.getBoundingClientRect();
+            imageBar.style.top = Math.max(4, r.top - 44) + 'px';
+            imageBar.style.left = Math.max(4, Math.min(r.left, window.innerWidth - 304)) + 'px';
+        }
+        imageBar.style.display = 'flex';
+        place();
+    }
+
+    /* ── Pasted pictures: embedded as data URIs; ServiceNow saves them as attachments of the journal entry ── */
+    const PASTE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    const PASTE_MAX_WIDTH   = 1600;
+    const PASTE_JPEG_FROM   = 400 * 1024;
+    const PASTE_MAX_BYTES   = 1.5 * 1024 * 1024;
+    const dataUrlBytes = url => Math.round((url.length - url.indexOf(',') - 1) * 3 / 4);
+
+    function readAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(String(r.result));
+            r.onerror = () => reject(new Error('The image could not be read.'));
+            r.readAsDataURL(file);
+        });
+    }
+    function loadImage(src) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('The image could not be read.'));
+            img.src = src;
+        });
+    }
+
+    async function processPastedImage(file) {
+        const original = await readAsDataURL(file);
+        const img = await loadImage(original);
+        // A small GIF stays as it is, so it keeps its animation
+        if (file.type === 'image/gif' && dataUrlBytes(original) <= PASTE_JPEG_FROM && img.naturalWidth <= PASTE_MAX_WIDTH) {
+            return { dataUrl: original, w: img.naturalWidth, h: img.naturalHeight };
+        }
+        const scale = Math.min(1, PASTE_MAX_WIDTH / img.naturalWidth);
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const g = canvas.getContext('2d');
+        g.drawImage(img, 0, 0, w, h);
+        let dataUrl = canvas.toDataURL('image/png');
+        if (dataUrlBytes(dataUrl) > PASTE_JPEG_FROM) {
+            // JPEG has no transparency: paint white below the picture
+            g.globalCompositeOperation = 'destination-over';
+            g.fillStyle = '#ffffff';
+            g.fillRect(0, 0, w, h);
+            dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        }
+        if (dataUrlBytes(dataUrl) > PASTE_MAX_BYTES) throw new Error('This image is too large to paste. Make it smaller and try again.');
+        return { dataUrl, w, h };
+    }
+
+    function pasteStatus(text, isError) {
+        const el = document.getElementById('formatted-text-paste-status');
+        if (!el) return;
+        el.textContent = text;
+        el.style.color = isError ? '#dc3545' : '#28a745';
+    }
+
+    async function insertPastedImage(file, editor) {
+        const sel = window.getSelection();
+        const range = sel.rangeCount && editor.contains(sel.getRangeAt(0).startContainer) ? sel.getRangeAt(0).cloneRange() : null;
+        try {
+            pasteStatus('Preparing the image…');
+            const { dataUrl, w, h } = await processPastedImage(file);
+            const img = document.createElement('img');
+            img.src = dataUrl;
+            img.style.width = '25%';
+            img.style.maxWidth = '100%';
+            if (range) {
+                range.deleteContents();
+                range.insertNode(img);
+                range.setStartAfter(img);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } else editor.appendChild(img);
+            editor.focus();
+            pasteStatus(`Image pasted (${w} x ${h}, ${Math.max(1, Math.round(dataUrlBytes(dataUrl) / 1024))} KB). Click it to change its size.`);
+        } catch (e) {
+            pasteStatus(e.message, true);
+        }
+    }
+
     /* ----------------------------------------------------------
      *  IMAGE INSERTION MODAL
      * ----------------------------------------------------------*/
@@ -9260,45 +9439,9 @@ Version 1.0.3:
         const sizeRow = document.createElement('div');
         Object.assign(sizeRow.style, { display: 'flex', alignItems: 'center', gap: '10px' });
 
-        const sizeSelect = document.createElement('select');
-        Object.assign(sizeSelect.style, {
-            flex: '1',
-            padding: '8px 10px',
-            border: '1px solid #ccc',
-            borderRadius: '5px',
-            fontSize: '13px',
-            fontFamily: 'Arial, sans-serif',
-            cursor: 'pointer',
-            outline: 'none',
-            boxSizing: 'border-box'
-        });
-        sizeSelect.onfocus = () => { sizeSelect.style.borderColor = '#669bea'; sizeSelect.style.boxShadow = '0 0 0 0.2rem rgba(102,155,234,0.25)'; };
-        sizeSelect.onblur  = () => { sizeSelect.style.borderColor = '#ccc';    sizeSelect.style.boxShadow = 'none'; };
-
-        const sizeOptions = [
-            { label: '25% (default)',              value: '25' },
-            { label: '50%',              value: '50' },
-            { label: '75%',              value: '75' },
-            { label: '100%',   value: '100' }
-        ];
-        sizeOptions.forEach(opt => {
-            const o = document.createElement('option');
-            o.value = opt.value;
-            o.textContent = opt.label;
-            if (opt.value === '25') o.selected = true;
-            sizeSelect.appendChild(o);
-        });
-
-        const sizeValueBadge = document.createElement('span');
-        sizeValueBadge.textContent = '25%';
-        Object.assign(sizeValueBadge.style, {
-            fontSize: '13px', fontWeight: 'bold', color: '#28a745',
-            minWidth: '40px', textAlign: 'center'
-        });
-        sizeSelect.onchange = () => { sizeValueBadge.textContent = sizeSelect.value + '%'; };
-
-        sizeRow.appendChild(sizeSelect);
-        sizeRow.appendChild(sizeValueBadge);
+        // Same control as the size bar on images: 5% steps, starts at 25%
+        const sizeSelect = makeImageSizeControl(25);
+        sizeRow.appendChild(sizeSelect.el);
 
         // --- Preview area ---
         const previewContainer = document.createElement('div');
@@ -9338,7 +9481,7 @@ Version 1.0.3:
             }
         }
         urlInput.oninput  = updatePreview;
-        sizeSelect.onchange = () => { sizeValueBadge.textContent = sizeSelect.value + '%'; updatePreview(); };
+        sizeSelect.onchange = () => updatePreview();
 
         previewImg.onerror = () => {
             previewImg.style.display = 'none';
@@ -10379,8 +10522,11 @@ Version 1.0.3:
                     ], { maxWidth: '360px' }));
                     caption(body, 'Selected text fills Link Text. Addresses starting with javascript are refused.');
                     body.appendChild(span('🖼️ Insert Image', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 4px 0' }));
-                    body.appendChild(hrow(['25%', '50%', '75%', '100%'].map((w, i) => chip(w, i === 1 ? '#667eea' : '#fff', { color: i === 1 ? '#fff' : '#333', border: '1px solid #ccc' })), { gap: '4px' }));
-                    caption(body, 'Paste the image URL, check the live preview, pick a width.');
+                    body.appendChild(hrow([chip('−', '#fff', { color: '#333', border: '1px solid #ccc' }), span('━━━●━━━━━━', { color: '#28a745', fontSize: '12px' }),
+                        chip('25%', '#fff', { color: '#28a745', border: 'none' }), chip('+', '#fff', { color: '#333', border: '1px solid #ccc' })], { gap: '4px' }));
+                    caption(body, 'Paste the image URL, check the live preview, pick a width from 5% to 100% in 5% steps.');
+                    body.appendChild(span('📋 Paste a picture', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 4px 0' }));
+                    caption(body, 'Press Ctrl+V with a screenshot or a copied picture: it goes into the editor at 25%. Click any image to change its size (− / + or the slider, 5% steps) or remove it. Big pictures are made smaller first. ServiceNow keeps the picture with the comment or work note.');
                     body.appendChild(span('▦ Insert Table', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 4px 0' }));
                     const grid = document.createElement('div');
                     Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'repeat(6, 14px)', gap: '2px', margin: '0 0 4px 0' });
@@ -11456,6 +11602,10 @@ Version 1.0.3:
             const cd = e.clipboardData || window.clipboardData;
             if (!cd) return;
             e.preventDefault();
+            // A pasted picture wins over the text or HTML copy that often comes with it
+            const imageFile = [...(cd.files || [])].find(f => PASTE_IMAGE_TYPES.includes(f.type))
+                || [...(cd.items || [])].filter(it => it.kind === 'file' && PASTE_IMAGE_TYPES.includes(it.type)).map(it => it.getAsFile()).find(Boolean);
+            if (imageFile) { insertPastedImage(imageFile, editor); return; }
             const pastedHTML = cd.getData('text/html');
             const pastedText = cd.getData('text/plain');
             if (pastedHTML && pastedHTML.trim()) {
@@ -11464,6 +11614,13 @@ Version 1.0.3:
                 document.execCommand('insertText', false, pastedText);
             }
         });
+
+        // Click an image to change its size or remove it
+        editor.addEventListener('click', (e) => {
+            const img = e.target.closest && e.target.closest('img');
+            if (img && editor.contains(img)) showImageBar(img); else hideImageBar();
+        });
+        editor.addEventListener('keydown', hideImageBar);
 
         editorContainer.appendChild(editor);
 
@@ -11566,6 +11723,11 @@ Version 1.0.3:
         buttonContainer.appendChild(insertBtn);
 
         footer.appendChild(previewToggle);
+        // Result of the last pasted picture (size, or why it was refused)
+        const pasteStatusEl = document.createElement('span');
+        pasteStatusEl.id = 'formatted-text-paste-status';
+        Object.assign(pasteStatusEl.style, { flex: '1', margin: '0 12px', fontSize: '12px', color: '#28a745', fontFamily: 'Arial, sans-serif' });
+        footer.appendChild(pasteStatusEl);
         footer.appendChild(buttonContainer);
 
         // Assemble modal
@@ -11586,6 +11748,13 @@ Version 1.0.3:
 
     // Returns the address when it is a safe web link (http, https, or mailto for links), otherwise ''.
     // Parsing it, instead of checking the text, catches tricks like "java\tscript:".
+    // Images may also be embedded raster pictures (pasted screenshots). Never SVG: it can carry scripts.
+    function safeImageSrc(value) {
+        const v = String(value || '').trim();
+        if (/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(v)) return v;
+        return safeUrl(v, false);
+    }
+
     function safeUrl(value, allowMailto) {
         try {
             const u = new URL(String(value || '').trim(), location.href);
@@ -11624,7 +11793,7 @@ Version 1.0.3:
             Array.from(el.attributes).forEach(attr => el.removeAttribute(attr.name));
 
             if (href && tag === 'a' && safeUrl(href, true)) el.setAttribute('href', href);
-            if (src  && tag === 'img' && safeUrl(src, false)) el.setAttribute('src', src);
+            if (src  && tag === 'img' && safeImageSrc(src)) el.setAttribute('src', src);
             if (alt  && tag === 'img') el.setAttribute('alt', alt);
             if (title)                 el.setAttribute('title', title);
             if (style && STYLE_TAGS.includes(tag)) el.setAttribute('style', style);
@@ -11716,7 +11885,7 @@ Version 1.0.3:
                 if (name === 'href' && tag === 'A') {
                     if (!safeUrl(attr.value, true)) el.removeAttribute('href');
                 } else if (name === 'src' && tag === 'IMG') {
-                    if (!safeUrl(attr.value, false)) el.removeAttribute('src');
+                    if (!safeImageSrc(attr.value)) el.removeAttribute('src');
                 } else if (name === 'style' && keepStyle) {
                     const filtered = filterStyle(attr.value);
                     if (filtered) el.setAttribute('style', filtered);
