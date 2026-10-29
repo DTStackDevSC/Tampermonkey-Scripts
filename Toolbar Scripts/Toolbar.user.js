@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.9.0
+// @version      2.9.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.9.0';
-    const CHANGELOG = `Version 2.9.0:
+   const SCRIPT_VERSION = '2.9.1';
+    const CHANGELOG = `Version 2.9.1:
+- Change Tracker: Copy domains / IPs now copies one value per line or separated by commas, as chosen in its dropdown.
+
+Version 2.9.0:
 - Change Tracker: copy the domains and IPs to check, for the whole ticket (net result) or for one entry, separated by spaces or in quotes.
 
 Version 2.8.0:
@@ -17607,8 +17610,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.0';
-    const CHANGELOG = `Version 2.3.0:
+    const SCRIPT_VERSION = '2.3.1';
+    const CHANGELOG = `Version 2.3.1:
+- Copy domains / IPs: the dropdown now offers "Copy separated by lines" and "Copy separated by commas", and copies exactly that.
+
+Version 2.3.0:
 - New "🌐 Copy domains / IPs" button above the log: copies the domains and IPs that stay added in the ticket (Network Locations, Destination Profiles, SSL Decryption, Steering Exceptions), each once. Choose a.com b.com or "a.com" "b.com" in the dropdown next to it.
 - Entries with domains or IPs have a small copy button for their own values.
 
@@ -22635,7 +22641,7 @@ Version 1.4.3:
             flex:'0 0 auto', padding:'3px 4px', fontSize:'10px', border:'1px solid #ccc', borderRadius:'3px',
             fontFamily:'Arial, sans-serif', background:'#fff', color:'#333', cursor:'pointer'
         });
-        [['space', 'a.com b.com'], ['quotes', '"a.com" "b.com"']].forEach(([v, label]) => {
+        [['lines', 'Copy separated by lines'], ['commas', 'Copy separated by commas']].forEach(([v, label]) => {
             const o = mk('option'); o.value = v; o.textContent = label; formatSel.appendChild(o);
         });
         formatSel.value = ctCopyFormat();
@@ -23092,11 +23098,12 @@ Version 1.4.3:
 
     // The groups whose values are domains or IPs, in the order they are copied
     const CT_COPY_GROUPS = ['Network Locations', 'Destination Profiles', 'SSL Decryption Policies', 'Steering Exceptions'];
-    const CT_COPY_FORMAT_KEY = 'changeTrackerCopyFormat';   // 'space' or 'quotes'
+    const CT_COPY_FORMAT_KEY = 'changeTrackerCopyFormat';   // 'lines' or 'commas'
 
-    function ctCopyFormat() { return GM_getValue(CT_COPY_FORMAT_KEY, 'space') === 'quotes' ? 'quotes' : 'space'; }
+    // Anything else (the first version saved 'space' or 'quotes') means one value per line
+    function ctCopyFormat() { return GM_getValue(CT_COPY_FORMAT_KEY, 'lines') === 'commas' ? 'commas' : 'lines'; }
     function ctFormatValues(values) {
-        return ctCopyFormat() === 'quotes' ? values.map(v => `"${v.replace(/"/g, '')}"`).join(' ') : values.join(' ');
+        return values.join(ctCopyFormat() === 'commas' ? ', ' : '\n');
     }
 
     // The group config of an entry type, when that type holds domains or IPs
@@ -23566,7 +23573,7 @@ Version 1.4.3:
                     badgeRow(body, chip('📋 Copy All', '#667eea', { padding: '5px 8px', radius: '3px' }), 'Copies the full log as text to the clipboard.');
                     badgeRow(body, chip('📝 Worknote', '#5a6268', { padding: '5px 8px', radius: '3px' }), 'Copies a closing worknote that summarizes the net result of all changes, grouped by category.');
                     badgeRow(body, chip('🗑️ Clear', '#dc3545', { padding: '5px 8px', radius: '3px' }), 'Deletes every entry of this ticket for the whole team, after a confirmation.');
-                    badgeRow(body, chip('🌐 Copy domains / IPs', '#17a2b8', { padding: '5px 8px', radius: '3px' }), 'Copies the domains and IPs that stay added in this ticket (Network Locations, Destination Profiles, SSL Decryption, Steering Exceptions), each once. The dropdown next to it chooses a.com b.com or "a.com" "b.com".');
+                    badgeRow(body, chip('🌐 Copy domains / IPs', '#17a2b8', { padding: '5px 8px', radius: '3px' }), 'Copies the domains and IPs that stay added in this ticket (Network Locations, Destination Profiles, SSL Decryption, Steering Exceptions), each once. The dropdown next to it chooses one value per line or separated by commas.');
                 }
             },
             {
