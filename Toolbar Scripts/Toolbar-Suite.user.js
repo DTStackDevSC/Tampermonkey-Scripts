@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.5.0
+// @version      2.6.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.5.0';
-    const CHANGELOG = `Version 2.5.0:
+   const SCRIPT_VERSION = '2.6.0';
+    const CHANGELOG = `Version 2.6.0:
+- Change Tracker: new 📋 Paste policy button on Policy and DLP Policy entries fills every field from the last Copy policy, and asks before replacing a field that already has text.
+- NS Policies Toolkit: Copy policy keeps the copied policy for the Change Tracker, and destination profile policies now show their activities.
+
+Version 2.5.0:
 - NS Policies Toolkit: Copy policy now shows names instead of ids for threat protection profiles, HTTP header profiles and destination profiles, and has a Position option (for example 19.5).
 
 Version 2.4.0:
@@ -17588,8 +17592,13 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.1';
-    const CHANGELOG = `Version 2.0.1:
+    const SCRIPT_VERSION = '2.1.0';
+    const CHANGELOG = `Version 2.1.0:
+- New 📋 Paste policy button on Policy and DLP Policy entries: fills every field from the last Copy policy of NS Policies Toolkit.
+- When a field already has text, a window asks whether to replace it.
+- No copy at hand? Paste the Copy policy text in a box instead.
+
+Version 2.0.1:
 - The change summary no longer writes "(no items recorded)". A list or exception whose changes cancel each other out, for example a domain added and then removed again, is now left out of the summary.
 
 Version 2.0.0:
@@ -23337,6 +23346,27 @@ Version 1.4.3:
                 }
             },
             {
+                icon: '📋',
+                title: 'Paste policy',
+                buildContent: (body) => {
+                    lead(body, 'On Policy and DLP Policy entries, fill every field at once from the policy you copied with Copy policy (NS Policies Toolkit, on Netskope).');
+                    const card = panel({ border: '1px solid #d6daf5', borderRadius: '4px', background: '#f3f4ff' });
+                    card.appendChild(hrow([
+                        chip('📋 Paste policy', '#667eea', { fontSize: '11px', padding: '3px 9px', radius: '4px' }),
+                        span('Paste text instead', { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' }),
+                    ], { gap: '8px', margin: '0 0 3px 0' }));
+                    card.appendChild(span('Block risky categories, copied 5 min ago', { fontSize: '11px', color: '#555', display: 'block' }));
+                    body.appendChild(card);
+                    bullets(body, [
+                        'Copy the policy in Netskope with Copy policy, then click 📋 Paste policy here. The line below the button tells which policy and when it was copied.',
+                        'Source gets the group names and user emails, Destination the categories, apps or destination profiles with their activities in brackets, and Group position the position from the copy, for example 19.5.',
+                        'When a field already has text, a "Conflict detected" window shows the current and the new value. Keep is chosen for each field unless you pick Replace, Replace all or Keep all.',
+                        'No copy in this browser, or a copy from someone else? "Paste text instead" (or "📋 Paste policy text") opens a box to paste the Copy policy text.',
+                        'Nothing is saved until you add or save the entry as usual.',
+                    ]);
+                }
+            },
+            {
                 icon: '✍️',
                 title: 'Writing to the Ticket',
                 buildContent: (body) => {
@@ -28319,6 +28349,7 @@ Version 1.16:
                         'File constraints are described like the policy editor: the file should match or not match, with its size and file types.',
                         'Settings the toolkit does not know yet appear under Other settings, so nothing is left out.',
                         'A spinning wheel shows while the policy loads. Nothing in the policy changes.',
+                        'In the Change Tracker, 📋 Paste policy fills a Policy or DLP Policy entry from your last copy.',
                     ]);
                 },
             },

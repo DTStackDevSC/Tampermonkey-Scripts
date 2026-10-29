@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.5.0
+// @version      2.6.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.5.0';
-    const CHANGELOG = `Version 2.5.0:
+   const SCRIPT_VERSION = '2.6.0';
+    const CHANGELOG = `Version 2.6.0:
+- Change Tracker: new 📋 Paste policy button on Policy and DLP Policy entries fills every field from the last Copy policy, and asks before replacing a field that already has text.
+- NS Policies Toolkit: Copy policy keeps the copied policy for the Change Tracker, and destination profile policies now show their activities.
+
+Version 2.5.0:
 - NS Policies Toolkit: Copy policy now shows names instead of ids for threat protection profiles, HTTP header profiles and destination profiles, and has a Position option (for example 19.5).
 
 Version 2.4.0:
@@ -17588,8 +17592,13 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.1';
-    const CHANGELOG = `Version 2.0.1:
+    const SCRIPT_VERSION = '2.1.0';
+    const CHANGELOG = `Version 2.1.0:
+- New 📋 Paste policy button on Policy and DLP Policy entries: fills every field from the last Copy policy of NS Policies Toolkit.
+- When a field already has text, a window asks whether to replace it.
+- No copy at hand? Paste the Copy policy text in a box instead.
+
+Version 2.0.1:
 - The change summary no longer writes "(no items recorded)". A list or exception whose changes cancel each other out, for example a domain added and then removed again, is now left out of the summary.
 
 Version 2.0.0:
@@ -20817,6 +20826,7 @@ Version 1.4.3:
         if (schema) {
             buildFieldInputs(schema, values || {}, prefix, container);
             buildOptionalNoteInput(note || '', prefix, container);
+            if (ctSchemaName(type)) buildPasteBar(type, prefix, container);
         } else {
             buildFreeformInput(note || '', prefix, container);
         }
@@ -20836,6 +20846,401 @@ Version 1.4.3:
             }
         });
         return vals;
+    }
+
+    /* ==========================================================
+     *  PASTE POLICY
+     *  Fills Policy and DLP Policy entries from the last NS Policies Toolkit
+     *  "Copy policy" (handed over through the suite's shared storage), or from
+     *  a pasted Copy policy text.
+     * ==========================================================*/
+
+    const CT_HANDOFF_KEY = 'toolkit_policyHandoff';
+    const CT_PASTE_SCHEMAS = ['policy_full', 'dlp_policy_full'];
+    const CT_ACTION_NAMES = { block: 'Block', alert: 'Alert', useralert: 'User Alert', add_headers: 'Add SMTP header', allow: 'Allow' };
+    const CT_CONSTRAINT_NAMES = { to_user: 'To user', from_user: 'From user' };
+
+    function ctPolicyHandoff() {
+        try {
+            const h = JSON.parse(GM_getValue(CT_HANDOFF_KEY, 'null'));
+            return h && h.v === 1 && h.policy && h.policy.rule_data ? h : null;
+        } catch (e) { return null; }
+    }
+
+    function ctAge(ms) {
+        const min = Math.floor((Date.now() - ms) / 60000);
+        if (min < 1) return 'just now';
+        if (min < 60) return `${min} min ago`;
+        const h = Math.floor(min / 60);
+        if (h < 24) return `${h} h ago`;
+        if (h < 48) return 'yesterday';
+        const d = new Date(ms);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    const ctUnique = list => [...new Set(list.filter(v => v !== '' && v != null).map(String))];
+    const ctShortName = name => String(name || '').split('/').pop().trim();
+    const ctActionName = a => (a && (CT_ACTION_NAMES[a.action_name] || a.action_name)) || '';
+
+    // Entry field values from a Copy policy handoff, in the formats agreed with the user.
+    function ctPolicyValues(h, schemaName) {
+        const rd = h.policy.rule_data || {};
+        const names = h.names || {};
+        const named = (kind, id) => (names[kind] && names[kind][String(id)]) || String(id);
+        const v = {}, notes = [];
+
+        v.policyName = h.policy.rule_name || h.policyName || '';
+
+        const groups = ((rd.userGroups && rd.userGroups.length) ? rd.userGroups : (rd.userGroupObjects || []).map(o => o.name)).map(ctShortName);
+        const exGroups = ((rd.excludedGroups && rd.excludedGroups.length) ? rd.excludedGroups : (rd.excludedUserGroupObjects || []).map(o => o.name)).map(ctShortName);
+        const except = ctUnique([...exGroups, ...(rd.excludedUsers || [])]);
+        v.source = (ctUnique([...groups, ...(rd.users || [])]).join(', ') || 'All users') + (except.length ? ` (except ${except.join(', ')})` : '');
+
+        const parts = [
+            ...(rd.categories || []).filter(c => c.appCategory).map(c => c.appCategory),
+            ...(rd.apps || []).map(a => a.appName),
+            ...(rd.emailOutboundApps || []).map(a => a.appName),
+            ...(rd.appInstances || []).map(a => `${a.appInstanceName} / ${a.instanceName}`),
+        ];
+        const dests = (rd.destinationProfiles || []).map(id => named('dest', id));
+        if (dests.length) parts.push((rd.b_negateDestinationProfiles ? 'NOT ' : '') + dests.join(', '));
+        if (!parts.length && (rd.policy_type || h.policy.policy_type) === 'any_category') parts.push('Any category');
+        const activityLists = [rd.categories, rd.apps, rd.emailOutboundApps, rd.appInstances].map(l => l || []);
+        const activities = [].concat(...activityLists.map(l => [].concat(...l.map(x => x.activities || []))));
+        const acts = ctUnique(activities.map(a => a.activity));
+        v.destination = ctUnique(parts).join(', ') + (acts.length ? ` [${acts.join(', ')}]` : '');
+
+        v.description = rd.description || '';
+        if (h.place && h.place.groupOrder != null && h.place.position) v.groupPosition = `${h.place.groupOrder}.${h.place.position}`;
+        else { v.groupPosition = ''; notes.push('Group position left empty: Position was not copied.'); }
+        v.action = ctActionName(rd.match_criteria_action);
+
+        if (schemaName === 'dlp_policy_full') {
+            v.activities = acts.join(', ');
+            v.dlpProfile = ctUnique((rd.dlp_profile && rd.dlp_profile.length) ? rd.dlp_profile : (rd.dlp_actions || []).map(d => d.dlp_profile)).join(', ');
+            v.profileAction = (rd.dlp_actions || []).map(d => `${d.dlp_profile}: ${ctUnique((d.actions || []).map(ctActionName)).join(', ')}`).join('; ');
+        }
+
+        // "+ Add fields" extras; only the ones the entry type has are used
+        v.osFamily = ctUnique(rd.os_family || []).join(', ');
+        v.browsers = ctUnique(rd.browsers || []).join(', ');
+        v.accessMethod = ctUnique(rd.access_method || []).join(', ');
+        v.httpHeader = ctUnique((rd.http_header_obj || []).map(id => named('http', id))).join(', ');
+        v.appInstance = ctUnique((rd.appInstances || []).map(a => `${a.appInstanceName} / ${a.instanceName}`)).join(', ');
+        v.activityConstraints = ctUnique([].concat(...activities.map(a => (a.list_of_constraints || []).map(c =>
+            `${CT_CONSTRAINT_NAMES[c.constraints_type] || c.constraints_type}: ${named('constraints', c.constraints_profile)}`)))).join('; ');
+        const ft = rd.filefilter_fileTypes || {};
+        const size = (rd.filefilter_file_size || []).map(s => `${{ gt: 'greater than', lt: 'less than' }[s.operator] || s.operator} ${s.size} ${s.unit || ''}`.trim());
+        const fileBits = [
+            size.length ? 'size ' + size.join(', ') : '',
+            (ft.categories || []).length ? 'categories ' + ft.categories.join(', ') : '',
+            (ft.types || []).length ? 'types ' + ft.types.join(', ') : '',
+        ].filter(Boolean);
+        v.fileConstraints = ((rd.filefilter_profiles || []).length || fileBits.length)
+            ? `should ${rd.b_negate_filefilter_profiles ? 'not match' : 'match'}` + (fileBits.length ? ': ' + fileBits.join('; ') : '') : '';
+        return { values: v, notes };
+    }
+
+    function ctSchemaName(type) {
+        const schema = getSchema(type);
+        return CT_PASTE_SCHEMAS.find(n => FIELD_SCHEMAS[n] === schema) || null;
+    }
+
+    function ctSchemaLabels(schema) {
+        const labels = {};
+        schema.forEach(f => [f, ...(f.extraFields || [])].forEach(x => { labels[x.key] = x.label; }));
+        return labels;
+    }
+
+    // Fills the form with the values; a field that already holds other text is asked about first.
+    function ctApplyPolicyValues(type, prefix, container, values, notes, policyName) {
+        const schema = getSchema(type);
+        const labels = ctSchemaLabels(schema);
+        const current = collectFieldValues(schema, prefix);
+        const noteEl = document.getElementById(`${prefix}-note`);
+        const note = noteEl ? noteEl.value : '';
+        const keys = Object.keys(values).filter(k => labels[k] && values[k] !== '');
+        const conflicts = keys.filter(k => current[k] && current[k] !== values[k])
+            .map(k => ({ key: k, label: labels[k], current: current[k], next: values[k] }));
+        const finish = (replace) => {
+            const merged = Object.assign({}, current);
+            let filled = 0, kept = 0;
+            keys.forEach(k => {
+                if (!current[k]) { merged[k] = values[k]; filled++; }
+                else if (current[k] !== values[k]) {
+                    if (replace.has(k)) { merged[k] = values[k]; filled++; } else kept++;
+                }
+            });
+            rebuildInputFields(type, merged, note, prefix, container);
+            const status = container.querySelector('.ct-paste-status');
+            if (status) {
+                status.textContent = [`Filled ${filled} field${filled === 1 ? '' : 's'} from "${policyName}".`,
+                    kept ? `${kept} kept as ${kept === 1 ? 'it was' : 'they were'}.` : '', ...notes].filter(Boolean).join(' ');
+            }
+        };
+        if (conflicts.length) ctPolicyConflicts(conflicts, finish);
+        else finish(new Set());
+    }
+
+    function ctPasteFromHandoff(type, prefix, container) {
+        const h = ctPolicyHandoff();
+        if (!h) { ctOpenPasteBox(type, prefix, container); return; }
+        const { values, notes } = ctPolicyValues(h, ctSchemaName(type));
+        ctApplyPolicyValues(type, prefix, container, values, notes, h.policyName || h.policy.rule_name);
+    }
+
+    function buildPasteBar(type, prefix, container) {
+        const h = ctPolicyHandoff();
+        const bar = css(mk('div', { className: 'ct-paste-bar' }), {
+            margin: '0 0 8px', padding: '6px 8px', background: '#f3f4ff', border: '1px solid #d6daf5',
+            borderRadius: '4px', fontFamily: 'Arial, sans-serif',
+        });
+        const row = css(mk('div'), { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' });
+        const btn = css(mk('button', { type: 'button' }), {
+            padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', border: 'none', borderRadius: '4px',
+            background: '#667eea', color: '#fff', cursor: 'pointer', fontFamily: 'Arial, sans-serif',
+        });
+        btn.dataset.ctPaste = '1';
+        btn.textContent = h ? '📋 Paste policy' : '📋 Paste policy text';
+        btn.title = h ? 'Fill these fields from the last Copy policy of NS Policies Toolkit' : 'Paste the text of a Copy policy to fill these fields';
+        btn.onclick = (e) => { e.preventDefault(); ctPasteFromHandoff(type, prefix, container); };
+        row.appendChild(btn);
+        if (h) {
+            const link = css(mk('button', { type: 'button' }), {
+                fontSize: '11px', color: '#0066cc', background: 'none', border: 'none', padding: '0',
+                cursor: 'pointer', textDecoration: 'underline', fontFamily: 'Arial, sans-serif',
+            });
+            link.dataset.ctPasteText = '1';
+            link.textContent = 'Paste text instead';
+            link.onclick = (e) => { e.preventDefault(); ctOpenPasteBox(type, prefix, container); };
+            row.appendChild(link);
+        }
+        bar.appendChild(row);
+        if (h) {
+            const from = css(mk('div', { className: 'ct-paste-from' }), { fontSize: '11px', color: '#555', marginTop: '3px' });
+            from.textContent = `${h.policyName || h.policy.rule_name}, copied ${ctAge(h.copiedAt)}`;
+            bar.appendChild(from);
+        }
+        bar.appendChild(css(mk('div', { className: 'ct-paste-status' }), { fontSize: '11px', color: '#26890d', marginTop: '3px' }));
+        container.insertBefore(bar, container.firstChild);
+    }
+
+    // One row per field that already holds other text: Keep (default) or Replace.
+    function ctPolicyConflicts(rows, onApply) {
+        document.getElementById('ct-paste-conflict-overlay')?.remove();
+        document.getElementById('ct-paste-conflict')?.remove();
+        const close = () => { ov.remove(); md.remove(); };
+        const ov = css(mk('div', { id: 'ct-paste-conflict-overlay' }), { position: 'fixed', inset: '0', background: 'rgba(0,0,0,.45)', zIndex: '1100000' });
+        const md = css(mk('div', { id: 'ct-paste-conflict' }), {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: '1100001', background: '#fff',
+            border: '2px solid #f0ad4e', padding: '20px', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
+            width: '720px', maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 16px rgba(0,0,0,.3)', boxSizing: 'border-box',
+        });
+        const title = css(mk('div'), { fontSize: '15px', fontWeight: 'bold', color: '#333', marginBottom: '6px' });
+        title.textContent = 'Conflict detected';
+        const intro = css(mk('p'), { margin: '0 0 12px', fontSize: '12px', color: '#555', lineHeight: '1.5' });
+        intro.textContent = 'These fields already have text. Choose what to do with each one. Empty fields are filled anyway.';
+        const table = css(mk('table'), { width: '100%', borderCollapse: 'collapse', fontSize: '12px', tableLayout: 'fixed' });
+        const cellCss = { padding: '6px 8px', borderTop: '1px solid #eee', verticalAlign: 'top', textAlign: 'left', wordBreak: 'break-word' };
+        const valueCell = (text) => {
+            const td = css(mk('td'), cellCss);
+            const span = mk('span');
+            const long = text.length > 160;
+            span.textContent = long ? text.slice(0, 160) + '…' : text;
+            td.appendChild(span);
+            if (long) {
+                const more = css(mk('button', { type: 'button' }), { display: 'block', fontSize: '11px', color: '#0066cc', background: 'none',
+                    border: 'none', padding: '2px 0 0', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'Arial, sans-serif' });
+                more.textContent = 'show all';
+                more.onclick = (e) => {
+                    e.preventDefault();
+                    const all = more.textContent === 'show all';
+                    span.textContent = all ? text : text.slice(0, 160) + '…';
+                    more.textContent = all ? 'show less' : 'show all';
+                };
+                td.appendChild(more);
+            }
+            return td;
+        };
+        rows.forEach(r => {
+            const tr = mk('tr');
+            tr.dataset.key = r.key;
+            const label = css(mk('td'), Object.assign({}, cellCss, { fontWeight: 'bold', color: '#444', width: '18%' }));
+            label.textContent = r.label;
+            const arrow = css(mk('td'), Object.assign({}, cellCss, { width: '24px', color: '#999', textAlign: 'center' }));
+            arrow.textContent = '→';
+            const pick = css(mk('td'), Object.assign({}, cellCss, { width: '92px', whiteSpace: 'nowrap' }));
+            ['keep', 'replace'].forEach(v => {
+                const lab = css(mk('label'), { display: 'block', cursor: 'pointer' });
+                const radio = mk('input');
+                radio.type = 'radio';
+                radio.name = `ct-pc-${r.key}`;
+                radio.value = v;
+                radio.checked = v === 'keep';
+                lab.append(radio, document.createTextNode(v === 'keep' ? ' Keep' : ' Replace'));
+                pick.appendChild(lab);
+            });
+            tr.append(label, valueCell(r.current), arrow, valueCell(r.next), pick);
+            table.appendChild(tr);
+        });
+        const setAll = (v) => md.querySelectorAll(`input[type="radio"][value="${v}"]`).forEach(x => { x.checked = true; });
+        const btnRow = css(mk('div'), { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: '14px' });
+        [['Replace all', '#6c757d', () => setAll('replace')], ['Keep all', '#6c757d', () => setAll('keep')],
+         ['Apply', '#667eea', () => {
+             const replace = new Set(rows.filter(r => md.querySelector(`input[name="ct-pc-${r.key}"][value="replace"]`).checked).map(r => r.key));
+             close();
+             onApply(replace);
+         }],
+         ['Cancel', '#adb5bd', close]].forEach(([label, bg, fn]) => {
+            const b = css(mk('button', { type: 'button' }), { padding: '7px 14px', border: 'none', borderRadius: '5px', cursor: 'pointer',
+                fontWeight: 'bold', fontSize: '12px', fontFamily: 'Arial, sans-serif', background: bg, color: '#fff' });
+            b.textContent = label;
+            b.onclick = (e) => { e.preventDefault(); fn(); };
+            btnRow.appendChild(b);
+        });
+        md.append(title, intro, table, btnRow);
+        document.body.append(ov, md);
+    }
+
+    // Reads the text of a Copy policy into entry field values (fallback when there is no handoff).
+    function ctValuesFromText(text, schemaName) {
+        const lines = String(text || '').replace(/\r/g, '').split('\n');
+        const head = (lines[0] || '').match(/^Netskope Real-time Protection policy: (.*)$/);
+        if (!head) return null;
+        const sections = {};
+        let current = null;
+        for (let i = 1; i < lines.length; i++) {
+            if (/^=+$/.test(lines[i + 1] || '') && /^[A-Z][A-Z &]+$/.test(lines[i])) { current = lines[i]; sections[current] = []; i++; continue; }
+            if (current) sections[current].push(lines[i]);
+        }
+        const depth = l => (l.match(/^ */)[0].length) / 2;
+        const strip = l => l.replace(/^ *(• )?/, '');
+        const noId = s => s.replace(/ \((?:[^()]*|\([^()]*\))*\)$/, '').trim();
+        const items = (sec, label, d = 0) => {
+            const ls = sections[sec] || [];
+            const at = ls.findIndex(l => depth(l) === d && new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\(\\d+\\):').test(strip(l)));
+            if (at < 0) return [];
+            const out = [];
+            for (let i = at + 1; i < ls.length && depth(ls[i]) > d; i++) if (depth(ls[i]) === d + 1 && /^ *• /.test(ls[i])) out.push(strip(ls[i]));
+            return out;
+        };
+        const line = (sec, label, d = 0) => {
+            const l = (sections[sec] || []).find(x => depth(x) === d && strip(x).startsWith(label + ': '));
+            return l ? strip(l).slice(label.length + 2) : '';
+        };
+        const v = {}, notes = [];
+        v.policyName = line('POLICY NAME', 'Name') || head[1];
+
+        // Source
+        const S = 'SOURCE';
+        const exAt = (sections[S] || []).findIndex(l => strip(l) === 'Exclusions:');
+        const before = exAt < 0 ? sections[S] || [] : (sections[S] || []).slice(0, exAt);
+        const after = exAt < 0 ? [] : (sections[S] || []).slice(exAt + 1);
+        const listIn = (ls, label, d) => {
+            const at = ls.findIndex(l => depth(l) === d && strip(l).startsWith(label + ' ('));
+            const out = [];
+            if (at >= 0) for (let i = at + 1; i < ls.length && depth(ls[i]) > d; i++) if (/^ *• /.test(ls[i])) out.push(strip(ls[i]));
+            return out;
+        };
+        const groups = listIn(before, 'User groups', 0).map(ctShortName);
+        const users = listIn(before, 'Users', 0);
+        const except = ctUnique([...listIn(after, 'User groups', 1).map(ctShortName), ...listIn(after, 'Users', 1)]);
+        v.source = (ctUnique([...groups, ...users]).join(', ') || 'All users') + (except.length ? ` (except ${except.join(', ')})` : '');
+
+        // Destination
+        const D = 'DESTINATION', dl = sections[D] || [];
+        const parts = [...items(D, 'Categories'), ...items(D, 'Applications'), ...items(D, 'Email outbound apps'),
+            ...items(D, 'App instances').map(x => x.replace(/ \(.*$/, '').replace(/, all connected instances$/, ''))];
+        const destHead = dl.find(l => depth(l) === 0 && /^Destination profiles \(\d+\): /.test(l));
+        const dests = items(D, 'Destination profiles').map(noId);
+        if (dests.length) parts.push((destHead && /does not match$/.test(destHead) ? 'NOT ' : '') + dests.join(', '));
+        if (!parts.length && line(D, 'Type') === 'Any category') parts.push('Any category');
+        const acts = ctUnique([].concat(...dl.filter(l => strip(l).startsWith('Activities: ')).map(l => strip(l).slice(12).split(', '))));
+        v.destination = ctUnique(parts).join(', ') + (acts.length ? ` [${acts.join(', ')}]` : '');
+        v.activityConstraints = ctUnique(dl.filter(l => strip(l).startsWith('Constraints: '))
+            .map(l => noId(strip(l).slice(13).replace(/ \[[^\]]*\]$/, '')))).join('; ');
+        const fileAt = dl.findIndex(l => depth(l) === 0 && strip(l).startsWith('File constraints: file should '));
+        if (fileAt >= 0) {
+            const bits = [];
+            for (let i = fileAt + 1; i < dl.length && depth(dl[i]) > 0; i++) {
+                const t = strip(dl[i]);
+                if (t.startsWith('File size: ')) bits.push('size ' + t.slice(11));
+                else if (/^File type categories \(\d+\): /.test(t)) bits.push('categories ' + t.replace(/^File type categories \(\d+\): /, ''));
+                else if (/^File types \(\d+\): /.test(t)) bits.push('types ' + t.replace(/^File types \(\d+\): /, ''));
+            }
+            v.fileConstraints = strip(dl[fileAt]).replace('File constraints: file ', '') + (bits.length ? ': ' + bits.join('; ') : '');
+        }
+
+        // Profile & Action
+        const A = 'PROFILE & ACTION', al = sections[A] || [];
+        const topAction = line(A, 'Action');
+        v.action = topAction && topAction !== 'none' ? topAction.split(': ')[0].replace(/, severity .*$/, '') : '';
+        if (schemaName === 'dlp_policy_full') {
+            v.activities = acts.join(', ');
+            const at = al.findIndex(l => depth(l) === 0 && /^DLP profiles \(\d+\):/.test(l));
+            const profiles = [];
+            if (at >= 0) for (let i = at + 1; i < al.length && depth(al[i]) > 0; i++) {
+                if (depth(al[i]) === 1 && /^ *• /.test(al[i])) profiles.push({ name: strip(al[i]), actions: [] });
+                else if (depth(al[i]) === 2 && strip(al[i]).startsWith('Action: ') && profiles.length) {
+                    profiles[profiles.length - 1].actions.push(strip(al[i]).slice(8).split(': ')[0].replace(/, severity .*$/, ''));
+                }
+            }
+            v.dlpProfile = ctUnique(profiles.map(x => x.name)).join(', ');
+            v.profileAction = profiles.map(x => `${x.name}: ${ctUnique(x.actions).join(', ')}`).join('; ');
+        }
+        v.osFamily = line(S, 'OS family');
+        v.browsers = line(S, 'Browsers');
+        v.accessMethod = line(S, 'Access method');
+        v.httpHeader = items(S, 'HTTP header').map(noId).join(', ');
+        v.appInstance = items(D, 'App instances').map(x => x.replace(/ \(.*$/, '').replace(/, all connected instances$/, '')).join(', ');
+
+        // Policy Name
+        const N = 'POLICY NAME', nl = sections[N] || [];
+        const dAt = nl.findIndex(l => strip(l) === 'Description:');
+        const desc = [];
+        if (dAt >= 0) for (let i = dAt + 1; i < nl.length && depth(nl[i]) >= 1; i++) desc.push(nl[i].slice(2));
+        v.description = desc.join('\n');
+
+        const pos = ((sections.POSITION || []).find(l => l.startsWith('Position: ')) || '').slice(10);
+        if (/^\d+\.\d+$/.test(pos)) v.groupPosition = pos;
+        else { v.groupPosition = ''; notes.push('Group position left empty: Position was not copied.'); }
+        return { values: v, notes, policyName: v.policyName };
+    }
+
+    function ctOpenPasteBox(type, prefix, container) {
+        document.getElementById('ct-paste-box-overlay')?.remove();
+        document.getElementById('ct-paste-box')?.remove();
+        const close = () => { ov.remove(); md.remove(); };
+        const ov = css(mk('div', { id: 'ct-paste-box-overlay' }), { position: 'fixed', inset: '0', background: 'rgba(0,0,0,.45)', zIndex: '1100000' });
+        const md = css(mk('div', { id: 'ct-paste-box' }), {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: '1100001', background: '#fff',
+            border: '2px solid #667eea', padding: '20px', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
+            width: '560px', maxWidth: '94vw', boxShadow: '0 4px 16px rgba(0,0,0,.3)', boxSizing: 'border-box',
+        });
+        const title = css(mk('div'), { fontSize: '15px', fontWeight: 'bold', color: '#333', marginBottom: '6px' });
+        title.textContent = 'Paste policy text';
+        const intro = css(mk('p'), { margin: '0 0 10px', fontSize: '12px', color: '#555', lineHeight: '1.5' });
+        intro.textContent = 'Paste the text of Copy policy (NS Policies Toolkit) with Ctrl+V, then click Fill.';
+        const ta = css(mk('textarea'), { width: '100%', height: '200px', boxSizing: 'border-box', padding: '8px', fontSize: '12px',
+            fontFamily: '"Courier New", Courier, monospace', border: '1px solid #ccc', borderRadius: '4px', resize: 'vertical' });
+        ta.placeholder = 'Netskope Real-time Protection policy: …';
+        const err = css(mk('div', { className: 'ct-paste-error' }), { minHeight: '16px', marginTop: '6px', fontSize: '12px', color: '#da291c' });
+        const row = css(mk('div'), { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' });
+        [['Fill', '#667eea', () => {
+            const parsed = ctValuesFromText(ta.value.trim(), ctSchemaName(type));
+            if (!parsed) { err.textContent = 'This is not a text from Copy policy.'; return; }
+            close();
+            ctApplyPolicyValues(type, prefix, container, parsed.values, parsed.notes, parsed.policyName);
+        }], ['Cancel', '#adb5bd', close]].forEach(([label, bg, fn]) => {
+            const b = css(mk('button', { type: 'button' }), { padding: '7px 14px', border: 'none', borderRadius: '5px', cursor: 'pointer',
+                fontWeight: 'bold', fontSize: '12px', fontFamily: 'Arial, sans-serif', background: bg, color: '#fff' });
+            b.textContent = label;
+            b.onclick = (e) => { e.preventDefault(); fn(); };
+            row.appendChild(b);
+        });
+        md.append(title, intro, ta, err, row);
+        document.body.append(ov, md);
+        ta.focus();
     }
 
     /* ==========================================================
@@ -22937,6 +23342,27 @@ Version 1.4.3:
                         '× deletes the entry: click it twice to confirm.',
                         'Entries longer than 50 lines show a short preview; click "⤢ Show full entry" to read the whole entry in a separate window.',
                         'Some types show "+ Add fields" in the form to record optional extra details.'
+                    ]);
+                }
+            },
+            {
+                icon: '📋',
+                title: 'Paste policy',
+                buildContent: (body) => {
+                    lead(body, 'On Policy and DLP Policy entries, fill every field at once from the policy you copied with Copy policy (NS Policies Toolkit, on Netskope).');
+                    const card = panel({ border: '1px solid #d6daf5', borderRadius: '4px', background: '#f3f4ff' });
+                    card.appendChild(hrow([
+                        chip('📋 Paste policy', '#667eea', { fontSize: '11px', padding: '3px 9px', radius: '4px' }),
+                        span('Paste text instead', { fontSize: '11px', color: '#0066cc', textDecoration: 'underline' }),
+                    ], { gap: '8px', margin: '0 0 3px 0' }));
+                    card.appendChild(span('Block risky categories, copied 5 min ago', { fontSize: '11px', color: '#555', display: 'block' }));
+                    body.appendChild(card);
+                    bullets(body, [
+                        'Copy the policy in Netskope with Copy policy, then click 📋 Paste policy here. The line below the button tells which policy and when it was copied.',
+                        'Source gets the group names and user emails, Destination the categories, apps or destination profiles with their activities in brackets, and Group position the position from the copy, for example 19.5.',
+                        'When a field already has text, a "Conflict detected" window shows the current and the new value. Keep is chosen for each field unless you pick Replace, Replace all or Keep all.',
+                        'No copy in this browser, or a copy from someone else? "Paste text instead" (or "📋 Paste policy text") opens a box to paste the Copy policy text.',
+                        'Nothing is saved until you add or save the entry as usual.',
                     ]);
                 }
             },
@@ -26172,8 +26598,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.31.0';
-    const CHANGELOG = `Version 1.31:
+    const SCRIPT_VERSION = '1.32.0';
+    const CHANGELOG = `Version 1.32:
+- Copy policy: destination profile policies now show their activities.
+- Copy policy also keeps the copied policy for the Change Tracker Paste policy button.
+
+Version 1.31:
 - Copy policy: new Position option, ticked by default. It shows the group order and the place in the group, for example 19.5. The global order stays in Metadata.
 - Copy policy: threat protection profiles, HTTP header profiles and destination profiles now show their names, like the policy editor.
 - Copy policy: file constraints are described like the editor (file should match or not match, size and file types). The file profile ids moved to Metadata.
@@ -27919,6 +28349,7 @@ Version 1.16:
                         'File constraints are described like the policy editor: the file should match or not match, with its size and file types.',
                         'Settings the toolkit does not know yet appear under Other settings, so nothing is left out.',
                         'A spinning wheel shows while the policy loads. Nothing in the policy changes.',
+                        'In the Change Tracker, 📋 Paste policy fills a Policy or DLP Policy entry from your last copy.',
                     ]);
                 },
             },
@@ -34227,7 +34658,10 @@ Version 1.16:
                 lines.push(...pcActivityLines(data, item.activities, 2));
             });
         };
-        block('Categories', rd.categories, c => c.appCategory);
+        // Destination profile policies keep their activities in a category entry without a name
+        const named = (rd.categories || []).filter(c => c.appCategory);
+        const unnamedActs = [].concat(...(rd.categories || []).filter(c => !c.appCategory).map(c => c.activities || []));
+        block('Categories', named, c => c.appCategory);
         block('Applications', rd.apps, a => a.appName);
         block('Email outbound apps', rd.emailOutboundApps, a => a.appName);
         block('App instances', rd.appInstances, a => `${a.appInstanceName} / ${a.instanceName}` + (a.instance_type ? ` (${a.instance_type})` : '') +
@@ -34246,7 +34680,8 @@ Version 1.16:
         if ((rd.destinationProfiles || []).length) {
             lines.push(`Destination profiles (${rd.destinationProfiles.length}): ` + (rd.b_negateDestinationProfiles ? 'does not match' : 'matches'));
             rd.destinationProfiles.forEach(id => lines.push(pcPad(1, '• ' + pcDestinationProfile(data, id))));
-        }
+            lines.push(...pcActivityLines(data, unnamedActs, 1));
+        } else lines.push(...pcActivityLines(data, unnamedActs, 0));
         return lines;
     }
 
@@ -34374,6 +34809,20 @@ Version 1.16:
         return blocks.map(b => b.join('\n')).join('\n\n') + '\n';
     }
 
+    // The last copied policy, for the Change Tracker "Paste policy" button (the suite shares its storage across sites).
+    const PC_HANDOFF_KEY = 'toolkit_policyHandoff';
+    function pcSaveHandoff(data) {
+        const names = {};
+        Object.entries(data.names).forEach(([kind, map]) => { names[kind] = Object.fromEntries(map); });
+        const place = data.place ? { groupOrder: data.place.groupOrder, position: data.place.position } : null;
+        try {
+            GM_setValue(PC_HANDOFF_KEY, JSON.stringify({
+                v: 1, copiedAt: Date.now(), tenant: location.hostname, ruleId: String(data.policy.rule_id),
+                policyName: data.policy.rule_name, policy: data.policy, names, place,
+            }));
+        } catch (e) { /* the copy itself already worked */ }
+    }
+
     async function pcCopy() {
         if (pc.busy) return;
         const id = pcPolicyId();
@@ -34393,6 +34842,7 @@ Version 1.16:
                 if (typeof GM_setClipboard !== 'function') throw new Error('The browser refused to copy the text.');
                 GM_setClipboard(text);
             }
+            pcSaveHandoff(data);
             if (data.missing.size) pcStatus('✔ Copied. Some names could not be loaded, their ids are shown.', 'warn');
             else pcStatus(`✔ Copied ${text.trimEnd().split('\n').length} lines.`);
         } catch (e) {
