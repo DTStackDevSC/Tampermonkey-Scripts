@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.3.0
+// @version      4.3.1
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.0';
-    const CHANGELOG = `Version 4.3.0:
+    const SCRIPT_VERSION = '4.3.1';
+    const CHANGELOG = `Version 4.3.1:
+- Formatted Text Helper: the button that removes a clicked image is now a red trash icon.
+
+Version 4.3.0:
 - Formatted Text Helper: paste a picture with Ctrl+V straight into the editor, and click any image to change its size in 5% steps or remove it. Insert Image uses the same size control.
 
 Version 4.2.0:
@@ -1064,8 +1067,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.0';
-    const CHANGELOG = `Version 4.3.0:
+    const SCRIPT_VERSION = '4.3.1';
+    const CHANGELOG = `Version 4.3.1:
+- Formatted Text Helper: the button that removes a clicked image is now a red trash icon.
+
+Version 4.3.0:
 - Formatted Text Helper: paste a picture with Ctrl+V straight into the editor, and click any image to change its size in 5% steps or remove it. Insert Image uses the same size control.
 
 Version 4.2.0:
@@ -8774,10 +8780,13 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
+    const SCRIPT_VERSION = '1.4.1';
+    const CHANGELOG = `Version 1.4.1:
+- The button that removes a clicked image is now a red trash icon.
+
+Version 1.4.0:
 - Paste a picture: press Ctrl+V with a screenshot or a copied picture and it goes into the editor. ServiceNow keeps it with the comment or work note. Big pictures are made smaller first.
-- Click an image in the editor to change its size, from 5% to 100% in 5% steps, or to remove it with the red 🗑.
+- Click an image in the editor to change its size, from 5% to 100% in 5% steps, or to remove it.
 - Insert Image uses the same size control instead of the four fixed sizes.
 
 Version 1.3.1:
