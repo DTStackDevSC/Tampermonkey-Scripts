@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.6.1
+// @version      2.6.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.6.1';
-    const CHANGELOG = `Version 2.6.1:
+   const SCRIPT_VERSION = '2.6.2';
+    const CHANGELOG = `Version 2.6.2:
+- Change Tracker: the "no access" warning now offers to sign in to SharePoint in another tab and try again first, since an expired sign in looks the same. Ask the site owner only if it still fails.
+
+Version 2.6.1:
 - NS Policies Toolkit: fixed the log buttons not appearing below the description of SSL Decryption policies in Netskope's new policy editor.
 
 Version 2.6.0:
@@ -17595,8 +17598,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.0';
-    const CHANGELOG = `Version 2.1.0:
+    const SCRIPT_VERSION = '2.1.1';
+    const CHANGELOG = `Version 2.1.1:
+- When SharePoint refuses the list, the warning now explains that the sign in may have expired: it has an "Open SharePoint to sign in" button and ↺ to try again, and says to ask the site owner only if it still fails. Before, it only said to ask the site owner, even when signing in again was enough.
+
+Version 2.1.0:
 - New 📋 Paste policy button on Policy and DLP Policy entries: fills every field from the last Copy policy of NS Policies Toolkit.
 - When a field already has text, a window asks whether to replace it.
 - No copy at hand? Paste the Copy policy text in a box instead.
@@ -19152,7 +19158,7 @@ Version 1.4.3:
         function describeFailure(res) {
             if (!res) return '';
             if (res.kind === 'session') return 'You are not signed in to SharePoint in this browser. Open the site in another tab, sign in, then check again.';
-            if (res.kind === 'forbidden') return 'You do not have access to this site or list. Ask the site owner for access.';
+            if (res.kind === 'forbidden') return 'SharePoint refused the request. Your sign in may have expired: open the site in another tab, sign in, then try again. If it still fails, ask the site owner for access.';
             if (res.kind === 'network' || res.kind === 'server') return 'SharePoint could not be reached. Check the site address and your connection.';
             if (res.kind === 'notfound') return 'Not found. Check the site address.';
             return res.message || `SharePoint answered with an error (HTTP ${res.status}).`;
@@ -22715,14 +22721,27 @@ Version 1.4.3:
             const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
             btns.append(open, retry);
             banner.append(msg, btns);
-        } else {
+        } else if (noAccessReason === 'notfound') {
             css(banner, { background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24' });
-            msg.textContent = noAccessReason === 'notfound'
-                ? '⛔ The SharePoint list was not found. It may have been deleted, moved or renamed: check Site contents and the recycle bin, then open Configure.'
-                : '⛔ No access to the SharePoint list. Ask the site owner for access.';
+            msg.textContent = '⛔ The SharePoint list was not found. It may have been deleted, moved or renamed: check Site contents and the recycle bin, then open Configure.';
             const cfg = button('Configure', null, { background:'transparent', color:'#721c24', textDecoration:'underline' });
             cfg.onclick = () => openSetupPrompt({ previousState: connState });
             banner.append(msg, cfg);
+        } else {
+            // SharePoint answers 403 to the first request when the sign in expired, the same answer as a real
+            // lack of access: so the user is sent to sign in first, and to the site owner only after that.
+            css(banner, { background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24' });
+            msg.textContent = `⛔ Can't open the SharePoint list${waitingText}. Your sign in may have expired: open SharePoint in another tab, sign in, then click ↺. If it still fails, ask the site owner for access.`;
+            const open = button('Open SharePoint to sign in', 'ct-signin-btn', { background:'#f5c6cb', color:'#721c24' });
+            open.onclick = () => window.open(spClient.siteUrl(), '_blank');
+            const retry = button('↺', 'ct-reconnect-btn', { background:'transparent', color:'#721c24' });
+            retry.title = 'Try again';
+            retry.onclick = () => attemptReconnect(getTicketNumber(), false);
+            const cfg = button('Configure', null, { background:'transparent', color:'#721c24', textDecoration:'underline' });
+            cfg.onclick = () => openSetupPrompt({ previousState: connState });
+            const btns = css(mk('span'), { display:'inline-flex', gap:'4px', flexWrap:'wrap' });
+            btns.append(open, retry, cfg);
+            banner.append(msg, btns);
         }
     }
 
@@ -22759,7 +22778,7 @@ Version 1.4.3:
         // are allowed when the offline fallback setting is on)
         if (!canAddEntries()) {
             if (connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') flashStatus('⚠️ Offline: adding new entries is turned off in the settings.', '#e67e22');
-            else if (connState === 'NO_ACCESS') flashStatus('⛔ No access to the SharePoint list.', '#dc3545');
+            else if (connState === 'NO_ACCESS') flashStatus("⛔ Can't open the SharePoint list. Sign in to SharePoint in another tab, then click ↺.", '#dc3545');
             else                                    flashStatus('⚠️ Not connected yet.', '#e67e22');
             return;
         }
@@ -23047,7 +23066,8 @@ Version 1.4.3:
             handleApiResponse(['session', 'forbidden'].includes(f.kind) ? f : { ok: false, kind: 'network' });
             if (!silent) flashStatus(
                 connState === 'SESSION_EXPIRED' ? 'SharePoint session expired. Sign in to SharePoint, then try again.'
-                : connState === 'NO_ACCESS' ? 'No access to the SharePoint list.' : 'Still offline. Try again later.', '#e67e22');
+                : connState === 'NO_ACCESS' ? 'Still no access. Sign in to SharePoint in another tab, then try again. If it keeps failing, ask the site owner for access.'
+                : 'Still offline. Try again later.', '#e67e22');
             const b = document.getElementById('ct-reconnect-btn');
             if (b) { b.textContent = '↺ Reconnect'; b.disabled = false; b.style.opacity = '1'; }
             return;
@@ -23453,7 +23473,7 @@ Version 1.4.3:
                     }
                     body.appendChild(banner('⚠ Offline · 2 changes waiting to sync', '↺ Reconnect', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
                     body.appendChild(banner('🔒 SharePoint session expired · 1 change waiting to sync', 'Open SharePoint to sign in', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
-                    body.appendChild(banner('⛔ No access to the SharePoint list', 'Configure', '#f8d7da', '#f5c6cb', '#721c24', 'transparent', '#721c24'));
+                    body.appendChild(banner("⛔ Can't open the SharePoint list", 'Open SharePoint to sign in', '#f8d7da', '#f5c6cb', '#721c24', '#f5c6cb', '#721c24'));
                     body.appendChild(hrow([
                         span('2026-10-13 14:05  ·  by Jane', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace' }),
                         chip('⏳ Not synced', '#fff3cd', { color: '#856404', border: '1px solid #ffc107', fontSize: '10px', padding: '1px 6px', radius: '8px' })
@@ -23469,7 +23489,7 @@ Version 1.4.3:
                         'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
                         'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
                         'Session expired: open SharePoint in another tab and sign in. Your changes wait on this computer and are sent when you come back to the ticket.',
-                        'No access: ask the owner of the SharePoint site to give you access to the list.',
+                        "Can't open the SharePoint list: an expired sign in looks the same as missing access. Click \"Open SharePoint to sign in\", sign in in that tab, then click ↺. If it still fails, ask the owner of the SharePoint site to give you access to the list.",
                         'Each entry shows who created it and who edited it last.',
                         'While SharePoint is saving, a spinning wheel covers the form, entry or window you are working on, so nothing is clicked twice.'
                     ]);
