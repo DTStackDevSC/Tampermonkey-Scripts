@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.9.1
+// @version      2.9.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.9.1';
-    const CHANGELOG = `Version 2.9.1:
+   const SCRIPT_VERSION = '2.9.2';
+    const CHANGELOG = `Version 2.9.2:
+- Change Tracker: the small copy button on each entry turns green and shows how many values were copied.
+
+Version 2.9.1:
 - Change Tracker: Copy domains / IPs now copies one value per line or separated by commas, as chosen in its dropdown.
 
 Version 2.9.0:
@@ -17610,8 +17613,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.1';
-    const CHANGELOG = `Version 2.3.1:
+    const SCRIPT_VERSION = '2.3.2';
+    const CHANGELOG = `Version 2.3.2:
+- The small "📋 Copy domains" button on each entry now turns green and shows how many values were copied.
+
+Version 2.3.1:
 - Copy domains / IPs: the dropdown now offers "Copy separated by lines" and "Copy separated by commas", and copies exactly that.
 
 Version 2.3.0:
@@ -22238,9 +22244,18 @@ Version 1.4.3:
             cb.title = `Copy the ${copyValues.length} ${what} of this entry`;
             cb.onclick = async (e) => {
                 e.stopPropagation();
-                (await copyToClipboard(ctFormatValues(copyValues)))
-                    ? flashStatus(`✓ ${copyValues.length} ${copyValues.length === 1 ? 'value' : 'values'} copied!`)
-                    : flashStatus('✗ Copy failed.', '#dc3545');
+                const ok = await copyToClipboard(ctFormatValues(copyValues));
+                ok ? flashStatus(`✓ ${copyValues.length} ${copyValues.length === 1 ? 'value' : 'values'} copied!`)
+                   : flashStatus('✗ Copy failed.', '#dc3545');
+                // Show the result on the button itself, then go back to normal
+                clearTimeout(cb._flash);
+                cb.textContent = ok ? `✓ ${copyValues.length} copied` : '✗ Copy failed';
+                css(cb, ok ? { color:'#fff', background:'#28a745', borderColor:'#28a745' }
+                           : { color:'#fff', background:'#dc3545', borderColor:'#dc3545' });
+                cb._flash = setTimeout(() => {
+                    cb.textContent = `📋 Copy ${what}`;
+                    css(cb, { color:'#17a2b8', background:'#fff', borderColor:'#17a2b8' });
+                }, 1500);
             };
             card.appendChild(cb);
         }
@@ -23484,7 +23499,7 @@ Version 1.4.3:
                         '× deletes the entry: click it twice to confirm.',
                         'Entries longer than 50 lines show a short preview; click "⤢ Show full entry" to read the whole entry in a separate window.',
                         'Some types show "+ Add fields" in the form to record optional extra details.',
-                        'Entries with domains or IPs have a small "📋 Copy domains" (or "Copy IPs") button that copies only that entry\'s values, in the format chosen above the log.'
+                        'Entries with domains or IPs have a small "📋 Copy domains" (or "Copy IPs") button that copies only that entry\'s values, in the format chosen above the log. It turns green for a moment to show it was copied.'
                     ]);
                 }
             },
