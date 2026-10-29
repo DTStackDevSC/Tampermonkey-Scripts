@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.6.2
+// @version      2.7.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.6.2';
-    const CHANGELOG = `Version 2.6.2:
+   const SCRIPT_VERSION = '2.7.0';
+    const CHANGELOG = `Version 2.7.0:
+- NS Policies Toolkit: Bulk remove and Bulk add domains have a "Match case" option for the steering configuration filter.
+
+Version 2.6.2:
 - Change Tracker: the "no access" warning now offers to sign in to SharePoint in another tab and try again first, since an expired sign in looks the same. Ask the site owner only if it still fails.
 
 Version 2.6.1:
@@ -26621,8 +26624,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.32.1';
-    const CHANGELOG = `Version 1.32.1:
+    const SCRIPT_VERSION = '1.33.0';
+    const CHANGELOG = `Version 1.33:
+- Steering Exception Domain Tools: new "Match case" option under the configuration filter of Bulk remove and Bulk add domains. Your choice is remembered.
+
+Version 1.32.1:
 - Fixed the log buttons not appearing below the description of SSL Decryption policies in Netskope's new policy editor. The old editor keeps working as before.
 
 Version 1.32:
@@ -28189,6 +28195,7 @@ Version 1.16:
                     bullets(body, [
                         'Matching is exact. A domain only removes the same value, so example.com leaves *.example.com alone. Wildcard entries that cover a domain are listed as similar entries but never removed.',
                         'Only the requested domains are taken out of an entry. The entry is deleted only when it holds nothing else.',
+                        'The configuration filter ignores upper and lower case. Tick "Match case" under it to find only names with the exact case, for example EMEA but not emea.',
                         'Configurations show in the list once you have opened them. Open the Steering Configuration list once so all of them appear. Inside a steering configuration, that one is ticked for you. From the list, nothing is ticked.',
                         'When it finishes, it checks again that the domains are gone and gives you a summary to copy into the ticket, plus a backup file to download.',
                     ]);
@@ -31762,6 +31769,7 @@ Version 1.16:
     const SE_CONFIGS_KEY = 'toolkit_steeringConfigs';   // { [config_id]: { name, trafficType } }
     const SE_BACKUPS_KEY      = 'toolkit_steeringBackups';      // removal backups, newest first
     const SE_BACKUP_LIMIT_KEY = 'toolkit_steeringBackupLimit';  // how many backups to keep
+    const SE_FILTER_CASE_KEY  = 'toolkit_steeringFilterMatchCase'; // "Match case" in the configuration filter
     const SE_OLD_BACKUP_KEY   = 'toolkit_steeringBackup';       // the single backup kept by 1.24.x
     const SE_HOST_ID     = 'ns-steering-remover-host';
     const SE_BUTTON_ID   = 'ns-steering-remover-btn';
@@ -32556,6 +32564,7 @@ Version 1.16:
             .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
             .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
             .panel.add { border-top-color: #26890d; }
+            .filter-case { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; cursor: pointer; }
             .notes-row { margin-top: 14px; }
             .notes-row textarea { min-height: 54px; font-family: Arial, sans-serif; }
             .notes-row .option { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; cursor: pointer; }
@@ -32600,6 +32609,7 @@ Version 1.16:
                             <div class="col">
                                 <label class="label" for="se-filter">Steering configurations</label>
                                 <input type="text" id="se-filter" placeholder="Filter by name">
+                                <label class="filter-case"><input type="checkbox" id="se-filter-case"${GM_getValue(SE_FILTER_CASE_KEY, false) ? ' checked' : ''}><span>Match case</span></label>
                                 <div class="configs" id="se-configs"></div>
                                 <div class="help" id="se-config-help"></div>
                             </div>
@@ -32670,6 +32680,7 @@ Version 1.16:
             }
         });
         shadow.addEventListener('change', (e) => {
+            if (e.target.id === 'se-filter-case') { GM_setValue(SE_FILTER_CASE_KEY, e.target.checked); seRenderConfigList(); }
             if (e.target.id === 'se-bk-limit') seSetBackupLimit(e.target.value);
             if (e.target.id === 'se-bk-file' && e.target.files[0]) {
                 seImportBackupFile(e.target.files[0]);
@@ -32728,12 +32739,15 @@ Version 1.16:
         if (!box.dataset.init && se.openConfig) ticked.add(se.openConfig);
         box.dataset.init = '1';
 
-        const filter  = seEl('se-filter').value.trim().toLowerCase();
+        // "Match case" off: EMEA also finds emea
+        const matchCase = seEl('se-filter-case').checked;
+        const fold    = text => matchCase ? text : text.toLowerCase();
+        const filter  = fold(seEl('se-filter').value.trim());
         const configs = seGetConfigs();
         const ids = Object.keys(configs).sort((a, b) => configs[a].name.localeCompare(configs[b].name));
 
         box.innerHTML = '';
-        ids.filter(id => ticked.has(id) || !filter || configs[id].name.toLowerCase().includes(filter)).forEach(id => {
+        ids.filter(id => ticked.has(id) || !filter || fold(configs[id].name).includes(filter)).forEach(id => {
             const row = document.createElement('label');
             row.className = 'cfg';
             row.innerHTML = `<input type="checkbox" data-cfg="${seEscape(id)}"${ticked.has(id) ? ' checked' : ''}>
