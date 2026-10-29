@@ -8777,7 +8777,7 @@ Regards.`,
     const SCRIPT_VERSION = '1.4.0';
     const CHANGELOG = `Version 1.4.0:
 - Paste a picture: press Ctrl+V with a screenshot or a copied picture and it goes into the editor. ServiceNow keeps it with the comment or work note. Big pictures are made smaller first.
-- Click an image in the editor to change its size, from 5% to 100% in 5% steps, or to remove it.
+- Click an image in the editor to change its size, from 5% to 100% in 5% steps, or to remove it with the red 🗑.
 - Insert Image uses the same size control instead of the four fixed sizes.
 
 Version 1.3.1:
@@ -9236,8 +9236,11 @@ Version 1.0.3:
         const remove = document.createElement('button');
         remove.type = 'button';
         remove.dataset.imageRemove = '1';
-        remove.textContent = '✕ Remove';
-        Object.assign(remove.style, { border: 'none', background: 'none', color: '#dc3545', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap' });
+        remove.textContent = '🗑';
+        remove.title = 'Remove image';
+        remove.setAttribute('aria-label', 'Remove image');
+        Object.assign(remove.style, { width: '28px', height: '26px', padding: '0', border: '1px solid #dc3545', borderRadius: '4px',
+            background: '#dc3545', color: '#fff', cursor: 'pointer', fontSize: '14px', lineHeight: '1', flexShrink: '0' });
         remove.onclick = (e) => { e.preventDefault(); img.remove(); hideImageBar(); };
         imageBar.append(ctl.el, remove);
         function place() {
@@ -10526,7 +10529,7 @@ Version 1.0.3:
                         chip('25%', '#fff', { color: '#28a745', border: 'none' }), chip('+', '#fff', { color: '#333', border: '1px solid #ccc' })], { gap: '4px' }));
                     caption(body, 'Paste the image URL, check the live preview, pick a width from 5% to 100% in 5% steps.');
                     body.appendChild(span('📋 Paste a picture', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 4px 0' }));
-                    caption(body, 'Press Ctrl+V with a screenshot or a copied picture: it goes into the editor at 25%. Click any image to change its size (− / + or the slider, 5% steps) or remove it. Big pictures are made smaller first. ServiceNow keeps the picture with the comment or work note.');
+                    caption(body, 'Press Ctrl+V with a screenshot or a copied picture: it goes into the editor at 25%. Click any image to change its size (− / + or the slider, 5% steps) or remove it with the red 🗑. Big pictures are made smaller first. ServiceNow keeps the picture with the comment or work note.');
                     body.appendChild(span('▦ Insert Table', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 4px 0' }));
                     const grid = document.createElement('div');
                     Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'repeat(6, 14px)', gap: '2px', margin: '0 0 4px 0' });
