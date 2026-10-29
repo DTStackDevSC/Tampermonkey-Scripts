@@ -21016,8 +21016,223 @@ Version 1.4.3:
         container.insertBefore(bar, container.firstChild);
     }
 
-    function ctPolicyConflicts(rows, onApply) { onApply(new Set()); }
-    function ctOpenPasteBox(type, prefix, container) { /* paste box comes with the conflicts dialog */ }
+    // One row per field that already holds other text: Keep (default) or Replace.
+    function ctPolicyConflicts(rows, onApply) {
+        document.getElementById('ct-paste-conflict-overlay')?.remove();
+        document.getElementById('ct-paste-conflict')?.remove();
+        const close = () => { ov.remove(); md.remove(); };
+        const ov = css(mk('div', { id: 'ct-paste-conflict-overlay' }), { position: 'fixed', inset: '0', background: 'rgba(0,0,0,.45)', zIndex: '1100000' });
+        const md = css(mk('div', { id: 'ct-paste-conflict' }), {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: '1100001', background: '#fff',
+            border: '2px solid #f0ad4e', padding: '20px', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
+            width: '720px', maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 16px rgba(0,0,0,.3)', boxSizing: 'border-box',
+        });
+        const title = css(mk('div'), { fontSize: '15px', fontWeight: 'bold', color: '#333', marginBottom: '6px' });
+        title.textContent = 'Conflict detected';
+        const intro = css(mk('p'), { margin: '0 0 12px', fontSize: '12px', color: '#555', lineHeight: '1.5' });
+        intro.textContent = 'These fields already have text. Choose what to do with each one. Empty fields are filled anyway.';
+        const table = css(mk('table'), { width: '100%', borderCollapse: 'collapse', fontSize: '12px', tableLayout: 'fixed' });
+        const cellCss = { padding: '6px 8px', borderTop: '1px solid #eee', verticalAlign: 'top', textAlign: 'left', wordBreak: 'break-word' };
+        const valueCell = (text) => {
+            const td = css(mk('td'), cellCss);
+            const span = mk('span');
+            const long = text.length > 160;
+            span.textContent = long ? text.slice(0, 160) + '…' : text;
+            td.appendChild(span);
+            if (long) {
+                const more = css(mk('button', { type: 'button' }), { display: 'block', fontSize: '11px', color: '#0066cc', background: 'none',
+                    border: 'none', padding: '2px 0 0', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'Arial, sans-serif' });
+                more.textContent = 'show all';
+                more.onclick = (e) => {
+                    e.preventDefault();
+                    const all = more.textContent === 'show all';
+                    span.textContent = all ? text : text.slice(0, 160) + '…';
+                    more.textContent = all ? 'show less' : 'show all';
+                };
+                td.appendChild(more);
+            }
+            return td;
+        };
+        rows.forEach(r => {
+            const tr = mk('tr');
+            tr.dataset.key = r.key;
+            const label = css(mk('td'), Object.assign({}, cellCss, { fontWeight: 'bold', color: '#444', width: '18%' }));
+            label.textContent = r.label;
+            const arrow = css(mk('td'), Object.assign({}, cellCss, { width: '24px', color: '#999', textAlign: 'center' }));
+            arrow.textContent = '→';
+            const pick = css(mk('td'), Object.assign({}, cellCss, { width: '92px', whiteSpace: 'nowrap' }));
+            ['keep', 'replace'].forEach(v => {
+                const lab = css(mk('label'), { display: 'block', cursor: 'pointer' });
+                const radio = mk('input');
+                radio.type = 'radio';
+                radio.name = `ct-pc-${r.key}`;
+                radio.value = v;
+                radio.checked = v === 'keep';
+                lab.append(radio, document.createTextNode(v === 'keep' ? ' Keep' : ' Replace'));
+                pick.appendChild(lab);
+            });
+            tr.append(label, valueCell(r.current), arrow, valueCell(r.next), pick);
+            table.appendChild(tr);
+        });
+        const setAll = (v) => md.querySelectorAll(`input[type="radio"][value="${v}"]`).forEach(x => { x.checked = true; });
+        const btnRow = css(mk('div'), { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: '14px' });
+        [['Replace all', '#6c757d', () => setAll('replace')], ['Keep all', '#6c757d', () => setAll('keep')],
+         ['Apply', '#667eea', () => {
+             const replace = new Set(rows.filter(r => md.querySelector(`input[name="ct-pc-${r.key}"][value="replace"]`).checked).map(r => r.key));
+             close();
+             onApply(replace);
+         }],
+         ['Cancel', '#adb5bd', close]].forEach(([label, bg, fn]) => {
+            const b = css(mk('button', { type: 'button' }), { padding: '7px 14px', border: 'none', borderRadius: '5px', cursor: 'pointer',
+                fontWeight: 'bold', fontSize: '12px', fontFamily: 'Arial, sans-serif', background: bg, color: '#fff' });
+            b.textContent = label;
+            b.onclick = (e) => { e.preventDefault(); fn(); };
+            btnRow.appendChild(b);
+        });
+        md.append(title, intro, table, btnRow);
+        document.body.append(ov, md);
+    }
+
+    // Reads the text of a Copy policy into entry field values (fallback when there is no handoff).
+    function ctValuesFromText(text, schemaName) {
+        const lines = String(text || '').replace(/\r/g, '').split('\n');
+        const head = (lines[0] || '').match(/^Netskope Real-time Protection policy: (.*)$/);
+        if (!head) return null;
+        const sections = {};
+        let current = null;
+        for (let i = 1; i < lines.length; i++) {
+            if (/^=+$/.test(lines[i + 1] || '') && /^[A-Z][A-Z &]+$/.test(lines[i])) { current = lines[i]; sections[current] = []; i++; continue; }
+            if (current) sections[current].push(lines[i]);
+        }
+        const depth = l => (l.match(/^ */)[0].length) / 2;
+        const strip = l => l.replace(/^ *(• )?/, '');
+        const noId = s => s.replace(/ \((?:[^()]*|\([^()]*\))*\)$/, '').trim();
+        const items = (sec, label, d = 0) => {
+            const ls = sections[sec] || [];
+            const at = ls.findIndex(l => depth(l) === d && new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\(\\d+\\):').test(strip(l)));
+            if (at < 0) return [];
+            const out = [];
+            for (let i = at + 1; i < ls.length && depth(ls[i]) > d; i++) if (depth(ls[i]) === d + 1 && /^ *• /.test(ls[i])) out.push(strip(ls[i]));
+            return out;
+        };
+        const line = (sec, label, d = 0) => {
+            const l = (sections[sec] || []).find(x => depth(x) === d && strip(x).startsWith(label + ': '));
+            return l ? strip(l).slice(label.length + 2) : '';
+        };
+        const v = {}, notes = [];
+        v.policyName = line('POLICY NAME', 'Name') || head[1];
+
+        // Source
+        const S = 'SOURCE';
+        const exAt = (sections[S] || []).findIndex(l => strip(l) === 'Exclusions:');
+        const before = exAt < 0 ? sections[S] || [] : (sections[S] || []).slice(0, exAt);
+        const after = exAt < 0 ? [] : (sections[S] || []).slice(exAt + 1);
+        const listIn = (ls, label, d) => {
+            const at = ls.findIndex(l => depth(l) === d && strip(l).startsWith(label + ' ('));
+            const out = [];
+            if (at >= 0) for (let i = at + 1; i < ls.length && depth(ls[i]) > d; i++) if (/^ *• /.test(ls[i])) out.push(strip(ls[i]));
+            return out;
+        };
+        const groups = listIn(before, 'User groups', 0).map(ctShortName);
+        const users = listIn(before, 'Users', 0);
+        const except = ctUnique([...listIn(after, 'User groups', 1).map(ctShortName), ...listIn(after, 'Users', 1)]);
+        v.source = (ctUnique([...groups, ...users]).join(', ') || 'All users') + (except.length ? ` (except ${except.join(', ')})` : '');
+
+        // Destination
+        const D = 'DESTINATION', dl = sections[D] || [];
+        const parts = [...items(D, 'Categories'), ...items(D, 'Applications'), ...items(D, 'Email outbound apps'),
+            ...items(D, 'App instances').map(x => x.replace(/ \(.*$/, '').replace(/, all connected instances$/, ''))];
+        const destHead = dl.find(l => depth(l) === 0 && /^Destination profiles \(\d+\): /.test(l));
+        const dests = items(D, 'Destination profiles').map(noId);
+        if (dests.length) parts.push((destHead && /does not match$/.test(destHead) ? 'NOT ' : '') + dests.join(', '));
+        if (!parts.length && line(D, 'Type') === 'Any category') parts.push('Any category');
+        const acts = ctUnique([].concat(...dl.filter(l => strip(l).startsWith('Activities: ')).map(l => strip(l).slice(12).split(', '))));
+        v.destination = ctUnique(parts).join(', ') + (acts.length ? ` [${acts.join(', ')}]` : '');
+        v.activityConstraints = ctUnique(dl.filter(l => strip(l).startsWith('Constraints: '))
+            .map(l => noId(strip(l).slice(13).replace(/ \[[^\]]*\]$/, '')))).join('; ');
+        const fileAt = dl.findIndex(l => depth(l) === 0 && strip(l).startsWith('File constraints: file should '));
+        if (fileAt >= 0) {
+            const bits = [];
+            for (let i = fileAt + 1; i < dl.length && depth(dl[i]) > 0; i++) {
+                const t = strip(dl[i]);
+                if (t.startsWith('File size: ')) bits.push('size ' + t.slice(11));
+                else if (/^File type categories \(\d+\): /.test(t)) bits.push('categories ' + t.replace(/^File type categories \(\d+\): /, ''));
+                else if (/^File types \(\d+\): /.test(t)) bits.push('types ' + t.replace(/^File types \(\d+\): /, ''));
+            }
+            v.fileConstraints = strip(dl[fileAt]).replace('File constraints: file ', '') + (bits.length ? ': ' + bits.join('; ') : '');
+        }
+
+        // Profile & Action
+        const A = 'PROFILE & ACTION', al = sections[A] || [];
+        const topAction = line(A, 'Action');
+        v.action = topAction && topAction !== 'none' ? topAction.split(': ')[0].replace(/, severity .*$/, '') : '';
+        if (schemaName === 'dlp_policy_full') {
+            v.activities = acts.join(', ');
+            const at = al.findIndex(l => depth(l) === 0 && /^DLP profiles \(\d+\):/.test(l));
+            const profiles = [];
+            if (at >= 0) for (let i = at + 1; i < al.length && depth(al[i]) > 0; i++) {
+                if (depth(al[i]) === 1 && /^ *• /.test(al[i])) profiles.push({ name: strip(al[i]), actions: [] });
+                else if (depth(al[i]) === 2 && strip(al[i]).startsWith('Action: ') && profiles.length) {
+                    profiles[profiles.length - 1].actions.push(strip(al[i]).slice(8).split(': ')[0].replace(/, severity .*$/, ''));
+                }
+            }
+            v.dlpProfile = ctUnique(profiles.map(x => x.name)).join(', ');
+            v.profileAction = profiles.map(x => `${x.name}: ${ctUnique(x.actions).join(', ')}`).join('; ');
+        }
+        v.osFamily = line(S, 'OS family');
+        v.browsers = line(S, 'Browsers');
+        v.accessMethod = line(S, 'Access method');
+        v.httpHeader = items(S, 'HTTP header').map(noId).join(', ');
+        v.appInstance = items(D, 'App instances').map(x => x.replace(/ \(.*$/, '').replace(/, all connected instances$/, '')).join(', ');
+
+        // Policy Name
+        const N = 'POLICY NAME', nl = sections[N] || [];
+        const dAt = nl.findIndex(l => strip(l) === 'Description:');
+        const desc = [];
+        if (dAt >= 0) for (let i = dAt + 1; i < nl.length && depth(nl[i]) >= 1; i++) desc.push(nl[i].slice(2));
+        v.description = desc.join('\n');
+
+        const pos = ((sections.POSITION || []).find(l => l.startsWith('Position: ')) || '').slice(10);
+        if (/^\d+\.\d+$/.test(pos)) v.groupPosition = pos;
+        else { v.groupPosition = ''; notes.push('Group position left empty: Position was not copied.'); }
+        return { values: v, notes, policyName: v.policyName };
+    }
+
+    function ctOpenPasteBox(type, prefix, container) {
+        document.getElementById('ct-paste-box-overlay')?.remove();
+        document.getElementById('ct-paste-box')?.remove();
+        const close = () => { ov.remove(); md.remove(); };
+        const ov = css(mk('div', { id: 'ct-paste-box-overlay' }), { position: 'fixed', inset: '0', background: 'rgba(0,0,0,.45)', zIndex: '1100000' });
+        const md = css(mk('div', { id: 'ct-paste-box' }), {
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: '1100001', background: '#fff',
+            border: '2px solid #667eea', padding: '20px', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
+            width: '560px', maxWidth: '94vw', boxShadow: '0 4px 16px rgba(0,0,0,.3)', boxSizing: 'border-box',
+        });
+        const title = css(mk('div'), { fontSize: '15px', fontWeight: 'bold', color: '#333', marginBottom: '6px' });
+        title.textContent = 'Paste policy text';
+        const intro = css(mk('p'), { margin: '0 0 10px', fontSize: '12px', color: '#555', lineHeight: '1.5' });
+        intro.textContent = 'Paste the text of Copy policy (NS Policies Toolkit) with Ctrl+V, then click Fill.';
+        const ta = css(mk('textarea'), { width: '100%', height: '200px', boxSizing: 'border-box', padding: '8px', fontSize: '12px',
+            fontFamily: '"Courier New", Courier, monospace', border: '1px solid #ccc', borderRadius: '4px', resize: 'vertical' });
+        ta.placeholder = 'Netskope Real-time Protection policy: …';
+        const err = css(mk('div', { className: 'ct-paste-error' }), { minHeight: '16px', marginTop: '6px', fontSize: '12px', color: '#da291c' });
+        const row = css(mk('div'), { display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' });
+        [['Fill', '#667eea', () => {
+            const parsed = ctValuesFromText(ta.value.trim(), ctSchemaName(type));
+            if (!parsed) { err.textContent = 'This is not a text from Copy policy.'; return; }
+            close();
+            ctApplyPolicyValues(type, prefix, container, parsed.values, parsed.notes, parsed.policyName);
+        }], ['Cancel', '#adb5bd', close]].forEach(([label, bg, fn]) => {
+            const b = css(mk('button', { type: 'button' }), { padding: '7px 14px', border: 'none', borderRadius: '5px', cursor: 'pointer',
+                fontWeight: 'bold', fontSize: '12px', fontFamily: 'Arial, sans-serif', background: bg, color: '#fff' });
+            b.textContent = label;
+            b.onclick = (e) => { e.preventDefault(); fn(); };
+            row.appendChild(b);
+        });
+        md.append(title, intro, ta, err, row);
+        document.body.append(ov, md);
+        ta.focus();
+    }
 
     /* ==========================================================
      *  ENTRY CONTENT FORMATTER  (for card display + export text)
