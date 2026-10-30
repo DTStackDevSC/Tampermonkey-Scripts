@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.10.1
+// @version      2.11.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.10.1';
-    const CHANGELOG = `Version 2.10.1:
+   const SCRIPT_VERSION = '2.11.0';
+    const CHANGELOG = `Version 2.11.0:
+- NS Policies Toolkit: Bulk add groups has a "📋 Copy for ticket" button at the end, with each policy changed and the groups added, and what was not changed and why.
+
+Version 2.10.1:
 - NS Policies Toolkit: Bulk add groups shows the progress of Check, with the group it is looking up and how long Netskope takes.
 
 Version 2.10.0:
@@ -26764,8 +26767,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.34.1';
-    const CHANGELOG = `Version 1.34.1:
+    const SCRIPT_VERSION = '1.35.0';
+    const CHANGELOG = `Version 1.35:
+- Bulk add groups: the "📋 Copy for ticket" button at the end copies a text to paste in the ticket. It lists each policy changed with the groups added, then the policies not changed or failed and why, and the pairs that were not applied.
+
+Version 1.34.1:
 - Bulk add groups: Check now shows its progress, for example "Looking up the groups to add: 37 of 130", with a bar and the group it is on. When Netskope takes 10 seconds or more for one group, it shows how long it has been waiting.
 
 Version 1.34:
@@ -28541,7 +28547,8 @@ Version 1.16:
                         'Names must be exact: capitals, spaces and dashes count. The group to add must exist once in Netskope, or write its full path.',
                         BG_TAB_WARNING,
                         'Continue picks up where it stopped. After a reload the run waits for you to click Continue or Discard.',
-                        'A policy that fails is not saved. The summary lists it with the reason and a link to open it, and can be copied.',
+                        'A policy that fails is not saved. The summary lists it with the reason and a link to open it.',
+                        '"📋 Copy for ticket" copies a text to paste in the ticket: the policies changed and the groups added, then the ones not changed or failed and why, and the pairs not applied.',
                         'Click Apply Changes yourself when the run ends.',
                     ]);
                 },
@@ -34869,7 +34876,10 @@ Version 1.16:
             return { outcome: 'skipped', reason: `${job.a.join(', ')} is not in this policy any more.` };
         }
         const missing = job.adds.filter(b => !bgHasGroup(groups, b));
-        if (!missing.length) { await bgLeave(); return { outcome: 'skipped', reason: 'The groups were already there.' }; }
+        if (!missing.length) {
+            await bgLeave();
+            return { outcome: 'skipped', reason: 'The groups were already there.', already: job.adds.map(smShortName) };
+        }
         for (const b of missing) {
             const r = await smAddValue('group', b, BG_ADD_CFG);
             if (r !== 'added' && r !== 'already') {
@@ -34897,15 +34907,22 @@ Version 1.16:
             if (sm.lastSave && bgIsList()) return { ok: true };
             return null;
         }, BG_WAIT);
-        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.' };
+        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.', added: missing.map(smShortName) };
         await bgLeave();
-        return { outcome: 'failed', reason: end ? `Not saved: ${end.error}` : 'Netskope did not confirm the save in time.' };
+        return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
 
     function bgStart() {
         if (!bg.jobs || !bg.jobs.length || bg.running) return;
         const leftOut = bg.rows.filter(r => r.status !== 'ok').map(r => `${r.a}${r.b ? ', ' + r.b : ''}: ${BG_STATUS[r.status][0]}`);
-        bgSaveRun({ v: 1, jobs: bg.jobs, index: 0, results: [], leftOut, state: 'running', startedAt: Date.now() });
+        // Policies that already had a group at the check, for the ticket text
+        const alreadyThere = [];
+        bg.rows.filter(r => r.status === 'ok').forEach(r => r.skipped.forEach(name => {
+            const item = alreadyThere.find(x => x.name === name) || (alreadyThere.push({ name, groups: [] }), alreadyThere[alreadyThere.length - 1]);
+            if (!item.groups.includes(r.b)) item.groups.push(r.b);
+        }));
+        bgSaveRun({ v: 1, jobs: bg.jobs, index: 0, results: [], leftOut, alreadyThere, state: 'running', startedAt: Date.now(),
+            tenant: location.hostname, by: GM_getValue('toolkit_username', '') });
         bg.host.dataset.open = 'false';
         bgRunLoop();
     }
@@ -34924,7 +34941,8 @@ Version 1.16:
                 try { res = await bgRunJob(job); }
                 catch (e) { res = { outcome: 'failed', reason: e.message }; await bgLeave(); }
                 if (res.outcome === 'paused') continue;
-                run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason });
+                run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason,
+                    a: job.a, added: res.added || [], already: res.already || [] });
                 run.index++;
                 bgSaveRun(run);
                 bgRunLog(`${job.name}: ${res.outcome}. ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
@@ -34932,6 +34950,7 @@ Version 1.16:
             if (bg.stopRequested) { run.state = 'finished'; run.stopped = true; }
             else if (bg.pauseRequested && run.index < run.jobs.length) { run.state = 'paused'; run.pausedReason = bg.pauseRequested; }
             else run.state = 'finished';
+            if (run.state === 'finished') run.finishedAt = Date.now();
             bgSaveRun(run);
             bgRenderRunCard(run, null);
         } finally {
@@ -34963,6 +34982,7 @@ Version 1.16:
         if (!run || run.state !== 'paused') return;
         run.state = 'finished';
         run.stopped = true;
+        run.finishedAt = Date.now();
         bgSaveRun(run);
         bgRenderRunCard(run, null);
         bgSyncButton();
@@ -34976,17 +34996,39 @@ Version 1.16:
         bgSyncButton();
     }
 
+    // Text to paste in the ticket: what changed, grouped by policy, then what did not and why.
     function bgSummaryText(run) {
+        const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+        const pad = n => String(n).padStart(2, '0');
+        const d = new Date(run.finishedAt || Date.now());
+        const head = [`Date: ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`];
+        if (run.tenant) head.push(`Tenant: ${run.tenant}`);
+        if (run.by) head.push(`By: ${run.by}`);
+        const lines = ['Netskope Real-time Protection: bulk add groups', head.join(' · ')];
+        const section = (title, items) => {
+            if (!items.length) return;
+            lines.push('', `${title} (${count(items.length, 'policy', 'policies')}):`);
+            items.forEach(i => lines.push('- ' + i));
+        };
         const of = kind => run.results.filter(r => r.outcome === kind);
-        const lines = [`Bulk add groups: Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}`];
-        if (run.stopped) lines.push(`Stopped: ${run.jobs.length - run.results.length} of ${run.jobs.length} policies were not done.`);
-        for (const [kind, title] of [['done', 'Done'], ['skipped', 'Skipped'], ['failed', 'Failed']]) {
-            if (!of(kind).length) continue;
-            lines.push('', title + ':');
-            of(kind).forEach(r => lines.push(`  ${r.name} (id ${r.id}): ${r.reason}`));
+
+        section('Changed', of('done').map(r => `${r.name}: added ${(r.added || []).join(', ')} (policy has ${(r.a || []).join(', ')})`));
+        const already = (run.alreadyThere || []).map(x => ({ name: x.name, groups: x.groups.slice() }));
+        of('skipped').filter(r => r.already && r.already.length).forEach(r => {
+            const item = already.find(x => x.name === r.name);
+            if (item) r.already.forEach(g => { if (!item.groups.includes(g)) item.groups.push(g); });
+            else already.push({ name: r.name, groups: r.already.slice() });
+        });
+        section('Not changed, already had the group', already.map(x => `${x.name}: ${x.groups.join(', ')}`));
+        section('Not changed', of('skipped').filter(r => !(r.already && r.already.length)).map(r => `${r.name}: ${r.reason}`));
+        section('Failed, not saved', of('failed').map(r => `${r.name}: ${r.reason}`));
+        if (run.stopped) section('Not done, the run was stopped', run.jobs.slice(run.results.length).map(j => j.name));
+        const leftOut = run.leftOut || [];
+        if (leftOut.length) {
+            lines.push('', `Pairs not applied (${count(leftOut.length, 'pair', 'pairs')}):`);
+            leftOut.forEach(l => lines.push('- ' + l));
         }
-        if (run.leftOut && run.leftOut.length) { lines.push('', 'Left out at the check:'); run.leftOut.forEach(l => lines.push('  ' + l)); }
-        lines.push('', 'Click Apply Changes on the policy list to apply the changes.');
+        lines.push('', 'Pending: Apply Changes in Netskope.');
         return lines.join('\n');
     }
 
@@ -35044,7 +35086,7 @@ Version 1.16:
                     <button type="button" class="primary" data-bg="continue" hidden>Continue</button>
                     <button type="button" data-bg="stop">Stop</button>
                     <button type="button" data-bg="discard" hidden>Discard</button>
-                    <button type="button" data-bg="copy-summary" hidden>Copy summary</button>
+                    <button type="button" data-bg="copy-summary" hidden>📋 Copy for ticket</button>
                 </div>
             </section>`;
         document.documentElement.appendChild(host);
