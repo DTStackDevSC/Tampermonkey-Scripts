@@ -34416,6 +34416,8 @@ Version 1.16:
         rows:   null,       // Check results, null when there are none
         jobs:   null,       // one per policy to change: { id, type, name, a: [groups], adds: [full paths] }
         running:   false,
+        pauseRequested: null,   // why the run should pause at its next safe point
+        stopRequested:  false,
         runHost:   null,
         runShadow: null,
     };
@@ -34485,14 +34487,22 @@ Version 1.16:
         const apply = bgIsList() && [...document.querySelectorAll('button.ns-btn.ns-btn-primary')]
             .find(b => b.id !== BG_BUTTON_ID && b.textContent.trim() === 'Apply Changes' && b.getClientRects().length);
         if (!apply) { btn?.remove(); return; }
-        if (btn && btn.previousElementSibling === apply) return;
+        const run = bgLoadRun();
+        const paused = run && run.state === 'paused';
+        const label = paused ? '👥 Bulk add groups (paused)' : '👥 Bulk add groups';
+        const title = paused ? `Run paused at ${run.index + 1} of ${run.jobs.length}` : 'Add a group to every policy that holds another group (NS Policies Toolkit)';
+        if (btn && btn.previousElementSibling === apply) {
+            if (btn.textContent !== label) btn.textContent = label;
+            if (btn.title !== title) btn.title = title;
+            return;
+        }
         btn?.remove();
         const b = document.createElement('button');
         b.id = BG_BUTTON_ID;
         b.type = 'button';
         b.className = 'ns-btn ns-btn-secondary ns-right ns-margin-right-small';
-        b.textContent = '👥 Bulk add groups';
-        b.title = 'Add a group to every policy that holds another group (NS Policies Toolkit)';
+        b.textContent = label;
+        b.title = title;
         Object.assign(b.style, { whiteSpace: 'nowrap' });
         b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); bgOpen(); });
         apply.insertAdjacentElement('afterend', b);
@@ -34501,6 +34511,12 @@ Version 1.16:
     function initBulkGroups() {
         if (!getSetting('bulkGroupAdd') || bg.timer) return;
         bg.timer = setInterval(bgSyncButton, 1000);
+        // A hidden tab is slowed down by the browser: pause rather than risk a policy half done
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') bgPause('the tab was not visible'); });
+        // A run that was going when the page reloaded never continues alone
+        const run = bgLoadRun();
+        if (run && run.state === 'running') { run.state = 'paused'; run.pausedReason = 'the page was reloaded'; bgSaveRun(run); }
+        if (run && run.state === 'paused') bgRenderRunCard(run, null);
         bgSyncButton();
     }
 
@@ -34622,7 +34638,10 @@ Version 1.16:
         const n = bg.jobs ? bg.jobs.length : 0;
         bgEl('check').disabled = bg.busy;
         bgEl('pairs').disabled = bg.busy;
-        bgEl('start').disabled = bg.busy || bg.running || !n;
+        const pending = bgLoadRun();
+        const waiting = !!(pending && pending.state === 'paused');
+        bgEl('start').disabled = bg.busy || bg.running || waiting || !n;
+        bgEl('start').title = waiting ? 'Continue or discard the paused run first.' : '';
         bgEl('start').textContent = bg.jobs ? `Start (${n} ${n === 1 ? 'policy' : 'policies'})` : 'Start';
     }
 
@@ -34771,6 +34790,8 @@ Version 1.16:
             return { outcome: 'failed', reason: 'The groups could not be checked after adding them. Nothing was saved.' };
         }
 
+        // Last safe point: once Save is clicked the job waits for its answer before pausing
+        if (bg.pauseRequested || bg.stopRequested) { await bgLeave(); return { outcome: 'paused' }; }
         sm.lastSave = null;
         if (!(await bgClickSave())) { await bgLeave(); return { outcome: 'failed', reason: 'Save is not available: the policy has an error.' }; }
         const end = await bgWaitFor(() => {
@@ -34802,27 +34823,69 @@ Version 1.16:
         bgShowRunCard(run);
         try {
             while (run.index < run.jobs.length) {
+                if (bg.pauseRequested || bg.stopRequested) break;
                 const job = run.jobs[run.index];
                 bgRenderRunCard(run, job);
                 let res;
                 try { res = await bgRunJob(job); }
                 catch (e) { res = { outcome: 'failed', reason: e.message }; await bgLeave(); }
+                if (res.outcome === 'paused') continue;
                 run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason });
                 run.index++;
                 bgSaveRun(run);
                 bgRunLog(`${job.name}: ${res.outcome}. ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
             }
-            run.state = 'finished';
+            if (bg.stopRequested) { run.state = 'finished'; run.stopped = true; }
+            else if (bg.pauseRequested && run.index < run.jobs.length) { run.state = 'paused'; run.pausedReason = bg.pauseRequested; }
+            else run.state = 'finished';
             bgSaveRun(run);
             bgRenderRunCard(run, null);
         } finally {
             bg.running = false;
+            bg.pauseRequested = null;
+            bg.stopRequested = false;
+            bgSyncButton();
         }
+    }
+
+    function bgPause(reason) {
+        if (!bg.running || bg.pauseRequested) return;
+        bg.pauseRequested = reason;
+        bgRunLog('Pausing at the next safe step…', 'warn');
+    }
+
+    function bgResume() {
+        const run = bgLoadRun();
+        if (!run || run.state !== 'paused' || bg.running) return;
+        run.state = 'running';
+        run.pausedReason = null;
+        bgSaveRun(run);
+        bgRunLoop();
+    }
+
+    function bgStop() {
+        if (bg.running) { bg.stopRequested = true; bgRunLog('Stopping at the next safe step…', 'warn'); return; }
+        const run = bgLoadRun();
+        if (!run || run.state !== 'paused') return;
+        run.state = 'finished';
+        run.stopped = true;
+        bgSaveRun(run);
+        bgRenderRunCard(run, null);
+        bgSyncButton();
+    }
+
+    function bgDiscard() {
+        if (bg.running) return;
+        GM_deleteValue(BG_RUN_KEY);
+        bg.runHost?.remove();
+        bg.runHost = bg.runShadow = null;
+        bgSyncButton();
     }
 
     function bgSummaryText(run) {
         const of = kind => run.results.filter(r => r.outcome === kind);
         const lines = [`Bulk add groups: Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}`];
+        if (run.stopped) lines.push(`Stopped: ${run.jobs.length - run.results.length} of ${run.jobs.length} policies were not done.`);
         for (const [kind, title] of [['done', 'Done'], ['skipped', 'Skipped'], ['failed', 'Failed']]) {
             if (!of(kind).length) continue;
             lines.push('', title + ':');
@@ -34883,6 +34946,10 @@ Version 1.16:
                     <div class="summary" data-bg="summary"></div>
                 </div>
                 <div class="foot">
+                    <button type="button" data-bg="pause">Pause</button>
+                    <button type="button" class="primary" data-bg="continue" hidden>Continue</button>
+                    <button type="button" data-bg="stop">Stop</button>
+                    <button type="button" data-bg="discard" hidden>Discard</button>
                     <button type="button" data-bg="copy-summary" hidden>Copy summary</button>
                 </div>
             </section>`;
@@ -34891,6 +34958,10 @@ Version 1.16:
         bg.runShadow = shadow;
         bgRunEl('run-warning').textContent = '⚠ ' + BG_TAB_WARNING;
         bgRunEl('run-close').addEventListener('click', () => { host.remove(); bg.runHost = bg.runShadow = null; });
+        bgRunEl('pause').addEventListener('click', () => bgPause('you paused it'));
+        bgRunEl('continue').addEventListener('click', bgResume);
+        bgRunEl('stop').addEventListener('click', bgStop);
+        bgRunEl('discard').addEventListener('click', bgDiscard);
         bgRunEl('copy-summary').addEventListener('click', (e) => { const run = bgLoadRun(); if (run) smCopy(bgSummaryText(run), e.currentTarget); });
     }
 
@@ -34908,8 +34979,14 @@ Version 1.16:
         bgShowRunCard();
         const total = run.jobs.length;
         const finished = run.state === 'finished';
-        bgRunEl('progress').textContent = finished ? `Finished: ${total} of ${total}` : `${run.index + 1} of ${total}`;
-        bgRunEl('current').textContent = job ? job.name : '';
+        const paused = run.state === 'paused';
+        bgRunEl('progress').textContent = finished ? (run.stopped ? `Stopped at ${run.results.length} of ${total}` : `Finished: ${total} of ${total}`)
+            : paused ? `Run paused at ${run.index + 1} of ${total}` : `${run.index + 1} of ${total}`;
+        bgRunEl('current').textContent = paused ? `Paused: ${run.pausedReason || 'you paused it'}.` : job ? job.name : '';
+        bgRunEl('pause').hidden = finished || paused;
+        bgRunEl('stop').hidden = finished;
+        bgRunEl('continue').hidden = !paused;
+        bgRunEl('discard').hidden = !paused;
         bgRunEl('bar').style.width = `${Math.round((run.index / Math.max(1, total)) * 100)}%`;
         bgRunEl('run-warning').hidden = finished;
         bgRunEl('copy-summary').hidden = !finished;
@@ -34920,6 +34997,8 @@ Version 1.16:
         const of = kind => run.results.filter(r => r.outcome === kind);
         box.appendChild(Object.assign(document.createElement('div'), { textContent:
             `Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}` }));
+        if (run.stopped) box.appendChild(Object.assign(document.createElement('div'), { textContent:
+            `Stopped: ${total - run.results.length} of ${total} policies were not done.` }));
         for (const [kind, title] of [['skipped', 'Skipped'], ['failed', 'Failed']]) {
             if (!of(kind).length) continue;
             box.appendChild(Object.assign(document.createElement('b'), { textContent: title + ':' }));
