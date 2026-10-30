@@ -15143,6 +15143,46 @@ Version 1.4.1:
         console.log('✅ Netskope URL List Manager initialized!');
     }
 
+    // Lets the Change Tracker call the Netskope API with the tokens saved here, without ever handing a token out.
+    suiteBridge.netskopeApi = {
+        hasToken: (host) => !!host && Storage.hasToken(host) && !Storage.isTokenExpired(host),
+        saveToken: (host, token, hours, passphrase) => Storage.saveToken(host, token, hours, passphrase),
+        async request(host, method, path, body) {
+            // Only the tenants set up in this browser: a token is never sent anywhere else
+            if (!Object.values(TENANT_TYPE_TO_KEY).some(k => String(GM_getValue(k, '') || '').trim().toLowerCase() === String(host || '').toLowerCase())) {
+                return { ok: false, status: 0, error: 'This host is not one of your Netskope tenants.' };
+            }
+            if (!host || !Storage.hasToken(host)) return { ok: false, status: 0, error: 'noToken' };
+            if (Storage.isTokenExpired(host)) return { ok: false, status: 0, error: 'expired' };
+            if (!SessionManager.hasPassphrase(host)) {
+                for (let attempt = 0; attempt < 3 && !SessionManager.hasPassphrase(host); attempt++) {
+                    let passphrase;
+                    try {
+                        passphrase = await UI.promptPassphrase('Unlock API Token',
+                            attempt ? '❌ Invalid passphrase. Please try again.' : `The Change Tracker needs your ${host} API token. Enter its passphrase to unlock it for this browser session.`, false);
+                    } catch (e) { return { ok: false, status: 0, error: 'The API token stays locked.' }; }
+                    if (await Storage.verifyPassphrase(host, passphrase)) SessionManager.setPassphrase(host, passphrase);
+                }
+                if (!SessionManager.hasPassphrase(host)) return { ok: false, status: 0, error: 'Wrong passphrase: the API token stays locked.' };
+            }
+            let token;
+            try { token = await Storage.getToken(host); } catch (e) { return { ok: false, status: 0, error: 'The API token could not be unlocked.' }; }
+            return new Promise(resolve => GM_xmlhttpRequest({
+                method, url: `https://${host}${path}`, timeout: 60000,
+                headers: { 'Netskope-Api-Token': token, 'Content-Type': 'application/json', Accept: 'application/json' },
+                data: body ? JSON.stringify(body) : undefined,
+                onload: (r) => {
+                    let data = null;
+                    try { data = r.responseText ? JSON.parse(r.responseText) : null; } catch (e) { data = null; }
+                    const ok = r.status >= 200 && r.status < 300;
+                    resolve({ ok, status: r.status, data, error: ok ? null : (data && (data.message || data.error)) || `HTTP ${r.status}` });
+                },
+                onerror: () => resolve({ ok: false, status: 0, error: 'Network error' }),
+                ontimeout: () => resolve({ ok: false, status: 0, error: 'Netskope did not answer in time' }),
+            }));
+        },
+    };
+
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
@@ -24062,6 +24102,13 @@ Version 1.4.3:
 
     /* ── Review list ── */
 
+    // The tenant host always comes from this browser's own setup (URL Lists Editor), never from an entry:
+    // entries are shared and anyone can write them, so their host is only shown as text.
+    const nrdHostOf = (type) => {
+        const h = type && TENANT_TYPE_TO_KEY[type] ? String(GM_getValue(TENANT_TYPE_TO_KEY[type], '') || '').trim() : '';
+        return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(h) ? h : '';
+    };
+    const nrdSafeDomain = (d) => /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(d || '').trim());
     const nrdKeyOf = (it) => `${it.tenantType}\n${it.profile}\n${String(it.domain).toLowerCase()}`;
     const nrdDate = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
 
@@ -24108,7 +24155,7 @@ Version 1.4.3:
         if (!due.length) modal.appendChild(Object.assign(css(mk('div'), { color:'#2a7d4f', margin:'6px 0 10px' }), { textContent: '✔ Nothing is due for review.' }));
         [...tenants.keys()].sort().forEach(type => {
             const list = tenants.get(type);
-            const host = (list.find(i => i.host) || {}).host || '';
+            const host = nrdHostOf(type);
             const g = css(mk('div'), { border:'1px solid #e8e8f0', borderRadius:'6px', marginBottom:'10px', overflow:'hidden' });
             g.dataset.nrdTenantGroup = type || 'none';
             const gh = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 10px', background:'#f8f8ff', fontWeight:'bold' });
@@ -24143,7 +24190,8 @@ Version 1.4.3:
                     cat.dataset.nrdCategory = '1';
                     cat.textContent = '🔍 Check category';
                     cat.onclick = (e) => { e.preventDefault(); GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${it.domain.replace(/^\*\./, '')}`, { active: true, insert: true }); };
-                    r.append(cb, dom, meta, cat);
+                    r.append(cb, dom, meta);
+                    if (nrdSafeDomain(it.domain)) r.appendChild(cat);
                     g.appendChild(r);
                 });
             });
@@ -24172,7 +24220,23 @@ Version 1.4.3:
         const settingsBtn = css(mk('button', { type:'button' }), Object.assign(btnStyle(false), { marginLeft:'auto' }));
         settingsBtn.textContent = '⚙ Profiles';
         settingsBtn.onclick = () => openNrdSettings();
-        foot.append(removedBtn, keepBtn, again, settingsBtn);
+        const on = nrdApiOn();
+        if (due.some(i => on[i.tenantType])) {
+            const apiBtn = css(mk('button', { id:'ct-nrd-api-check', type:'button', title:'Looks up the categories with the Netskope API and proposes what to remove' }), btnStyle(false));
+            apiBtn.textContent = '🔌 Check with the API';
+            apiBtn.onclick = async () => {
+                apiBtn.disabled = true;
+                msg.textContent = 'Checking with the Netskope API…';
+                const plan = await nrdApiPlan(due);
+                apiBtn.disabled = false;
+                if (!plan.ok) { msg.textContent = plan.message; return; }
+                msg.textContent = plan.notes.join(' ') || (plan.rows.length ? 'Review the proposal, then apply it.' : 'Nothing to propose.');
+                if (plan.rows.length || plan.notTracked.length) renderNrdApiPlan(modal, close, plan);
+            };
+            foot.append(removedBtn, keepBtn, again, apiBtn, settingsBtn);
+        } else {
+            foot.append(removedBtn, keepBtn, again, settingsBtn);
+        }
         modal.appendChild(foot);
 
         const picked = () => [...modal.querySelectorAll('[data-nrd-pick]')].filter(c => c.checked).map(c => due.find(i => nrdKeyOf(i) === c.dataset.nrdPick)).filter(Boolean);
@@ -24200,7 +24264,7 @@ Version 1.4.3:
         still.forEach(i => { const k = `${i.ticket}\n${i.tenantType}\n${i.profile}`; (groups.get(k) || groups.set(k, []).get(k)).push(i); });
         for (const items of groups.values()) {
             const first = items[0];
-            const tenant = first.tenantType ? { type: first.tenantType, host: first.host || '' } : null;
+            const tenant = first.tenantType ? { type: first.tenantType, host: nrdHostOf(first.tenantType) } : null;
             const fields = { profileName: first.profile, destinations: items.map(i => i.domain).join('\n') };
             const days = Math.max(...items.map(i => i.days));
             if (kind === 'removed') {
@@ -24215,6 +24279,218 @@ Version 1.4.3:
         if (still.length) parts.push(`✔ ${still.length} ${still.length === 1 ? 'domain' : 'domains'} ${kind === 'removed' ? 'marked as removed' : `kept ${NRD_KEEP_DAYS} more days`}.`);
         if (gone.length) parts.push(`Already done by someone else: ${gone.map(i => i.domain).join(', ')}.`);
         return parts.join(' ');
+    }
+
+    /* ── Netskope API mode (optional, uses the URL Lists Editor tokens) ── */
+
+    const NRD_API_KEY     = 'changeTrackerNrdApi';   // { EMA: true, ... } in this browser only
+    const NRD_LOOKUP_PATH = '/api/v2/nsiq/urllookup';
+    const NRD_DEST_PATH   = '/api/v2/profiles/destinations';
+    const NRD_PLACEHOLDER = '#No values';
+    const nrdApiOn = () => GM_getValue(NRD_API_KEY, null) || {};
+    const nrdBridge = () => suiteBridge.netskopeApi || null;
+    const nrdLookupKey = (domain) => String(domain || '').trim().replace(/^\*\./, '').toLowerCase();
+    const nrdIsNrdCategory = (cats) => (cats || []).some(c => /newly registered domain|newly observed domain/i.test(c));
+
+    // Drops the removed values, then the comment of a block left without values. Netskope needs one value at least.
+    function nrdRebuildValues(values, removeSet) {
+        const blocks = [{ comment: null, entries: [] }];
+        for (const v of values || []) {
+            const t = String(v).trim();
+            if (t.startsWith('#')) blocks.push({ comment: v, entries: [] });
+            else if (t) blocks[blocks.length - 1].entries.push(v);
+        }
+        const out = [];
+        for (const b of blocks) {
+            const kept = b.entries.filter(v => !removeSet.has(String(v).trim().toLowerCase()));
+            const placeholder = b.comment !== null && b.comment.trim().toLowerCase() === NRD_PLACEHOLDER.toLowerCase();
+            if (b.comment !== null && !placeholder && (kept.length || !b.entries.length)) out.push(b.comment);
+            out.push(...kept);
+        }
+        return out.length ? out : [NRD_PLACEHOLDER];
+    }
+
+    // { ok, map: { 'a.com': ['Business'] } } with the predefined categories, 50 domains per call
+    async function nrdApiLookup(host, domains) {
+        const bridge = nrdBridge();
+        const keys = [...new Set(domains.map(nrdLookupKey).filter(Boolean))];
+        const map = {};
+        for (let i = 0; i < keys.length; i += 50) {
+            const r = await bridge.request(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: keys.slice(i, i + 50) } });
+            if (!r.ok) return { ok: false, status: r.status, error: r.error };
+            ((r.data && r.data.result) || []).forEach(x => {
+                map[String(x.url).toLowerCase()] = (x.categories || []).filter(c => c.type === 'predefined').map(c => c.name || '');
+            });
+        }
+        return { ok: true, map };
+    }
+
+    async function nrdApiProfile(host, name) {
+        const bridge = nrdBridge();
+        const list = await bridge.request(host, 'GET', `${NRD_DEST_PATH}?filter=${encodeURIComponent(`name co "${name}"`)}`);
+        if (!list.ok) return list;
+        const matches = ((list.data && list.data.elements) || []).filter(p => p.name === name);
+        if (!matches.length) return { ok: false, error: `no Destination Profile called "${name}"` };
+        if (matches.length > 1) return { ok: false, error: `${matches.length} profiles are called "${name}"` };
+        return bridge.request(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(matches[0].id)}?details=true`);
+    }
+
+    const nrdApiError = (r, what) => r.status === 403
+        ? `the token has no permission for ${what}. Ask for a token that includes it.`
+        : r.error === 'noToken' ? 'no API token saved for this tenant in the URL Lists Editor.'
+        : r.error === 'expired' ? 'the API token expired: save a new one in the URL Lists Editor.'
+        : (r.error || `Netskope answered ${r.status}`);
+
+    // Tests the token of one tenant without changing anything.
+    async function nrdApiTest(type) {
+        const bridge = nrdBridge();
+        if (!bridge) return '⚠ Turn on the URL Lists Editor in the toolbar settings to use the Netskope API.';
+        const host = nrdHostOf(type);
+        if (!host) return `⚠ No ${type} tenant host is set up in the URL Lists Editor.`;
+        if (!bridge.hasToken(host)) return `⚠ No API token for ${type}: save one in the URL Lists Editor.`;
+        const look = await bridge.request(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: ['example.com'] } });
+        if (!look.ok) return `⛔ ${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`;
+        const dest = await bridge.request(host, 'GET', `${NRD_DEST_PATH}?limit=1`);
+        if (!dest.ok) return `⛔ ${type}: ${nrdApiError(dest, '/api/v2/profiles/destinations')}`;
+        return `✔ ${type}: the token can look up categories and read Destination Profiles. Changing a profile also needs PATCH on /api/v2/profiles/destinations, checked when you apply.`;
+    }
+
+    // Builds the proposal for the due domains of the tenants with the API on.
+    async function nrdApiPlan(due) {
+        const bridge = nrdBridge();
+        if (!bridge) return { ok: false, message: 'Turn on the URL Lists Editor in the toolbar settings to use the Netskope API.' };
+        const on = nrdApiOn();
+        const rows = [], notes = [], notTracked = [], profiles = [];
+        const byTenant = new Map();
+        due.filter(i => on[i.tenantType]).forEach(i => (byTenant.get(i.tenantType) || byTenant.set(i.tenantType, []).get(i.tenantType)).push(i));
+        if (!byTenant.size) return { ok: false, message: 'The Netskope API is not turned on for these tenants: open ⚙ Profiles.' };
+        for (const [type, items] of byTenant) {
+            const host = nrdHostOf(type);
+            if (!host || !bridge.hasToken(host)) { notes.push(`No API token for ${type}: save one in the URL Lists Editor.`); continue; }
+            const look = await nrdApiLookup(host, items.map(i => i.domain));
+            if (!look.ok) { notes.push(`${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`); continue; }
+            items.forEach(it => {
+                const cats = look.map[nrdLookupKey(it.domain)];
+                const nrd = cats ? nrdIsNrdCategory(cats) : null;
+                rows.push({ item: it, host, categories: cats || null, nrd, action: cats == null ? 'skip' : nrd ? 'keep' : 'remove' });
+            });
+            // Cross check: dated domains in the profile the tracker does not know
+            const tracked = new Set(((nrdCache() || {}).items || []).map(i => `${i.profile}\n${nrdLookupKey(i.domain)}`));
+            for (const name of [...new Set(items.map(i => i.profile))]) {
+                const prof = await nrdApiProfile(host, name);
+                if (!prof.ok) { notes.push(`${type} · ${name}: ${nrdApiError(prof, '/api/v2/profiles/destinations')}`); continue; }
+                profiles.push({ host, name, id: prof.data.id });
+                let comment = null, date = null;
+                for (const v of prof.data.values || []) {
+                    const t = String(v).trim();
+                    if (t.startsWith('#')) { comment = t; const m = /\b(\d{4}-\d{2}-\d{2})\b/.exec(t); date = m ? Date.parse(m[1]) : null; continue; }
+                    if (t && date && Date.now() - date >= NRD_EXPIRY_DAYS * NRD_DAY && !tracked.has(`${name}\n${nrdLookupKey(t)}`)) {
+                        notTracked.push({ type, profile: name, value: t, comment });
+                    }
+                }
+            }
+        }
+        return { ok: true, rows, notes, notTracked, profiles };
+    }
+
+    // Removes the domains marked "remove" profile by profile, then logs everything in the original tickets.
+    async function nrdApiApply(plan) {
+        const bridge = nrdBridge();
+        const notes = [];
+        let pending = false;
+        const groups = new Map();
+        plan.rows.filter(r => r.action === 'remove').forEach(r => {
+            const k = `${r.host}\n${r.item.profile}`;
+            (groups.get(k) || groups.set(k, []).get(k)).push(r);
+        });
+        const removed = [];
+        for (const rows of groups.values()) {
+            const { host } = rows[0];
+            const name = rows[0].item.profile;
+            const first = await nrdApiProfile(host, name);
+            if (!first.ok) { notes.push(`${name}: ${nrdApiError(first, '/api/v2/profiles/destinations')}`); continue; }
+            if (first.data.status && first.data.status !== 'applied') { notes.push(`${name}: skipped, it has pending changes in Netskope. Apply or discard them first.`); continue; }
+            const values = nrdRebuildValues(first.data.values, new Set(rows.map(r => String(r.item.domain).trim().toLowerCase())));
+            // Nobody may have changed it while the proposal was being reviewed
+            const again = await bridge.request(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(first.data.id)}?details=true`);
+            if (!again.ok || JSON.stringify(again.data.values) !== JSON.stringify(first.data.values) || again.data.modify_time !== first.data.modify_time) {
+                notes.push(`${name}: it changed in Netskope while you were reviewing, nothing was changed. Check again.`);
+                continue;
+            }
+            const d = again.data;
+            const res = await bridge.request(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}`,
+                { name: d.name, description: d.description || '', type: d.type, label_ids: d.label_ids || [], values });
+            if (!res.ok) { notes.push(`${name}: not changed, ${nrdApiError(res, 'PATCH /api/v2/profiles/destinations')}`); continue; }
+            if (!res.data || res.data.status !== 'applied') pending = true;
+            removed.push(...rows);
+        }
+        // Logged only after Netskope confirmed the change
+        const logGroups = (list) => list.reduce((m, r) => { const k = `${r.item.ticket}\n${r.item.tenantType}\n${r.item.profile}`; (m.get(k) || m.set(k, []).get(k)).push(r); return m; }, new Map());
+        const tenantOf = (it) => it.tenantType ? { type: it.tenantType, host: nrdHostOf(it.tenantType) } : null;
+        for (const rows of logGroups(removed).values()) {
+            const it = rows[0].item;
+            const cats = [...new Set(rows.flatMap(r => r.categories || []))].join(', ') || 'unknown';
+            await addEntry(it.ticket, 'Destination Profile — Destinations Removed', { profileName: it.profile, destinations: rows.map(r => r.item.domain).join('\n') },
+                `NRD review: removed after ${Math.max(...rows.map(r => r.item.days))} days, category now ${cats}.`, { tenant: tenantOf(it) });
+        }
+        for (const rows of logGroups(plan.rows.filter(r => r.action === 'keep')).values()) {
+            const it = rows[0].item;
+            await addEntry(it.ticket, NRD_REVIEW_TYPE, { profileName: it.profile, destinations: rows.map(r => r.item.domain).join('\n'), outcome: 'kept',
+                category: [...new Set(rows.flatMap(r => r.categories || []))].join(', ') }, `NRD review: kept ${NRD_KEEP_DAYS} more days, still Newly Registered Domain`, { tenant: tenantOf(it) });
+        }
+        await nrdCheck({ force: true });
+        const kept = plan.rows.filter(r => r.action === 'keep').length;
+        const parts = [`✔ ${removed.length} removed from the profiles, ${kept} kept ${NRD_KEEP_DAYS} more days.`];
+        if (removed.length && pending) parts.push('Click Apply Changes in Netskope for the change to take effect.');
+        return parts.concat(notes).join(' ');
+    }
+
+    function renderNrdApiPlan(modal, close, plan) {
+        modal.querySelector('#ct-nrd-api-plan')?.remove();
+        const box = css(mk('div', { id:'ct-nrd-api-plan' }), { border:'1px solid #c0c8f0', borderRadius:'6px', padding:'8px 10px', margin:'10px 0', background:'#f8f8ff' });
+        box.appendChild(Object.assign(css(mk('div'), { fontWeight:'bold', marginBottom:'6px' }), { textContent: '🔌 Proposal from the Netskope API' }));
+        plan.rows.forEach(r => {
+            const row = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', padding:'3px 0', flexWrap:'wrap' });
+            row.dataset.nrdPlan = '1';
+            row.dataset.domain = r.item.domain;
+            const sel = css(mk('select'), { fontSize:'12px', padding:'2px' });
+            sel.dataset.nrdAction = '1';
+            [['remove', 'Remove'], ['keep', `Keep ${NRD_KEEP_DAYS} more days`], ['skip', 'Leave for now']].forEach(([v, l]) => sel.appendChild(Object.assign(mk('option'), { value: v, textContent: l })));
+            sel.value = r.action;
+            const dom = css(mk('span'), { fontFamily:'monospace', minWidth:'140px' });
+            dom.textContent = r.item.domain;
+            const cat = css(mk('span'), { color:'#555' });
+            cat.textContent = r.categories == null ? 'Not checked: Netskope did not return a category' : (r.categories.join(', ') || 'No category');
+            const warn = css(mk('span'), { color:'#dc3545', fontWeight:'bold', width:'100%' });
+            const sync = () => {
+                r.action = sel.value;
+                warn.textContent = sel.value === 'remove' && r.nrd ? '⚠ Still Newly Registered Domain: users will be blocked again.' : '';
+            };
+            sel.onchange = sync;
+            sync();
+            row.append(sel, dom, cat, warn);
+            box.appendChild(row);
+        });
+        if (plan.notTracked.length) {
+            const nt = css(mk('div', { id:'ct-nrd-not-tracked' }), { marginTop:'8px', color:'#555' });
+            nt.appendChild(Object.assign(css(mk('div'), { fontWeight:'bold' }), { textContent: 'In the profile but not in the tracker (not changed):' }));
+            plan.notTracked.forEach(x => nt.appendChild(Object.assign(mk('div'), { textContent: `${x.value} · ${x.profile} · ${x.comment || ''}` })));
+            box.appendChild(nt);
+        }
+        const apply = css(mk('button', { id:'ct-nrd-api-apply', type:'button' }), { marginTop:'8px', padding:'6px 12px', borderRadius:'4px', cursor:'pointer',
+            fontSize:'12px', fontWeight:'bold', border:'none', background:'#667eea', color:'#fff' });
+        apply.textContent = 'Apply in Netskope and log it';
+        apply.disabled = !plan.rows.length;
+        apply.onclick = async () => {
+            apply.disabled = true;
+            const msg = modal.querySelector('#ct-nrd-review-msg');
+            if (msg) msg.textContent = 'Changing the profiles in Netskope…';
+            const text = await nrdApiApply(plan);
+            renderNrdReview(modal, close, text);
+        };
+        box.appendChild(apply);
+        const foot = modal.querySelector('#ct-nrd-mark-removed')?.parentElement;
+        modal.insertBefore(box, foot || null);
     }
 
     function openNrdSettings() {
@@ -24248,7 +24524,33 @@ Version 1.4.3:
         ruleTitle.textContent = 'Found by the name, in the last 90 days';
         const ruleList = css(mk('div', { id:'ct-nrd-rule-list' }), { fontSize:'12px', color:'#555', lineHeight:'1.6' });
         ruleList.textContent = 'Loading…';
-        modal.append(hdr, help, rows, addBtn, saveBtn, msg, ruleTitle, ruleList);
+        // The Netskope API is a personal choice per tenant: it uses this browser's URL Lists Editor tokens
+        const apiTitle = css(mk('div'), { fontSize:'12px', fontWeight:'bold', margin:'16px 0 4px' });
+        apiTitle.textContent = 'Netskope API (this browser only, optional)';
+        const apiHelp = css(mk('div'), { fontSize:'11px', color:'#666', lineHeight:'1.5', marginBottom:'6px' });
+        apiHelp.textContent = 'With the API on, the review looks up the categories and takes the domains out of the profile for you. It uses the API token saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.';
+        const apiBox = css(mk('div', { id:'ct-nrd-api' }), { display:'flex', flexDirection:'column', gap:'6px' });
+        Object.keys(TENANT_TYPE_TO_KEY).forEach(type => {
+            const host = String(GM_getValue(TENANT_TYPE_TO_KEY[type], '') || '').trim();
+            const row = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap', fontSize:'12px' });
+            const lab = css(mk('label'), { display:'inline-flex', alignItems:'center', gap:'4px', minWidth:'200px' });
+            const cb = mk('input', { type:'checkbox' });
+            cb.dataset.nrdApi = type;
+            cb.checked = !!nrdApiOn()[type];
+            cb.disabled = !host;
+            cb.onchange = () => { const on = nrdApiOn(); if (cb.checked) on[type] = true; else delete on[type]; GM_setValue(NRD_API_KEY, on); };
+            lab.append(cb, document.createTextNode(`${type}${host ? ' · ' + host : ' (no host set up)'}`));
+            const test = css(mk('button', { type:'button' }), { padding:'2px 8px', fontSize:'11px', border:'1px solid #c0c8f0', borderRadius:'4px', background:'#fff', color:'#667eea', cursor:'pointer' });
+            test.dataset.nrdApiTest = type;
+            test.textContent = 'Test';
+            test.disabled = !host;
+            const res = css(mk('span'), { color:'#555', flex:'1 1 100%' });
+            res.dataset.nrdApiResult = type;
+            test.onclick = async () => { test.disabled = true; res.textContent = 'Testing…'; res.textContent = await nrdApiTest(type); test.disabled = false; };
+            row.append(lab, test, res);
+            apiBox.appendChild(row);
+        });
+        modal.append(hdr, help, rows, addBtn, saveBtn, msg, ruleTitle, ruleList, apiTitle, apiHelp, apiBox);
         document.body.append(overlay, modal);
 
         let current = null;   // the settings item as loaded: { nrdProfiles, id, spId, etag }
@@ -24970,6 +25272,7 @@ Version 1.4.3:
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue,
+                bridge: suiteBridge, nrdRebuildValues, nrdApiLookup,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary };
         }
 
