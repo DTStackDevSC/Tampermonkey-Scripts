@@ -19550,7 +19550,7 @@ Version 1.4.3:
             SNIPPET_GROUPS.forEach(g => g.items.forEach(i => { groupOf[i.value] = g.group; }));
             const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
                 .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
-                .filter(r => r.entry && groupOf[r.entry.type] === 'Destination Profiles');
+                .filter(r => r.entry && (groupOf[r.entry.type] === 'Destination Profiles' || r.entry.type === NRD_REVIEW_TYPE));
             return { ok: true, data };
         },
 
@@ -22682,6 +22682,15 @@ Version 1.4.3:
                 marginBottom:'10px', fontSize:'12px', fontFamily:'Arial, sans-serif'
             })
         );
+        // Newly Registered Domains due for review, for the whole team
+        sidebar.appendChild(
+            css(mk('div', { id:'ct-nrd-banner' }), {
+                display:'none', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap',
+                gap:'8px', padding:'7px 10px', borderRadius:'4px', background:'#fff4e5', border:'1px solid #ffc680',
+                color:'#8a5a00', marginBottom:'10px', fontSize:'12px', fontFamily:'Arial, sans-serif'
+            })
+        );
+        setTimeout(renderNrdAlert, 0);
 
         // ══ INPUT AREA ═══════════════════════════════════════════
 
@@ -23943,6 +23952,113 @@ Version 1.4.3:
 
     const nrdSinceIso = (days) => new Date(Date.now() - days * 86400000).toISOString().replace(/\.\d+Z$/, 'Z');
 
+    const NRD_REVIEW_TYPE = 'Destination Profile — NRD review';
+    const NRD_EXPIRY_DAYS = 30;
+    const NRD_KEEP_DAYS   = 7;
+    const NRD_CHECK_EVERY = 4 * 3600 * 1000;
+    const NRD_CACHE_KEY   = 'changeTrackerNrdCache';
+    const NRD_DAY         = 86400000;
+    const NRD_ADD_TYPES   = ['Destination Profile Created', 'Destination Profile — Destinations Added'];
+
+    // "2026-10-28 14:05" (local time, as entries keep it) → ms
+    function nrdTime(ts) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(String(ts || ''));
+        return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)).getTime() : NaN;
+    }
+
+    // rows: [{ ticket, entry }] of Destination Profile entries. Net result per tenant, profile and domain:
+    // the last addition counts, a removal or a removal of the whole profile closes it, a "kept" review moves it 7 days.
+    function nrdComputeDue(rows, settings, now = Date.now()) {
+        const open = new Map();   // key → item
+        const sameTarget = (it, tenantType, profile) => it.profile === profile && (!tenantType || !it.tenantType || it.tenantType === tenantType);
+        const sorted = rows.filter(r => r && r.entry).slice().sort((a, b) => nrdTime(a.entry.ts) - nrdTime(b.entry.ts));
+        for (const { ticket, entry } of sorted) {
+            const f = entry.fields || {};
+            const profile = String(f.profileName || '').trim();
+            const tenantType = (entry.tenant && entry.tenant.type) || '';
+            if (!isNrdProfile(profile, tenantType || null, settings)) continue;
+            const at = nrdTime(entry.ts);
+            if (entry.type === 'Destination Profile Removed') {
+                for (const [k, it] of open) if (sameTarget(it, tenantType, profile)) open.delete(k);
+                continue;
+            }
+            for (const domain of parseDomains(f.destinations || '')) {
+                const d = domain.toLowerCase();
+                const matches = [...open].filter(([, it]) => it.domain.toLowerCase() === d && sameTarget(it, tenantType, profile));
+                if (NRD_ADD_TYPES.includes(entry.type)) {
+                    matches.forEach(([k]) => open.delete(k));
+                    open.set(`${tenantType}\n${profile}\n${d}`, { tenantType, host: (entry.tenant && entry.tenant.host) || '', profile, domain,
+                        ticket, addedTs: entry.ts, dueAt: at + NRD_EXPIRY_DAYS * NRD_DAY });
+                } else if (entry.type === 'Destination Profile — Destinations Removed' || (entry.type === NRD_REVIEW_TYPE && f.outcome === 'removed')) {
+                    matches.forEach(([k]) => open.delete(k));
+                } else if (entry.type === NRD_REVIEW_TYPE && f.outcome === 'kept') {
+                    matches.forEach(([, it]) => { it.dueAt = Math.max(it.dueAt, at + NRD_KEEP_DAYS * NRD_DAY); });
+                }
+            }
+        }
+        return [...open.values()].map(it => Object.assign(it, {
+            days: Math.floor((now - nrdTime(it.addedTs)) / NRD_DAY), state: now >= it.dueAt ? 'due' : 'upcoming' }))
+            .sort((a, b) => a.dueAt - b.dueAt);
+    }
+
+    const nrdCache = () => GM_getValue(NRD_CACHE_KEY, null);
+    const nrdDueItems = () => ((nrdCache() || {}).items || []).filter(i => i.state === 'due' || Date.now() >= i.dueAt);
+
+    let nrdChecking = null;
+    // Reads the last 90 days across tickets and stores what is due. At most every 4 hours unless forced.
+    function nrdCheck({ force = false } = {}) {
+        if (nrdChecking) return nrdChecking;
+        const cache = nrdCache();
+        if (!api.isConfigured() || (!force && cache && Date.now() - cache.at < NRD_CHECK_EVERY)) { renderNrdAlert(); return Promise.resolve(cache); }
+        nrdChecking = (async () => {
+            const [settings, rows] = await Promise.all([api.loadSettings(), api.fetchProfileEntriesSince(nrdSinceIso(NRD_HISTORY_DAYS))]);
+            if (!settings.ok || !rows.ok) return cache;
+            const next = { at: Date.now(), items: nrdComputeDue(rows.data, settings.data) };
+            GM_setValue(NRD_CACHE_KEY, next);
+            return next;
+        })().catch(() => cache).finally(() => { nrdChecking = null; renderNrdAlert(); });
+        return nrdChecking;
+    }
+
+    function renderNrdAlert() {
+        const due = nrdDueItems().length;
+        // Toolbar dot, kept while something is due (the toolbar may redraw its buttons)
+        const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+        const dot = document.getElementById('ct-nrd-dot');
+        if (!due) dot?.remove();
+        else if (toolEl && (!dot || !toolEl.contains(dot))) {
+            dot?.remove();
+            toolEl.style.position = 'relative';
+            const d = mk('div', { id:'ct-nrd-dot', title:`${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review` });
+            Object.assign(d.style, { position:'absolute', bottom:'2px', right:'2px', width:'9px', height:'9px', borderRadius:'50%',
+                background:'#ff8c00', border:'1px solid #fff', pointerEvents:'none', zIndex:'10' });
+            toolEl.appendChild(d);
+        }
+        const banner = document.getElementById('ct-nrd-banner');
+        if (!banner) return;
+        banner.textContent = '';
+        banner.style.display = due ? 'flex' : 'none';
+        if (!due) return;
+        const msg = mk('span');
+        msg.textContent = `⏰ ${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review`;
+        const btn = (id, text, primary) => {
+            const b = css(mk('button', { id, type:'button' }), { border: primary ? 'none' : '1px solid #e0a800', borderRadius:'3px', cursor:'pointer',
+                padding:'3px 10px', fontSize:'11px', fontWeight:'bold', background: primary ? '#ff8c00' : 'transparent', color: primary ? '#fff' : '#8a5a00' });
+            b.textContent = text;
+            return b;
+        };
+        const review = btn('ct-nrd-review-btn', 'Review', true);
+        review.onclick = () => openNrdReview();
+        const again = btn('ct-nrd-check-btn', '↺ Check now', false);
+        again.onclick = () => nrdCheck({ force: true });
+        const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
+        btns.append(review, again);
+        banner.append(msg, btns);
+    }
+
+    // The review list of due domains (filled in by the review section below)
+    function openNrdReview() {}
+
     function openNrdSettings() {
         document.getElementById('ct-nrd-settings-overlay')?.remove();
         document.getElementById('ct-nrd-settings')?.remove();
@@ -24678,6 +24794,12 @@ Version 1.4.3:
             }
         }, 2500);
 
+        // Newly Registered Domains: a few seconds after the page loads, then now and then (each check
+        // reads SharePoint at most every 4 hours, across tabs). The dot is redrawn when the toolbar redraws.
+        setTimeout(() => { if (api.isConfigured()) nrdCheck(); }, 4000);
+        setInterval(() => { if (api.isConfigured()) nrdCheck(); }, 15 * 60000);
+        setInterval(renderNrdAlert, 5000);
+
         // While offline, retry the connection in the background every minute.
         setInterval(() => {
             if ((connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') && api.isConfigured()) {
@@ -24689,7 +24811,7 @@ Version 1.4.3:
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile,
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary };
         }
 
