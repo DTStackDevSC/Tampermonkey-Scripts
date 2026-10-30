@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.15.0
+// @version      2.15.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.15.0';
-    const CHANGELOG = `Version 2.15.0:
+   const SCRIPT_VERSION = '2.15.1';
+    const CHANGELOG = `Version 2.15.1:
+- Change Tracker: profiles named with "Newly Registered Domain" (singular) also count as Newly Registered Domains profiles.
+
+Version 2.15.0:
 - Change Tracker: the Newly Registered Domains buttons show they are working and what they found, and the Netskope API can be set up from the review, token included.
 
 Version 2.14.1:
@@ -17691,8 +17694,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.6.0';
-    const CHANGELOG = `Version 2.6.0:
+    const SCRIPT_VERSION = '2.6.1';
+    const CHANGELOG = `Version 2.6.1:
+- Newly Registered Domains: profiles whose name contains "Newly Registered Domain" (singular) now also count by themselves, like the ones with "Newly Registered Domains".
+
+Version 2.6.0:
 - Newly Registered Domains: every "Check now" button shows it is working and then what it found. The profiles button in Configure says to connect first when SharePoint is not set up yet.
 - The review now offers the Netskope API when it is off, with "Set up the API". In the profiles window each tenant shows whether a token is saved and until when, lets you add or replace the token there (shared with the URL Lists Editor), test it and turn the API on, with a confirmation.
 
@@ -23888,7 +23894,7 @@ Version 1.4.3:
                     bullets(body, [
                         'Check each category, take the domains that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". It is logged in the ticket where they were added.',
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
-                        'Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
+                        'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
                         '"↺ Check now" next to it in Configure looks right away, without waiting for the next automatic check.',
                         'The API can be set up from the review ("Set up the API") or in the profiles window: add the token there, test it and turn it on per tenant. The token is shared with the URL Lists Editor.',
                         'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
@@ -24044,7 +24050,7 @@ Version 1.4.3:
 
     const NRD_SETTINGS_TICKET = '__CT_SETTINGS__';
     const NRD_SETTINGS_TYPE   = 'Tracker settings';
-    const NRD_NAME_RULE       = /newly registered domains/i;
+    const NRD_NAME_RULE       = /newly registered domains?/i;   // "Newly Registered Domain" or "Domains"
     const NRD_HISTORY_DAYS    = 90;
 
     // A profile is NRD by its name, or when the team listed it in the shared settings for that tenant.
@@ -24635,7 +24641,7 @@ Version 1.4.3:
         x.onclick = close;
         hdr.append(title, x);
         const help = css(mk('div'), { fontSize:'12px', color:'#555', lineHeight:'1.5', marginBottom:'10px' });
-        help.textContent = 'Profiles whose name contains "Newly Registered Domains" count by themselves. Add here, exactly as in Netskope, the ones named otherwise. This list is shared by the whole team.';
+        help.textContent = 'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Add here, exactly as in Netskope, the ones named otherwise. This list is shared by the whole team.';
         const rows = css(mk('div', { id:'ct-nrd-rows' }), { display:'flex', flexDirection:'column', gap:'6px', marginBottom:'8px' });
         const btnStyle = { padding:'6px 12px', border:'1px solid #c0c8f0', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:'bold', background:'#fff', color:'#667eea' };
         const addBtn = css(mk('button', { id:'ct-nrd-add', type:'button' }), btnStyle);
