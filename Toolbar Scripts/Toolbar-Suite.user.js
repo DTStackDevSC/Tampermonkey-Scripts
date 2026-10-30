@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.14.0
+// @version      2.14.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.14.0';
-    const CHANGELOG = `Version 2.14.0:
+   const SCRIPT_VERSION = '2.14.1';
+    const CHANGELOG = `Version 2.14.1:
+- Change Tracker: a "↺ Check now" button in Configure looks for the Newly Registered Domains due for review right away.
+
+Version 2.14.0:
 - Change Tracker: reminders and a review list for the Newly Registered Domains allowed in Destination Profiles, for the whole team, with an optional Netskope API check that also takes them out of the profile. Every new entry records its Netskope tenant.
 - URL List Editor: its API token can also serve the Change Tracker reviews.
 
@@ -17684,8 +17687,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.5.0';
-    const CHANGELOG = `Version 2.5.0:
+    const SCRIPT_VERSION = '2.5.1';
+    const CHANGELOG = `Version 2.5.1:
+- New "↺ Check now" button in Configure, next to "⏰ Newly Registered Domains profiles": looks for the domains due for review right away and says how many are due and coming up, with a link to the review.
+
+Version 2.5.0:
 - New Newly Registered Domains review. When a domain added to a Newly Registered Domains Destination Profile reaches 30 days, everyone sees an orange dot on the Change Tracker icon and "⏰ N Newly Registered Domains are due for review".
 - "Review" lists them by tenant and profile, with links to check the category and to open Netskope. After taking them out of the profile, tick them and click "Mark as removed". For the ones still categorized as NRD, click "Keep 7 more days". Everything is logged in the ticket where they were added.
 - Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added to a list shared by the whole team, in Configure.
@@ -23875,6 +23881,7 @@ Version 1.4.3:
                         'Check each category, take the domains that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". It is logged in the ticket where they were added.',
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
                         'Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
+                        '"↺ Check now" next to it in Configure looks right away, without waiting for the next automatic check.',
                         'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
                     ]);
@@ -24793,7 +24800,33 @@ Version 1.4.3:
         nrdBtn.textContent = '⏰ Newly Registered Domains profiles';
         nrdBtn.title = 'The Destination Profiles whose domains are reviewed after 30 days, shared by the team';
         nrdBtn.onclick = () => { if (spClient.siteUrl()) openNrdSettings(); };
-        modal.appendChild(nrdBtn);
+        // Checks right away, without waiting for the next automatic check (every 4 hours)
+        const nrdCheckBtn = css(mk('button', { id:'ct-nrd-check-now', type:'button' }), {
+            padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
+            cursor:'pointer', fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif', margin:'-6px 0 14px 6px'
+        });
+        nrdCheckBtn.textContent = '↺ Check now';
+        nrdCheckBtn.title = 'Looks for Newly Registered Domains due for review now';
+        const nrdCheckResult = css(mk('div', { id:'ct-nrd-check-result' }), { fontSize:'12px', color:'#555', margin:'-8px 0 14px' });
+        nrdCheckBtn.onclick = async () => {
+            if (!api.isConfigured()) { nrdCheckResult.textContent = 'Connect to SharePoint first.'; return; }
+            nrdCheckBtn.disabled = true;
+            nrdCheckResult.textContent = '⏳ Checking…';
+            const before = nrdCache();
+            const res = await nrdCheck({ force: true });
+            nrdCheckBtn.disabled = false;
+            if (!res || res === before) { nrdCheckResult.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
+            const due = res.items.filter(i => Date.now() >= i.dueAt).length;
+            nrdCheckResult.textContent = `Newly Registered Domains: ${due} due for review, ${res.items.length - due} coming up. `;
+            if (due) {
+                const link = css(mk('a', { href:'#' }), { color:'#667eea', fontWeight:'bold' });
+                link.dataset.nrdOpenReview = '1';
+                link.textContent = 'Review';
+                link.onclick = (e) => { e.preventDefault(); openNrdReview(); };
+                nrdCheckResult.appendChild(link);
+            }
+        };
+        modal.append(nrdBtn, nrdCheckBtn, nrdCheckResult);
 
         function renderRenewLog() {
             const rec = spClient.renewRecord();
