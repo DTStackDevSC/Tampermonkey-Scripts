@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.14.1
+// @version      2.15.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.14.1';
-    const CHANGELOG = `Version 2.14.1:
+   const SCRIPT_VERSION = '2.15.0';
+    const CHANGELOG = `Version 2.15.0:
+- Change Tracker: the Newly Registered Domains buttons show they are working and what they found, and the Netskope API can be set up from the review, token included.
+
+Version 2.14.1:
 - Change Tracker: a "↺ Check now" button in Configure looks for the Newly Registered Domains due for review right away.
 
 Version 2.14.0:
@@ -15158,6 +15161,7 @@ Version 1.4.1:
     suiteBridge.netskopeApi = {
         hasToken: (host) => !!host && Storage.hasToken(host) && !Storage.isTokenExpired(host),
         saveToken: (host, token, hours, passphrase) => Storage.saveToken(host, token, hours, passphrase),
+        tokenExpiry: (host) => { const e = Storage.getExpiry(host); return (e && e.expiryDate) || null; },
         async request(host, method, path, body) {
             // Only the tenants set up in this browser: a token is never sent anywhere else
             if (!Object.values(TENANT_TYPE_TO_KEY).some(k => String(GM_getValue(k, '') || '').trim().toLowerCase() === String(host || '').toLowerCase())) {
@@ -17687,8 +17691,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.5.1';
-    const CHANGELOG = `Version 2.5.1:
+    const SCRIPT_VERSION = '2.6.0';
+    const CHANGELOG = `Version 2.6.0:
+- Newly Registered Domains: every "Check now" button shows it is working and then what it found. The profiles button in Configure says to connect first when SharePoint is not set up yet.
+- The review now offers the Netskope API when it is off, with "Set up the API". In the profiles window each tenant shows whether a token is saved and until when, lets you add or replace the token there (shared with the URL Lists Editor), test it and turn the API on, with a confirmation.
+
+Version 2.5.1:
 - New "↺ Check now" button in Configure, next to "⏰ Newly Registered Domains profiles": looks for the domains due for review right away and says how many are due and coming up, with a link to the review.
 
 Version 2.5.0:
@@ -23882,6 +23890,7 @@ Version 1.4.3:
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
                         'Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
                         '"↺ Check now" next to it in Configure looks right away, without waiting for the next automatic check.',
+                        'The API can be set up from the review ("Set up the API") or in the profiles window: add the token there, test it and turn it on per tenant. The token is shared with the URL Lists Editor.',
                         'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
                     ]);
@@ -24117,6 +24126,31 @@ Version 1.4.3:
         return nrdChecking;
     }
 
+    function nrdSummary(res) {
+        const due = res.items.filter(i => Date.now() >= i.dueAt).length;
+        return `Newly Registered Domains: ${due} due for review, ${res.items.length - due} coming up.`;
+    }
+
+    // Runs a slow action from a button: the button shows it is working and comes back when done.
+    async function nrdRun(btn, busyText, fn) {
+        const label = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = `⏳ ${busyText}`;
+        try { return await fn(); }
+        finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
+    }
+
+    // Forced check with a result line in the tracker status
+    async function nrdCheckNow(btn) {
+        return nrdRun(btn, 'Checking…', async () => {
+            const before = nrdCache();
+            const res = await nrdCheck({ force: true });
+            const ok = !!res && res !== before;
+            flashStatus(ok ? '✔ ' + nrdSummary(res) : '⚠ Could not read SharePoint. Try again later.', ok ? '#28a745' : '#dc3545', 8000);
+            return ok ? res : null;
+        });
+    }
+
     function renderNrdAlert() {
         const due = nrdDueItems().length;
         // Toolbar dot, kept while something is due (the toolbar may redraw its buttons)
@@ -24133,6 +24167,9 @@ Version 1.4.3:
         }
         const banner = document.getElementById('ct-nrd-banner');
         if (!banner) return;
+        // Redrawn only when the count changes, so a button in use keeps its state
+        if (banner.dataset.due === String(due) && (banner.childElementCount || !due)) return;
+        banner.dataset.due = String(due);
         banner.textContent = '';
         banner.style.display = due ? 'flex' : 'none';
         if (!due) return;
@@ -24147,7 +24184,7 @@ Version 1.4.3:
         const review = btn('ct-nrd-review-btn', 'Review', true);
         review.onclick = () => openNrdReview();
         const again = btn('ct-nrd-check-btn', '↺ Check now', false);
-        again.onclick = () => nrdCheck({ force: true });
+        again.onclick = () => nrdCheckNow(again);
         const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
         btns.append(review, again);
         banner.append(msg, btns);
@@ -24289,6 +24326,17 @@ Version 1.4.3:
             foot.append(removedBtn, keepBtn, again, apiBtn, settingsBtn);
         } else {
             foot.append(removedBtn, keepBtn, again, settingsBtn);
+            if (due.length) {
+                const hint = css(mk('div', { id:'ct-nrd-api-hint' }), { display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap', margin:'10px 0 0',
+                    padding:'7px 10px', background:'#f8f8ff', border:'1px solid #d0d0f0', borderRadius:'6px', color:'#555' });
+                hint.appendChild(Object.assign(mk('span'), { textContent: '🔌 The Netskope API can look up the categories and take the domains out of the profile for you.' }));
+                const setup = css(mk('button', { type:'button' }), btnStyle(false));
+                setup.dataset.nrdSetupApi = '1';
+                setup.textContent = 'Set up the API';
+                setup.onclick = () => openNrdSettings({ focus: 'api' });
+                hint.appendChild(setup);
+                modal.appendChild(hint);
+            }
         }
         modal.appendChild(foot);
 
@@ -24304,7 +24352,10 @@ Version 1.4.3:
         };
         removedBtn.onclick = () => run('removed');
         keepBtn.onclick = () => run('kept');
-        again.onclick = async () => { again.disabled = true; await nrdCheck({ force: true }); renderNrdReview(modal, close, '✔ Checked again.'); };
+        again.onclick = async () => {
+            const res = await nrdCheckNow(again);
+            renderNrdReview(modal, close, res ? '✔ ' + nrdSummary(res) : '⚠ Could not read SharePoint. Try again later.');
+        };
     }
 
     // Logs the outcome in each domain's original ticket, after checking nobody did it in the meantime.
@@ -24565,7 +24616,7 @@ Version 1.4.3:
         modal.insertBefore(box, foot || null);
     }
 
-    function openNrdSettings() {
+    function openNrdSettings({ focus = null } = {}) {
         document.getElementById('ct-nrd-settings-overlay')?.remove();
         document.getElementById('ct-nrd-settings')?.remove();
         const overlay = css(mk('div', { id:'ct-nrd-settings-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.5)', zIndex:'1050010' });
@@ -24602,28 +24653,86 @@ Version 1.4.3:
         const apiHelp = css(mk('div'), { fontSize:'11px', color:'#666', lineHeight:'1.5', marginBottom:'6px' });
         apiHelp.textContent = 'With the API on, the review looks up the categories and takes the domains out of the profile for you. It uses the API token saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.';
         const apiBox = css(mk('div', { id:'ct-nrd-api' }), { display:'flex', flexDirection:'column', gap:'6px' });
+        const smallBtn = { padding:'2px 8px', fontSize:'11px', border:'1px solid #c0c8f0', borderRadius:'4px', background:'#fff', color:'#667eea', cursor:'pointer' };
         Object.keys(TENANT_TYPE_TO_KEY).forEach(type => {
-            const host = String(GM_getValue(TENANT_TYPE_TO_KEY[type], '') || '').trim();
-            const row = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap', fontSize:'12px' });
-            const lab = css(mk('label'), { display:'inline-flex', alignItems:'center', gap:'4px', minWidth:'200px' });
+            const host = nrdHostOf(type);
+            const row = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap', fontSize:'12px', padding:'6px 0', borderTop:'1px solid #f0f0f0' });
+            const lab = css(mk('label'), { display:'inline-flex', alignItems:'center', gap:'4px', minWidth:'200px', fontWeight:'bold' });
             const cb = mk('input', { type:'checkbox' });
             cb.dataset.nrdApi = type;
             cb.checked = !!nrdApiOn()[type];
-            cb.disabled = !host;
-            cb.onchange = () => { const on = nrdApiOn(); if (cb.checked) on[type] = true; else delete on[type]; GM_setValue(NRD_API_KEY, on); };
-            lab.append(cb, document.createTextNode(`${type}${host ? ' · ' + host : ' (no host set up)'}`));
-            const test = css(mk('button', { type:'button' }), { padding:'2px 8px', fontSize:'11px', border:'1px solid #c0c8f0', borderRadius:'4px', background:'#fff', color:'#667eea', cursor:'pointer' });
+            lab.append(cb, document.createTextNode(`${type}${host ? ' · ' + host : ''}`));
+            const test = css(mk('button', { type:'button' }), smallBtn);
             test.dataset.nrdApiTest = type;
             test.textContent = 'Test';
-            test.disabled = !host;
+            const addTok = css(mk('button', { type:'button' }), smallBtn);
+            addTok.dataset.nrdTokenAdd = type;
+            const status = css(mk('span'), { color:'#555', flex:'1 1 100%' });
+            status.dataset.nrdApiStatus = type;
             const res = css(mk('span'), { color:'#555', flex:'1 1 100%' });
             res.dataset.nrdApiResult = type;
-            test.onclick = async () => { test.disabled = true; res.textContent = 'Testing…'; res.textContent = await nrdApiTest(type); test.disabled = false; };
-            row.append(lab, test, res);
+            // Token form: saves into the URL Lists Editor storage, so both tools share the same token
+            const form = css(mk('div'), { display:'none', flex:'1 1 100%', gap:'6px', flexWrap:'wrap', alignItems:'center' });
+            const field = (key, type2, placeholder, width) => {
+                const i = css(mk('input', { type: type2, placeholder }), { padding:'4px', fontSize:'12px', border:'1px solid #ccc', borderRadius:'4px', width });
+                i.dataset[key] = type;
+                return i;
+            };
+            const tokIn = field('nrdTokenInput', 'password', 'API token (v2)', '200px');
+            const daysIn = field('nrdTokenDays', 'number', 'Valid for (days)', '110px');
+            daysIn.value = '90';
+            daysIn.min = '1';
+            const passIn = field('nrdTokenPass', 'password', 'Passphrase to encrypt it', '160px');
+            const saveTok = css(mk('button', { type:'button' }), Object.assign({}, smallBtn, { background:'#667eea', color:'#fff', border:'none' }));
+            saveTok.dataset.nrdTokenSave = type;
+            saveTok.textContent = 'Save token';
+            const formHelp = css(mk('div'), { flex:'1 1 100%', fontSize:'11px', color:'#777' });
+            formHelp.textContent = 'The token is encrypted in this browser with your passphrase and shared with the URL Lists Editor. You enter the passphrase once per browser session.';
+            form.append(tokIn, daysIn, passIn, saveTok, formHelp);
+
+            const refresh = (extra) => {
+                const bridge = nrdBridge();
+                let text, canToken = false;
+                if (!bridge) text = 'Turn on the URL Lists Editor in the toolbar settings (Tools) to use the API.';
+                else if (!host) text = 'No host set up for this tenant in the URL Lists Editor.';
+                else if (!bridge.hasToken(host)) { text = 'No API token saved.'; canToken = true; }
+                else {
+                    const exp = bridge.tokenExpiry(host);
+                    text = `Token saved${exp ? ', valid until ' + nrdDate(exp) : ''}.`;
+                    canToken = true;
+                }
+                if (bridge && host) text += cb.checked ? ' API on.' : ' API off.';
+                status.textContent = text + (extra ? ' ' + extra : '');
+                cb.disabled = test.disabled = !bridge || !host;
+                addTok.style.display = canToken ? '' : 'none';
+                addTok.textContent = bridge && host && bridge.hasToken(host) ? 'Replace token' : '+ Add token';
+            };
+            cb.onchange = () => {
+                const on = nrdApiOn();
+                if (cb.checked) on[type] = true; else delete on[type];
+                GM_setValue(NRD_API_KEY, on);
+                refresh(cb.checked ? `✔ The review can now use the API for ${type}.` : '');
+            };
+            test.onclick = () => nrdRun(test, 'Testing…', async () => { res.textContent = await nrdApiTest(type); });
+            addTok.onclick = () => { form.style.display = form.style.display === 'none' ? 'flex' : 'none'; };
+            saveTok.onclick = () => nrdRun(saveTok, 'Saving…', async () => {
+                const days = Math.round(Number(daysIn.value));
+                if (!tokIn.value.trim() || !passIn.value) { res.textContent = '⚠ Enter the token and a passphrase.'; return; }
+                if (!(days >= 1 && days <= 365)) { res.textContent = '⚠ Enter how many days the token is valid, 1 to 365.'; return; }
+                await nrdBridge().saveToken(host, tokIn.value.trim(), days * 24, passIn.value);
+                tokIn.value = passIn.value = '';
+                form.style.display = 'none';
+                refresh('✔ Token saved.');
+                res.textContent = 'Testing the token…';
+                res.textContent = await nrdApiTest(type);
+            });
+            refresh();
+            row.append(lab, test, addTok, status, form, res);
             apiBox.appendChild(row);
         });
         modal.append(hdr, help, rows, addBtn, saveBtn, msg, ruleTitle, ruleList, apiTitle, apiHelp, apiBox);
         document.body.append(overlay, modal);
+        if (focus === 'api') setTimeout(() => apiTitle.scrollIntoView({ block: 'start' }), 0);
 
         let current = null;   // the settings item as loaded: { nrdProfiles, id, spId, etag }
         const addRow = (p = { tenant: 'EMA', name: '' }) => {
@@ -24799,7 +24908,10 @@ Version 1.4.3:
         });
         nrdBtn.textContent = '⏰ Newly Registered Domains profiles';
         nrdBtn.title = 'The Destination Profiles whose domains are reviewed after 30 days, shared by the team';
-        nrdBtn.onclick = () => { if (spClient.siteUrl()) openNrdSettings(); };
+        nrdBtn.onclick = () => {
+            if (spClient.siteUrl()) openNrdSettings();
+            else nrdCheckResult.textContent = 'Connect to SharePoint first: save the site and list above.';
+        };
         // Checks right away, without waiting for the next automatic check (every 4 hours)
         const nrdCheckBtn = css(mk('button', { id:'ct-nrd-check-now', type:'button' }), {
             padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
@@ -24811,13 +24923,15 @@ Version 1.4.3:
         nrdCheckBtn.onclick = async () => {
             if (!api.isConfigured()) { nrdCheckResult.textContent = 'Connect to SharePoint first.'; return; }
             nrdCheckBtn.disabled = true;
-            nrdCheckResult.textContent = '⏳ Checking…';
+            nrdCheckBtn.textContent = '⏳ Checking…';
+            nrdCheckResult.textContent = '';
             const before = nrdCache();
             const res = await nrdCheck({ force: true });
             nrdCheckBtn.disabled = false;
+            nrdCheckBtn.textContent = '↺ Check now';
             if (!res || res === before) { nrdCheckResult.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
             const due = res.items.filter(i => Date.now() >= i.dueAt).length;
-            nrdCheckResult.textContent = `Newly Registered Domains: ${due} due for review, ${res.items.length - due} coming up. `;
+            nrdCheckResult.textContent = nrdSummary(res) + ' ';
             if (due) {
                 const link = css(mk('a', { href:'#' }), { color:'#667eea', fontWeight:'bold' });
                 link.dataset.nrdOpenReview = '1';
