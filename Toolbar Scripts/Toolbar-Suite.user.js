@@ -18065,6 +18065,8 @@ Version 1.4.3:
                 { label: 'Destination Profile — Destinations Added',   value: 'Destination Profile — Destinations Added',   color: '#20c997', schema: 'destination_profile' },
                 { label: 'Destination Profile — Destinations Removed', value: 'Destination Profile — Destinations Removed', color: '#fd7e14', schema: 'destination_profile' },
                 { label: 'Destination Profile Removed',                value: 'Destination Profile Removed',                color: '#dc3545', schema: 'destination_profile' },
+                // Written by the Newly Registered Domains review, not offered in the change type list
+                { label: 'Destination Profile — NRD review',           value: 'Destination Profile — NRD review',           color: '#ff8c00', schema: 'destination_profile', auto: true },
             ],
         },
         {
@@ -18217,6 +18219,7 @@ Version 1.4.3:
             const grp = document.createElement('optgroup');
             grp.label = group;
             items.forEach(s => {
+                if (s.auto && s.value !== selectedValue) return;
                 const opt = mk('option');
                 opt.value = s.value; opt.textContent = s.label;
                 if (s.value === selectedValue) opt.selected = true;
@@ -18285,7 +18288,8 @@ Version 1.4.3:
             let hasAny = false;
             SNIPPET_GROUPS.forEach(({ group, items }) => {
                 const groupMatch   = group.toLowerCase().includes(q);
-                const visibleItems = groupMatch ? items : items.filter(s => s.label.toLowerCase().includes(q));
+                const offered = items.filter(s => !s.auto);
+                const visibleItems = groupMatch ? offered : offered.filter(s => s.label.toLowerCase().includes(q));
                 if (!visibleItems.length) return;
                 hasAny = true;
                 const header = mk('li');
@@ -24056,8 +24060,162 @@ Version 1.4.3:
         banner.append(msg, btns);
     }
 
-    // The review list of due domains (filled in by the review section below)
-    function openNrdReview() {}
+    /* ── Review list ── */
+
+    const nrdKeyOf = (it) => `${it.tenantType}\n${it.profile}\n${String(it.domain).toLowerCase()}`;
+    const nrdDate = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
+
+    async function openNrdReview() {
+        document.getElementById('ct-nrd-review-overlay')?.remove();
+        document.getElementById('ct-nrd-review')?.remove();
+        const overlay = css(mk('div', { id:'ct-nrd-review-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.5)', zIndex:'1050010' });
+        const modal = css(mk('div', { id:'ct-nrd-review' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1050011', background:'#fff',
+            border:'1px solid #ccc', borderRadius:'10px', padding:'20px', width:'640px', maxWidth:'94vw', maxHeight:'86vh',
+            overflowY:'auto', fontFamily:'Arial, sans-serif', boxShadow:'0 6px 24px rgba(0,0,0,.25)', color:'#333', fontSize:'12px'
+        });
+        const close = () => { overlay.remove(); modal.remove(); };
+        overlay.onclick = close;
+        document.body.append(overlay, modal);
+        if (!nrdCache()) await nrdCheck({ force: true });
+        renderNrdReview(modal, close);
+    }
+
+    function renderNrdReview(modal, close, message) {
+        modal.textContent = '';
+        const items = (nrdCache() || {}).items || [];
+        const now = Date.now();
+        const due = items.filter(i => now >= i.dueAt);
+        const upcoming = items.filter(i => now < i.dueAt);
+        const btnStyle = (primary) => ({ padding:'6px 12px', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:'bold',
+            border: primary ? 'none' : '1px solid #c0c8f0', background: primary ? '#667eea' : '#fff', color: primary ? '#fff' : '#667eea' });
+
+        const hdr = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' });
+        const title = css(mk('div'), { fontSize:'15px', fontWeight:'bold' });
+        title.textContent = '⏰ Newly Registered Domains to review';
+        const x = css(mk('button', { type:'button' }), { background:'red', color:'#fff', border:'none', borderRadius:'4px', cursor:'pointer', padding:'4px 10px', fontWeight:'bold', fontSize:'18px', lineHeight:'1' });
+        x.textContent = '×';
+        x.onclick = close;
+        hdr.append(title, x);
+        const lead = css(mk('div'), { color:'#555', lineHeight:'1.5', marginBottom:'10px' });
+        lead.textContent = 'Check the category of each domain. Take the ones that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". Tick the ones still categorized as NRD and click "Keep 7 more days".';
+        const msg = css(mk('div', { id:'ct-nrd-review-msg' }), { minHeight:'16px', margin:'0 0 8px', fontWeight:'bold', color:'#8a5a00' });
+        msg.textContent = message || '';
+        modal.append(hdr, lead, msg);
+
+        const groupBy = (list, keyFn) => list.reduce((m, i) => { const k = keyFn(i); (m.get(k) || m.set(k, []).get(k)).push(i); return m; }, new Map());
+        const tenants = groupBy(due, i => i.tenantType);
+        if (!due.length) modal.appendChild(Object.assign(css(mk('div'), { color:'#2a7d4f', margin:'6px 0 10px' }), { textContent: '✔ Nothing is due for review.' }));
+        [...tenants.keys()].sort().forEach(type => {
+            const list = tenants.get(type);
+            const host = (list.find(i => i.host) || {}).host || '';
+            const g = css(mk('div'), { border:'1px solid #e8e8f0', borderRadius:'6px', marginBottom:'10px', overflow:'hidden' });
+            g.dataset.nrdTenantGroup = type || 'none';
+            const gh = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 10px', background:'#f8f8ff', fontWeight:'bold' });
+            gh.appendChild(Object.assign(mk('span'), { textContent: type ? `${type}${host ? ' · ' + host : ''}` : 'Tenant not recorded' }));
+            if (host) {
+                const open = css(mk('button', { type:'button' }), btnStyle(false));
+                open.dataset.nrdOpenTenant = '1';
+                open.textContent = '↗ Open Netskope';
+                open.onclick = () => GM_openInTab(`https://${host}/`, { active: true, insert: true });
+                gh.appendChild(open);
+            }
+            g.appendChild(gh);
+            groupBy(list, i => i.profile).forEach((rows, profile) => {
+                g.appendChild(Object.assign(css(mk('div'), { padding:'6px 10px 2px', color:'#667eea', fontWeight:'bold' }), { textContent: profile }));
+                rows.forEach(it => {
+                    const r = css(mk('label'), { display:'flex', alignItems:'center', gap:'8px', padding:'4px 10px', cursor:'pointer' });
+                    r.dataset.nrdItem = '1';
+                    r.dataset.domain = it.domain;
+                    r.dataset.state = 'due';
+                    const cb = mk('input', { type:'checkbox' });
+                    cb.dataset.nrdPick = nrdKeyOf(it);
+                    const dom = css(mk('span'), { fontFamily:'monospace', flex:'1', wordBreak:'break-all' });
+                    dom.textContent = it.domain;
+                    const meta = css(mk('span'), { color:'#777', whiteSpace:'nowrap' });
+                    meta.textContent = `${it.days} days · `;
+                    const tk = css(mk('a', { href: `/nav_to.do?uri=task.do?sysparm_query=number=${encodeURIComponent(it.ticket)}`, target:'_blank' }), { color:'#0066cc' });
+                    tk.dataset.nrdTicket = it.ticket;
+                    tk.textContent = it.ticket;
+                    tk.onclick = (e) => e.stopPropagation();
+                    meta.appendChild(tk);
+                    const cat = css(mk('button', { type:'button', title:'Opens the Netskope URL lookup for this domain' }), Object.assign(btnStyle(false), { padding:'2px 8px', fontSize:'11px' }));
+                    cat.dataset.nrdCategory = '1';
+                    cat.textContent = '🔍 Check category';
+                    cat.onclick = (e) => { e.preventDefault(); GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${it.domain.replace(/^\*\./, '')}`, { active: true, insert: true }); };
+                    r.append(cb, dom, meta, cat);
+                    g.appendChild(r);
+                });
+            });
+            modal.appendChild(g);
+        });
+
+        const up = mk('details', { id:'ct-nrd-upcoming' });
+        up.appendChild(Object.assign(css(mk('summary'), { cursor:'pointer', fontWeight:'bold', margin:'4px 0' }), { textContent: `Coming up (${upcoming.length})` }));
+        upcoming.forEach(it => {
+            const r = css(mk('div'), { padding:'2px 10px', color:'#555' });
+            r.dataset.nrdItem = '1';
+            r.dataset.domain = it.domain;
+            r.dataset.state = 'upcoming';
+            r.textContent = `${nrdDate(it.dueAt)} · ${it.domain} · ${it.profile}${it.tenantType ? ' (' + it.tenantType + ')' : ''} · ${it.ticket}`;
+            up.appendChild(r);
+        });
+        modal.appendChild(up);
+
+        const foot = css(mk('div'), { display:'flex', gap:'6px', flexWrap:'wrap', marginTop:'12px' });
+        const removedBtn = css(mk('button', { id:'ct-nrd-mark-removed', type:'button' }), btnStyle(true));
+        removedBtn.textContent = '✔ Mark as removed';
+        const keepBtn = css(mk('button', { id:'ct-nrd-keep', type:'button' }), btnStyle(false));
+        keepBtn.textContent = `⏳ Keep ${NRD_KEEP_DAYS} more days`;
+        const again = css(mk('button', { id:'ct-nrd-review-check', type:'button' }), btnStyle(false));
+        again.textContent = '↺ Check now';
+        const settingsBtn = css(mk('button', { type:'button' }), Object.assign(btnStyle(false), { marginLeft:'auto' }));
+        settingsBtn.textContent = '⚙ Profiles';
+        settingsBtn.onclick = () => openNrdSettings();
+        foot.append(removedBtn, keepBtn, again, settingsBtn);
+        modal.appendChild(foot);
+
+        const picked = () => [...modal.querySelectorAll('[data-nrd-pick]')].filter(c => c.checked).map(c => due.find(i => nrdKeyOf(i) === c.dataset.nrdPick)).filter(Boolean);
+        const run = async (kind) => {
+            const list = picked();
+            if (!list.length) { msg.textContent = 'Tick the domains first.'; return; }
+            if (connState !== 'ONLINE') { msg.textContent = 'The tracker is not connected to SharePoint: open it and try again when it is online.'; return; }
+            [removedBtn, keepBtn, again].forEach(b => { b.disabled = true; });
+            msg.textContent = 'Saving…';
+            const text = await nrdApply(kind, list);
+            renderNrdReview(modal, close, text);
+        };
+        removedBtn.onclick = () => run('removed');
+        keepBtn.onclick = () => run('kept');
+        again.onclick = async () => { again.disabled = true; await nrdCheck({ force: true }); renderNrdReview(modal, close, '✔ Checked again.'); };
+    }
+
+    // Logs the outcome in each domain's original ticket, after checking nobody did it in the meantime.
+    async function nrdApply(kind, list) {
+        await nrdCheck({ force: true });
+        const fresh = new Set(((nrdCache() || {}).items || []).map(nrdKeyOf));
+        const still = list.filter(i => fresh.has(nrdKeyOf(i)));
+        const gone = list.filter(i => !fresh.has(nrdKeyOf(i)));
+        const groups = new Map();
+        still.forEach(i => { const k = `${i.ticket}\n${i.tenantType}\n${i.profile}`; (groups.get(k) || groups.set(k, []).get(k)).push(i); });
+        for (const items of groups.values()) {
+            const first = items[0];
+            const tenant = first.tenantType ? { type: first.tenantType, host: first.host || '' } : null;
+            const fields = { profileName: first.profile, destinations: items.map(i => i.domain).join('\n') };
+            const days = Math.max(...items.map(i => i.days));
+            if (kind === 'removed') {
+                await addEntry(first.ticket, 'Destination Profile — Destinations Removed', fields, `NRD review: removed after ${days} days.`, { tenant });
+            } else {
+                await addEntry(first.ticket, NRD_REVIEW_TYPE, Object.assign(fields, { outcome: 'kept', category: '' }),
+                    `NRD review: kept ${NRD_KEEP_DAYS} more days, still Newly Registered Domain`, { tenant });
+            }
+        }
+        await nrdCheck({ force: true });
+        const parts = [];
+        if (still.length) parts.push(`✔ ${still.length} ${still.length === 1 ? 'domain' : 'domains'} ${kind === 'removed' ? 'marked as removed' : `kept ${NRD_KEEP_DAYS} more days`}.`);
+        if (gone.length) parts.push(`Already done by someone else: ${gone.map(i => i.domain).join(', ')}.`);
+        return parts.join(' ');
+    }
 
     function openNrdSettings() {
         document.getElementById('ct-nrd-settings-overlay')?.remove();
