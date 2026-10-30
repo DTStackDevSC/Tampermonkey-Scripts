@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.12.0
+// @version      2.13.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.12.0';
-    const CHANGELOG = `Version 2.12.0:
+   const SCRIPT_VERSION = '2.13.0';
+    const CHANGELOG = `Version 2.13.0:
+- Change Tracker: an expired SharePoint sign in is renewed by itself in a background tab, so the "Open SharePoint to sign in" banner shows much less often. Configure has a "🧪 Test session renewal" button.
+
+Version 2.12.0:
 - NS Policies Toolkit: Bulk add groups locks the page while it runs, so a stray click or key cannot get in the way. Pause unlocks it.
 
 Version 2.11.0:
@@ -17625,8 +17628,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.2';
-    const CHANGELOG = `Version 2.3.2:
+    const SCRIPT_VERSION = '2.4.0';
+    const CHANGELOG = `Version 2.4.0:
+- When SharePoint refuses a request because your sign in expired, the tracker now renews it by itself: it opens the SharePoint site in a background tab, waits until SharePoint answers, closes the tab and carries on. You only see the banner when Microsoft asks you to sign in (the tab then stays open for you) or when you really have no access. This happens at most once every 15 minutes.
+- New "🧪 Test session renewal" button in Configure, with a line that shows how often the sign in was renewed by itself and the last failure.
+
+Version 2.3.2:
 - The small "📋 Copy domains" button on each entry now turns green and shows how many values were copied.
 
 Version 2.3.1:
@@ -19007,13 +19014,15 @@ Version 1.4.3:
                 hadSuccess = true;
                 digest = null;
                 closeTab();
-                saveRenewRecord({ count: (renewRecord().count || 0) + 1, lastOkAt: Date.now(), lastAnswerAt: Date.now() });
+                // A test from the settings is not counted: the record is there to see how often it really happens
+                saveRenewRecord(manual ? { lastTestAt: Date.now(), lastAnswerAt: Date.now() }
+                    : { count: (renewRecord().count || 0) + 1, lastOkAt: Date.now(), lastAnswerAt: Date.now() });
                 return (lastRenewal = { ok: true, kind: 'renewed', ms, manual });
             }
             // Still sent to the Microsoft sign in: leave the tab there for the user. Anything else: close it.
             const kind = last && last.kind === 'session' ? 'login' : last && last.kind === 'forbidden' ? 'forbidden' : 'network';
             if (kind !== 'login') closeTab();
-            saveRenewRecord({ lastFailAt: Date.now(), lastFailKind: kind });
+            saveRenewRecord(manual ? { lastTestAt: Date.now() } : { lastFailAt: Date.now(), lastFailKind: kind });
             return (lastRenewal = { ok: false, kind, ms, manual, tabOpen: kind === 'login' && !!tab });
         }
 
@@ -23716,6 +23725,8 @@ Version 1.4.3:
                         'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
                         'Session expired: open SharePoint in another tab and sign in. Your changes wait on this computer and are sent when you come back to the ticket.',
                         "Can't open the SharePoint list: an expired sign in looks the same as missing access. Click \"Open SharePoint to sign in\", sign in in that tab, then click ↺. If it still fails, ask the owner of the SharePoint site to give you access to the list.",
+                        'When SharePoint refuses a request, the tracker first opens the site in a background tab: if your company sign in renews it with no typing, the tab closes by itself and the tracker carries on. This happens at most once every 15 minutes. If Microsoft asks you to sign in, the tab stays open for you.',
+                        '"🧪 Test session renewal" in Configure runs that renewal on demand and shows how often it was needed.',
                         'Each entry shows who created it and who edited it last.',
                         'While SharePoint is saving, a spinning wheel covers the form, entry or window you are working on, so nothing is clicked twice.'
                     ]);
@@ -23954,6 +23965,49 @@ Version 1.4.3:
             borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif', lineHeight:'1.6'
         });
         modal.appendChild(checklist);
+
+        // SharePoint sign in: how often it was renewed by itself, and a test of that renewal
+        const renewBox = css(mk('div', { id:'ct-setup-renewal' }), {
+            margin:'0 0 14px', padding:'8px 10px', background:'#f8f8ff', border:'1px solid #d0d0f0',
+            borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif', lineHeight:'1.5'
+        });
+        const renewLog = css(mk('div', { id:'ct-setup-renewal-log' }), { color:'#555', marginBottom:'6px' });
+        const renewBtn = css(mk('button', { id:'ct-setup-test-renewal', type:'button' }), {
+            padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
+            cursor:'pointer', fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif'
+        });
+        renewBtn.textContent = '🧪 Test session renewal';
+        renewBtn.title = 'Opens the saved SharePoint site in a background tab, waits until SharePoint answers and closes the tab, as the tracker does by itself when the sign in expired';
+        const renewResult = css(mk('div', { id:'ct-setup-renewal-result' }), { marginTop:'6px', color:'#333' });
+        renewBox.append(renewLog, renewBtn, renewResult);
+        modal.appendChild(renewBox);
+
+        function renderRenewLog() {
+            const rec = spClient.renewRecord();
+            const when = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+            const FAIL = { login: 'sign in needed', forbidden: 'no access', network: 'SharePoint did not answer' };
+            const parts = [rec.count ? `Sign in renewed by itself ${rec.count} ${rec.count === 1 ? 'time' : 'times'}, last on ${when(rec.lastOkAt)}`
+                : 'The sign in has not needed renewing yet'];
+            if (rec.lastFailAt) parts.push(`last failure ${when(rec.lastFailAt)}: ${FAIL[rec.lastFailKind] || rec.lastFailKind}`);
+            if (rec.lastAnswerAt) parts.push(`SharePoint last answered ${when(rec.lastAnswerAt)}`);
+            renewLog.textContent = parts.join(' · ') + '.';
+        }
+        renderRenewLog();
+
+        renewBtn.onclick = async () => {
+            if (!spClient.siteUrl()) { renewResult.textContent = 'Save the site first: the test uses the saved SharePoint site.'; return; }
+            renewBtn.disabled = true;
+            renewResult.textContent = '⏳ Testing… the SharePoint site opens in a background tab, for 30 seconds at most.';
+            const r = await spClient.renewSession({ manual: true });
+            const secs = Math.max(1, Math.round(r.ms / 1000));
+            renewResult.textContent = r.ok ? `✔ Renewed in ${secs} s, the tab closed by itself.`
+                : r.kind === 'login' ? '🔒 Microsoft asks you to sign in: do it in the SharePoint tab that opened, then test again.'
+                : r.kind === 'forbidden' ? '⛔ You are signed in, but SharePoint refused access to this site. The tab was closed.'
+                : '⚠ SharePoint did not answer within 30 seconds. The tab was closed.';
+            renewBtn.disabled = false;
+            renderRenewLog();
+            if (r.ok && ['SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) attemptReconnect(getTicketNumber(), false);
+        };
 
         let checkPassedFor = null;   // "site|list" of the last check that passed
 

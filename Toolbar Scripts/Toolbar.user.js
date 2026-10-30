@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.12.0
+// @version      2.13.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.12.0';
-    const CHANGELOG = `Version 2.12.0:
+   const SCRIPT_VERSION = '2.13.0';
+    const CHANGELOG = `Version 2.13.0:
+- Change Tracker: an expired SharePoint sign in is renewed by itself in a background tab, so the "Open SharePoint to sign in" banner shows much less often. Configure has a "🧪 Test session renewal" button.
+
+Version 2.12.0:
 - NS Policies Toolkit: Bulk add groups locks the page while it runs, so a stray click or key cannot get in the way. Pause unlocks it.
 
 Version 2.11.0:
@@ -17625,8 +17628,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.3.2';
-    const CHANGELOG = `Version 2.3.2:
+    const SCRIPT_VERSION = '2.4.0';
+    const CHANGELOG = `Version 2.4.0:
+- When SharePoint refuses a request because your sign in expired, the tracker now renews it by itself: it opens the SharePoint site in a background tab, waits until SharePoint answers, closes the tab and carries on. You only see the banner when Microsoft asks you to sign in (the tab then stays open for you) or when you really have no access. This happens at most once every 15 minutes.
+- New "🧪 Test session renewal" button in Configure, with a line that shows how often the sign in was renewed by itself and the last failure.
+
+Version 2.3.2:
 - The small "📋 Copy domains" button on each entry now turns green and shows how many values were copied.
 
 Version 2.3.1:
@@ -18964,7 +18971,60 @@ Version 1.4.3:
         let digestExpires = 0;
         let hadSuccess = false;   // a 403 after a success means the session changed
         let onWait = null;
+        let onRenew = null;
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+        // The tracker holds no token: it uses the browser's SharePoint sign in. When that expired, opening the
+        // site once usually renews it with no typing (single sign on), so that is tried in a background tab.
+        const RENEW_KEY   = 'changeTrackerSpRenewal';
+        const RENEW_EVERY = 15 * 60 * 1000;   // at most one automatic renewal per 15 minutes, across tabs
+        const RENEW_WAIT  = 30000;
+        const RENEW_POLL  = 2000;
+        let renewInFlight = null;
+        let lastRenewal   = null;
+        let answerSavedAt = 0;
+        const renewRecord = () => GM_getValue(RENEW_KEY, null) || {};
+        const saveRenewRecord = (patch) => GM_setValue(RENEW_KEY, Object.assign({}, renewRecord(), patch));
+
+        function renewSession({ manual = false } = {}) {
+            if (!renewInFlight) renewInFlight = doRenew(manual).finally(() => { renewInFlight = null; });
+            return renewInFlight;
+        }
+
+        async function doRenew(manual) {
+            if (!siteUrl()) return { ok: false, kind: 'notConfigured', ms: 0, manual };
+            const rec = renewRecord();
+            if (!manual && rec.lastAutoAt && Date.now() - rec.lastAutoAt < RENEW_EVERY) {
+                return (lastRenewal = { ok: false, kind: 'throttled', ms: 0, manual });
+            }
+            if (!manual) saveRenewRecord({ lastAutoAt: Date.now() });
+            if (onRenew) onRenew(manual);
+            const t0 = Date.now();
+            let tab = null;
+            try { tab = GM_openInTab(siteUrl() + '/', { active: false, insert: true, setParent: true }) || null; } catch (e) { tab = null; }
+            const closeTab = () => { try { if (tab && typeof tab.close === 'function') tab.close(); } catch (e) { /* already closed */ } };
+            let last = null;
+            while (Date.now() - t0 < RENEW_WAIT) {
+                await wait(RENEW_POLL);
+                last = classify(await raw('GET', `${siteUrl()}/_api/web/currentuser?$select=Id`, { Accept: SP_ACCEPT }));
+                if (last.ok) break;
+            }
+            const ms = Date.now() - t0;
+            if (last && last.ok) {
+                hadSuccess = true;
+                digest = null;
+                closeTab();
+                // A test from the settings is not counted: the record is there to see how often it really happens
+                saveRenewRecord(manual ? { lastTestAt: Date.now(), lastAnswerAt: Date.now() }
+                    : { count: (renewRecord().count || 0) + 1, lastOkAt: Date.now(), lastAnswerAt: Date.now() });
+                return (lastRenewal = { ok: true, kind: 'renewed', ms, manual });
+            }
+            // Still sent to the Microsoft sign in: leave the tab there for the user. Anything else: close it.
+            const kind = last && last.kind === 'session' ? 'login' : last && last.kind === 'forbidden' ? 'forbidden' : 'network';
+            if (kind !== 'login') closeTab();
+            saveRenewRecord(manual ? { lastTestAt: Date.now() } : { lastFailAt: Date.now(), lastFailKind: kind });
+            return (lastRenewal = { ok: false, kind, ms, manual, tabOpen: kind === 'login' && !!tab });
+        }
 
         function siteUrl()   { return String(GM_getValue(SP_SITE_KEY, '') || '').trim().replace(/\/+$/, ''); }
         function listTitle() { return String(GM_getValue(SP_LIST_KEY, '') || '').trim() || SP_DEFAULT_LIST; }
@@ -19049,13 +19109,19 @@ Version 1.4.3:
             const refused = refusal(opts, url);
             if (refused) { console.warn('CT SP:', refused, url); return { ok: false, status: 0, kind: 'bad', data: null, message: refused, etag: null }; }
             const isWrite = opts.method !== 'GET';
-            let digestRetried = false, netRetried = false, throttleTries = 0;
+            let digestRetried = false, netRetried = false, throttleTries = 0, renewTried = false;
+            const signInFailed = kind => kind === 'session' || kind === 'forbidden';
             for (;;) {
                 const headers = { Accept: SP_ACCEPT };
                 if (isWrite) {
                     if (!digest || Date.now() >= digestExpires) {
-                        const d = await refreshDigest();
-                        if (!d.ok) return d.kind === 'digest' ? { ...d, kind: 'session' } : d;
+                        let d = await refreshDigest();
+                        if (!d.ok && d.kind === 'digest') d = { ...d, kind: 'session' };
+                        if (!d.ok && signInFailed(d.kind) && !renewTried) {
+                            renewTried = true;
+                            if ((await renewSession()).ok) continue;
+                        }
+                        if (!d.ok) return d;
                     }
                     headers['X-RequestDigest'] = digest;
                     headers['Content-Type'] = SP_VERBOSE;
@@ -19063,9 +19129,21 @@ Version 1.4.3:
                 if (opts.xMethod) headers['X-HTTP-Method'] = opts.xMethod;
                 if (opts.ifMatch) headers['IF-MATCH'] = opts.ifMatch;
                 const res = classify(await raw(opts.method, url, headers, opts.body ? JSON.stringify(opts.body) : undefined));
-                if (res.ok) { hadSuccess = true; return res; }
+                if (res.ok) {
+                    hadSuccess = true;
+                    if (Date.now() - answerSavedAt > 60000) { answerSavedAt = Date.now(); saveRenewRecord({ lastAnswerAt: answerSavedAt }); }
+                    return res;
+                }
                 if (res.kind === 'digest' && !digestRetried) { digestRetried = true; digest = null; continue; }
+                if (res.kind === 'digest' && !renewTried) {
+                    renewTried = true;
+                    if ((await renewSession()).ok) continue;
+                }
                 if (res.kind === 'digest') return { ...res, kind: 'session' };
+                if (signInFailed(res.kind) && !renewTried) {
+                    renewTried = true;
+                    if ((await renewSession()).ok) continue;
+                }
                 if (res.kind === 'session') digest = null;
                 if (res.kind === 'network' && !netRetried) { netRetried = true; await wait(800); continue; }
                 if (res.kind === 'server' && res.retryAfter && throttleTries < 3) {
@@ -19083,10 +19161,12 @@ Version 1.4.3:
             return call({ method: 'GET', path: '/_api/web/currentuser' + qs({ $select: 'Id,Title,Email' }) });
         }
 
-        return { call, currentUser, siteUrl, listTitle, listPath, odataQuote, setOnWait: (fn) => { onWait = fn; } };
+        return { call, currentUser, siteUrl, listTitle, listPath, odataQuote, setOnWait: (fn) => { onWait = fn; },
+            renewSession, lastRenewal: () => lastRenewal, renewRecord, setOnRenew: (fn) => { onRenew = fn; } };
     })();
 
     spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
+    spClient.setOnRenew((manual) => { if (!manual) flashStatus('🔄 Renewing the SharePoint sign in in a background tab…', '#17a2b8', 6000); });
 
     /* ==========================================================
      *  ENTRY MAPPER  (tracker entry <-> SharePoint list item)
@@ -22801,6 +22881,9 @@ Version 1.4.3:
         const waiting = pendingCount(getTicketNumber());
         const waitingText = waiting ? ` · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync` : '';
         const msg = mk('span');
+        // The automatic renewal left the SharePoint tab on the Microsoft sign in
+        const lr = spClient.lastRenewal();
+        const signInTab = !!(lr && lr.kind === 'login' && lr.tabOpen);
 
         if (connState === 'OFFLINE') {
             css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
@@ -22811,7 +22894,9 @@ Version 1.4.3:
             banner.append(msg, btn);
         } else if (connState === 'SESSION_EXPIRED') {
             css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
-            msg.textContent = `🔒 SharePoint session expired${waitingText}`;
+            msg.textContent = signInTab
+                ? `🔒 SharePoint session expired${waitingText}. Sign in in the SharePoint tab that just opened, then click ↺.`
+                : `🔒 SharePoint session expired${waitingText}`;
             const open = button('Open SharePoint to sign in', 'ct-signin-btn', { background:'#ffc107', color:'#333' });
             open.onclick = () => window.open(spClient.siteUrl(), '_blank');
             const retry = button('↺', 'ct-reconnect-btn', { background:'transparent', color:'#856404' });
@@ -22830,7 +22915,9 @@ Version 1.4.3:
             // SharePoint answers 403 to the first request when the sign in expired, the same answer as a real
             // lack of access: so the user is sent to sign in first, and to the site owner only after that.
             css(banner, { background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24' });
-            msg.textContent = `⛔ Can't open the SharePoint list${waitingText}. Your sign in may have expired: open SharePoint in another tab, sign in, then click ↺. If it still fails, ask the site owner for access.`;
+            msg.textContent = signInTab
+                ? `⛔ Can't open the SharePoint list${waitingText}. Sign in in the SharePoint tab that just opened, then click ↺. If it still fails, ask the site owner for access.`
+                : `⛔ Can't open the SharePoint list${waitingText}. Your sign in may have expired: open SharePoint in another tab, sign in, then click ↺. If it still fails, ask the site owner for access.`;
             const open = button('Open SharePoint to sign in', 'ct-signin-btn', { background:'#f5c6cb', color:'#721c24' });
             open.onclick = () => window.open(spClient.siteUrl(), '_blank');
             const retry = button('↺', 'ct-reconnect-btn', { background:'transparent', color:'#721c24' });
@@ -23638,6 +23725,8 @@ Version 1.4.3:
                         'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
                         'Session expired: open SharePoint in another tab and sign in. Your changes wait on this computer and are sent when you come back to the ticket.',
                         "Can't open the SharePoint list: an expired sign in looks the same as missing access. Click \"Open SharePoint to sign in\", sign in in that tab, then click ↺. If it still fails, ask the owner of the SharePoint site to give you access to the list.",
+                        'When SharePoint refuses a request, the tracker first opens the site in a background tab: if your company sign in renews it with no typing, the tab closes by itself and the tracker carries on. This happens at most once every 15 minutes. If Microsoft asks you to sign in, the tab stays open for you.',
+                        '"🧪 Test session renewal" in Configure runs that renewal on demand and shows how often it was needed.',
                         'Each entry shows who created it and who edited it last.',
                         'While SharePoint is saving, a spinning wheel covers the form, entry or window you are working on, so nothing is clicked twice.'
                     ]);
@@ -23876,6 +23965,49 @@ Version 1.4.3:
             borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif', lineHeight:'1.6'
         });
         modal.appendChild(checklist);
+
+        // SharePoint sign in: how often it was renewed by itself, and a test of that renewal
+        const renewBox = css(mk('div', { id:'ct-setup-renewal' }), {
+            margin:'0 0 14px', padding:'8px 10px', background:'#f8f8ff', border:'1px solid #d0d0f0',
+            borderRadius:'4px', fontSize:'12px', fontFamily:'Arial, sans-serif', lineHeight:'1.5'
+        });
+        const renewLog = css(mk('div', { id:'ct-setup-renewal-log' }), { color:'#555', marginBottom:'6px' });
+        const renewBtn = css(mk('button', { id:'ct-setup-test-renewal', type:'button' }), {
+            padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
+            cursor:'pointer', fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif'
+        });
+        renewBtn.textContent = '🧪 Test session renewal';
+        renewBtn.title = 'Opens the saved SharePoint site in a background tab, waits until SharePoint answers and closes the tab, as the tracker does by itself when the sign in expired';
+        const renewResult = css(mk('div', { id:'ct-setup-renewal-result' }), { marginTop:'6px', color:'#333' });
+        renewBox.append(renewLog, renewBtn, renewResult);
+        modal.appendChild(renewBox);
+
+        function renderRenewLog() {
+            const rec = spClient.renewRecord();
+            const when = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+            const FAIL = { login: 'sign in needed', forbidden: 'no access', network: 'SharePoint did not answer' };
+            const parts = [rec.count ? `Sign in renewed by itself ${rec.count} ${rec.count === 1 ? 'time' : 'times'}, last on ${when(rec.lastOkAt)}`
+                : 'The sign in has not needed renewing yet'];
+            if (rec.lastFailAt) parts.push(`last failure ${when(rec.lastFailAt)}: ${FAIL[rec.lastFailKind] || rec.lastFailKind}`);
+            if (rec.lastAnswerAt) parts.push(`SharePoint last answered ${when(rec.lastAnswerAt)}`);
+            renewLog.textContent = parts.join(' · ') + '.';
+        }
+        renderRenewLog();
+
+        renewBtn.onclick = async () => {
+            if (!spClient.siteUrl()) { renewResult.textContent = 'Save the site first: the test uses the saved SharePoint site.'; return; }
+            renewBtn.disabled = true;
+            renewResult.textContent = '⏳ Testing… the SharePoint site opens in a background tab, for 30 seconds at most.';
+            const r = await spClient.renewSession({ manual: true });
+            const secs = Math.max(1, Math.round(r.ms / 1000));
+            renewResult.textContent = r.ok ? `✔ Renewed in ${secs} s, the tab closed by itself.`
+                : r.kind === 'login' ? '🔒 Microsoft asks you to sign in: do it in the SharePoint tab that opened, then test again.'
+                : r.kind === 'forbidden' ? '⛔ You are signed in, but SharePoint refused access to this site. The tab was closed.'
+                : '⚠ SharePoint did not answer within 30 seconds. The tab was closed.';
+            renewBtn.disabled = false;
+            renderRenewLog();
+            if (r.ok && ['SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) attemptReconnect(getTicketNumber(), false);
+        };
 
         let checkPassedFor = null;   // "site|list" of the last check that passed
 
