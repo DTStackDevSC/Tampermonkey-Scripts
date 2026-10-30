@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.10.0
+// @version      2.10.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.10.0';
-    const CHANGELOG = `Version 2.10.0:
+   const SCRIPT_VERSION = '2.10.1';
+    const CHANGELOG = `Version 2.10.1:
+- NS Policies Toolkit: Bulk add groups shows the progress of Check, with the group it is looking up and how long Netskope takes.
+
+Version 2.10.0:
 - NS Policies Toolkit: new "👥 Bulk add groups" on the Real-time Protection policy list. Paste pairs of groups and the toolkit adds the second group to every policy that holds the first one, saving them one by one. Click Apply Changes yourself at the end.
 
 Version 2.9.2:
@@ -26761,8 +26764,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.34.0';
-    const CHANGELOG = `Version 1.34:
+    const SCRIPT_VERSION = '1.34.1';
+    const CHANGELOG = `Version 1.34.1:
+- Bulk add groups: Check now shows its progress, for example "Looking up the groups to add: 37 of 130", with a bar and the group it is on. When Netskope takes 10 seconds or more for one group, it shows how long it has been waiting.
+
+Version 1.34:
 - New "👥 Bulk add groups" button on the Real-time Protection policy list: paste pairs of groups, check which policies hold the first group, and the toolkit adds the second group to each of them and saves them one by one. Click Apply Changes yourself at the end.
 - The run pauses by itself when the Netskope tab is hidden, can be paused, stopped or continued after a reload, and ends with a summary you can copy.
 
@@ -28517,7 +28523,7 @@ Version 1.16:
                             { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', borderTop: i ? '1px solid #f0f0f0' : 'none' }));
                     });
                     body.appendChild(card);
-                    caption(body, 'After Check: which policies each pair touches. Lines with a problem are left out, and policies that already have the group are skipped.');
+                    caption(body, 'After Check: which policies each pair touches. Lines with a problem are left out, and policies that already have the group are skipped. While Check runs, a bar shows which group it is looking up and how long Netskope takes.');
 
                     const run = document.createElement('div');
                     Object.assign(run.style, { border: '1px solid #d5d5d5', borderTop: '4px solid #005587', borderRadius: '6px', padding: '8px 12px',
@@ -34633,6 +34639,9 @@ Version 1.16:
             .spinner { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px;
                 border: 2px solid #c8d6e5; border-top-color: #005587; border-radius: 50%; animation: spin .8s linear infinite; }
             @keyframes spin { to { transform: rotate(360deg); } }
+            .bar { height: 6px; margin-top: 8px; background: #e6e6e6; border-radius: 3px; overflow: hidden; }
+            .bar[hidden] { display: none; }
+            .bar > div { height: 100%; width: 0; background: #005587; transition: width .2s; }
             .table { width: 100%; margin-top: 14px; border-collapse: collapse; font-size: 12px; }
             .table th, .table td { text-align: left; padding: 6px 8px; border-top: 1px solid #f0f0f0; vertical-align: top; word-break: break-word; }
             .table th { background: #f7f7f7; font-weight: 700; }
@@ -34665,6 +34674,7 @@ Version 1.16:
                         <textarea id="bg-pairs" data-bg="pairs" spellcheck="false"></textarea>
                         <div class="warning" data-bg="warning"></div>
                         <div class="note" data-bg="note"></div>
+                        <div class="bar" data-bg="check-progress" hidden><div data-bg="check-bar"></div></div>
                         <div data-bg="results"></div>
                     </main>
                     <footer class="footer">
@@ -34718,11 +34728,28 @@ Version 1.16:
         bg.rows = bg.jobs = null;
         bgEl('results').textContent = '';
         bgUpdateButtons();
-        bgNote('Loading the policies and looking up the groups to add…', '', true);
+        bgNote('Loading the policies…', '', true);
+        const progress = bgEl('check-progress');
+        let ticker = null;
         try {
             const list = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
             const lookup = {};
-            for (const b of [...new Set(pairs.map(p => p.b))]) lookup[b] = await smSearch('group', b);
+            const toFind = [...new Set(pairs.map(p => p.b))];
+            progress.hidden = false;
+            for (let i = 0; i < toFind.length; i++) {
+                const b = toFind[i], t0 = Date.now();
+                const show = () => {
+                    const secs = Math.round((Date.now() - t0) / 1000);
+                    bgNote(`Looking up the groups to add: ${i + 1} of ${toFind.length} (${b})` +
+                        (secs >= 10 ? `. Waiting for Netskope for ${secs} s…` : '…'), '', true);
+                };
+                bgEl('check-bar').style.width = `${Math.round((i / toFind.length) * 100)}%`;
+                show();
+                // Shows how long Netskope takes, so a stuck lookup can be told from a slow one
+                ticker = setInterval(show, 1000);
+                lookup[b] = await smSearch('group', b);
+                clearInterval(ticker);
+            }
             const plan = bgBuildPlan(pairs, list, lookup);
             bg.rows = plan.rows.concat(errors.map(e => ({ a: e.text, b: '', line: e.line, status: 'lineError',
                 policies: [], skipped: [], reason: e.reason }))).sort((x, y) => x.line - y.line);
@@ -34732,6 +34759,8 @@ Version 1.16:
         } catch (e) {
             bgNote(e.message, 'err');
         } finally {
+            clearInterval(ticker);
+            progress.hidden = true;
             bg.busy = false;
             bgUpdateButtons();
         }
