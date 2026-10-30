@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.13.0
+// @version      2.14.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.13.0';
-    const CHANGELOG = `Version 2.13.0:
+   const SCRIPT_VERSION = '2.14.0';
+    const CHANGELOG = `Version 2.14.0:
+- Change Tracker: reminders and a review list for the Newly Registered Domains allowed in Destination Profiles, for the whole team, with an optional Netskope API check that also takes them out of the profile. Every new entry records its Netskope tenant.
+- URL List Editor: its API token can also serve the Change Tracker reviews.
+
+Version 2.13.0:
 - Change Tracker: an expired SharePoint sign in is renewed by itself in a background tab, so the "Open SharePoint to sign in" banner shows much less often. Configure has a "🧪 Test session renewal" button.
 
 Version 2.12.0:
@@ -11553,8 +11557,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.4';
-    const CHANGELOG = `Version 1.6.4:
+    const SCRIPT_VERSION = '1.6.5';
+    const CHANGELOG = `Version 1.6.5:
+- The API token saved here can also be used by the Change Tracker for its Newly Registered Domains reviews, when you turn that on there. It is only ever sent to your own Netskope tenants.
+
+Version 1.6.4:
 - Fixed a security issue where a URL List with a specially crafted name could run unwanted code on your page when the list was shown. List names are now always displayed as plain text.
 
 Version 1.6.3:
@@ -12796,6 +12803,7 @@ Version 1.4.1:
                         'Passphrase: encrypts your token with AES-256. You enter it once per browser session and the session stays unlocked until you close the tab or click Lock.',
                         'Forgot passphrase: the "Forgot Passphrase? Delete Token" option removes the encrypted token so you can save a new one with a fresh passphrase.',
                         'Token expiry: tokens nearing expiry show a yellow warning banner; expired tokens show a red banner with a click-to-update link.',
+                        'The Change Tracker can use the token saved here for its Newly Registered Domains reviews, when you turn the API on there. The token then also needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.',
                     ]);
                 }
             },
@@ -17676,8 +17684,15 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.0';
-    const CHANGELOG = `Version 2.4.0:
+    const SCRIPT_VERSION = '2.5.0';
+    const CHANGELOG = `Version 2.5.0:
+- New Newly Registered Domains review. When a domain added to a Newly Registered Domains Destination Profile reaches 30 days, everyone sees an orange dot on the Change Tracker icon and "⏰ N Newly Registered Domains are due for review".
+- "Review" lists them by tenant and profile, with links to check the category and to open Netskope. After taking them out of the profile, tick them and click "Mark as removed". For the ones still categorized as NRD, click "Keep 7 more days". Everything is logged in the ticket where they were added.
+- Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added to a list shared by the whole team, in Configure.
+- Optional, per tenant: the Netskope API (with the URL Lists Editor token) looks up the categories and takes the domains out of the profile for you, after you confirm.
+- Every new entry records the Netskope tenant of its ticket.
+
+Version 2.4.0:
 - When SharePoint refuses a request because your sign in expired, the tracker now renews it by itself: it opens the SharePoint site in a background tab, waits until SharePoint answers, closes the tab and carries on. You only see the banner when Microsoft asks you to sign in (the tab then stays open for you) or when you really have no access. This happens at most once every 15 minutes.
 - New "🧪 Test session renewal" button in Configure, with a line that shows how often the sign in was renewed by itself and the last failure.
 
@@ -23835,6 +23850,37 @@ Version 1.4.3:
                 }
             },
             {
+                icon: '⏰',
+                title: 'Newly Registered Domains',
+                buildContent: (body) => {
+                    lead(body, 'Domains allowed in a Newly Registered Domains Destination Profile are due for review 30 days after they were added, for the whole team.');
+                    body.appendChild(hrow([
+                        chip('⏰ 2 Newly Registered Domains are due for review', '#fff4e5', { color: '#8a5a00', border: '1px solid #ffc680' }),
+                        chip('Review', '#ff8c00'),
+                        chip('↺ Check now', 'transparent', { color: '#8a5a00', border: '1px solid #e0a800' })
+                    ]));
+                    caption(body, 'An orange dot on the Change Tracker icon and this banner show up when something is due. The tracker checks at most every 4 hours.');
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', overflow: 'hidden', margin: '10px 0 4px', fontFamily: 'Arial, sans-serif' });
+                    card.appendChild(hrow([span('EMA · tenant.goskope.com', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
+                        chip('↗ Open Netskope', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { padding: '6px 10px', margin: '0', background: '#f8f8ff', justifyContent: 'space-between' }));
+                    [['old-domain.com', '33 days · RITM0012345'], ['new-shop.net', '31 days · RITM0012399']].forEach(([d, meta]) => {
+                        card.appendChild(hrow([span('☐', { fontSize: '13px' }), span(d, { fontFamily: 'monospace', fontSize: '12px' }), span(meta, { fontSize: '11px', color: '#777' }),
+                            chip('🔍 Check category', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { padding: '4px 10px', margin: '0' }));
+                    });
+                    body.appendChild(card);
+                    body.appendChild(hrow([chip('✔ Mark as removed', '#667eea'), chip('⏳ Keep 7 more days', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' }),
+                        chip('🔌 Check with the API', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { margin: '8px 0 0 0' }));
+                    bullets(body, [
+                        'Check each category, take the domains that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". It is logged in the ticket where they were added.',
+                        'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
+                        'Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
+                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
+                        'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
+                    ]);
+                }
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent: (body) => {
@@ -24461,6 +24507,9 @@ Version 1.4.3:
             dom.textContent = r.item.domain;
             const cat = css(mk('span'), { color:'#555' });
             cat.textContent = r.categories == null ? 'Not checked: Netskope did not return a category' : (r.categories.join(', ') || 'No category');
+            // The profile this row changes, so a wrong name in the shared data is visible before applying
+            const prof = css(mk('span'), { color:'#667eea', fontSize:'11px' });
+            prof.textContent = `${r.item.profile} (${r.item.tenantType || 'tenant not recorded'})`;
             const warn = css(mk('span'), { color:'#dc3545', fontWeight:'bold', width:'100%' });
             const sync = () => {
                 r.action = sel.value;
@@ -24468,7 +24517,7 @@ Version 1.4.3:
             };
             sel.onchange = sync;
             sync();
-            row.append(sel, dom, cat, warn);
+            row.append(sel, dom, cat, prof, warn);
             box.appendChild(row);
         });
         if (plan.notTracked.length) {
@@ -24481,14 +24530,30 @@ Version 1.4.3:
             fontSize:'12px', fontWeight:'bold', border:'none', background:'#667eea', color:'#fff' });
         apply.textContent = 'Apply in Netskope and log it';
         apply.disabled = !plan.rows.length;
+        // A first click shows exactly which profiles change; the second one applies
+        const confirmBox = css(mk('div', { id:'ct-nrd-api-confirm' }), { display:'none', marginTop:'8px', padding:'6px 8px', background:'#fff4e5',
+            border:'1px solid #ffc680', borderRadius:'4px', color:'#8a5a00', lineHeight:'1.5' });
+        let armed = false;
         apply.onclick = async () => {
+            if (!armed) {
+                const counts = new Map();
+                plan.rows.filter(r => r.action === 'remove').forEach(r => { const k = `${r.item.profile} (${r.item.tenantType || 'tenant not recorded'})`; counts.set(k, (counts.get(k) || 0) + 1); });
+                const kept = plan.rows.filter(r => r.action === 'keep').length;
+                confirmBox.textContent = (counts.size
+                    ? `This changes ${counts.size === 1 ? 'this profile' : 'these profiles'} in Netskope: ${[...counts].map(([k, n]) => `${k}, ${n} ${n === 1 ? 'domain' : 'domains'} removed`).join('; ')}.`
+                    : 'No profile is changed in Netskope.') + (kept ? ` ${kept} kept ${NRD_KEEP_DAYS} more days.` : '') + ' Click again to confirm.';
+                confirmBox.style.display = 'block';
+                apply.textContent = 'Confirm and apply';
+                armed = true;
+                return;
+            }
             apply.disabled = true;
             const msg = modal.querySelector('#ct-nrd-review-msg');
             if (msg) msg.textContent = 'Changing the profiles in Netskope…';
             const text = await nrdApiApply(plan);
             renderNrdReview(modal, close, text);
         };
-        box.appendChild(apply);
+        box.append(confirmBox, apply);
         const foot = modal.querySelector('#ct-nrd-mark-removed')?.parentElement;
         modal.insertBefore(box, foot || null);
     }

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.13.0
+// @version      2.14.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.13.0';
-    const CHANGELOG = `Version 2.13.0:
+   const SCRIPT_VERSION = '2.14.0';
+    const CHANGELOG = `Version 2.14.0:
+- Change Tracker: reminders and a review list for the Newly Registered Domains allowed in Destination Profiles, for the whole team, with an optional Netskope API check that also takes them out of the profile. Every new entry records its Netskope tenant.
+- URL List Editor: its API token can also serve the Change Tracker reviews.
+
+Version 2.13.0:
 - Change Tracker: an expired SharePoint sign in is renewed by itself in a background tab, so the "Open SharePoint to sign in" banner shows much less often. Configure has a "🧪 Test session renewal" button.
 
 Version 2.12.0:
@@ -452,7 +456,8 @@ Version 1.0.0:
         #highlighter-config-modal, #highlighterChangelogModal, #rowHighlighterHelpModal { color: #333333 !important; }
         #highlighter-config-modal input, #highlighter-config-modal select, #highlighter-config-modal textarea { background-color: #ffffff !important; color: #333333 !important; }
         /* Change Tracker */
-        #ct-sidebar, #ct-changelog-modal, #ct-edit-modal, #ct-setup-modal { color: #333333 !important; }
+        #ct-sidebar, #ct-changelog-modal, #ct-edit-modal, #ct-setup-modal, #ct-nrd-settings, #ct-nrd-review { color: #333333 !important; }
+        #ct-nrd-settings input, #ct-nrd-settings select, #ct-nrd-review input, #ct-nrd-review select { background-color: #ffffff !important; color: #333333 !important; }
         #ct-sidebar input, #ct-sidebar select, #ct-sidebar textarea,
         #ct-edit-modal input, #ct-edit-modal select, #ct-edit-modal textarea,
         #ct-setup-modal input, #ct-setup-modal select, #ct-setup-modal textarea { background-color: #ffffff !important; color: #333333 !important; }
@@ -3579,6 +3584,86 @@ Version 1.0.0:
         toolRegistry.set(config.id, config);
         scheduleRerender();
     }
+
+    /* ==========================================================
+     *  SUITE TENANTS
+     *  The Netskope tenant of a ServiceNow ticket, read from its Requesting Member Firm
+     *  ("Deloitte <region>"). Shared by the URL List Editor and the Change Tracker.
+     * ==========================================================*/
+
+    const REGION_TO_TENANT_TYPE = {
+        'Africa':                        'EMA',
+        //'Asia Pacific':                  'APAC', -- Uncomment when Tenant is confirmed
+        'Australia':                     'APAC',
+        'Austria':                       'EU',
+        'Belgium':                       'EU',
+        'Brazil':                        'AME',
+        'Canada':                        'AME',
+        'Caribbean and Bermuda Countries': 'AME',
+        'Central Europe':                'CE',
+        'Central Mediterranean':         'EU',
+        'Chile':                         'AME',
+        //'China':                         'APAC', -- Uncomment when Tenant is confirmed
+        'Cyprus':                        'EU',
+        'Denmark':                       'EU',
+        'DKU':                           'EMA',
+        'Finland':                       'EU',
+        'France':                        'CE',
+        'Germany':                       'CE',
+        //'Hong Kong':                     'APAC', -- Uncomment when Tenant is confirmed
+        'Iceland':                       'EU',
+        'Ireland':                       'EU',
+        'Israel':                        'EMA',
+        'Japan':                         'APAC',
+        'Korea':                         'APAC',
+        'Luxembourg':                    'EU',
+        'Mauritius':                     'APAC',
+        'Mexico':                        'AME',
+        'Middle East':                   'EU',
+        'Netherlands':                   'EU',
+        'New Zealand':                   'APAC',
+        'Nordics':                       'EU',
+        'North and South Europe':        'EU',
+        'Norway':                        'EU',
+        'Portugal':                      'CE',
+        'S-LATAM':                       'EMA',
+        'South Asia(India)':             'APAC',
+        'Southeast Asia':                'APAC',
+        'Spain':                         'EMA',
+        'Sweden':                        'EU',
+        'Switzerland':                   'EU',
+        'Taiwan':                        'APAC',
+        'Touche Tohmatsu Limited':       'AME',
+        'Turkey':                        'CE',
+        'United Kingdom':                'EU',
+        'United States':                 'AME',
+    };
+
+    // Maps tenant type abbreviation → GM storage key
+    const TENANT_TYPE_TO_KEY = {
+        'EMA': 'netskopeHost_EMA',
+        'EU':  'netskopeHost_EU',
+        'CE':  'netskopeHost_CE',
+        'APAC': 'netskopeHost_APAC',
+        'AME': 'netskopeHost_AME',
+    };
+
+    // Returns { type, host } (host '' when that tenant is not set up yet), or null when the ticket has no member firm.
+    function detectTicketTenant(doc) {
+        const selectors = ['input.form-control.element_reference_input', 'input[type="hidden"][id*="display_hidden"]'];
+        for (const selector of selectors) {
+            for (const input of (doc || document).querySelectorAll(selector)) {
+                const value = String(input.value || '').trim();
+                if (!value.startsWith('Deloitte')) continue;
+                const type = REGION_TO_TENANT_TYPE[value.replace('Deloitte', '').trim()];
+                if (type) return { type, host: String(GM_getValue(TENANT_TYPE_TO_KEY[type], '') || '').trim() };
+            }
+        }
+        return null;
+    }
+
+    // Shared services between tools of this script (filled by the tools that provide them)
+    const suiteBridge = {};
 
     /* === TOOL: GENERAL TOOLKIT === */
 
@@ -11472,8 +11557,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.4';
-    const CHANGELOG = `Version 1.6.4:
+    const SCRIPT_VERSION = '1.6.5';
+    const CHANGELOG = `Version 1.6.5:
+- The API token saved here can also be used by the Change Tracker for its Newly Registered Domains reviews, when you turn that on there. It is only ever sent to your own Netskope tenants.
+
+Version 1.6.4:
 - Fixed a security issue where a URL List with a specially crafted name could run unwanted code on your page when the list was shown. List names are now always displayed as plain text.
 
 Version 1.6.3:
@@ -11567,53 +11655,6 @@ Version 1.4.1:
     /* ----------------------------------------------------------
      *  REGION → TENANT TYPE (static, organisational logic only)
      * ----------------------------------------------------------*/
-    const REGION_TO_TENANT_TYPE = {
-        'Africa':                        'EMA',
-        //'Asia Pacific':                  'APAC', -- Uncomment when Tenant is confirmed
-        'Australia':                     'APAC',
-        'Austria':                       'EU',
-        'Belgium':                       'EU',
-        'Brazil':                        'AME',
-        'Canada':                        'AME',
-        'Caribbean and Bermuda Countries': 'AME',
-        'Central Europe':                'CE',
-        'Central Mediterranean':         'EU',
-        'Chile':                         'AME',
-        //'China':                         'APAC', -- Uncomment when Tenant is confirmed
-        'Cyprus':                        'EU',
-        'Denmark':                       'EU',
-        'DKU':                           'EMA',
-        'Finland':                       'EU',
-        'France':                        'CE',
-        'Germany':                       'CE',
-        //'Hong Kong':                     'APAC', -- Uncomment when Tenant is confirmed
-        'Iceland':                       'EU',
-        'Ireland':                       'EU',
-        'Israel':                        'EMA',
-        'Japan':                         'APAC',
-        'Korea':                         'APAC',
-        'Luxembourg':                    'EU',
-        'Mauritius':                     'APAC',
-        'Mexico':                        'AME',
-        'Middle East':                   'EU',
-        'Netherlands':                   'EU',
-        'New Zealand':                   'APAC',
-        'Nordics':                       'EU',
-        'North and South Europe':        'EU',
-        'Norway':                        'EU',
-        'Portugal':                      'CE',
-        'S-LATAM':                       'EMA',
-        'South Asia(India)':             'APAC',
-        'Southeast Asia':                'APAC',
-        'Spain':                         'EMA',
-        'Sweden':                        'EU',
-        'Switzerland':                   'EU',
-        'Taiwan':                        'APAC',
-        'Touche Tohmatsu Limited':       'AME',
-        'Turkey':                        'CE',
-        'United Kingdom':                'EU',
-        'United States':                 'AME',
-    };
 
     /* ----------------------------------------------------------
      *  TENANT HOST KEYS  (GM storage keys + UI labels)
@@ -11626,14 +11667,6 @@ Version 1.4.1:
         { key: 'netskopeHost_AME', label: 'AME Tenant Host', placeholder: 'google.com' },
     ];
 
-    // Maps tenant type abbreviation → GM storage key
-    const TENANT_TYPE_TO_KEY = {
-        'EMA': 'netskopeHost_EMA',
-        'EU':  'netskopeHost_EU',
-        'CE':  'netskopeHost_CE',
-        'APAC': 'netskopeHost_APAC',
-        'AME': 'netskopeHost_AME',
-    };
 
     /* ----------------------------------------------------------
      *  TENANT HOST STORAGE HELPERS
@@ -11871,26 +11904,8 @@ Version 1.4.1:
         const ctx = getTicketContext();
         const doc = (ctx && ctx.doc) || document;
 
-        const selectors = [
-            'input.form-control.element_reference_input',
-            'input[type="hidden"][id*="display_hidden"]'
-        ];
-
-        for (const selector of selectors) {
-            for (const input of doc.querySelectorAll(selector)) {
-                const value = input.value.trim();
-                if (value.startsWith('Deloitte')) {
-                    const region = value.replace('Deloitte', '').trim();
-                    const tenantType = REGION_TO_TENANT_TYPE[region];
-                    if (tenantType) {
-                        const gmKey = TENANT_TYPE_TO_KEY[tenantType];
-                        const host = GM_getValue(gmKey, null);
-                        if (host) return host.trim();
-                    }
-                }
-            }
-        }
-        return null;
+        const tenant = detectTicketTenant(doc);
+        return tenant && tenant.host ? tenant.host : null;
     }
 
     const EXPIRY_SCALES = [
@@ -12788,6 +12803,7 @@ Version 1.4.1:
                         'Passphrase: encrypts your token with AES-256. You enter it once per browser session and the session stays unlocked until you close the tab or click Lock.',
                         'Forgot passphrase: the "Forgot Passphrase? Delete Token" option removes the encrypted token so you can save a new one with a fresh passphrase.',
                         'Token expiry: tokens nearing expiry show a yellow warning banner; expired tokens show a red banner with a click-to-update link.',
+                        'The Change Tracker can use the token saved here for its Newly Registered Domains reviews, when you turn the API on there. The token then also needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.',
                     ]);
                 }
             },
@@ -15134,6 +15150,46 @@ Version 1.4.1:
         initializeModal();
         console.log('✅ Netskope URL List Manager initialized!');
     }
+
+    // Lets the Change Tracker call the Netskope API with the tokens saved here, without ever handing a token out.
+    suiteBridge.netskopeApi = {
+        hasToken: (host) => !!host && Storage.hasToken(host) && !Storage.isTokenExpired(host),
+        saveToken: (host, token, hours, passphrase) => Storage.saveToken(host, token, hours, passphrase),
+        async request(host, method, path, body) {
+            // Only the tenants set up in this browser: a token is never sent anywhere else
+            if (!Object.values(TENANT_TYPE_TO_KEY).some(k => String(GM_getValue(k, '') || '').trim().toLowerCase() === String(host || '').toLowerCase())) {
+                return { ok: false, status: 0, error: 'This host is not one of your Netskope tenants.' };
+            }
+            if (!host || !Storage.hasToken(host)) return { ok: false, status: 0, error: 'noToken' };
+            if (Storage.isTokenExpired(host)) return { ok: false, status: 0, error: 'expired' };
+            if (!SessionManager.hasPassphrase(host)) {
+                for (let attempt = 0; attempt < 3 && !SessionManager.hasPassphrase(host); attempt++) {
+                    let passphrase;
+                    try {
+                        passphrase = await UI.promptPassphrase('Unlock API Token',
+                            attempt ? '❌ Invalid passphrase. Please try again.' : `The Change Tracker needs your ${host} API token. Enter its passphrase to unlock it for this browser session.`, false);
+                    } catch (e) { return { ok: false, status: 0, error: 'The API token stays locked.' }; }
+                    if (await Storage.verifyPassphrase(host, passphrase)) SessionManager.setPassphrase(host, passphrase);
+                }
+                if (!SessionManager.hasPassphrase(host)) return { ok: false, status: 0, error: 'Wrong passphrase: the API token stays locked.' };
+            }
+            let token;
+            try { token = await Storage.getToken(host); } catch (e) { return { ok: false, status: 0, error: 'The API token could not be unlocked.' }; }
+            return new Promise(resolve => GM_xmlhttpRequest({
+                method, url: `https://${host}${path}`, timeout: 60000,
+                headers: { 'Netskope-Api-Token': token, 'Content-Type': 'application/json', Accept: 'application/json' },
+                data: body ? JSON.stringify(body) : undefined,
+                onload: (r) => {
+                    let data = null;
+                    try { data = r.responseText ? JSON.parse(r.responseText) : null; } catch (e) { data = null; }
+                    const ok = r.status >= 200 && r.status < 300;
+                    resolve({ ok, status: r.status, data, error: ok ? null : (data && (data.message || data.error)) || `HTTP ${r.status}` });
+                },
+                onerror: () => resolve({ ok: false, status: 0, error: 'Network error' }),
+                ontimeout: () => resolve({ ok: false, status: 0, error: 'Netskope did not answer in time' }),
+            }));
+        },
+    };
 
         return function register() {
             initialize();
@@ -17628,8 +17684,15 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.0';
-    const CHANGELOG = `Version 2.4.0:
+    const SCRIPT_VERSION = '2.5.0';
+    const CHANGELOG = `Version 2.5.0:
+- New Newly Registered Domains review. When a domain added to a Newly Registered Domains Destination Profile reaches 30 days, everyone sees an orange dot on the Change Tracker icon and "⏰ N Newly Registered Domains are due for review".
+- "Review" lists them by tenant and profile, with links to check the category and to open Netskope. After taking them out of the profile, tick them and click "Mark as removed". For the ones still categorized as NRD, click "Keep 7 more days". Everything is logged in the ticket where they were added.
+- Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added to a list shared by the whole team, in Configure.
+- Optional, per tenant: the Netskope API (with the URL Lists Editor token) looks up the categories and takes the domains out of the profile for you, after you confirm.
+- Every new entry records the Netskope tenant of its ticket.
+
+Version 2.4.0:
 - When SharePoint refuses a request because your sign in expired, the tracker now renews it by itself: it opens the SharePoint site in a background tab, waits until SharePoint answers, closes the tab and carries on. You only see the banner when Microsoft asks you to sign in (the tab then stays open for you) or when you really have no access. This happens at most once every 15 minutes.
 - New "🧪 Test session renewal" button in Configure, with a line that shows how often the sign in was renewed by itself and the last failure.
 
@@ -18057,6 +18120,8 @@ Version 1.4.3:
                 { label: 'Destination Profile — Destinations Added',   value: 'Destination Profile — Destinations Added',   color: '#20c997', schema: 'destination_profile' },
                 { label: 'Destination Profile — Destinations Removed', value: 'Destination Profile — Destinations Removed', color: '#fd7e14', schema: 'destination_profile' },
                 { label: 'Destination Profile Removed',                value: 'Destination Profile Removed',                color: '#dc3545', schema: 'destination_profile' },
+                // Written by the Newly Registered Domains review, not offered in the change type list
+                { label: 'Destination Profile — NRD review',           value: 'Destination Profile — NRD review',           color: '#ff8c00', schema: 'destination_profile', auto: true },
             ],
         },
         {
@@ -18209,6 +18274,7 @@ Version 1.4.3:
             const grp = document.createElement('optgroup');
             grp.label = group;
             items.forEach(s => {
+                if (s.auto && s.value !== selectedValue) return;
                 const opt = mk('option');
                 opt.value = s.value; opt.textContent = s.label;
                 if (s.value === selectedValue) opt.selected = true;
@@ -18277,7 +18343,8 @@ Version 1.4.3:
             let hasAny = false;
             SNIPPET_GROUPS.forEach(({ group, items }) => {
                 const groupMatch   = group.toLowerCase().includes(q);
-                const visibleItems = groupMatch ? items : items.filter(s => s.label.toLowerCase().includes(q));
+                const offered = items.filter(s => !s.auto);
+                const visibleItems = groupMatch ? offered : offered.filter(s => s.label.toLowerCase().includes(q));
                 if (!visibleItems.length) return;
                 hasAny = true;
                 const header = mk('li');
@@ -19215,7 +19282,7 @@ Version 1.4.3:
                 CTEntryId:   entry.id,
                 CTPayload:   JSON.stringify({ v: 1, id: entry.id, ts: entry.ts, type: entry.type,
                                               fields: entry.fields || null, note: entry.note || null,
-                                              imported: entry.imported || undefined }),
+                                              imported: entry.imported || undefined, tenant: entry.tenant || undefined }),
             };
         }
 
@@ -19225,6 +19292,7 @@ Version 1.4.3:
             if (!p || !p.id) return null;
             return {
                 id: p.id, ts: p.ts, type: p.type, fields: p.fields || null, note: p.note || null,
+                tenant: p.tenant || null,
                 spId: item.Id,
                 etag: item['odata.etag'] || null,
                 // Imported entries keep the name of whoever wrote them on the old server.
@@ -19529,6 +19597,43 @@ Version 1.4.3:
                 $expand: 'Author,Editor', $orderby: 'CTEntryDate asc' });
             if (!res.ok) return res;
             return { ok: true, data: { entries: res.data.map(entryMapper.fromItem).filter(Boolean) } };
+        },
+
+        // Destination Profile entries of every ticket since a date. Filters on the indexed date only
+        // (list view threshold); the group is checked here. The shared settings item is skipped.
+        async fetchProfileEntriesSince(iso) {
+            const res = await api._allItems({ $filter: `CTEntryDate ge datetime'${iso}'`, $select: ITEM_SELECT + ',Title',
+                $expand: 'Author,Editor' });
+            if (!res.ok) return res;
+            const groupOf = {};
+            SNIPPET_GROUPS.forEach(g => g.items.forEach(i => { groupOf[i.value] = g.group; }));
+            const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
+                .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
+                .filter(r => r.entry && (groupOf[r.entry.type] === 'Destination Profiles' || r.entry.type === NRD_REVIEW_TYPE));
+            return { ok: true, data };
+        },
+
+        // The team's shared settings, one item in the list. Missing item = defaults.
+        async loadSettings() {
+            const res = await api.fetchEntries(NRD_SETTINGS_TICKET);
+            if (!res.ok) return res;
+            const item = res.data.entries.find(e => e.type === NRD_SETTINGS_TYPE);
+            const profiles = item && item.fields && Array.isArray(item.fields.nrdProfiles) ? item.fields.nrdProfiles : [];
+            return { ok: true, data: { nrdProfiles: profiles, id: item ? item.id : null, spId: item ? item.spId : null, etag: item ? item.etag : null } };
+        },
+
+        // Saves the NRD profiles over `prev` (as loaded). Someone else's save in between: kind 'conflict'.
+        async saveSettings(nrdProfiles, prev) {
+            if (!prev || !prev.spId) {
+                const now = await api.loadSettings();
+                if (!now.ok) return now;
+                if (now.data.spId) return { ok: false, kind: 'conflict' };
+            }
+            const entry = { id: (prev && prev.id) || 'ct-settings', ts: nowStamp(), type: NRD_SETTINGS_TYPE, fields: { nrdProfiles },
+                note: null, ticket: NRD_SETTINGS_TICKET, spId: prev && prev.spId, etag: prev && prev.etag };
+            const res = await api.saveEntry(entry);
+            if (!res.ok) return res;
+            return { ok: true, data: { nrdProfiles, id: entry.id, spId: res.data.spId, etag: res.data.etag } };
         },
 
         async findItem(entryId) {
@@ -20645,8 +20750,11 @@ Version 1.4.3:
         savePending(ticket, p);
     }
 
-    async function addEntry(ticket, type, fields, note) {
+    // extra.tenant: the Netskope tenant, for an entry written to another ticket than the open one
+    async function addEntry(ticket, type, fields, note, extra = {}) {
         const entry = { id: uid(), ts: nowStamp(), type, fields: fields || null, note: note || null };
+        const tenant = extra.tenant || (ticket === getTicketNumber() ? detectTicketTenant(getTicketDoc()) : null);
+        if (tenant) entry.tenant = tenant;
         const current = loadEntries(ticket);
         current.push(entry);
         _cacheEntries(ticket, current);                          // optimistic local update
@@ -22633,6 +22741,15 @@ Version 1.4.3:
                 marginBottom:'10px', fontSize:'12px', fontFamily:'Arial, sans-serif'
             })
         );
+        // Newly Registered Domains due for review, for the whole team
+        sidebar.appendChild(
+            css(mk('div', { id:'ct-nrd-banner' }), {
+                display:'none', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap',
+                gap:'8px', padding:'7px 10px', borderRadius:'4px', background:'#fff4e5', border:'1px solid #ffc680',
+                color:'#8a5a00', marginBottom:'10px', fontSize:'12px', fontFamily:'Arial, sans-serif'
+            })
+        );
+        setTimeout(renderNrdAlert, 0);
 
         // ══ INPUT AREA ═══════════════════════════════════════════
 
@@ -23733,6 +23850,37 @@ Version 1.4.3:
                 }
             },
             {
+                icon: '⏰',
+                title: 'Newly Registered Domains',
+                buildContent: (body) => {
+                    lead(body, 'Domains allowed in a Newly Registered Domains Destination Profile are due for review 30 days after they were added, for the whole team.');
+                    body.appendChild(hrow([
+                        chip('⏰ 2 Newly Registered Domains are due for review', '#fff4e5', { color: '#8a5a00', border: '1px solid #ffc680' }),
+                        chip('Review', '#ff8c00'),
+                        chip('↺ Check now', 'transparent', { color: '#8a5a00', border: '1px solid #e0a800' })
+                    ]));
+                    caption(body, 'An orange dot on the Change Tracker icon and this banner show up when something is due. The tracker checks at most every 4 hours.');
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', overflow: 'hidden', margin: '10px 0 4px', fontFamily: 'Arial, sans-serif' });
+                    card.appendChild(hrow([span('EMA · tenant.goskope.com', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
+                        chip('↗ Open Netskope', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { padding: '6px 10px', margin: '0', background: '#f8f8ff', justifyContent: 'space-between' }));
+                    [['old-domain.com', '33 days · RITM0012345'], ['new-shop.net', '31 days · RITM0012399']].forEach(([d, meta]) => {
+                        card.appendChild(hrow([span('☐', { fontSize: '13px' }), span(d, { fontFamily: 'monospace', fontSize: '12px' }), span(meta, { fontSize: '11px', color: '#777' }),
+                            chip('🔍 Check category', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { padding: '4px 10px', margin: '0' }));
+                    });
+                    body.appendChild(card);
+                    body.appendChild(hrow([chip('✔ Mark as removed', '#667eea'), chip('⏳ Keep 7 more days', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' }),
+                        chip('🔌 Check with the API', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { margin: '8px 0 0 0' }));
+                    bullets(body, [
+                        'Check each category, take the domains that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". It is logged in the ticket where they were added.',
+                        'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
+                        'Profiles whose name contains "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
+                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
+                        'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
+                    ]);
+                }
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent: (body) => {
@@ -23871,6 +24019,662 @@ Version 1.4.3:
      *  the Configure links.
      * ==========================================================*/
 
+    /* ==========================================================
+     *  NEWLY REGISTERED DOMAINS
+     *  Domains allowed in a Destination Profile for about 30 days, until Netskope drops
+     *  their Newly Registered Domain category. The tracker finds the due ones across
+     *  tickets and helps take them out again.
+     * ==========================================================*/
+
+    const NRD_SETTINGS_TICKET = '__CT_SETTINGS__';
+    const NRD_SETTINGS_TYPE   = 'Tracker settings';
+    const NRD_NAME_RULE       = /newly registered domains/i;
+    const NRD_HISTORY_DAYS    = 90;
+
+    // A profile is NRD by its name, or when the team listed it in the shared settings for that tenant.
+    function isNrdProfile(name, tenantType, settings) {
+        const n = String(name || '').trim();
+        if (!n) return false;
+        if (NRD_NAME_RULE.test(n)) return true;
+        return ((settings && settings.nrdProfiles) || []).some(p =>
+            String(p.name || '').trim() === n && (!tenantType || !p.tenant || p.tenant === tenantType));
+    }
+
+    const nrdSinceIso = (days) => new Date(Date.now() - days * 86400000).toISOString().replace(/\.\d+Z$/, 'Z');
+
+    const NRD_REVIEW_TYPE = 'Destination Profile — NRD review';
+    const NRD_EXPIRY_DAYS = 30;
+    const NRD_KEEP_DAYS   = 7;
+    const NRD_CHECK_EVERY = 4 * 3600 * 1000;
+    const NRD_CACHE_KEY   = 'changeTrackerNrdCache';
+    const NRD_DAY         = 86400000;
+    const NRD_ADD_TYPES   = ['Destination Profile Created', 'Destination Profile — Destinations Added'];
+
+    // "2026-10-28 14:05" (local time, as entries keep it) → ms
+    function nrdTime(ts) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(String(ts || ''));
+        return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)).getTime() : NaN;
+    }
+
+    // rows: [{ ticket, entry }] of Destination Profile entries. Net result per tenant, profile and domain:
+    // the last addition counts, a removal or a removal of the whole profile closes it, a "kept" review moves it 7 days.
+    function nrdComputeDue(rows, settings, now = Date.now()) {
+        const open = new Map();   // key → item
+        const sameTarget = (it, tenantType, profile) => it.profile === profile && (!tenantType || !it.tenantType || it.tenantType === tenantType);
+        const sorted = rows.filter(r => r && r.entry).slice().sort((a, b) => nrdTime(a.entry.ts) - nrdTime(b.entry.ts));
+        for (const { ticket, entry } of sorted) {
+            const f = entry.fields || {};
+            const profile = String(f.profileName || '').trim();
+            const tenantType = (entry.tenant && entry.tenant.type) || '';
+            if (!isNrdProfile(profile, tenantType || null, settings)) continue;
+            const at = nrdTime(entry.ts);
+            if (entry.type === 'Destination Profile Removed') {
+                for (const [k, it] of open) if (sameTarget(it, tenantType, profile)) open.delete(k);
+                continue;
+            }
+            for (const domain of parseDomains(f.destinations || '')) {
+                const d = domain.toLowerCase();
+                const matches = [...open].filter(([, it]) => it.domain.toLowerCase() === d && sameTarget(it, tenantType, profile));
+                if (NRD_ADD_TYPES.includes(entry.type)) {
+                    matches.forEach(([k]) => open.delete(k));
+                    open.set(`${tenantType}\n${profile}\n${d}`, { tenantType, host: (entry.tenant && entry.tenant.host) || '', profile, domain,
+                        ticket, addedTs: entry.ts, dueAt: at + NRD_EXPIRY_DAYS * NRD_DAY });
+                } else if (entry.type === 'Destination Profile — Destinations Removed' || (entry.type === NRD_REVIEW_TYPE && f.outcome === 'removed')) {
+                    matches.forEach(([k]) => open.delete(k));
+                } else if (entry.type === NRD_REVIEW_TYPE && f.outcome === 'kept') {
+                    matches.forEach(([, it]) => { it.dueAt = Math.max(it.dueAt, at + NRD_KEEP_DAYS * NRD_DAY); });
+                }
+            }
+        }
+        return [...open.values()].map(it => Object.assign(it, {
+            days: Math.floor((now - nrdTime(it.addedTs)) / NRD_DAY), state: now >= it.dueAt ? 'due' : 'upcoming' }))
+            .sort((a, b) => a.dueAt - b.dueAt);
+    }
+
+    const nrdCache = () => GM_getValue(NRD_CACHE_KEY, null);
+    const nrdDueItems = () => ((nrdCache() || {}).items || []).filter(i => i.state === 'due' || Date.now() >= i.dueAt);
+
+    let nrdChecking = null;
+    // Reads the last 90 days across tickets and stores what is due. At most every 4 hours unless forced.
+    function nrdCheck({ force = false } = {}) {
+        if (nrdChecking) return nrdChecking;
+        const cache = nrdCache();
+        if (!api.isConfigured() || (!force && cache && Date.now() - cache.at < NRD_CHECK_EVERY)) { renderNrdAlert(); return Promise.resolve(cache); }
+        nrdChecking = (async () => {
+            const [settings, rows] = await Promise.all([api.loadSettings(), api.fetchProfileEntriesSince(nrdSinceIso(NRD_HISTORY_DAYS))]);
+            if (!settings.ok || !rows.ok) return cache;
+            const next = { at: Date.now(), items: nrdComputeDue(rows.data, settings.data) };
+            GM_setValue(NRD_CACHE_KEY, next);
+            return next;
+        })().catch(() => cache).finally(() => { nrdChecking = null; renderNrdAlert(); });
+        return nrdChecking;
+    }
+
+    function renderNrdAlert() {
+        const due = nrdDueItems().length;
+        // Toolbar dot, kept while something is due (the toolbar may redraw its buttons)
+        const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
+        const dot = document.getElementById('ct-nrd-dot');
+        if (!due) dot?.remove();
+        else if (toolEl && (!dot || !toolEl.contains(dot))) {
+            dot?.remove();
+            toolEl.style.position = 'relative';
+            const d = mk('div', { id:'ct-nrd-dot', title:`${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review` });
+            Object.assign(d.style, { position:'absolute', bottom:'2px', right:'2px', width:'9px', height:'9px', borderRadius:'50%',
+                background:'#ff8c00', border:'1px solid #fff', pointerEvents:'none', zIndex:'10' });
+            toolEl.appendChild(d);
+        }
+        const banner = document.getElementById('ct-nrd-banner');
+        if (!banner) return;
+        banner.textContent = '';
+        banner.style.display = due ? 'flex' : 'none';
+        if (!due) return;
+        const msg = mk('span');
+        msg.textContent = `⏰ ${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review`;
+        const btn = (id, text, primary) => {
+            const b = css(mk('button', { id, type:'button' }), { border: primary ? 'none' : '1px solid #e0a800', borderRadius:'3px', cursor:'pointer',
+                padding:'3px 10px', fontSize:'11px', fontWeight:'bold', background: primary ? '#ff8c00' : 'transparent', color: primary ? '#fff' : '#8a5a00' });
+            b.textContent = text;
+            return b;
+        };
+        const review = btn('ct-nrd-review-btn', 'Review', true);
+        review.onclick = () => openNrdReview();
+        const again = btn('ct-nrd-check-btn', '↺ Check now', false);
+        again.onclick = () => nrdCheck({ force: true });
+        const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
+        btns.append(review, again);
+        banner.append(msg, btns);
+    }
+
+    /* ── Review list ── */
+
+    // The tenant host always comes from this browser's own setup (URL Lists Editor), never from an entry:
+    // entries are shared and anyone can write them, so their host is only shown as text.
+    const nrdHostOf = (type) => {
+        const h = type && TENANT_TYPE_TO_KEY[type] ? String(GM_getValue(TENANT_TYPE_TO_KEY[type], '') || '').trim() : '';
+        return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(h) ? h : '';
+    };
+    const nrdSafeDomain = (d) => /^(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(d || '').trim());
+    const nrdKeyOf = (it) => `${it.tenantType}\n${it.profile}\n${String(it.domain).toLowerCase()}`;
+    const nrdDate = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
+
+    async function openNrdReview() {
+        document.getElementById('ct-nrd-review-overlay')?.remove();
+        document.getElementById('ct-nrd-review')?.remove();
+        const overlay = css(mk('div', { id:'ct-nrd-review-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.5)', zIndex:'1050010' });
+        const modal = css(mk('div', { id:'ct-nrd-review' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1050011', background:'#fff',
+            border:'1px solid #ccc', borderRadius:'10px', padding:'20px', width:'640px', maxWidth:'94vw', maxHeight:'86vh',
+            overflowY:'auto', fontFamily:'Arial, sans-serif', boxShadow:'0 6px 24px rgba(0,0,0,.25)', color:'#333', fontSize:'12px'
+        });
+        const close = () => { overlay.remove(); modal.remove(); };
+        overlay.onclick = close;
+        document.body.append(overlay, modal);
+        if (!nrdCache()) await nrdCheck({ force: true });
+        renderNrdReview(modal, close);
+    }
+
+    function renderNrdReview(modal, close, message) {
+        modal.textContent = '';
+        const items = (nrdCache() || {}).items || [];
+        const now = Date.now();
+        const due = items.filter(i => now >= i.dueAt);
+        const upcoming = items.filter(i => now < i.dueAt);
+        const btnStyle = (primary) => ({ padding:'6px 12px', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:'bold',
+            border: primary ? 'none' : '1px solid #c0c8f0', background: primary ? '#667eea' : '#fff', color: primary ? '#fff' : '#667eea' });
+
+        const hdr = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' });
+        const title = css(mk('div'), { fontSize:'15px', fontWeight:'bold' });
+        title.textContent = '⏰ Newly Registered Domains to review';
+        const x = css(mk('button', { type:'button' }), { background:'red', color:'#fff', border:'none', borderRadius:'4px', cursor:'pointer', padding:'4px 10px', fontWeight:'bold', fontSize:'18px', lineHeight:'1' });
+        x.textContent = '×';
+        x.onclick = close;
+        hdr.append(title, x);
+        const lead = css(mk('div'), { color:'#555', lineHeight:'1.5', marginBottom:'10px' });
+        lead.textContent = 'Check the category of each domain. Take the ones that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". Tick the ones still categorized as NRD and click "Keep 7 more days".';
+        const msg = css(mk('div', { id:'ct-nrd-review-msg' }), { minHeight:'16px', margin:'0 0 8px', fontWeight:'bold', color:'#8a5a00' });
+        msg.textContent = message || '';
+        modal.append(hdr, lead, msg);
+
+        const groupBy = (list, keyFn) => list.reduce((m, i) => { const k = keyFn(i); (m.get(k) || m.set(k, []).get(k)).push(i); return m; }, new Map());
+        const tenants = groupBy(due, i => i.tenantType);
+        if (!due.length) modal.appendChild(Object.assign(css(mk('div'), { color:'#2a7d4f', margin:'6px 0 10px' }), { textContent: '✔ Nothing is due for review.' }));
+        [...tenants.keys()].sort().forEach(type => {
+            const list = tenants.get(type);
+            const host = nrdHostOf(type);
+            const g = css(mk('div'), { border:'1px solid #e8e8f0', borderRadius:'6px', marginBottom:'10px', overflow:'hidden' });
+            g.dataset.nrdTenantGroup = type || 'none';
+            const gh = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'7px 10px', background:'#f8f8ff', fontWeight:'bold' });
+            gh.appendChild(Object.assign(mk('span'), { textContent: type ? `${type}${host ? ' · ' + host : ''}` : 'Tenant not recorded' }));
+            if (host) {
+                const open = css(mk('button', { type:'button' }), btnStyle(false));
+                open.dataset.nrdOpenTenant = '1';
+                open.textContent = '↗ Open Netskope';
+                open.onclick = () => GM_openInTab(`https://${host}/`, { active: true, insert: true });
+                gh.appendChild(open);
+            }
+            g.appendChild(gh);
+            groupBy(list, i => i.profile).forEach((rows, profile) => {
+                g.appendChild(Object.assign(css(mk('div'), { padding:'6px 10px 2px', color:'#667eea', fontWeight:'bold' }), { textContent: profile }));
+                rows.forEach(it => {
+                    const r = css(mk('label'), { display:'flex', alignItems:'center', gap:'8px', padding:'4px 10px', cursor:'pointer' });
+                    r.dataset.nrdItem = '1';
+                    r.dataset.domain = it.domain;
+                    r.dataset.state = 'due';
+                    const cb = mk('input', { type:'checkbox' });
+                    cb.dataset.nrdPick = nrdKeyOf(it);
+                    const dom = css(mk('span'), { fontFamily:'monospace', flex:'1', wordBreak:'break-all' });
+                    dom.textContent = it.domain;
+                    const meta = css(mk('span'), { color:'#777', whiteSpace:'nowrap' });
+                    meta.textContent = `${it.days} days · `;
+                    const tk = css(mk('a', { href: `/nav_to.do?uri=task.do?sysparm_query=number=${encodeURIComponent(it.ticket)}`, target:'_blank' }), { color:'#0066cc' });
+                    tk.dataset.nrdTicket = it.ticket;
+                    tk.textContent = it.ticket;
+                    tk.onclick = (e) => e.stopPropagation();
+                    meta.appendChild(tk);
+                    const cat = css(mk('button', { type:'button', title:'Opens the Netskope URL lookup for this domain' }), Object.assign(btnStyle(false), { padding:'2px 8px', fontSize:'11px' }));
+                    cat.dataset.nrdCategory = '1';
+                    cat.textContent = '🔍 Check category';
+                    cat.onclick = (e) => { e.preventDefault(); GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${it.domain.replace(/^\*\./, '')}`, { active: true, insert: true }); };
+                    r.append(cb, dom, meta);
+                    if (nrdSafeDomain(it.domain)) r.appendChild(cat);
+                    g.appendChild(r);
+                });
+            });
+            modal.appendChild(g);
+        });
+
+        const up = mk('details', { id:'ct-nrd-upcoming' });
+        up.appendChild(Object.assign(css(mk('summary'), { cursor:'pointer', fontWeight:'bold', margin:'4px 0' }), { textContent: `Coming up (${upcoming.length})` }));
+        upcoming.forEach(it => {
+            const r = css(mk('div'), { padding:'2px 10px', color:'#555' });
+            r.dataset.nrdItem = '1';
+            r.dataset.domain = it.domain;
+            r.dataset.state = 'upcoming';
+            r.textContent = `${nrdDate(it.dueAt)} · ${it.domain} · ${it.profile}${it.tenantType ? ' (' + it.tenantType + ')' : ''} · ${it.ticket}`;
+            up.appendChild(r);
+        });
+        modal.appendChild(up);
+
+        const foot = css(mk('div'), { display:'flex', gap:'6px', flexWrap:'wrap', marginTop:'12px' });
+        const removedBtn = css(mk('button', { id:'ct-nrd-mark-removed', type:'button' }), btnStyle(true));
+        removedBtn.textContent = '✔ Mark as removed';
+        const keepBtn = css(mk('button', { id:'ct-nrd-keep', type:'button' }), btnStyle(false));
+        keepBtn.textContent = `⏳ Keep ${NRD_KEEP_DAYS} more days`;
+        const again = css(mk('button', { id:'ct-nrd-review-check', type:'button' }), btnStyle(false));
+        again.textContent = '↺ Check now';
+        const settingsBtn = css(mk('button', { type:'button' }), Object.assign(btnStyle(false), { marginLeft:'auto' }));
+        settingsBtn.textContent = '⚙ Profiles';
+        settingsBtn.onclick = () => openNrdSettings();
+        const on = nrdApiOn();
+        if (due.some(i => on[i.tenantType])) {
+            const apiBtn = css(mk('button', { id:'ct-nrd-api-check', type:'button', title:'Looks up the categories with the Netskope API and proposes what to remove' }), btnStyle(false));
+            apiBtn.textContent = '🔌 Check with the API';
+            apiBtn.onclick = async () => {
+                apiBtn.disabled = true;
+                msg.textContent = 'Checking with the Netskope API…';
+                const plan = await nrdApiPlan(due);
+                apiBtn.disabled = false;
+                if (!plan.ok) { msg.textContent = plan.message; return; }
+                msg.textContent = plan.notes.join(' ') || (plan.rows.length ? 'Review the proposal, then apply it.' : 'Nothing to propose.');
+                if (plan.rows.length || plan.notTracked.length) renderNrdApiPlan(modal, close, plan);
+            };
+            foot.append(removedBtn, keepBtn, again, apiBtn, settingsBtn);
+        } else {
+            foot.append(removedBtn, keepBtn, again, settingsBtn);
+        }
+        modal.appendChild(foot);
+
+        const picked = () => [...modal.querySelectorAll('[data-nrd-pick]')].filter(c => c.checked).map(c => due.find(i => nrdKeyOf(i) === c.dataset.nrdPick)).filter(Boolean);
+        const run = async (kind) => {
+            const list = picked();
+            if (!list.length) { msg.textContent = 'Tick the domains first.'; return; }
+            if (connState !== 'ONLINE') { msg.textContent = 'The tracker is not connected to SharePoint: open it and try again when it is online.'; return; }
+            [removedBtn, keepBtn, again].forEach(b => { b.disabled = true; });
+            msg.textContent = 'Saving…';
+            const text = await nrdApply(kind, list);
+            renderNrdReview(modal, close, text);
+        };
+        removedBtn.onclick = () => run('removed');
+        keepBtn.onclick = () => run('kept');
+        again.onclick = async () => { again.disabled = true; await nrdCheck({ force: true }); renderNrdReview(modal, close, '✔ Checked again.'); };
+    }
+
+    // Logs the outcome in each domain's original ticket, after checking nobody did it in the meantime.
+    async function nrdApply(kind, list) {
+        await nrdCheck({ force: true });
+        const fresh = new Set(((nrdCache() || {}).items || []).map(nrdKeyOf));
+        const still = list.filter(i => fresh.has(nrdKeyOf(i)));
+        const gone = list.filter(i => !fresh.has(nrdKeyOf(i)));
+        const groups = new Map();
+        still.forEach(i => { const k = `${i.ticket}\n${i.tenantType}\n${i.profile}`; (groups.get(k) || groups.set(k, []).get(k)).push(i); });
+        for (const items of groups.values()) {
+            const first = items[0];
+            const tenant = first.tenantType ? { type: first.tenantType, host: nrdHostOf(first.tenantType) } : null;
+            const fields = { profileName: first.profile, destinations: items.map(i => i.domain).join('\n') };
+            const days = Math.max(...items.map(i => i.days));
+            if (kind === 'removed') {
+                await addEntry(first.ticket, 'Destination Profile — Destinations Removed', fields, `NRD review: removed after ${days} days.`, { tenant });
+            } else {
+                await addEntry(first.ticket, NRD_REVIEW_TYPE, Object.assign(fields, { outcome: 'kept', category: '' }),
+                    `NRD review: kept ${NRD_KEEP_DAYS} more days, still Newly Registered Domain`, { tenant });
+            }
+        }
+        await nrdCheck({ force: true });
+        const parts = [];
+        if (still.length) parts.push(`✔ ${still.length} ${still.length === 1 ? 'domain' : 'domains'} ${kind === 'removed' ? 'marked as removed' : `kept ${NRD_KEEP_DAYS} more days`}.`);
+        if (gone.length) parts.push(`Already done by someone else: ${gone.map(i => i.domain).join(', ')}.`);
+        return parts.join(' ');
+    }
+
+    /* ── Netskope API mode (optional, uses the URL Lists Editor tokens) ── */
+
+    const NRD_API_KEY     = 'changeTrackerNrdApi';   // { EMA: true, ... } in this browser only
+    const NRD_LOOKUP_PATH = '/api/v2/nsiq/urllookup';
+    const NRD_DEST_PATH   = '/api/v2/profiles/destinations';
+    const NRD_PLACEHOLDER = '#No values';
+    const nrdApiOn = () => GM_getValue(NRD_API_KEY, null) || {};
+    const nrdBridge = () => suiteBridge.netskopeApi || null;
+    const nrdLookupKey = (domain) => String(domain || '').trim().replace(/^\*\./, '').toLowerCase();
+    const nrdIsNrdCategory = (cats) => (cats || []).some(c => /newly registered domain|newly observed domain/i.test(c));
+
+    // Drops the removed values, then the comment of a block left without values. Netskope needs one value at least.
+    function nrdRebuildValues(values, removeSet) {
+        const blocks = [{ comment: null, entries: [] }];
+        for (const v of values || []) {
+            const t = String(v).trim();
+            if (t.startsWith('#')) blocks.push({ comment: v, entries: [] });
+            else if (t) blocks[blocks.length - 1].entries.push(v);
+        }
+        const out = [];
+        for (const b of blocks) {
+            const kept = b.entries.filter(v => !removeSet.has(String(v).trim().toLowerCase()));
+            const placeholder = b.comment !== null && b.comment.trim().toLowerCase() === NRD_PLACEHOLDER.toLowerCase();
+            if (b.comment !== null && !placeholder && (kept.length || !b.entries.length)) out.push(b.comment);
+            out.push(...kept);
+        }
+        return out.length ? out : [NRD_PLACEHOLDER];
+    }
+
+    // { ok, map: { 'a.com': ['Business'] } } with the predefined categories, 50 domains per call
+    async function nrdApiLookup(host, domains) {
+        const bridge = nrdBridge();
+        const keys = [...new Set(domains.map(nrdLookupKey).filter(Boolean))];
+        const map = {};
+        for (let i = 0; i < keys.length; i += 50) {
+            const r = await bridge.request(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: keys.slice(i, i + 50) } });
+            if (!r.ok) return { ok: false, status: r.status, error: r.error };
+            ((r.data && r.data.result) || []).forEach(x => {
+                map[String(x.url).toLowerCase()] = (x.categories || []).filter(c => c.type === 'predefined').map(c => c.name || '');
+            });
+        }
+        return { ok: true, map };
+    }
+
+    async function nrdApiProfile(host, name) {
+        const bridge = nrdBridge();
+        const list = await bridge.request(host, 'GET', `${NRD_DEST_PATH}?filter=${encodeURIComponent(`name co "${name}"`)}`);
+        if (!list.ok) return list;
+        const matches = ((list.data && list.data.elements) || []).filter(p => p.name === name);
+        if (!matches.length) return { ok: false, error: `no Destination Profile called "${name}"` };
+        if (matches.length > 1) return { ok: false, error: `${matches.length} profiles are called "${name}"` };
+        return bridge.request(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(matches[0].id)}?details=true`);
+    }
+
+    const nrdApiError = (r, what) => r.status === 403
+        ? `the token has no permission for ${what}. Ask for a token that includes it.`
+        : r.error === 'noToken' ? 'no API token saved for this tenant in the URL Lists Editor.'
+        : r.error === 'expired' ? 'the API token expired: save a new one in the URL Lists Editor.'
+        : (r.error || `Netskope answered ${r.status}`);
+
+    // Tests the token of one tenant without changing anything.
+    async function nrdApiTest(type) {
+        const bridge = nrdBridge();
+        if (!bridge) return '⚠ Turn on the URL Lists Editor in the toolbar settings to use the Netskope API.';
+        const host = nrdHostOf(type);
+        if (!host) return `⚠ No ${type} tenant host is set up in the URL Lists Editor.`;
+        if (!bridge.hasToken(host)) return `⚠ No API token for ${type}: save one in the URL Lists Editor.`;
+        const look = await bridge.request(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: ['example.com'] } });
+        if (!look.ok) return `⛔ ${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`;
+        const dest = await bridge.request(host, 'GET', `${NRD_DEST_PATH}?limit=1`);
+        if (!dest.ok) return `⛔ ${type}: ${nrdApiError(dest, '/api/v2/profiles/destinations')}`;
+        return `✔ ${type}: the token can look up categories and read Destination Profiles. Changing a profile also needs PATCH on /api/v2/profiles/destinations, checked when you apply.`;
+    }
+
+    // Builds the proposal for the due domains of the tenants with the API on.
+    async function nrdApiPlan(due) {
+        const bridge = nrdBridge();
+        if (!bridge) return { ok: false, message: 'Turn on the URL Lists Editor in the toolbar settings to use the Netskope API.' };
+        const on = nrdApiOn();
+        const rows = [], notes = [], notTracked = [], profiles = [];
+        const byTenant = new Map();
+        due.filter(i => on[i.tenantType]).forEach(i => (byTenant.get(i.tenantType) || byTenant.set(i.tenantType, []).get(i.tenantType)).push(i));
+        if (!byTenant.size) return { ok: false, message: 'The Netskope API is not turned on for these tenants: open ⚙ Profiles.' };
+        for (const [type, items] of byTenant) {
+            const host = nrdHostOf(type);
+            if (!host || !bridge.hasToken(host)) { notes.push(`No API token for ${type}: save one in the URL Lists Editor.`); continue; }
+            const look = await nrdApiLookup(host, items.map(i => i.domain));
+            if (!look.ok) { notes.push(`${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`); continue; }
+            items.forEach(it => {
+                const cats = look.map[nrdLookupKey(it.domain)];
+                const nrd = cats ? nrdIsNrdCategory(cats) : null;
+                rows.push({ item: it, host, categories: cats || null, nrd, action: cats == null ? 'skip' : nrd ? 'keep' : 'remove' });
+            });
+            // Cross check: dated domains in the profile the tracker does not know
+            const tracked = new Set(((nrdCache() || {}).items || []).map(i => `${i.profile}\n${nrdLookupKey(i.domain)}`));
+            for (const name of [...new Set(items.map(i => i.profile))]) {
+                const prof = await nrdApiProfile(host, name);
+                if (!prof.ok) { notes.push(`${type} · ${name}: ${nrdApiError(prof, '/api/v2/profiles/destinations')}`); continue; }
+                profiles.push({ host, name, id: prof.data.id });
+                let comment = null, date = null;
+                for (const v of prof.data.values || []) {
+                    const t = String(v).trim();
+                    if (t.startsWith('#')) { comment = t; const m = /\b(\d{4}-\d{2}-\d{2})\b/.exec(t); date = m ? Date.parse(m[1]) : null; continue; }
+                    if (t && date && Date.now() - date >= NRD_EXPIRY_DAYS * NRD_DAY && !tracked.has(`${name}\n${nrdLookupKey(t)}`)) {
+                        notTracked.push({ type, profile: name, value: t, comment });
+                    }
+                }
+            }
+        }
+        return { ok: true, rows, notes, notTracked, profiles };
+    }
+
+    // Removes the domains marked "remove" profile by profile, then logs everything in the original tickets.
+    async function nrdApiApply(plan) {
+        const bridge = nrdBridge();
+        const notes = [];
+        let pending = false;
+        const groups = new Map();
+        plan.rows.filter(r => r.action === 'remove').forEach(r => {
+            const k = `${r.host}\n${r.item.profile}`;
+            (groups.get(k) || groups.set(k, []).get(k)).push(r);
+        });
+        const removed = [];
+        for (const rows of groups.values()) {
+            const { host } = rows[0];
+            const name = rows[0].item.profile;
+            const first = await nrdApiProfile(host, name);
+            if (!first.ok) { notes.push(`${name}: ${nrdApiError(first, '/api/v2/profiles/destinations')}`); continue; }
+            if (first.data.status && first.data.status !== 'applied') { notes.push(`${name}: skipped, it has pending changes in Netskope. Apply or discard them first.`); continue; }
+            const values = nrdRebuildValues(first.data.values, new Set(rows.map(r => String(r.item.domain).trim().toLowerCase())));
+            // Nobody may have changed it while the proposal was being reviewed
+            const again = await bridge.request(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(first.data.id)}?details=true`);
+            if (!again.ok || JSON.stringify(again.data.values) !== JSON.stringify(first.data.values) || again.data.modify_time !== first.data.modify_time) {
+                notes.push(`${name}: it changed in Netskope while you were reviewing, nothing was changed. Check again.`);
+                continue;
+            }
+            const d = again.data;
+            const res = await bridge.request(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}`,
+                { name: d.name, description: d.description || '', type: d.type, label_ids: d.label_ids || [], values });
+            if (!res.ok) { notes.push(`${name}: not changed, ${nrdApiError(res, 'PATCH /api/v2/profiles/destinations')}`); continue; }
+            if (!res.data || res.data.status !== 'applied') pending = true;
+            removed.push(...rows);
+        }
+        // Logged only after Netskope confirmed the change
+        const logGroups = (list) => list.reduce((m, r) => { const k = `${r.item.ticket}\n${r.item.tenantType}\n${r.item.profile}`; (m.get(k) || m.set(k, []).get(k)).push(r); return m; }, new Map());
+        const tenantOf = (it) => it.tenantType ? { type: it.tenantType, host: nrdHostOf(it.tenantType) } : null;
+        for (const rows of logGroups(removed).values()) {
+            const it = rows[0].item;
+            const cats = [...new Set(rows.flatMap(r => r.categories || []))].join(', ') || 'unknown';
+            await addEntry(it.ticket, 'Destination Profile — Destinations Removed', { profileName: it.profile, destinations: rows.map(r => r.item.domain).join('\n') },
+                `NRD review: removed after ${Math.max(...rows.map(r => r.item.days))} days, category now ${cats}.`, { tenant: tenantOf(it) });
+        }
+        for (const rows of logGroups(plan.rows.filter(r => r.action === 'keep')).values()) {
+            const it = rows[0].item;
+            await addEntry(it.ticket, NRD_REVIEW_TYPE, { profileName: it.profile, destinations: rows.map(r => r.item.domain).join('\n'), outcome: 'kept',
+                category: [...new Set(rows.flatMap(r => r.categories || []))].join(', ') }, `NRD review: kept ${NRD_KEEP_DAYS} more days, still Newly Registered Domain`, { tenant: tenantOf(it) });
+        }
+        await nrdCheck({ force: true });
+        const kept = plan.rows.filter(r => r.action === 'keep').length;
+        const parts = [`✔ ${removed.length} removed from the profiles, ${kept} kept ${NRD_KEEP_DAYS} more days.`];
+        if (removed.length && pending) parts.push('Click Apply Changes in Netskope for the change to take effect.');
+        return parts.concat(notes).join(' ');
+    }
+
+    function renderNrdApiPlan(modal, close, plan) {
+        modal.querySelector('#ct-nrd-api-plan')?.remove();
+        const box = css(mk('div', { id:'ct-nrd-api-plan' }), { border:'1px solid #c0c8f0', borderRadius:'6px', padding:'8px 10px', margin:'10px 0', background:'#f8f8ff' });
+        box.appendChild(Object.assign(css(mk('div'), { fontWeight:'bold', marginBottom:'6px' }), { textContent: '🔌 Proposal from the Netskope API' }));
+        plan.rows.forEach(r => {
+            const row = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', padding:'3px 0', flexWrap:'wrap' });
+            row.dataset.nrdPlan = '1';
+            row.dataset.domain = r.item.domain;
+            const sel = css(mk('select'), { fontSize:'12px', padding:'2px' });
+            sel.dataset.nrdAction = '1';
+            [['remove', 'Remove'], ['keep', `Keep ${NRD_KEEP_DAYS} more days`], ['skip', 'Leave for now']].forEach(([v, l]) => sel.appendChild(Object.assign(mk('option'), { value: v, textContent: l })));
+            sel.value = r.action;
+            const dom = css(mk('span'), { fontFamily:'monospace', minWidth:'140px' });
+            dom.textContent = r.item.domain;
+            const cat = css(mk('span'), { color:'#555' });
+            cat.textContent = r.categories == null ? 'Not checked: Netskope did not return a category' : (r.categories.join(', ') || 'No category');
+            // The profile this row changes, so a wrong name in the shared data is visible before applying
+            const prof = css(mk('span'), { color:'#667eea', fontSize:'11px' });
+            prof.textContent = `${r.item.profile} (${r.item.tenantType || 'tenant not recorded'})`;
+            const warn = css(mk('span'), { color:'#dc3545', fontWeight:'bold', width:'100%' });
+            const sync = () => {
+                r.action = sel.value;
+                warn.textContent = sel.value === 'remove' && r.nrd ? '⚠ Still Newly Registered Domain: users will be blocked again.' : '';
+            };
+            sel.onchange = sync;
+            sync();
+            row.append(sel, dom, cat, prof, warn);
+            box.appendChild(row);
+        });
+        if (plan.notTracked.length) {
+            const nt = css(mk('div', { id:'ct-nrd-not-tracked' }), { marginTop:'8px', color:'#555' });
+            nt.appendChild(Object.assign(css(mk('div'), { fontWeight:'bold' }), { textContent: 'In the profile but not in the tracker (not changed):' }));
+            plan.notTracked.forEach(x => nt.appendChild(Object.assign(mk('div'), { textContent: `${x.value} · ${x.profile} · ${x.comment || ''}` })));
+            box.appendChild(nt);
+        }
+        const apply = css(mk('button', { id:'ct-nrd-api-apply', type:'button' }), { marginTop:'8px', padding:'6px 12px', borderRadius:'4px', cursor:'pointer',
+            fontSize:'12px', fontWeight:'bold', border:'none', background:'#667eea', color:'#fff' });
+        apply.textContent = 'Apply in Netskope and log it';
+        apply.disabled = !plan.rows.length;
+        // A first click shows exactly which profiles change; the second one applies
+        const confirmBox = css(mk('div', { id:'ct-nrd-api-confirm' }), { display:'none', marginTop:'8px', padding:'6px 8px', background:'#fff4e5',
+            border:'1px solid #ffc680', borderRadius:'4px', color:'#8a5a00', lineHeight:'1.5' });
+        let armed = false;
+        apply.onclick = async () => {
+            if (!armed) {
+                const counts = new Map();
+                plan.rows.filter(r => r.action === 'remove').forEach(r => { const k = `${r.item.profile} (${r.item.tenantType || 'tenant not recorded'})`; counts.set(k, (counts.get(k) || 0) + 1); });
+                const kept = plan.rows.filter(r => r.action === 'keep').length;
+                confirmBox.textContent = (counts.size
+                    ? `This changes ${counts.size === 1 ? 'this profile' : 'these profiles'} in Netskope: ${[...counts].map(([k, n]) => `${k}, ${n} ${n === 1 ? 'domain' : 'domains'} removed`).join('; ')}.`
+                    : 'No profile is changed in Netskope.') + (kept ? ` ${kept} kept ${NRD_KEEP_DAYS} more days.` : '') + ' Click again to confirm.';
+                confirmBox.style.display = 'block';
+                apply.textContent = 'Confirm and apply';
+                armed = true;
+                return;
+            }
+            apply.disabled = true;
+            const msg = modal.querySelector('#ct-nrd-review-msg');
+            if (msg) msg.textContent = 'Changing the profiles in Netskope…';
+            const text = await nrdApiApply(plan);
+            renderNrdReview(modal, close, text);
+        };
+        box.append(confirmBox, apply);
+        const foot = modal.querySelector('#ct-nrd-mark-removed')?.parentElement;
+        modal.insertBefore(box, foot || null);
+    }
+
+    function openNrdSettings() {
+        document.getElementById('ct-nrd-settings-overlay')?.remove();
+        document.getElementById('ct-nrd-settings')?.remove();
+        const overlay = css(mk('div', { id:'ct-nrd-settings-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.5)', zIndex:'1050010' });
+        const modal = css(mk('div', { id:'ct-nrd-settings' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1050011', background:'#fff',
+            border:'1px solid #ccc', borderRadius:'10px', padding:'20px', width:'520px', maxWidth:'92vw', maxHeight:'86vh',
+            overflowY:'auto', fontFamily:'Arial, sans-serif', boxShadow:'0 6px 24px rgba(0,0,0,.25)', color:'#333'
+        });
+        const close = () => { overlay.remove(); modal.remove(); };
+        overlay.onclick = close;
+        const hdr = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' });
+        const title = css(mk('div'), { fontSize:'15px', fontWeight:'bold' });
+        title.textContent = '⏰ Newly Registered Domains profiles';
+        const x = css(mk('button', { type:'button' }), { background:'red', color:'#fff', border:'none', borderRadius:'4px', cursor:'pointer', padding:'4px 10px', fontWeight:'bold', fontSize:'18px', lineHeight:'1' });
+        x.textContent = '×';
+        x.onclick = close;
+        hdr.append(title, x);
+        const help = css(mk('div'), { fontSize:'12px', color:'#555', lineHeight:'1.5', marginBottom:'10px' });
+        help.textContent = 'Profiles whose name contains "Newly Registered Domains" count by themselves. Add here, exactly as in Netskope, the ones named otherwise. This list is shared by the whole team.';
+        const rows = css(mk('div', { id:'ct-nrd-rows' }), { display:'flex', flexDirection:'column', gap:'6px', marginBottom:'8px' });
+        const btnStyle = { padding:'6px 12px', border:'1px solid #c0c8f0', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:'bold', background:'#fff', color:'#667eea' };
+        const addBtn = css(mk('button', { id:'ct-nrd-add', type:'button' }), btnStyle);
+        addBtn.textContent = '+ Add profile';
+        const saveBtn = css(mk('button', { id:'ct-nrd-save', type:'button' }), Object.assign({}, btnStyle, { background:'#667eea', color:'#fff', border:'none', marginLeft:'6px' }));
+        saveBtn.textContent = 'Save';
+        const msg = css(mk('div', { id:'ct-nrd-settings-msg' }), { fontSize:'12px', margin:'8px 0', minHeight:'16px' });
+        const ruleTitle = css(mk('div'), { fontSize:'12px', fontWeight:'bold', margin:'14px 0 4px' });
+        ruleTitle.textContent = 'Found by the name, in the last 90 days';
+        const ruleList = css(mk('div', { id:'ct-nrd-rule-list' }), { fontSize:'12px', color:'#555', lineHeight:'1.6' });
+        ruleList.textContent = 'Loading…';
+        // The Netskope API is a personal choice per tenant: it uses this browser's URL Lists Editor tokens
+        const apiTitle = css(mk('div'), { fontSize:'12px', fontWeight:'bold', margin:'16px 0 4px' });
+        apiTitle.textContent = 'Netskope API (this browser only, optional)';
+        const apiHelp = css(mk('div'), { fontSize:'11px', color:'#666', lineHeight:'1.5', marginBottom:'6px' });
+        apiHelp.textContent = 'With the API on, the review looks up the categories and takes the domains out of the profile for you. It uses the API token saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.';
+        const apiBox = css(mk('div', { id:'ct-nrd-api' }), { display:'flex', flexDirection:'column', gap:'6px' });
+        Object.keys(TENANT_TYPE_TO_KEY).forEach(type => {
+            const host = String(GM_getValue(TENANT_TYPE_TO_KEY[type], '') || '').trim();
+            const row = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap', fontSize:'12px' });
+            const lab = css(mk('label'), { display:'inline-flex', alignItems:'center', gap:'4px', minWidth:'200px' });
+            const cb = mk('input', { type:'checkbox' });
+            cb.dataset.nrdApi = type;
+            cb.checked = !!nrdApiOn()[type];
+            cb.disabled = !host;
+            cb.onchange = () => { const on = nrdApiOn(); if (cb.checked) on[type] = true; else delete on[type]; GM_setValue(NRD_API_KEY, on); };
+            lab.append(cb, document.createTextNode(`${type}${host ? ' · ' + host : ' (no host set up)'}`));
+            const test = css(mk('button', { type:'button' }), { padding:'2px 8px', fontSize:'11px', border:'1px solid #c0c8f0', borderRadius:'4px', background:'#fff', color:'#667eea', cursor:'pointer' });
+            test.dataset.nrdApiTest = type;
+            test.textContent = 'Test';
+            test.disabled = !host;
+            const res = css(mk('span'), { color:'#555', flex:'1 1 100%' });
+            res.dataset.nrdApiResult = type;
+            test.onclick = async () => { test.disabled = true; res.textContent = 'Testing…'; res.textContent = await nrdApiTest(type); test.disabled = false; };
+            row.append(lab, test, res);
+            apiBox.appendChild(row);
+        });
+        modal.append(hdr, help, rows, addBtn, saveBtn, msg, ruleTitle, ruleList, apiTitle, apiHelp, apiBox);
+        document.body.append(overlay, modal);
+
+        let current = null;   // the settings item as loaded: { nrdProfiles, id, spId, etag }
+        const addRow = (p = { tenant: 'EMA', name: '' }) => {
+            const row = css(mk('div'), { display:'flex', gap:'6px', alignItems:'center' });
+            row.dataset.nrdRow = '1';
+            const sel = css(mk('select'), { padding:'4px', fontSize:'12px' });
+            sel.dataset.nrdTenant = '1';
+            Object.keys(TENANT_TYPE_TO_KEY).forEach(t => sel.appendChild(Object.assign(mk('option'), { value: t, textContent: t })));
+            sel.value = p.tenant || 'EMA';
+            const inp = css(mk('input', { type:'text', placeholder:'Destination Profile name, as in Netskope' }), { flex:'1', padding:'5px', fontSize:'12px', border:'1px solid #ccc', borderRadius:'4px' });
+            inp.dataset.nrdName = '1';
+            inp.value = p.name || '';
+            const del = css(mk('button', { type:'button', title:'Remove from the list' }), { border:'none', background:'transparent', color:'#dc3545', cursor:'pointer', fontSize:'14px' });
+            del.textContent = '✕';
+            del.onclick = () => row.remove();
+            row.append(sel, inp, del);
+            rows.appendChild(row);
+        };
+        const render = () => { rows.textContent = ''; (current.nrdProfiles || []).forEach(addRow); };
+        const load = async () => {
+            const res = await api.loadSettings();
+            if (!res.ok) { msg.textContent = '⚠ Could not read the shared list from SharePoint.'; return false; }
+            current = res.data;
+            render();
+            return true;
+        };
+        addBtn.onclick = () => addRow();
+        saveBtn.onclick = async () => {
+            if (!current) return;
+            const seen = new Set();
+            const list = [...rows.querySelectorAll('[data-nrd-row]')].map(r => ({
+                tenant: r.querySelector('[data-nrd-tenant]').value, name: r.querySelector('[data-nrd-name]').value.trim() }))
+                .filter(p => p.name && !seen.has(p.tenant + '\n' + p.name) && seen.add(p.tenant + '\n' + p.name));
+            saveBtn.disabled = true;
+            msg.textContent = 'Saving…';
+            const res = await api.saveSettings(list, current);
+            saveBtn.disabled = false;
+            if (res.ok) { current = res.data; msg.textContent = '✔ Saved. Everyone gets it at their next check.'; return; }
+            if (res.kind === 'conflict') {
+                await load();
+                msg.textContent = '⚠ The list was changed by someone else just now. It was reloaded: check it and save again.';
+                return;
+            }
+            msg.textContent = `⚠ Not saved: ${res.message || res.kind || 'SharePoint refused it'}.`;
+        };
+        load();
+        api.fetchProfileEntriesSince(nrdSinceIso(NRD_HISTORY_DAYS)).then(res => {
+            if (!res.ok) { ruleList.textContent = 'Could not read the recent entries.'; return; }
+            const found = new Map();
+            res.data.forEach(({ entry }) => {
+                const name = entry.fields && String(entry.fields.profileName || '').trim();
+                if (name && NRD_NAME_RULE.test(name)) found.set(((entry.tenant && entry.tenant.type) || '?') + '\n' + name, true);
+            });
+            ruleList.textContent = found.size ? [...found.keys()].map(k => k.replace('\n', ' · ')).sort().join('\n') : 'None in the last 90 days.';
+            ruleList.style.whiteSpace = 'pre-line';
+        });
+    }
+
     function openSetupPrompt(options = {}) {
         const { previousState = null } = options;
         const prevSite = GM_getValue(SP_SITE_KEY, '');
@@ -23981,6 +24785,15 @@ Version 1.4.3:
         const renewResult = css(mk('div', { id:'ct-setup-renewal-result' }), { marginTop:'6px', color:'#333' });
         renewBox.append(renewLog, renewBtn, renewResult);
         modal.appendChild(renewBox);
+
+        const nrdBtn = css(mk('button', { id:'ct-nrd-settings-btn', type:'button' }), {
+            padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
+            cursor:'pointer', fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif', margin:'-6px 0 14px'
+        });
+        nrdBtn.textContent = '⏰ Newly Registered Domains profiles';
+        nrdBtn.title = 'The Destination Profiles whose domains are reviewed after 30 days, shared by the team';
+        nrdBtn.onclick = () => { if (spClient.siteUrl()) openNrdSettings(); };
+        modal.appendChild(nrdBtn);
 
         function renderRenewLog() {
             const rec = spClient.renewRecord();
@@ -24506,6 +25319,12 @@ Version 1.4.3:
             }
         }, 2500);
 
+        // Newly Registered Domains: a few seconds after the page loads, then now and then (each check
+        // reads SharePoint at most every 4 hours, across tabs). The dot is redrawn when the toolbar redraws.
+        setTimeout(() => { if (api.isConfigured()) nrdCheck(); }, 4000);
+        setInterval(() => { if (api.isConfigured()) nrdCheck(); }, 15 * 60000);
+        setInterval(renderNrdAlert, 5000);
+
         // While offline, retry the connection in the background every minute.
         setInterval(() => {
             if ((connState === 'OFFLINE' || connState === 'SESSION_EXPIRED') && api.isConfigured()) {
@@ -24517,7 +25336,8 @@ Version 1.4.3:
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue,
+                bridge: suiteBridge, nrdRebuildValues, nrdApiLookup,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary };
         }
 
