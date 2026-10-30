@@ -3580,6 +3580,86 @@ Version 1.0.0:
         scheduleRerender();
     }
 
+    /* ==========================================================
+     *  SUITE TENANTS
+     *  The Netskope tenant of a ServiceNow ticket, read from its Requesting Member Firm
+     *  ("Deloitte <region>"). Shared by the URL List Editor and the Change Tracker.
+     * ==========================================================*/
+
+    const REGION_TO_TENANT_TYPE = {
+        'Africa':                        'EMA',
+        //'Asia Pacific':                  'APAC', -- Uncomment when Tenant is confirmed
+        'Australia':                     'APAC',
+        'Austria':                       'EU',
+        'Belgium':                       'EU',
+        'Brazil':                        'AME',
+        'Canada':                        'AME',
+        'Caribbean and Bermuda Countries': 'AME',
+        'Central Europe':                'CE',
+        'Central Mediterranean':         'EU',
+        'Chile':                         'AME',
+        //'China':                         'APAC', -- Uncomment when Tenant is confirmed
+        'Cyprus':                        'EU',
+        'Denmark':                       'EU',
+        'DKU':                           'EMA',
+        'Finland':                       'EU',
+        'France':                        'CE',
+        'Germany':                       'CE',
+        //'Hong Kong':                     'APAC', -- Uncomment when Tenant is confirmed
+        'Iceland':                       'EU',
+        'Ireland':                       'EU',
+        'Israel':                        'EMA',
+        'Japan':                         'APAC',
+        'Korea':                         'APAC',
+        'Luxembourg':                    'EU',
+        'Mauritius':                     'APAC',
+        'Mexico':                        'AME',
+        'Middle East':                   'EU',
+        'Netherlands':                   'EU',
+        'New Zealand':                   'APAC',
+        'Nordics':                       'EU',
+        'North and South Europe':        'EU',
+        'Norway':                        'EU',
+        'Portugal':                      'CE',
+        'S-LATAM':                       'EMA',
+        'South Asia(India)':             'APAC',
+        'Southeast Asia':                'APAC',
+        'Spain':                         'EMA',
+        'Sweden':                        'EU',
+        'Switzerland':                   'EU',
+        'Taiwan':                        'APAC',
+        'Touche Tohmatsu Limited':       'AME',
+        'Turkey':                        'CE',
+        'United Kingdom':                'EU',
+        'United States':                 'AME',
+    };
+
+    // Maps tenant type abbreviation → GM storage key
+    const TENANT_TYPE_TO_KEY = {
+        'EMA': 'netskopeHost_EMA',
+        'EU':  'netskopeHost_EU',
+        'CE':  'netskopeHost_CE',
+        'APAC': 'netskopeHost_APAC',
+        'AME': 'netskopeHost_AME',
+    };
+
+    // Returns { type, host } (host '' when that tenant is not set up yet), or null when the ticket has no member firm.
+    function detectTicketTenant(doc) {
+        const selectors = ['input.form-control.element_reference_input', 'input[type="hidden"][id*="display_hidden"]'];
+        for (const selector of selectors) {
+            for (const input of (doc || document).querySelectorAll(selector)) {
+                const value = String(input.value || '').trim();
+                if (!value.startsWith('Deloitte')) continue;
+                const type = REGION_TO_TENANT_TYPE[value.replace('Deloitte', '').trim()];
+                if (type) return { type, host: String(GM_getValue(TENANT_TYPE_TO_KEY[type], '') || '').trim() };
+            }
+        }
+        return null;
+    }
+
+    // Shared services between tools of this script (filled by the tools that provide them)
+    const suiteBridge = {};
+
     /* === TOOL: GENERAL TOOLKIT === */
 
     const registerGeneralToolkit = (() => {
@@ -11567,53 +11647,6 @@ Version 1.4.1:
     /* ----------------------------------------------------------
      *  REGION → TENANT TYPE (static, organisational logic only)
      * ----------------------------------------------------------*/
-    const REGION_TO_TENANT_TYPE = {
-        'Africa':                        'EMA',
-        //'Asia Pacific':                  'APAC', -- Uncomment when Tenant is confirmed
-        'Australia':                     'APAC',
-        'Austria':                       'EU',
-        'Belgium':                       'EU',
-        'Brazil':                        'AME',
-        'Canada':                        'AME',
-        'Caribbean and Bermuda Countries': 'AME',
-        'Central Europe':                'CE',
-        'Central Mediterranean':         'EU',
-        'Chile':                         'AME',
-        //'China':                         'APAC', -- Uncomment when Tenant is confirmed
-        'Cyprus':                        'EU',
-        'Denmark':                       'EU',
-        'DKU':                           'EMA',
-        'Finland':                       'EU',
-        'France':                        'CE',
-        'Germany':                       'CE',
-        //'Hong Kong':                     'APAC', -- Uncomment when Tenant is confirmed
-        'Iceland':                       'EU',
-        'Ireland':                       'EU',
-        'Israel':                        'EMA',
-        'Japan':                         'APAC',
-        'Korea':                         'APAC',
-        'Luxembourg':                    'EU',
-        'Mauritius':                     'APAC',
-        'Mexico':                        'AME',
-        'Middle East':                   'EU',
-        'Netherlands':                   'EU',
-        'New Zealand':                   'APAC',
-        'Nordics':                       'EU',
-        'North and South Europe':        'EU',
-        'Norway':                        'EU',
-        'Portugal':                      'CE',
-        'S-LATAM':                       'EMA',
-        'South Asia(India)':             'APAC',
-        'Southeast Asia':                'APAC',
-        'Spain':                         'EMA',
-        'Sweden':                        'EU',
-        'Switzerland':                   'EU',
-        'Taiwan':                        'APAC',
-        'Touche Tohmatsu Limited':       'AME',
-        'Turkey':                        'CE',
-        'United Kingdom':                'EU',
-        'United States':                 'AME',
-    };
 
     /* ----------------------------------------------------------
      *  TENANT HOST KEYS  (GM storage keys + UI labels)
@@ -11626,14 +11659,6 @@ Version 1.4.1:
         { key: 'netskopeHost_AME', label: 'AME Tenant Host', placeholder: 'google.com' },
     ];
 
-    // Maps tenant type abbreviation → GM storage key
-    const TENANT_TYPE_TO_KEY = {
-        'EMA': 'netskopeHost_EMA',
-        'EU':  'netskopeHost_EU',
-        'CE':  'netskopeHost_CE',
-        'APAC': 'netskopeHost_APAC',
-        'AME': 'netskopeHost_AME',
-    };
 
     /* ----------------------------------------------------------
      *  TENANT HOST STORAGE HELPERS
@@ -11871,26 +11896,8 @@ Version 1.4.1:
         const ctx = getTicketContext();
         const doc = (ctx && ctx.doc) || document;
 
-        const selectors = [
-            'input.form-control.element_reference_input',
-            'input[type="hidden"][id*="display_hidden"]'
-        ];
-
-        for (const selector of selectors) {
-            for (const input of doc.querySelectorAll(selector)) {
-                const value = input.value.trim();
-                if (value.startsWith('Deloitte')) {
-                    const region = value.replace('Deloitte', '').trim();
-                    const tenantType = REGION_TO_TENANT_TYPE[region];
-                    if (tenantType) {
-                        const gmKey = TENANT_TYPE_TO_KEY[tenantType];
-                        const host = GM_getValue(gmKey, null);
-                        if (host) return host.trim();
-                    }
-                }
-            }
-        }
-        return null;
+        const tenant = detectTicketTenant(doc);
+        return tenant && tenant.host ? tenant.host : null;
     }
 
     const EXPIRY_SCALES = [
@@ -19215,7 +19222,7 @@ Version 1.4.3:
                 CTEntryId:   entry.id,
                 CTPayload:   JSON.stringify({ v: 1, id: entry.id, ts: entry.ts, type: entry.type,
                                               fields: entry.fields || null, note: entry.note || null,
-                                              imported: entry.imported || undefined }),
+                                              imported: entry.imported || undefined, tenant: entry.tenant || undefined }),
             };
         }
 
@@ -19225,6 +19232,7 @@ Version 1.4.3:
             if (!p || !p.id) return null;
             return {
                 id: p.id, ts: p.ts, type: p.type, fields: p.fields || null, note: p.note || null,
+                tenant: p.tenant || null,
                 spId: item.Id,
                 etag: item['odata.etag'] || null,
                 // Imported entries keep the name of whoever wrote them on the old server.
@@ -20645,8 +20653,11 @@ Version 1.4.3:
         savePending(ticket, p);
     }
 
-    async function addEntry(ticket, type, fields, note) {
+    // extra.tenant: the Netskope tenant, for an entry written to another ticket than the open one
+    async function addEntry(ticket, type, fields, note, extra = {}) {
         const entry = { id: uid(), ts: nowStamp(), type, fields: fields || null, note: note || null };
+        const tenant = extra.tenant || (ticket === getTicketNumber() ? detectTicketTenant(getTicketDoc()) : null);
+        if (tenant) entry.tenant = tenant;
         const current = loadEntries(ticket);
         current.push(entry);
         _cacheEntries(ticket, current);                          // optimistic local update
