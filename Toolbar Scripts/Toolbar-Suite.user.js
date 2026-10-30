@@ -452,7 +452,8 @@ Version 1.0.0:
         #highlighter-config-modal, #highlighterChangelogModal, #rowHighlighterHelpModal { color: #333333 !important; }
         #highlighter-config-modal input, #highlighter-config-modal select, #highlighter-config-modal textarea { background-color: #ffffff !important; color: #333333 !important; }
         /* Change Tracker */
-        #ct-sidebar, #ct-changelog-modal, #ct-edit-modal, #ct-setup-modal { color: #333333 !important; }
+        #ct-sidebar, #ct-changelog-modal, #ct-edit-modal, #ct-setup-modal, #ct-nrd-settings, #ct-nrd-review { color: #333333 !important; }
+        #ct-nrd-settings input, #ct-nrd-settings select, #ct-nrd-review input, #ct-nrd-review select { background-color: #ffffff !important; color: #333333 !important; }
         #ct-sidebar input, #ct-sidebar select, #ct-sidebar textarea,
         #ct-edit-modal input, #ct-edit-modal select, #ct-edit-modal textarea,
         #ct-setup-modal input, #ct-setup-modal select, #ct-setup-modal textarea { background-color: #ffffff !important; color: #333333 !important; }
@@ -19539,6 +19540,43 @@ Version 1.4.3:
             return { ok: true, data: { entries: res.data.map(entryMapper.fromItem).filter(Boolean) } };
         },
 
+        // Destination Profile entries of every ticket since a date. Filters on the indexed date only
+        // (list view threshold); the group is checked here. The shared settings item is skipped.
+        async fetchProfileEntriesSince(iso) {
+            const res = await api._allItems({ $filter: `CTEntryDate ge datetime'${iso}'`, $select: ITEM_SELECT + ',Title',
+                $expand: 'Author,Editor' });
+            if (!res.ok) return res;
+            const groupOf = {};
+            SNIPPET_GROUPS.forEach(g => g.items.forEach(i => { groupOf[i.value] = g.group; }));
+            const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
+                .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
+                .filter(r => r.entry && groupOf[r.entry.type] === 'Destination Profiles');
+            return { ok: true, data };
+        },
+
+        // The team's shared settings, one item in the list. Missing item = defaults.
+        async loadSettings() {
+            const res = await api.fetchEntries(NRD_SETTINGS_TICKET);
+            if (!res.ok) return res;
+            const item = res.data.entries.find(e => e.type === NRD_SETTINGS_TYPE);
+            const profiles = item && item.fields && Array.isArray(item.fields.nrdProfiles) ? item.fields.nrdProfiles : [];
+            return { ok: true, data: { nrdProfiles: profiles, id: item ? item.id : null, spId: item ? item.spId : null, etag: item ? item.etag : null } };
+        },
+
+        // Saves the NRD profiles over `prev` (as loaded). Someone else's save in between: kind 'conflict'.
+        async saveSettings(nrdProfiles, prev) {
+            if (!prev || !prev.spId) {
+                const now = await api.loadSettings();
+                if (!now.ok) return now;
+                if (now.data.spId) return { ok: false, kind: 'conflict' };
+            }
+            const entry = { id: (prev && prev.id) || 'ct-settings', ts: nowStamp(), type: NRD_SETTINGS_TYPE, fields: { nrdProfiles },
+                note: null, ticket: NRD_SETTINGS_TICKET, spId: prev && prev.spId, etag: prev && prev.etag };
+            const res = await api.saveEntry(entry);
+            if (!res.ok) return res;
+            return { ok: true, data: { nrdProfiles, id: entry.id, spId: res.data.spId, etag: res.data.etag } };
+        },
+
         async findItem(entryId) {
             const res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items` + qs({
                 $filter: `CTEntryId eq '${spClient.odataQuote(entryId)}'`, $select: ITEM_SELECT, $expand: 'Author,Editor', $top: '1' }) });
@@ -23882,6 +23920,120 @@ Version 1.4.3:
      *  the Configure links.
      * ==========================================================*/
 
+    /* ==========================================================
+     *  NEWLY REGISTERED DOMAINS
+     *  Domains allowed in a Destination Profile for about 30 days, until Netskope drops
+     *  their Newly Registered Domain category. The tracker finds the due ones across
+     *  tickets and helps take them out again.
+     * ==========================================================*/
+
+    const NRD_SETTINGS_TICKET = '__CT_SETTINGS__';
+    const NRD_SETTINGS_TYPE   = 'Tracker settings';
+    const NRD_NAME_RULE       = /newly registered domains/i;
+    const NRD_HISTORY_DAYS    = 90;
+
+    // A profile is NRD by its name, or when the team listed it in the shared settings for that tenant.
+    function isNrdProfile(name, tenantType, settings) {
+        const n = String(name || '').trim();
+        if (!n) return false;
+        if (NRD_NAME_RULE.test(n)) return true;
+        return ((settings && settings.nrdProfiles) || []).some(p =>
+            String(p.name || '').trim() === n && (!tenantType || !p.tenant || p.tenant === tenantType));
+    }
+
+    const nrdSinceIso = (days) => new Date(Date.now() - days * 86400000).toISOString().replace(/\.\d+Z$/, 'Z');
+
+    function openNrdSettings() {
+        document.getElementById('ct-nrd-settings-overlay')?.remove();
+        document.getElementById('ct-nrd-settings')?.remove();
+        const overlay = css(mk('div', { id:'ct-nrd-settings-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.5)', zIndex:'1050010' });
+        const modal = css(mk('div', { id:'ct-nrd-settings' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1050011', background:'#fff',
+            border:'1px solid #ccc', borderRadius:'10px', padding:'20px', width:'520px', maxWidth:'92vw', maxHeight:'86vh',
+            overflowY:'auto', fontFamily:'Arial, sans-serif', boxShadow:'0 6px 24px rgba(0,0,0,.25)', color:'#333'
+        });
+        const close = () => { overlay.remove(); modal.remove(); };
+        overlay.onclick = close;
+        const hdr = css(mk('div'), { display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' });
+        const title = css(mk('div'), { fontSize:'15px', fontWeight:'bold' });
+        title.textContent = '⏰ Newly Registered Domains profiles';
+        const x = css(mk('button', { type:'button' }), { background:'red', color:'#fff', border:'none', borderRadius:'4px', cursor:'pointer', padding:'4px 10px', fontWeight:'bold', fontSize:'18px', lineHeight:'1' });
+        x.textContent = '×';
+        x.onclick = close;
+        hdr.append(title, x);
+        const help = css(mk('div'), { fontSize:'12px', color:'#555', lineHeight:'1.5', marginBottom:'10px' });
+        help.textContent = 'Profiles whose name contains "Newly Registered Domains" count by themselves. Add here, exactly as in Netskope, the ones named otherwise. This list is shared by the whole team.';
+        const rows = css(mk('div', { id:'ct-nrd-rows' }), { display:'flex', flexDirection:'column', gap:'6px', marginBottom:'8px' });
+        const btnStyle = { padding:'6px 12px', border:'1px solid #c0c8f0', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:'bold', background:'#fff', color:'#667eea' };
+        const addBtn = css(mk('button', { id:'ct-nrd-add', type:'button' }), btnStyle);
+        addBtn.textContent = '+ Add profile';
+        const saveBtn = css(mk('button', { id:'ct-nrd-save', type:'button' }), Object.assign({}, btnStyle, { background:'#667eea', color:'#fff', border:'none', marginLeft:'6px' }));
+        saveBtn.textContent = 'Save';
+        const msg = css(mk('div', { id:'ct-nrd-settings-msg' }), { fontSize:'12px', margin:'8px 0', minHeight:'16px' });
+        const ruleTitle = css(mk('div'), { fontSize:'12px', fontWeight:'bold', margin:'14px 0 4px' });
+        ruleTitle.textContent = 'Found by the name, in the last 90 days';
+        const ruleList = css(mk('div', { id:'ct-nrd-rule-list' }), { fontSize:'12px', color:'#555', lineHeight:'1.6' });
+        ruleList.textContent = 'Loading…';
+        modal.append(hdr, help, rows, addBtn, saveBtn, msg, ruleTitle, ruleList);
+        document.body.append(overlay, modal);
+
+        let current = null;   // the settings item as loaded: { nrdProfiles, id, spId, etag }
+        const addRow = (p = { tenant: 'EMA', name: '' }) => {
+            const row = css(mk('div'), { display:'flex', gap:'6px', alignItems:'center' });
+            row.dataset.nrdRow = '1';
+            const sel = css(mk('select'), { padding:'4px', fontSize:'12px' });
+            sel.dataset.nrdTenant = '1';
+            Object.keys(TENANT_TYPE_TO_KEY).forEach(t => sel.appendChild(Object.assign(mk('option'), { value: t, textContent: t })));
+            sel.value = p.tenant || 'EMA';
+            const inp = css(mk('input', { type:'text', placeholder:'Destination Profile name, as in Netskope' }), { flex:'1', padding:'5px', fontSize:'12px', border:'1px solid #ccc', borderRadius:'4px' });
+            inp.dataset.nrdName = '1';
+            inp.value = p.name || '';
+            const del = css(mk('button', { type:'button', title:'Remove from the list' }), { border:'none', background:'transparent', color:'#dc3545', cursor:'pointer', fontSize:'14px' });
+            del.textContent = '✕';
+            del.onclick = () => row.remove();
+            row.append(sel, inp, del);
+            rows.appendChild(row);
+        };
+        const render = () => { rows.textContent = ''; (current.nrdProfiles || []).forEach(addRow); };
+        const load = async () => {
+            const res = await api.loadSettings();
+            if (!res.ok) { msg.textContent = '⚠ Could not read the shared list from SharePoint.'; return false; }
+            current = res.data;
+            render();
+            return true;
+        };
+        addBtn.onclick = () => addRow();
+        saveBtn.onclick = async () => {
+            if (!current) return;
+            const seen = new Set();
+            const list = [...rows.querySelectorAll('[data-nrd-row]')].map(r => ({
+                tenant: r.querySelector('[data-nrd-tenant]').value, name: r.querySelector('[data-nrd-name]').value.trim() }))
+                .filter(p => p.name && !seen.has(p.tenant + '\n' + p.name) && seen.add(p.tenant + '\n' + p.name));
+            saveBtn.disabled = true;
+            msg.textContent = 'Saving…';
+            const res = await api.saveSettings(list, current);
+            saveBtn.disabled = false;
+            if (res.ok) { current = res.data; msg.textContent = '✔ Saved. Everyone gets it at their next check.'; return; }
+            if (res.kind === 'conflict') {
+                await load();
+                msg.textContent = '⚠ The list was changed by someone else just now. It was reloaded: check it and save again.';
+                return;
+            }
+            msg.textContent = `⚠ Not saved: ${res.message || res.kind || 'SharePoint refused it'}.`;
+        };
+        load();
+        api.fetchProfileEntriesSince(nrdSinceIso(NRD_HISTORY_DAYS)).then(res => {
+            if (!res.ok) { ruleList.textContent = 'Could not read the recent entries.'; return; }
+            const found = new Map();
+            res.data.forEach(({ entry }) => {
+                const name = entry.fields && String(entry.fields.profileName || '').trim();
+                if (name && NRD_NAME_RULE.test(name)) found.set(((entry.tenant && entry.tenant.type) || '?') + '\n' + name, true);
+            });
+            ruleList.textContent = found.size ? [...found.keys()].map(k => k.replace('\n', ' · ')).sort().join('\n') : 'None in the last 90 days.';
+            ruleList.style.whiteSpace = 'pre-line';
+        });
+    }
+
     function openSetupPrompt(options = {}) {
         const { previousState = null } = options;
         const prevSite = GM_getValue(SP_SITE_KEY, '');
@@ -23992,6 +24144,15 @@ Version 1.4.3:
         const renewResult = css(mk('div', { id:'ct-setup-renewal-result' }), { marginTop:'6px', color:'#333' });
         renewBox.append(renewLog, renewBtn, renewResult);
         modal.appendChild(renewBox);
+
+        const nrdBtn = css(mk('button', { id:'ct-nrd-settings-btn', type:'button' }), {
+            padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
+            cursor:'pointer', fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif', margin:'-6px 0 14px'
+        });
+        nrdBtn.textContent = '⏰ Newly Registered Domains profiles';
+        nrdBtn.title = 'The Destination Profiles whose domains are reviewed after 30 days, shared by the team';
+        nrdBtn.onclick = () => { if (spClient.siteUrl()) openNrdSettings(); };
+        modal.appendChild(nrdBtn);
 
         function renderRenewLog() {
             const rec = spClient.renewRecord();
@@ -24528,7 +24689,7 @@ Version 1.4.3:
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema,
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary };
         }
 
