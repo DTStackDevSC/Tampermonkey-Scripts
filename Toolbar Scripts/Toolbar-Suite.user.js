@@ -18964,7 +18964,58 @@ Version 1.4.3:
         let digestExpires = 0;
         let hadSuccess = false;   // a 403 after a success means the session changed
         let onWait = null;
+        let onRenew = null;
         const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+        // The tracker holds no token: it uses the browser's SharePoint sign in. When that expired, opening the
+        // site once usually renews it with no typing (single sign on), so that is tried in a background tab.
+        const RENEW_KEY   = 'changeTrackerSpRenewal';
+        const RENEW_EVERY = 15 * 60 * 1000;   // at most one automatic renewal per 15 minutes, across tabs
+        const RENEW_WAIT  = 30000;
+        const RENEW_POLL  = 2000;
+        let renewInFlight = null;
+        let lastRenewal   = null;
+        let answerSavedAt = 0;
+        const renewRecord = () => GM_getValue(RENEW_KEY, null) || {};
+        const saveRenewRecord = (patch) => GM_setValue(RENEW_KEY, Object.assign({}, renewRecord(), patch));
+
+        function renewSession({ manual = false } = {}) {
+            if (!renewInFlight) renewInFlight = doRenew(manual).finally(() => { renewInFlight = null; });
+            return renewInFlight;
+        }
+
+        async function doRenew(manual) {
+            if (!siteUrl()) return { ok: false, kind: 'notConfigured', ms: 0, manual };
+            const rec = renewRecord();
+            if (!manual && rec.lastAutoAt && Date.now() - rec.lastAutoAt < RENEW_EVERY) {
+                return (lastRenewal = { ok: false, kind: 'throttled', ms: 0, manual });
+            }
+            if (!manual) saveRenewRecord({ lastAutoAt: Date.now() });
+            if (onRenew) onRenew(manual);
+            const t0 = Date.now();
+            let tab = null;
+            try { tab = GM_openInTab(siteUrl() + '/', { active: false, insert: true, setParent: true }) || null; } catch (e) { tab = null; }
+            const closeTab = () => { try { if (tab && typeof tab.close === 'function') tab.close(); } catch (e) { /* already closed */ } };
+            let last = null;
+            while (Date.now() - t0 < RENEW_WAIT) {
+                await wait(RENEW_POLL);
+                last = classify(await raw('GET', `${siteUrl()}/_api/web/currentuser?$select=Id`, { Accept: SP_ACCEPT }));
+                if (last.ok) break;
+            }
+            const ms = Date.now() - t0;
+            if (last && last.ok) {
+                hadSuccess = true;
+                digest = null;
+                closeTab();
+                saveRenewRecord({ count: (renewRecord().count || 0) + 1, lastOkAt: Date.now(), lastAnswerAt: Date.now() });
+                return (lastRenewal = { ok: true, kind: 'renewed', ms, manual });
+            }
+            // Still sent to the Microsoft sign in: leave the tab there for the user. Anything else: close it.
+            const kind = last && last.kind === 'session' ? 'login' : last && last.kind === 'forbidden' ? 'forbidden' : 'network';
+            if (kind !== 'login') closeTab();
+            saveRenewRecord({ lastFailAt: Date.now(), lastFailKind: kind });
+            return (lastRenewal = { ok: false, kind, ms, manual, tabOpen: kind === 'login' && !!tab });
+        }
 
         function siteUrl()   { return String(GM_getValue(SP_SITE_KEY, '') || '').trim().replace(/\/+$/, ''); }
         function listTitle() { return String(GM_getValue(SP_LIST_KEY, '') || '').trim() || SP_DEFAULT_LIST; }
@@ -19049,13 +19100,19 @@ Version 1.4.3:
             const refused = refusal(opts, url);
             if (refused) { console.warn('CT SP:', refused, url); return { ok: false, status: 0, kind: 'bad', data: null, message: refused, etag: null }; }
             const isWrite = opts.method !== 'GET';
-            let digestRetried = false, netRetried = false, throttleTries = 0;
+            let digestRetried = false, netRetried = false, throttleTries = 0, renewTried = false;
+            const signInFailed = kind => kind === 'session' || kind === 'forbidden';
             for (;;) {
                 const headers = { Accept: SP_ACCEPT };
                 if (isWrite) {
                     if (!digest || Date.now() >= digestExpires) {
-                        const d = await refreshDigest();
-                        if (!d.ok) return d.kind === 'digest' ? { ...d, kind: 'session' } : d;
+                        let d = await refreshDigest();
+                        if (!d.ok && d.kind === 'digest') d = { ...d, kind: 'session' };
+                        if (!d.ok && signInFailed(d.kind) && !renewTried) {
+                            renewTried = true;
+                            if ((await renewSession()).ok) continue;
+                        }
+                        if (!d.ok) return d;
                     }
                     headers['X-RequestDigest'] = digest;
                     headers['Content-Type'] = SP_VERBOSE;
@@ -19063,9 +19120,21 @@ Version 1.4.3:
                 if (opts.xMethod) headers['X-HTTP-Method'] = opts.xMethod;
                 if (opts.ifMatch) headers['IF-MATCH'] = opts.ifMatch;
                 const res = classify(await raw(opts.method, url, headers, opts.body ? JSON.stringify(opts.body) : undefined));
-                if (res.ok) { hadSuccess = true; return res; }
+                if (res.ok) {
+                    hadSuccess = true;
+                    if (Date.now() - answerSavedAt > 60000) { answerSavedAt = Date.now(); saveRenewRecord({ lastAnswerAt: answerSavedAt }); }
+                    return res;
+                }
                 if (res.kind === 'digest' && !digestRetried) { digestRetried = true; digest = null; continue; }
+                if (res.kind === 'digest' && !renewTried) {
+                    renewTried = true;
+                    if ((await renewSession()).ok) continue;
+                }
                 if (res.kind === 'digest') return { ...res, kind: 'session' };
+                if (signInFailed(res.kind) && !renewTried) {
+                    renewTried = true;
+                    if ((await renewSession()).ok) continue;
+                }
                 if (res.kind === 'session') digest = null;
                 if (res.kind === 'network' && !netRetried) { netRetried = true; await wait(800); continue; }
                 if (res.kind === 'server' && res.retryAfter && throttleTries < 3) {
@@ -19083,10 +19152,12 @@ Version 1.4.3:
             return call({ method: 'GET', path: '/_api/web/currentuser' + qs({ $select: 'Id,Title,Email' }) });
         }
 
-        return { call, currentUser, siteUrl, listTitle, listPath, odataQuote, setOnWait: (fn) => { onWait = fn; } };
+        return { call, currentUser, siteUrl, listTitle, listPath, odataQuote, setOnWait: (fn) => { onWait = fn; },
+            renewSession, lastRenewal: () => lastRenewal, renewRecord, setOnRenew: (fn) => { onRenew = fn; } };
     })();
 
     spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
+    spClient.setOnRenew((manual) => { if (!manual) flashStatus('🔄 Renewing the SharePoint sign in in a background tab…', '#17a2b8', 6000); });
 
     /* ==========================================================
      *  ENTRY MAPPER  (tracker entry <-> SharePoint list item)
@@ -22801,6 +22872,9 @@ Version 1.4.3:
         const waiting = pendingCount(getTicketNumber());
         const waitingText = waiting ? ` · ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting to sync` : '';
         const msg = mk('span');
+        // The automatic renewal left the SharePoint tab on the Microsoft sign in
+        const lr = spClient.lastRenewal();
+        const signInTab = !!(lr && lr.kind === 'login' && lr.tabOpen);
 
         if (connState === 'OFFLINE') {
             css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
@@ -22811,7 +22885,9 @@ Version 1.4.3:
             banner.append(msg, btn);
         } else if (connState === 'SESSION_EXPIRED') {
             css(banner, { background:'#fff3cd', border:'1px solid #ffc107', color:'#856404' });
-            msg.textContent = `🔒 SharePoint session expired${waitingText}`;
+            msg.textContent = signInTab
+                ? `🔒 SharePoint session expired${waitingText}. Sign in in the SharePoint tab that just opened, then click ↺.`
+                : `🔒 SharePoint session expired${waitingText}`;
             const open = button('Open SharePoint to sign in', 'ct-signin-btn', { background:'#ffc107', color:'#333' });
             open.onclick = () => window.open(spClient.siteUrl(), '_blank');
             const retry = button('↺', 'ct-reconnect-btn', { background:'transparent', color:'#856404' });
@@ -22830,7 +22906,9 @@ Version 1.4.3:
             // SharePoint answers 403 to the first request when the sign in expired, the same answer as a real
             // lack of access: so the user is sent to sign in first, and to the site owner only after that.
             css(banner, { background:'#f8d7da', border:'1px solid #f5c6cb', color:'#721c24' });
-            msg.textContent = `⛔ Can't open the SharePoint list${waitingText}. Your sign in may have expired: open SharePoint in another tab, sign in, then click ↺. If it still fails, ask the site owner for access.`;
+            msg.textContent = signInTab
+                ? `⛔ Can't open the SharePoint list${waitingText}. Sign in in the SharePoint tab that just opened, then click ↺. If it still fails, ask the site owner for access.`
+                : `⛔ Can't open the SharePoint list${waitingText}. Your sign in may have expired: open SharePoint in another tab, sign in, then click ↺. If it still fails, ask the site owner for access.`;
             const open = button('Open SharePoint to sign in', 'ct-signin-btn', { background:'#f5c6cb', color:'#721c24' });
             open.onclick = () => window.open(spClient.siteUrl(), '_blank');
             const retry = button('↺', 'ct-reconnect-btn', { background:'transparent', color:'#721c24' });
