@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.11.0
+// @version      2.12.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.11.0';
-    const CHANGELOG = `Version 2.11.0:
+   const SCRIPT_VERSION = '2.12.0';
+    const CHANGELOG = `Version 2.12.0:
+- NS Policies Toolkit: Bulk add groups locks the page while it runs, so a stray click or key cannot get in the way. Pause unlocks it.
+
+Version 2.11.0:
 - NS Policies Toolkit: Bulk add groups has a "📋 Copy for ticket" button at the end, with each policy changed and the groups added, and what was not changed and why.
 
 Version 2.10.1:
@@ -26767,8 +26770,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.35.0';
-    const CHANGELOG = `Version 1.35:
+    const SCRIPT_VERSION = '1.36.0';
+    const CHANGELOG = `Version 1.36:
+- Bulk add groups: while a run goes, the page is locked so a stray click or key cannot change the policy being edited. The card in the corner keeps working, and Pause unlocks the page.
+
+Version 1.35:
 - Bulk add groups: the "📋 Copy for ticket" button at the end copies a text to paste in the ticket. It lists each policy changed with the groups added, then the policies not changed or failed and why, and the pairs that were not applied.
 
 Version 1.34.1:
@@ -28546,6 +28552,7 @@ Version 1.16:
                     bullets(body, [
                         'Names must be exact: capitals, spaces and dashes count. The group to add must exist once in Netskope, or write its full path.',
                         BG_TAB_WARNING,
+                        'While it runs the page is locked, so a stray click or key cannot change the policy being edited. Pause on the card unlocks it.',
                         'Continue picks up where it stopped. After a reload the run waits for you to click Continue or Discard.',
                         'A policy that fails is not saved. The summary lists it with the reason and a link to open it.',
                         '"📋 Copy for ticket" copies a text to paste in the ticket: the policies changed and the groups added, then the ones not changed or failed and why, and the pairs not applied.',
@@ -34591,6 +34598,7 @@ Version 1.16:
         bg.timer = setInterval(bgSyncButton, 1000);
         // A hidden tab is slowed down by the browser: pause rather than risk a policy half done
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') bgPause('the tab was not visible'); });
+        ['keydown', 'keypress', 'keyup'].forEach(type => window.addEventListener(type, bgBlockKeys, true));
         // A run that was going when the page reloaded never continues alone
         const run = bgLoadRun();
         if (run && run.state === 'running') { run.state = 'paused'; run.pausedReason = 'the page was reloaded'; bgSaveRun(run); }
@@ -34813,6 +34821,7 @@ Version 1.16:
 
     const BG_RUN_KEY     = 'toolkit_bulkGroupRun';
     const BG_RUN_HOST_ID = 'nstk-bulk-groups-run';
+    const BG_LOCK_ID     = 'nstk-bulk-groups-lock';
     const BG_LIST_HASH   = '#/inline-policy-page?queryType=&prefillNPAFields=&privateApps=&appDiscovery=';
     const BG_WAIT        = 30000;
     const BG_ADD_CFG     = { timeout: 30000, retries: 1, pause: 0 };
@@ -34912,6 +34921,38 @@ Version 1.16:
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
 
+    // While a run goes, a veil over the page stops your clicks and keys from changing the policy being edited.
+    // The run's own clicks go straight to the elements, so they are not blocked. The run card stays usable.
+    function bgLock(on) {
+        const old = document.getElementById(BG_LOCK_ID);
+        if (!on) { old?.remove(); return; }
+        if (old) return;
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        host.id = BG_LOCK_ID;
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; inset: 0 !important; z-index: 2147483646 !important;
+                display: block !important; cursor: not-allowed; background: rgba(0, 0, 0, .18); font-family: Arial, sans-serif; }
+            .msg { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); max-width: 560px;
+                padding: 10px 16px; color: #fff; background: #005587; border-radius: 6px; font-size: 13px;
+                line-height: 1.5; text-align: center; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = '<div class="msg">🔒 Bulk add groups is running: the page is locked so a click or a key does not get in the way. Use Pause on the card to unlock it.</div>';
+        // A click on the veil must not reach the page either: Netskope closes an open dropdown on any outside click
+        ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel'].forEach(type =>
+            host.addEventListener(type, (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false }));
+        document.documentElement.appendChild(host);
+    }
+
+    function bgBlockKeys(e) {
+        if (!e.isTrusted || !document.getElementById(BG_LOCK_ID)) return;
+        if (bg.runHost && e.composedPath().includes(bg.runHost)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+    }
+
     function bgStart() {
         if (!bg.jobs || !bg.jobs.length || bg.running) return;
         const leftOut = bg.rows.filter(r => r.status !== 'ok').map(r => `${r.a}${r.b ? ', ' + r.b : ''}: ${BG_STATUS[r.status][0]}`);
@@ -34932,6 +34973,7 @@ Version 1.16:
         if (!run || run.state !== 'running' || bg.running) return;
         bg.running = true;
         bgShowRunCard(run);
+        bgLock(true);
         try {
             while (run.index < run.jobs.length) {
                 if (bg.pauseRequested || bg.stopRequested) break;
@@ -34954,6 +34996,7 @@ Version 1.16:
             bgSaveRun(run);
             bgRenderRunCard(run, null);
         } finally {
+            bgLock(false);
             bg.running = false;
             bg.pauseRequested = null;
             bg.stopRequested = false;
