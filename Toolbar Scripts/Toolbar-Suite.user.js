@@ -31954,6 +31954,8 @@ Version 1.16:
         resources:      {},         // path family → latest "resource" header the page sent for it
         lastBodies:     {},         // path → latest JSON body the page sent (token removed)
         policyList:     null,       // data of the latest policy list the page loaded
+        lastPolicy:     null,       // { id, name } of the latest policy the page opened
+        lastSave:       null,       // { status, msg } of the latest policy Save
         confirmTimer:   null,       // Remove waits for a second click while this runs
     };
 
@@ -31998,6 +32000,22 @@ Version 1.16:
                 const json = JSON.parse(body);
                 if (json && typeof json === 'object') { delete json.token; sm.lastBodies[path] = json; }
             } catch (e) { /* not JSON */ }
+        }
+        // Bulk add groups waits for the policy it opened and for the answer to its Save
+        if (/^inline_policies\/(getPolicy|edit)$/.test(path)) {
+            xhr.addEventListener('load', () => {
+                try {
+                    const json = xhr.responseType === 'json' ? xhr.response : JSON.parse(xhr.responseText);
+                    if (/getPolicy$/.test(path)) {
+                        const d = json && json.status === 'success' && json.data;
+                        if (d && d.rule_id != null) sm.lastPolicy = { id: String(d.rule_id), name: String(d.rule_name || ''), at: Date.now() };
+                    } else {
+                        sm.lastSave = { status: (json && json.status) || 'error', msg: (json && json.msg) || '', at: Date.now() };
+                    }
+                } catch (e) {
+                    if (/edit$/.test(path)) sm.lastSave = { status: 'error', msg: 'Netskope sent an unexpected answer.', at: Date.now() };
+                }
+            });
         }
         if (/getPolicyGroupsWithAssociatedPolicies/.test(path)) {
             xhr.addEventListener('load', () => {
@@ -34397,6 +34415,9 @@ Version 1.16:
         busy:   false,
         rows:   null,       // Check results, null when there are none
         jobs:   null,       // one per policy to change: { id, type, name, a: [groups], adds: [full paths] }
+        running:   false,
+        runHost:   null,
+        runShadow: null,
     };
 
     const bgEl = name => bg.shadow.querySelector(`[data-bg="${name}"]`);
@@ -34580,6 +34601,7 @@ Version 1.16:
         bgEl('close').addEventListener('click', () => { host.dataset.open = 'false'; });
         bgEl('pairs').addEventListener('input', () => { bg.rows = bg.jobs = null; bgEl('results').textContent = ''; bgUpdateButtons(); });
         bgEl('check').addEventListener('click', bgCheck);
+        bgEl('start').addEventListener('click', bgStart);
         bgUpdateButtons();
     }
 
@@ -34600,7 +34622,7 @@ Version 1.16:
         const n = bg.jobs ? bg.jobs.length : 0;
         bgEl('check').disabled = bg.busy;
         bgEl('pairs').disabled = bg.busy;
-        bgEl('start').disabled = bg.busy || !n;
+        bgEl('start').disabled = bg.busy || bg.running || !n;
         bgEl('start').textContent = bg.jobs ? `Start (${n} ${n === 1 ? 'policy' : 'policies'})` : 'Start';
     }
 
@@ -34665,6 +34687,256 @@ Version 1.16:
         const n = bg.jobs.length;
         wrap.appendChild(Object.assign(document.createElement('div'), { className: 'totals',
             textContent: `${n} ${n === 1 ? 'policy' : 'policies'} to change.` + (problems ? ` ${problems} ${problems === 1 ? 'line has' : 'lines have'} a problem and will be left out.` : '') }));
+    }
+
+    /* ── The run: one job per policy ── */
+
+    const BG_RUN_KEY     = 'toolkit_bulkGroupRun';
+    const BG_RUN_HOST_ID = 'nstk-bulk-groups-run';
+    const BG_LIST_HASH   = '#/inline-policy-page?queryType=&prefillNPAFields=&privateApps=&appDiscovery=';
+    const BG_WAIT        = 30000;
+    const BG_ADD_CFG     = { timeout: 30000, retries: 1, pause: 0 };
+
+    const bgEditHash = job => `#/inline-policy-page?type=${encodeURIComponent(job.type)}&view=wizard&mode=edit&id=${encodeURIComponent(job.id)}`;
+    const bgHasGroup = (groups, name) => groups.some(g => g === name || smShortName(g) === smShortName(name));
+    const bgLoadRun = () => { const r = GM_getValue(BG_RUN_KEY, null); return r && r.v === 1 ? r : null; };
+    const bgSaveRun = run => GM_setValue(BG_RUN_KEY, run);
+    const bgRunEl = name => bg.runShadow && bg.runShadow.querySelector(`[data-bg="${name}"]`);
+
+    async function bgWaitFor(test, ms) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < ms) {
+            const v = test();
+            if (v) return v;
+            await smWait(200);
+        }
+        return null;
+    }
+
+    async function bgReadGroups() {
+        return (await smReadSource()).filter(t => t.type === 'group').map(t => t.name);
+    }
+
+    // Leaves the form without saving: Netskope has no "unsaved changes" question.
+    async function bgLeave() {
+        if (!bgIsList()) location.hash = BG_LIST_HASH;
+        await bgWaitFor(() => bgIsList(), 5000);
+    }
+
+    async function bgClickSave() {
+        const save = document.querySelector('.ns-policy-container .ns-policy-title .ns-right button.ns-btn.ns-btn-primary');
+        if (!save || save.disabled) return false;
+        // The Save reminder is a user setting: when it is on, the flag lets this click through
+        saveProceedFlag = true;
+        save.click();
+        setTimeout(() => { saveProceedFlag = false; }, 300);
+        const modal = await bgWaitFor(() => document.getElementById('ns-save-reminder-modal'), 1000);
+        if (modal) [...modal.querySelectorAll('button')].find(b => /^Save anyway/.test(b.textContent.trim()))?.click();
+        return true;
+    }
+
+    async function bgRunJob(job) {
+        // Netskope ignores a change from one edit page to another, so go through the list first
+        sm.lastPolicy = null;
+        if (!bgIsList()) { location.hash = BG_LIST_HASH; await bgWaitFor(() => bgIsList(), 5000); }
+        await smWait(50);
+        location.hash = bgEditHash(job);
+        const loaded = await bgWaitFor(() => {
+            const lp = sm.lastPolicy;
+            if (!lp || lp.id !== job.id) return false;
+            const h1 = document.querySelector('.ns-policy-container .ns-policy-title h1');
+            const found = smFindPicker();
+            return !!(h1 && h1.textContent.trim() === 'Edit ' + lp.name && found && smTagsOf(found.select).length);
+        }, BG_WAIT);
+        if (!loaded) { await bgLeave(); return { outcome: 'failed', reason: 'The policy did not load in time.' }; }
+
+        let groups = await bgReadGroups();
+        if (!job.a.some(a => bgHasGroup(groups, a))) {
+            await bgLeave();
+            return { outcome: 'skipped', reason: `${job.a.join(', ')} is not in this policy any more.` };
+        }
+        const missing = job.adds.filter(b => !bgHasGroup(groups, b));
+        if (!missing.length) { await bgLeave(); return { outcome: 'skipped', reason: 'The groups were already there.' }; }
+        for (const b of missing) {
+            const r = await smAddValue('group', b, BG_ADD_CFG);
+            if (r !== 'added' && r !== 'already') {
+                await bgLeave();
+                return { outcome: 'failed', reason: `${smShortName(b)}: ${SM_REASON[r] || r}.` };
+            }
+        }
+        groups = await bgReadGroups();
+        const right = sm.lastPolicy && sm.lastPolicy.id === job.id && new RegExp(`[?&]id=%?2?2?${job.id}(%22)?(&|$)`).test(location.hash);
+        if (!right || !job.adds.every(b => bgHasGroup(groups, b)) || !job.a.some(a => bgHasGroup(groups, a))) {
+            await bgLeave();
+            return { outcome: 'failed', reason: 'The groups could not be checked after adding them. Nothing was saved.' };
+        }
+
+        sm.lastSave = null;
+        if (!(await bgClickSave())) { await bgLeave(); return { outcome: 'failed', reason: 'Save is not available: the policy has an error.' }; }
+        const end = await bgWaitFor(() => {
+            const err = document.querySelector('.ns-policy-container .form-error-message');
+            if (err && err.getClientRects().length) return { error: err.textContent.trim() };
+            const save = document.querySelector('.ns-policy-container .ns-policy-title .ns-right button.ns-btn.ns-btn-primary');
+            if (save && save.disabled && !sm.lastSave) return { error: 'Save is not available: the policy has an error.' };
+            if (sm.lastSave && sm.lastSave.status !== 'success') return { error: sm.lastSave.msg || 'Netskope did not save it.' };
+            if (sm.lastSave && bgIsList()) return { ok: true };
+            return null;
+        }, BG_WAIT);
+        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.' };
+        await bgLeave();
+        return { outcome: 'failed', reason: end ? `Not saved: ${end.error}` : 'Netskope did not confirm the save in time.' };
+    }
+
+    function bgStart() {
+        if (!bg.jobs || !bg.jobs.length || bg.running) return;
+        const leftOut = bg.rows.filter(r => r.status !== 'ok').map(r => `${r.a}${r.b ? ', ' + r.b : ''}: ${BG_STATUS[r.status][0]}`);
+        bgSaveRun({ v: 1, jobs: bg.jobs, index: 0, results: [], leftOut, state: 'running', startedAt: Date.now() });
+        bg.host.dataset.open = 'false';
+        bgRunLoop();
+    }
+
+    async function bgRunLoop() {
+        const run = bgLoadRun();
+        if (!run || run.state !== 'running' || bg.running) return;
+        bg.running = true;
+        bgShowRunCard(run);
+        try {
+            while (run.index < run.jobs.length) {
+                const job = run.jobs[run.index];
+                bgRenderRunCard(run, job);
+                let res;
+                try { res = await bgRunJob(job); }
+                catch (e) { res = { outcome: 'failed', reason: e.message }; await bgLeave(); }
+                run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason });
+                run.index++;
+                bgSaveRun(run);
+                bgRunLog(`${job.name}: ${res.outcome}. ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
+            }
+            run.state = 'finished';
+            bgSaveRun(run);
+            bgRenderRunCard(run, null);
+        } finally {
+            bg.running = false;
+        }
+    }
+
+    function bgSummaryText(run) {
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        const lines = [`Bulk add groups: Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}`];
+        for (const [kind, title] of [['done', 'Done'], ['skipped', 'Skipped'], ['failed', 'Failed']]) {
+            if (!of(kind).length) continue;
+            lines.push('', title + ':');
+            of(kind).forEach(r => lines.push(`  ${r.name} (id ${r.id}): ${r.reason}`));
+        }
+        if (run.leftOut && run.leftOut.length) { lines.push('', 'Left out at the check:'); run.leftOut.forEach(l => lines.push('  ' + l)); }
+        lines.push('', 'Click Apply Changes on the policy list to apply the changes.');
+        return lines.join('\n');
+    }
+
+    /* ── Run card ── */
+
+    function bgShowRunCard() {
+        if (bg.runHost && bg.runHost.isConnected) return;
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        host.id = BG_RUN_HOST_ID;
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; right: 20px !important; bottom: 20px !important;
+                z-index: 2147483647 !important; display: block !important; font-family: Arial, sans-serif; }
+            .card { width: 380px; max-height: 70vh; display: flex; flex-direction: column; box-sizing: border-box;
+                color: #282728; background: #fff; border: 1px solid #d5d5d5; border-top: 5px solid #005587;
+                border-radius: 6px; box-shadow: 0 8px 28px rgba(0, 0, 0, .3); font-size: 13px; }
+            .head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #e6e6e6; }
+            .head b { font-size: 14px; }
+            .close { border: 0; background: transparent; font-size: 20px; cursor: pointer; color: #53565a; }
+            .main { padding: 10px 14px; overflow: auto; }
+            .progress { font-weight: 700; }
+            .current { margin-top: 4px; color: #63666a; word-break: break-word; }
+            .bar { height: 6px; margin-top: 8px; background: #e6e6e6; border-radius: 3px; overflow: hidden; }
+            .bar > div { height: 100%; width: 0; background: #26890d; transition: width .2s; }
+            .warning { margin-top: 8px; padding: 6px 8px; background: #fff8e1; border: 1px solid #f0c36d; border-radius: 4px; font-size: 11px; color: #5c4400; }
+            .log { margin-top: 8px; max-height: 120px; overflow: auto; padding: 6px 8px; background: #f6f8fa;
+                border: 1px solid #e1e4e8; border-radius: 4px; font: 11px Consolas, monospace; white-space: pre-wrap; }
+            .log:empty { display: none; }
+            .log .ok { color: #26890d; } .log .warn { color: #8a5a00; } .log .err { color: #da291c; }
+            .summary { margin-top: 8px; font-size: 12px; line-height: 1.5; }
+            .summary:empty { display: none; }
+            .summary .row { margin-left: 8px; }
+            .summary a { color: #005587; }
+            .foot { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid #e6e6e6; }
+            .foot button { padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;
+                color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .foot .primary { color: #fff; background: #005587; border-color: #005587; }
+            [hidden] { display: none !important; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <section class="card" role="status">
+                <div class="head"><b>👥 Bulk add groups</b><button type="button" class="close" data-bg="run-close" aria-label="Close" hidden>×</button></div>
+                <div class="main">
+                    <div class="progress" data-bg="progress"></div>
+                    <div class="current" data-bg="current"></div>
+                    <div class="bar"><div data-bg="bar"></div></div>
+                    <div class="warning" data-bg="run-warning"></div>
+                    <div class="log" data-bg="log"></div>
+                    <div class="summary" data-bg="summary"></div>
+                </div>
+                <div class="foot">
+                    <button type="button" data-bg="copy-summary" hidden>Copy summary</button>
+                </div>
+            </section>`;
+        document.documentElement.appendChild(host);
+        bg.runHost = host;
+        bg.runShadow = shadow;
+        bgRunEl('run-warning').textContent = '⚠ ' + BG_TAB_WARNING;
+        bgRunEl('run-close').addEventListener('click', () => { host.remove(); bg.runHost = bg.runShadow = null; });
+        bgRunEl('copy-summary').addEventListener('click', (e) => { const run = bgLoadRun(); if (run) smCopy(bgSummaryText(run), e.currentTarget); });
+    }
+
+    function bgRunLog(msg, cls) {
+        const log = bgRunEl('log');
+        if (!log) return;
+        const line = document.createElement('div');
+        if (cls) line.className = cls;
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function bgRenderRunCard(run, job) {
+        bgShowRunCard();
+        const total = run.jobs.length;
+        const finished = run.state === 'finished';
+        bgRunEl('progress').textContent = finished ? `Finished: ${total} of ${total}` : `${run.index + 1} of ${total}`;
+        bgRunEl('current').textContent = job ? job.name : '';
+        bgRunEl('bar').style.width = `${Math.round((run.index / Math.max(1, total)) * 100)}%`;
+        bgRunEl('run-warning').hidden = finished;
+        bgRunEl('copy-summary').hidden = !finished;
+        bgRunEl('run-close').hidden = !finished;
+        const box = bgRunEl('summary');
+        box.textContent = '';
+        if (!finished) return;
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        box.appendChild(Object.assign(document.createElement('div'), { textContent:
+            `Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}` }));
+        for (const [kind, title] of [['skipped', 'Skipped'], ['failed', 'Failed']]) {
+            if (!of(kind).length) continue;
+            box.appendChild(Object.assign(document.createElement('b'), { textContent: title + ':' }));
+            of(kind).forEach(r => {
+                const row = document.createElement('div');
+                row.className = 'row';
+                const a = document.createElement('a');
+                a.href = location.pathname + bgEditHash(r);
+                a.target = '_blank';
+                a.textContent = r.name;
+                row.append(a, document.createTextNode(': ' + r.reason));
+                box.appendChild(row);
+            });
+        }
+        if (run.leftOut && run.leftOut.length) box.appendChild(Object.assign(document.createElement('div'), {
+            textContent: `${run.leftOut.length} ${run.leftOut.length === 1 ? 'line was' : 'lines were'} left out at the check.` }));
+        box.appendChild(Object.assign(document.createElement('div'), { textContent: 'Click Apply Changes on the policy list to apply the changes.' }));
     }
 
     // ─────────────────────────────────────────────────────────────
