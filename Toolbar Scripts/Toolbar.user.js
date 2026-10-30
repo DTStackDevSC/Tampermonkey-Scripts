@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.9.2
+// @version      2.10.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.9.2';
-    const CHANGELOG = `Version 2.9.2:
+   const SCRIPT_VERSION = '2.10.0';
+    const CHANGELOG = `Version 2.10.0:
+- NS Policies Toolkit: new "👥 Bulk add groups" on the Real-time Protection policy list. Paste pairs of groups and the toolkit adds the second group to every policy that holds the first one, saving them one by one. Click Apply Changes yourself at the end.
+
+Version 2.9.2:
 - Change Tracker: the small copy button on each entry turns green and shows how many values were copied.
 
 Version 2.9.1:
@@ -26748,6 +26751,7 @@ Version 0.9.1:
         steeringRemover: 'toolkit_steeringRemover',
         sourceManager:   'toolkit_sourceManager',
         policyCopy:      'toolkit_policyCopy',
+        bulkGroupAdd:    'toolkit_bulkGroupAdd',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -26757,8 +26761,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.33.0';
-    const CHANGELOG = `Version 1.33:
+    const SCRIPT_VERSION = '1.34.0';
+    const CHANGELOG = `Version 1.34:
+- New "👥 Bulk add groups" button on the Real-time Protection policy list: paste pairs of groups, check which policies hold the first group, and the toolkit adds the second group to each of them and saves them one by one. Click Apply Changes yourself at the end.
+- The run pauses by itself when the Netskope tab is hidden, can be paused, stopped or continued after a reload, and ends with a summary you can copy.
+
+Version 1.33:
 - Steering Exception Domain Tools: new "Match case" option under the configuration filter of Bulk remove and Bulk add domains. Your choice is remembered.
 
 Version 1.32.1:
@@ -27278,6 +27286,11 @@ Version 1.16:
             label:       '📋 Copy Policy',
             description: 'On Real-time Protection policy pages, adds a "Copy policy" button that copies the saved policy as readable text, section by section, for a support case or a ticket.',
         },
+        {
+            key:         'bulkGroupAdd',
+            label:       '👥 Bulk Add Groups',
+            description: 'On the Real-time Protection policy list, adds a "Bulk add groups" button: paste pairs of groups, and every policy that holds the first group gets the second one added and saved.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -27524,6 +27537,7 @@ Version 1.16:
                     if (key === 'steeringRemover') cleanupSteeringRemover();
                     if (key === 'sourceManager') cleanupSourceManager();
                     if (key === 'policyCopy') cleanupPolicyCopy();
+                    if (key === 'bulkGroupAdd') cleanupBulkGroups();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -27575,7 +27589,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -28465,6 +28479,64 @@ Version 1.16:
                         'Add and Remove need a Check of the current list. Editing the list or switching between Users and Groups asks for a new Check.',
                         'Exclusions are never read or changed.',
                         'Stop ends the run after the current item. The summary lists what failed, to copy or download.',
+                    ]);
+                },
+            },
+            {
+                icon: '👥',
+                title: 'Bulk Add Groups',
+                buildContent(body) {
+                    lead(body, 'On the Real-time Protection policy list, add a group to every policy that already holds another group, for many pairs at once.');
+
+                    body.appendChild(hrow([
+                        chip('Apply Changes', '#005587'),
+                        chip('👥 Bulk add groups', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits next to Apply Changes on the policy list.');
+
+                    const box = document.createElement('div');
+                    Object.assign(box.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333', margin: '12px 0 4px 0', whiteSpace: 'pre-wrap'
+                    });
+                    box.textContent = BG_EXAMPLE;
+                    body.appendChild(box);
+                    caption(body, 'One pair per line: the group already in the policy, a comma, the group to add. Two columns copied from Excel also work.');
+
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0', fontFamily: 'Arial, sans-serif' });
+                    [
+                        { kind: 'Ready',     bg: '#26890d', pair: 'SG-SCC Allow Anaplan SCCA → APP31194-SG-SCC Allow Anaplan SCCA', note: '3 policies' },
+                        { kind: 'Ready',     bg: '#26890d', pair: 'SG-SCC Allow Anyscale SCCA - CA → APP31194-SG-SCC Allow Anyscale SCCA - CA', note: '1 policy (already there)' },
+                        { kind: 'Not found', bg: '#da291c', pair: 'SG-OLD GROUP → SG-NEW GROUP', note: 'Group to add not found in Netskope' },
+                    ].forEach((r, i) => {
+                        const text = document.createElement('div');
+                        text.appendChild(span(r.pair, { fontSize: '12px', fontWeight: 'bold', color: '#333', display: 'block' }));
+                        text.appendChild(span(r.note, { fontSize: '11px', color: '#777', display: 'block' }));
+                        card.appendChild(hrow([chip(r.kind, r.bg), text],
+                            { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', borderTop: i ? '1px solid #f0f0f0' : 'none' }));
+                    });
+                    body.appendChild(card);
+                    caption(body, 'After Check: which policies each pair touches. Lines with a problem are left out, and policies that already have the group are skipped.');
+
+                    const run = document.createElement('div');
+                    Object.assign(run.style, { border: '1px solid #d5d5d5', borderTop: '4px solid #005587', borderRadius: '6px', padding: '8px 12px',
+                        maxWidth: '300px', margin: '12px 0 4px 0', fontFamily: 'Arial, sans-serif' });
+                    run.appendChild(span('12 of 130', { fontSize: '12px', fontWeight: 'bold', color: '#333', display: 'block' }));
+                    run.appendChild(span('Block risky apps EMEA', { fontSize: '11px', color: '#777', display: 'block', marginBottom: '6px' }));
+                    run.appendChild(hrow([
+                        chip('Pause', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                        chip('Stop', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                    ], { margin: '0' }));
+                    body.appendChild(run);
+                    caption(body, 'Start opens each policy, adds the group, clicks Save and moves on. The card in the corner shows the progress and, at the end, the summary.');
+
+                    bullets(body, [
+                        'Names must be exact: capitals, spaces and dashes count. The group to add must exist once in Netskope, or write its full path.',
+                        BG_TAB_WARNING,
+                        'Continue picks up where it stopped. After a reload the run waits for you to click Continue or Discard.',
+                        'A policy that fails is not saved. The summary lists it with the reason and a link to open it, and can be copied.',
+                        'Click Apply Changes yourself when the run ends.',
                     ]);
                 },
             },
@@ -31947,6 +32019,8 @@ Version 1.16:
         resources:      {},         // path family → latest "resource" header the page sent for it
         lastBodies:     {},         // path → latest JSON body the page sent (token removed)
         policyList:     null,       // data of the latest policy list the page loaded
+        lastPolicy:     null,       // { id, name } of the latest policy the page opened
+        lastSave:       null,       // { status, msg } of the latest policy Save
         confirmTimer:   null,       // Remove waits for a second click while this runs
     };
 
@@ -31991,6 +32065,22 @@ Version 1.16:
                 const json = JSON.parse(body);
                 if (json && typeof json === 'object') { delete json.token; sm.lastBodies[path] = json; }
             } catch (e) { /* not JSON */ }
+        }
+        // Bulk add groups waits for the policy it opened and for the answer to its Save
+        if (/^inline_policies\/(getPolicy|edit)$/.test(path)) {
+            xhr.addEventListener('load', () => {
+                try {
+                    const json = xhr.responseType === 'json' ? xhr.response : JSON.parse(xhr.responseText);
+                    if (/getPolicy$/.test(path)) {
+                        const d = json && json.status === 'success' && json.data;
+                        if (d && d.rule_id != null) sm.lastPolicy = { id: String(d.rule_id), name: String(d.rule_name || ''), at: Date.now() };
+                    } else {
+                        sm.lastSave = { status: (json && json.status) || 'error', msg: (json && json.msg) || '', at: Date.now() };
+                    }
+                } catch (e) {
+                    if (/edit$/.test(path)) sm.lastSave = { status: 'error', msg: 'Netskope sent an unexpected answer.', at: Date.now() };
+                }
+            });
         }
         if (/getPolicyGroupsWithAssociatedPolicies/.test(path)) {
             xhr.addEventListener('load', () => {
@@ -32057,7 +32147,7 @@ Version 1.16:
     }
 
     // Must run before the console app starts so its first requests are seen
-    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy')) nsInstallSniffer();
+    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy') || getSetting('bulkGroupAdd')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -34365,6 +34455,635 @@ Version 1.16:
 
 
     // ─────────────────────────────────────────────────────────────
+    // BULK ADD GROUPS
+    // On the Real-time Protection list: pairs "group in the policy, group to add". Finds every policy
+    // that holds the first group, then opens each one, adds the second group and saves it.
+    // ─────────────────────────────────────────────────────────────
+
+    const BG_HOST_ID     = 'nstk-bulk-groups-host';
+    const BG_BUTTON_ID   = 'nstk-bulk-groups-button';
+    const BG_EXAMPLE     = 'SG-SCC Allow Anaplan SCCA, APP31194-SG-SCC Allow Anaplan SCCA\nSG-SCC Allow Anyscale SCCA - CA, APP31194-SG-SCC Allow Anyscale SCCA - CA';
+    const BG_TAB_WARNING = 'Keep this Netskope tab visible and active until the run ends. If the tab is hidden the browser slows the page down: the run pauses by itself.';
+    const BG_STATUS = {
+        ok:          ['Ready',                               'found'],
+        notInPolicy: ['No policy has this group',            'error'],
+        bNotFound:   ['Group to add not found in Netskope',  'notfound'],
+        bAmbiguous:  ['Several groups have this name: write the full path', 'ambiguous'],
+        bTooMany:    ['Too many groups match: write the full path', 'ambiguous'],
+        lineError:   ['Line not understood',                 'notfound'],
+    };
+
+    const bg = {
+        timer:  null,
+        host:   null,
+        shadow: null,
+        busy:   false,
+        rows:   null,       // Check results, null when there are none
+        jobs:   null,       // one per policy to change: { id, type, name, a: [groups], adds: [full paths] }
+        running:   false,
+        pauseRequested: null,   // why the run should pause at its next safe point
+        stopRequested:  false,
+        runHost:   null,
+        runShadow: null,
+    };
+
+    const bgEl = name => bg.shadow.querySelector(`[data-bg="${name}"]`);
+    const bgIsList = () => /#\/inline-policy-page/.test(location.hash) && !/[?&]mode=edit(&|$)/.test(location.hash);
+
+    // One pair per line, separated by one comma or one tab (two columns copied from Excel).
+    function bgParsePairs(text) {
+        const pairs = [], errors = [], seen = new Set();
+        String(text || '').split(/\r?\n/).forEach((raw, i) => {
+            const line = raw.trim();
+            if (!line) return;
+            const parts = line.split(/[,\t]/).map(s => s.trim());
+            if (parts.length !== 2 || !parts[0] || !parts[1]) {
+                errors.push({ line: i + 1, text: line, reason: 'Write one pair per line: the group in the policy, a comma, the group to add.' });
+                return;
+            }
+            const key = parts[0] + '\n' + parts[1];
+            if (seen.has(key)) return;
+            seen.add(key);
+            pairs.push({ a: parts[0], b: parts[1], line: i + 1 });
+        });
+        return { pairs, errors };
+    }
+
+    function bgPoliciesOf(policyGroups) {
+        const out = [];
+        (Array.isArray(policyGroups) ? policyGroups : []).forEach(g => (g.policies || []).forEach(p => {
+            const rd = p.rule_data || {};
+            out.push({ id: String(p.rule_id), name: p.rule_name || String(p.rule_id), type: rd.policy_type || p.policy_type || '',
+                groups: Array.isArray(rd.userGroups) ? rd.userGroups : [] });
+        }));
+        return out;
+    }
+
+    // lookup: { [group to add]: names the group search returned }. Names match exactly, capitals included.
+    function bgBuildPlan(pairs, policyGroups, lookup) {
+        const policies = bgPoliciesOf(policyGroups);
+        const jobs = new Map();
+        const rows = pairs.map(({ a, b, line }) => {
+            const row = { a, b, line, status: 'ok', policies: [], skipped: [], fullB: null };
+            const results = lookup[b] || [];
+            const exact = [...new Set(results.filter(n => n === b || smShortName(n) === b))];
+            const holders = policies.filter(p => p.groups.some(g => g === a || smShortName(g) === a));
+            row.policies = holders.map(p => p.name);
+            if (exact.length === 1) row.fullB = exact[0];
+            else row.status = exact.length > 1 ? 'bAmbiguous' : results.length >= 100 ? 'bTooMany' : 'bNotFound';
+            if (row.status === 'ok' && !holders.length) row.status = 'notInPolicy';
+            if (row.status !== 'ok') return row;
+            holders.forEach(p => {
+                if (p.groups.some(g => g === row.fullB || smShortName(g) === b)) { row.skipped.push(p.name); return; }
+                const job = jobs.get(p.id) || { id: p.id, type: p.type, name: p.name, a: [], adds: [] };
+                if (!job.adds.includes(row.fullB)) job.adds.push(row.fullB);
+                if (!job.a.includes(a)) job.a.push(a);
+                jobs.set(p.id, job);
+            });
+            return row;
+        });
+        return { rows, jobs: [...jobs.values()] };
+    }
+
+    /* ── Page button ── */
+
+    function bgSyncButton() {
+        const btn = document.getElementById(BG_BUTTON_ID);
+        const apply = bgIsList() && [...document.querySelectorAll('button.ns-btn.ns-btn-primary')]
+            .find(b => b.id !== BG_BUTTON_ID && b.textContent.trim() === 'Apply Changes' && b.getClientRects().length);
+        if (!apply) { btn?.remove(); return; }
+        const run = bgLoadRun();
+        const paused = run && run.state === 'paused';
+        const label = paused ? '👥 Bulk add groups (paused)' : '👥 Bulk add groups';
+        const title = paused ? `Run paused at ${run.index + 1} of ${run.jobs.length}` : 'Add a group to every policy that holds another group (NS Policies Toolkit)';
+        if (btn && btn.previousElementSibling === apply) {
+            if (btn.textContent !== label) btn.textContent = label;
+            if (btn.title !== title) btn.title = title;
+            return;
+        }
+        btn?.remove();
+        const b = document.createElement('button');
+        b.id = BG_BUTTON_ID;
+        b.type = 'button';
+        b.className = 'ns-btn ns-btn-secondary ns-right ns-margin-right-small';
+        b.textContent = label;
+        b.title = title;
+        Object.assign(b.style, { whiteSpace: 'nowrap' });
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); bgOpen(); });
+        apply.insertAdjacentElement('afterend', b);
+    }
+
+    function initBulkGroups() {
+        if (!getSetting('bulkGroupAdd') || bg.timer) return;
+        bg.timer = setInterval(bgSyncButton, 1000);
+        // A hidden tab is slowed down by the browser: pause rather than risk a policy half done
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') bgPause('the tab was not visible'); });
+        // A run that was going when the page reloaded never continues alone
+        const run = bgLoadRun();
+        if (run && run.state === 'running') { run.state = 'paused'; run.pausedReason = 'the page was reloaded'; bgSaveRun(run); }
+        if (run && run.state === 'paused') bgRenderRunCard(run, null);
+        bgSyncButton();
+    }
+
+    function cleanupBulkGroups() {
+        clearInterval(bg.timer);
+        bg.timer = null;
+        removeAll('#' + BG_BUTTON_ID);
+        bg.host?.remove();
+        bg.host = bg.shadow = null;
+    }
+
+    /* ── Panel ── */
+
+    function bgCreateHost() {
+        const host   = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet  = new CSSStyleSheet();
+        host.id = BG_HOST_ID;
+        host.dataset.open = 'false';
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; inset: 0 !important;
+                z-index: 2147483647 !important; display: block !important; font-family: Arial, sans-serif; }
+            :host([data-open="false"]) { display: none !important; }
+            .backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+                padding: 24px; box-sizing: border-box; background: rgba(0, 0, 0, .48); }
+            .bg-panel { display: flex; flex-direction: column; width: min(860px, calc(100vw - 32px));
+                max-height: calc(100vh - 48px); overflow: hidden; box-sizing: border-box;
+                color: #282728; background: #fff; border: 1px solid #d5d5d5; border-top: 5px solid #005587;
+                border-radius: 6px; box-shadow: 0 8px 28px rgba(0, 0, 0, .3); }
+            .header, .footer { display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+                padding: 14px 20px; box-sizing: border-box; }
+            .header { justify-content: space-between; border-bottom: 1px solid #e6e6e6; }
+            .header h2 { margin: 0; color: #1a1a1a; font-size: 18px; font-weight: 700; }
+            .close { padding: 2px 8px; color: #53565a; background: transparent; border: 0;
+                font-size: 24px; line-height: 1; cursor: pointer; }
+            .body { overflow: auto; padding: 16px 20px; box-sizing: border-box; }
+            .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+            .help { margin: 0 0 8px; color: #63666a; font-size: 12px; line-height: 1.5; }
+            .example { margin: 0 0 10px; padding: 8px 10px; background: #f6f8fa; border: 1px solid #e1e4e8;
+                border-radius: 4px; font: 12px Consolas, "Courier New", monospace; white-space: pre-wrap; color: #282728; }
+            .warning { margin: 10px 0 0; padding: 8px 10px; background: #fff8e1; border: 1px solid #f0c36d;
+                border-radius: 4px; font-size: 12px; line-height: 1.5; color: #5c4400; }
+            textarea { display: block; width: 100%; box-sizing: border-box; padding: 8px; min-height: 130px;
+                border: 1px solid #a7a8aa; border-radius: 4px; color: #282728; background: #fff; resize: vertical;
+                font: 13px Consolas, "Courier New", monospace; }
+            .note { margin-top: 8px; font-size: 13px; }
+            .note.err { color: #da291c; } .note.warn { color: #8a5a00; }
+            .note:empty { display: none; }
+            .spinner { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px;
+                border: 2px solid #c8d6e5; border-top-color: #005587; border-radius: 50%; animation: spin .8s linear infinite; }
+            @keyframes spin { to { transform: rotate(360deg); } }
+            .table { width: 100%; margin-top: 14px; border-collapse: collapse; font-size: 12px; }
+            .table th, .table td { text-align: left; padding: 6px 8px; border-top: 1px solid #f0f0f0; vertical-align: top; word-break: break-word; }
+            .table th { background: #f7f7f7; font-weight: 700; }
+            .chip { font-size: 11px; font-weight: 700; color: #fff; border-radius: 3px; padding: 2px 7px; display: inline-block; }
+            .chip.found { background: #26890d; } .chip.ambiguous { background: #e08a00; }
+            .chip.notfound { background: #da291c; } .chip.error { background: #75787b; }
+            .muted { color: #63666a; font-size: 11px; }
+            .totals { margin-top: 10px; font-size: 13px; font-weight: 700; }
+            .footer { border-top: 1px solid #e6e6e6; }
+            .spacer { flex: 1; }
+            .footer button { padding: 8px 16px; border-radius: 4px; font-weight: 600; cursor: pointer;
+                font-size: 13px; color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .footer .primary { color: #fff; background: #005587; border-color: #005587; }
+            .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
+            button:disabled { cursor: not-allowed; opacity: .5; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <div class="backdrop">
+                <section class="bg-panel" role="dialog" aria-modal="true" aria-labelledby="bg-title">
+                    <header class="header">
+                        <h2 id="bg-title">👥 Bulk add groups</h2>
+                        <button type="button" class="close" data-bg="close" aria-label="Close">×</button>
+                    </header>
+                    <main class="body">
+                        <label class="label" for="bg-pairs">Pairs of groups</label>
+                        <p class="help">One pair per line: first the group that is already in the policy, then a comma, then the group to add.
+                            Write the names exactly as in Netskope: capitals, spaces and dashes count. Two columns copied from Excel also work.</p>
+                        <div class="example"></div>
+                        <textarea id="bg-pairs" data-bg="pairs" spellcheck="false"></textarea>
+                        <div class="warning" data-bg="warning"></div>
+                        <div class="note" data-bg="note"></div>
+                        <div data-bg="results"></div>
+                    </main>
+                    <footer class="footer">
+                        <button type="button" class="primary" data-bg="check">Check</button>
+                        <span class="spacer"></span>
+                        <button type="button" class="success" data-bg="start" disabled>Start</button>
+                    </footer>
+                </section>
+            </div>`;
+        shadow.querySelector('.example').textContent = BG_EXAMPLE;
+        document.documentElement.appendChild(host);
+        bg.host = host;
+        bg.shadow = shadow;
+        bgEl('warning').textContent = '⚠ ' + BG_TAB_WARNING + ' Click Apply Changes yourself when it ends.';
+        bgEl('close').addEventListener('click', () => { host.dataset.open = 'false'; });
+        bgEl('pairs').addEventListener('input', () => { bg.rows = bg.jobs = null; bgEl('results').textContent = ''; bgUpdateButtons(); });
+        bgEl('check').addEventListener('click', bgCheck);
+        bgEl('start').addEventListener('click', bgStart);
+        bgUpdateButtons();
+    }
+
+    function bgOpen() {
+        if (!bg.host || !bg.host.isConnected) bgCreateHost();
+        bg.host.dataset.open = 'true';
+    }
+
+    function bgNote(text, cls, busy) {
+        const n = bgEl('note');
+        n.className = 'note' + (cls ? ' ' + cls : '');
+        n.textContent = '';
+        if (busy) n.appendChild(Object.assign(document.createElement('span'), { className: 'spinner' }));
+        if (text) n.appendChild(document.createTextNode(text));
+    }
+
+    function bgUpdateButtons() {
+        const n = bg.jobs ? bg.jobs.length : 0;
+        bgEl('check').disabled = bg.busy;
+        bgEl('pairs').disabled = bg.busy;
+        const pending = bgLoadRun();
+        const waiting = !!(pending && pending.state === 'paused');
+        bgEl('start').disabled = bg.busy || bg.running || waiting || !n;
+        bgEl('start').title = waiting ? 'Continue or discard the paused run first.' : '';
+        bgEl('start').textContent = bg.jobs ? `Start (${n} ${n === 1 ? 'policy' : 'policies'})` : 'Start';
+    }
+
+    async function bgCheck() {
+        if (bg.busy) return;
+        const { pairs, errors } = bgParsePairs(bgEl('pairs').value);
+        if (!pairs.length && !errors.length) { bgNote('Paste at least one pair of groups.', 'warn'); return; }
+        bg.busy = true;
+        bg.rows = bg.jobs = null;
+        bgEl('results').textContent = '';
+        bgUpdateButtons();
+        bgNote('Loading the policies and looking up the groups to add…', '', true);
+        try {
+            const list = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+            const lookup = {};
+            for (const b of [...new Set(pairs.map(p => p.b))]) lookup[b] = await smSearch('group', b);
+            const plan = bgBuildPlan(pairs, list, lookup);
+            bg.rows = plan.rows.concat(errors.map(e => ({ a: e.text, b: '', line: e.line, status: 'lineError',
+                policies: [], skipped: [], reason: e.reason }))).sort((x, y) => x.line - y.line);
+            bg.jobs = plan.jobs;
+            bgNote('');
+            bgRenderRows();
+        } catch (e) {
+            bgNote(e.message, 'err');
+        } finally {
+            bg.busy = false;
+            bgUpdateButtons();
+        }
+    }
+
+    function bgRenderRows() {
+        const wrap = bgEl('results');
+        wrap.textContent = '';
+        const table = document.createElement('table');
+        table.className = 'table';
+        table.innerHTML = '<thead><tr><th>Group in the policy</th><th>Group to add</th><th>Policies</th><th>Status</th></tr></thead><tbody data-bg="rows"></tbody>';
+        const body = table.querySelector('tbody');
+        const cell = (tr, text) => { const td = tr.insertCell(); td.textContent = text; return td; };
+        for (const row of bg.rows) {
+            const tr = body.insertRow();
+            tr.dataset.status = row.status;
+            cell(tr, row.a);
+            const bCell = cell(tr, row.b);
+            if (row.fullB && row.fullB !== row.b) bCell.appendChild(Object.assign(document.createElement('div'), { className: 'muted', textContent: row.fullB }));
+            const pCell = tr.insertCell();
+            if (row.status === 'lineError') pCell.appendChild(Object.assign(document.createElement('span'), { className: 'muted', textContent: row.reason }));
+            row.policies.forEach(name => {
+                const d = document.createElement('div');
+                d.dataset.bgPolicy = name;
+                d.textContent = name;
+                if (row.skipped.includes(name)) {
+                    d.dataset.bgSkip = '1';
+                    d.appendChild(Object.assign(document.createElement('span'), { className: 'muted', textContent: ' (already there)' }));
+                }
+                pCell.appendChild(d);
+            });
+            const [label, cls] = BG_STATUS[row.status];
+            tr.insertCell().appendChild(Object.assign(document.createElement('span'), { className: 'chip ' + cls, textContent: label }));
+        }
+        wrap.appendChild(table);
+        const problems = bg.rows.filter(r => r.status !== 'ok').length;
+        const n = bg.jobs.length;
+        wrap.appendChild(Object.assign(document.createElement('div'), { className: 'totals',
+            textContent: `${n} ${n === 1 ? 'policy' : 'policies'} to change.` + (problems ? ` ${problems} ${problems === 1 ? 'line has' : 'lines have'} a problem and will be left out.` : '') }));
+    }
+
+    /* ── The run: one job per policy ── */
+
+    const BG_RUN_KEY     = 'toolkit_bulkGroupRun';
+    const BG_RUN_HOST_ID = 'nstk-bulk-groups-run';
+    const BG_LIST_HASH   = '#/inline-policy-page?queryType=&prefillNPAFields=&privateApps=&appDiscovery=';
+    const BG_WAIT        = 30000;
+    const BG_ADD_CFG     = { timeout: 30000, retries: 1, pause: 0 };
+
+    const bgEditHash = job => `#/inline-policy-page?type=${encodeURIComponent(job.type)}&view=wizard&mode=edit&id=${encodeURIComponent(job.id)}`;
+    const bgHasGroup = (groups, name) => groups.some(g => g === name || smShortName(g) === smShortName(name));
+    const bgLoadRun = () => { const r = GM_getValue(BG_RUN_KEY, null); return r && r.v === 1 ? r : null; };
+    const bgSaveRun = run => GM_setValue(BG_RUN_KEY, run);
+    const bgRunEl = name => bg.runShadow && bg.runShadow.querySelector(`[data-bg="${name}"]`);
+
+    async function bgWaitFor(test, ms) {
+        const t0 = Date.now();
+        while (Date.now() - t0 < ms) {
+            const v = test();
+            if (v) return v;
+            await smWait(200);
+        }
+        return null;
+    }
+
+    async function bgReadGroups() {
+        return (await smReadSource()).filter(t => t.type === 'group').map(t => t.name);
+    }
+
+    // Leaves the form without saving: Netskope has no "unsaved changes" question.
+    async function bgLeave() {
+        if (!bgIsList()) location.hash = BG_LIST_HASH;
+        await bgWaitFor(() => bgIsList(), 5000);
+    }
+
+    async function bgClickSave() {
+        const save = document.querySelector('.ns-policy-container .ns-policy-title .ns-right button.ns-btn.ns-btn-primary');
+        if (!save || save.disabled) return false;
+        // The Save reminder is a user setting: when it is on, the flag lets this click through
+        saveProceedFlag = true;
+        save.click();
+        setTimeout(() => { saveProceedFlag = false; }, 300);
+        const modal = await bgWaitFor(() => document.getElementById('ns-save-reminder-modal'), 1000);
+        if (modal) [...modal.querySelectorAll('button')].find(b => /^Save anyway/.test(b.textContent.trim()))?.click();
+        return true;
+    }
+
+    async function bgRunJob(job) {
+        // Netskope ignores a change from one edit page to another, so go through the list first
+        sm.lastPolicy = null;
+        if (!bgIsList()) { location.hash = BG_LIST_HASH; await bgWaitFor(() => bgIsList(), 5000); }
+        await smWait(50);
+        location.hash = bgEditHash(job);
+        const loaded = await bgWaitFor(() => {
+            const lp = sm.lastPolicy;
+            if (!lp || lp.id !== job.id) return false;
+            const h1 = document.querySelector('.ns-policy-container .ns-policy-title h1');
+            const found = smFindPicker();
+            return !!(h1 && h1.textContent.trim() === 'Edit ' + lp.name && found && smTagsOf(found.select).length);
+        }, BG_WAIT);
+        if (!loaded) { await bgLeave(); return { outcome: 'failed', reason: 'The policy did not load in time.' }; }
+
+        let groups = await bgReadGroups();
+        if (!job.a.some(a => bgHasGroup(groups, a))) {
+            await bgLeave();
+            return { outcome: 'skipped', reason: `${job.a.join(', ')} is not in this policy any more.` };
+        }
+        const missing = job.adds.filter(b => !bgHasGroup(groups, b));
+        if (!missing.length) { await bgLeave(); return { outcome: 'skipped', reason: 'The groups were already there.' }; }
+        for (const b of missing) {
+            const r = await smAddValue('group', b, BG_ADD_CFG);
+            if (r !== 'added' && r !== 'already') {
+                await bgLeave();
+                return { outcome: 'failed', reason: `${smShortName(b)}: ${SM_REASON[r] || r}.` };
+            }
+        }
+        groups = await bgReadGroups();
+        const right = sm.lastPolicy && sm.lastPolicy.id === job.id && new RegExp(`[?&]id=%?2?2?${job.id}(%22)?(&|$)`).test(location.hash);
+        if (!right || !job.adds.every(b => bgHasGroup(groups, b)) || !job.a.some(a => bgHasGroup(groups, a))) {
+            await bgLeave();
+            return { outcome: 'failed', reason: 'The groups could not be checked after adding them. Nothing was saved.' };
+        }
+
+        // Last safe point: once Save is clicked the job waits for its answer before pausing
+        if (bg.pauseRequested || bg.stopRequested) { await bgLeave(); return { outcome: 'paused' }; }
+        sm.lastSave = null;
+        if (!(await bgClickSave())) { await bgLeave(); return { outcome: 'failed', reason: 'Save is not available: the policy has an error.' }; }
+        const end = await bgWaitFor(() => {
+            const err = document.querySelector('.ns-policy-container .form-error-message');
+            if (err && err.getClientRects().length) return { error: err.textContent.trim() };
+            const save = document.querySelector('.ns-policy-container .ns-policy-title .ns-right button.ns-btn.ns-btn-primary');
+            if (save && save.disabled && !sm.lastSave) return { error: 'Save is not available: the policy has an error.' };
+            if (sm.lastSave && sm.lastSave.status !== 'success') return { error: sm.lastSave.msg || 'Netskope did not save it.' };
+            if (sm.lastSave && bgIsList()) return { ok: true };
+            return null;
+        }, BG_WAIT);
+        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.' };
+        await bgLeave();
+        return { outcome: 'failed', reason: end ? `Not saved: ${end.error}` : 'Netskope did not confirm the save in time.' };
+    }
+
+    function bgStart() {
+        if (!bg.jobs || !bg.jobs.length || bg.running) return;
+        const leftOut = bg.rows.filter(r => r.status !== 'ok').map(r => `${r.a}${r.b ? ', ' + r.b : ''}: ${BG_STATUS[r.status][0]}`);
+        bgSaveRun({ v: 1, jobs: bg.jobs, index: 0, results: [], leftOut, state: 'running', startedAt: Date.now() });
+        bg.host.dataset.open = 'false';
+        bgRunLoop();
+    }
+
+    async function bgRunLoop() {
+        const run = bgLoadRun();
+        if (!run || run.state !== 'running' || bg.running) return;
+        bg.running = true;
+        bgShowRunCard(run);
+        try {
+            while (run.index < run.jobs.length) {
+                if (bg.pauseRequested || bg.stopRequested) break;
+                const job = run.jobs[run.index];
+                bgRenderRunCard(run, job);
+                let res;
+                try { res = await bgRunJob(job); }
+                catch (e) { res = { outcome: 'failed', reason: e.message }; await bgLeave(); }
+                if (res.outcome === 'paused') continue;
+                run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason });
+                run.index++;
+                bgSaveRun(run);
+                bgRunLog(`${job.name}: ${res.outcome}. ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
+            }
+            if (bg.stopRequested) { run.state = 'finished'; run.stopped = true; }
+            else if (bg.pauseRequested && run.index < run.jobs.length) { run.state = 'paused'; run.pausedReason = bg.pauseRequested; }
+            else run.state = 'finished';
+            bgSaveRun(run);
+            bgRenderRunCard(run, null);
+        } finally {
+            bg.running = false;
+            bg.pauseRequested = null;
+            bg.stopRequested = false;
+            bgSyncButton();
+        }
+    }
+
+    function bgPause(reason) {
+        if (!bg.running || bg.pauseRequested) return;
+        bg.pauseRequested = reason;
+        bgRunLog('Pausing at the next safe step…', 'warn');
+    }
+
+    function bgResume() {
+        const run = bgLoadRun();
+        if (!run || run.state !== 'paused' || bg.running) return;
+        run.state = 'running';
+        run.pausedReason = null;
+        bgSaveRun(run);
+        bgRunLoop();
+    }
+
+    function bgStop() {
+        if (bg.running) { bg.stopRequested = true; bgRunLog('Stopping at the next safe step…', 'warn'); return; }
+        const run = bgLoadRun();
+        if (!run || run.state !== 'paused') return;
+        run.state = 'finished';
+        run.stopped = true;
+        bgSaveRun(run);
+        bgRenderRunCard(run, null);
+        bgSyncButton();
+    }
+
+    function bgDiscard() {
+        if (bg.running) return;
+        GM_deleteValue(BG_RUN_KEY);
+        bg.runHost?.remove();
+        bg.runHost = bg.runShadow = null;
+        bgSyncButton();
+    }
+
+    function bgSummaryText(run) {
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        const lines = [`Bulk add groups: Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}`];
+        if (run.stopped) lines.push(`Stopped: ${run.jobs.length - run.results.length} of ${run.jobs.length} policies were not done.`);
+        for (const [kind, title] of [['done', 'Done'], ['skipped', 'Skipped'], ['failed', 'Failed']]) {
+            if (!of(kind).length) continue;
+            lines.push('', title + ':');
+            of(kind).forEach(r => lines.push(`  ${r.name} (id ${r.id}): ${r.reason}`));
+        }
+        if (run.leftOut && run.leftOut.length) { lines.push('', 'Left out at the check:'); run.leftOut.forEach(l => lines.push('  ' + l)); }
+        lines.push('', 'Click Apply Changes on the policy list to apply the changes.');
+        return lines.join('\n');
+    }
+
+    /* ── Run card ── */
+
+    function bgShowRunCard() {
+        if (bg.runHost && bg.runHost.isConnected) return;
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        host.id = BG_RUN_HOST_ID;
+        sheet.replaceSync(`
+            :host { all: initial; position: fixed !important; right: 20px !important; bottom: 20px !important;
+                z-index: 2147483647 !important; display: block !important; font-family: Arial, sans-serif; }
+            .card { width: 380px; max-height: 70vh; display: flex; flex-direction: column; box-sizing: border-box;
+                color: #282728; background: #fff; border: 1px solid #d5d5d5; border-top: 5px solid #005587;
+                border-radius: 6px; box-shadow: 0 8px 28px rgba(0, 0, 0, .3); font-size: 13px; }
+            .head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #e6e6e6; }
+            .head b { font-size: 14px; }
+            .close { border: 0; background: transparent; font-size: 20px; cursor: pointer; color: #53565a; }
+            .main { padding: 10px 14px; overflow: auto; }
+            .progress { font-weight: 700; }
+            .current { margin-top: 4px; color: #63666a; word-break: break-word; }
+            .bar { height: 6px; margin-top: 8px; background: #e6e6e6; border-radius: 3px; overflow: hidden; }
+            .bar > div { height: 100%; width: 0; background: #26890d; transition: width .2s; }
+            .warning { margin-top: 8px; padding: 6px 8px; background: #fff8e1; border: 1px solid #f0c36d; border-radius: 4px; font-size: 11px; color: #5c4400; }
+            .log { margin-top: 8px; max-height: 120px; overflow: auto; padding: 6px 8px; background: #f6f8fa;
+                border: 1px solid #e1e4e8; border-radius: 4px; font: 11px Consolas, monospace; white-space: pre-wrap; }
+            .log:empty { display: none; }
+            .log .ok { color: #26890d; } .log .warn { color: #8a5a00; } .log .err { color: #da291c; }
+            .summary { margin-top: 8px; font-size: 12px; line-height: 1.5; }
+            .summary:empty { display: none; }
+            .summary .row { margin-left: 8px; }
+            .summary a { color: #005587; }
+            .foot { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid #e6e6e6; }
+            .foot button { padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;
+                color: #282728; background: #fff; border: 1px solid #a7a8aa; }
+            .foot .primary { color: #fff; background: #005587; border-color: #005587; }
+            [hidden] { display: none !important; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <section class="card" role="status">
+                <div class="head"><b>👥 Bulk add groups</b><button type="button" class="close" data-bg="run-close" aria-label="Close" hidden>×</button></div>
+                <div class="main">
+                    <div class="progress" data-bg="progress"></div>
+                    <div class="current" data-bg="current"></div>
+                    <div class="bar"><div data-bg="bar"></div></div>
+                    <div class="warning" data-bg="run-warning"></div>
+                    <div class="log" data-bg="log"></div>
+                    <div class="summary" data-bg="summary"></div>
+                </div>
+                <div class="foot">
+                    <button type="button" data-bg="pause">Pause</button>
+                    <button type="button" class="primary" data-bg="continue" hidden>Continue</button>
+                    <button type="button" data-bg="stop">Stop</button>
+                    <button type="button" data-bg="discard" hidden>Discard</button>
+                    <button type="button" data-bg="copy-summary" hidden>Copy summary</button>
+                </div>
+            </section>`;
+        document.documentElement.appendChild(host);
+        bg.runHost = host;
+        bg.runShadow = shadow;
+        bgRunEl('run-warning').textContent = '⚠ ' + BG_TAB_WARNING;
+        bgRunEl('run-close').addEventListener('click', () => { host.remove(); bg.runHost = bg.runShadow = null; });
+        bgRunEl('pause').addEventListener('click', () => bgPause('you paused it'));
+        bgRunEl('continue').addEventListener('click', bgResume);
+        bgRunEl('stop').addEventListener('click', bgStop);
+        bgRunEl('discard').addEventListener('click', bgDiscard);
+        bgRunEl('copy-summary').addEventListener('click', (e) => { const run = bgLoadRun(); if (run) smCopy(bgSummaryText(run), e.currentTarget); });
+    }
+
+    function bgRunLog(msg, cls) {
+        const log = bgRunEl('log');
+        if (!log) return;
+        const line = document.createElement('div');
+        if (cls) line.className = cls;
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function bgRenderRunCard(run, job) {
+        bgShowRunCard();
+        const total = run.jobs.length;
+        const finished = run.state === 'finished';
+        const paused = run.state === 'paused';
+        bgRunEl('progress').textContent = finished ? (run.stopped ? `Stopped at ${run.results.length} of ${total}` : `Finished: ${total} of ${total}`)
+            : paused ? `Run paused at ${run.index + 1} of ${total}` : `${run.index + 1} of ${total}`;
+        bgRunEl('current').textContent = paused ? `Paused: ${run.pausedReason || 'you paused it'}.` : job ? job.name : '';
+        bgRunEl('pause').hidden = finished || paused;
+        bgRunEl('stop').hidden = finished;
+        bgRunEl('continue').hidden = !paused;
+        bgRunEl('discard').hidden = !paused;
+        bgRunEl('bar').style.width = `${Math.round((run.index / Math.max(1, total)) * 100)}%`;
+        bgRunEl('run-warning').hidden = finished;
+        bgRunEl('copy-summary').hidden = !finished;
+        bgRunEl('run-close').hidden = !finished;
+        const box = bgRunEl('summary');
+        box.textContent = '';
+        if (!finished) return;
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        box.appendChild(Object.assign(document.createElement('div'), { textContent:
+            `Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}` }));
+        if (run.stopped) box.appendChild(Object.assign(document.createElement('div'), { textContent:
+            `Stopped: ${total - run.results.length} of ${total} policies were not done.` }));
+        for (const [kind, title] of [['skipped', 'Skipped'], ['failed', 'Failed']]) {
+            if (!of(kind).length) continue;
+            box.appendChild(Object.assign(document.createElement('b'), { textContent: title + ':' }));
+            of(kind).forEach(r => {
+                const row = document.createElement('div');
+                row.className = 'row';
+                const a = document.createElement('a');
+                a.href = location.pathname + bgEditHash(r);
+                a.target = '_blank';
+                a.textContent = r.name;
+                row.append(a, document.createTextNode(': ' + r.reason));
+                box.appendChild(row);
+            });
+        }
+        if (run.leftOut && run.leftOut.length) box.appendChild(Object.assign(document.createElement('div'), {
+            textContent: `${run.leftOut.length} ${run.leftOut.length === 1 ? 'line was' : 'lines were'} left out at the check.` }));
+        box.appendChild(Object.assign(document.createElement('div'), { textContent: 'Click Apply Changes on the policy list to apply the changes.' }));
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // COPY POLICY
     // Copies the saved configuration of the open Real-time Protection policy
     // as readable text, section by section, for a support case or a ticket.
@@ -35200,6 +35919,7 @@ Version 1.16:
         initSteeringRemover();
         initSourceManager();
         initPolicyCopy();
+        initBulkGroups();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 

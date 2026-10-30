@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.9.2
+// @version      2.10.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.9.2';
-    const CHANGELOG = `Version 2.9.2:
+   const SCRIPT_VERSION = '2.10.0';
+    const CHANGELOG = `Version 2.10.0:
+- NS Policies Toolkit: new "👥 Bulk add groups" on the Real-time Protection policy list. Paste pairs of groups and the toolkit adds the second group to every policy that holds the first one, saving them one by one. Click Apply Changes yourself at the end.
+
+Version 2.9.2:
 - Change Tracker: the small copy button on each entry turns green and shows how many values were copied.
 
 Version 2.9.1:
@@ -26758,8 +26761,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.33.0';
-    const CHANGELOG = `Version 1.33:
+    const SCRIPT_VERSION = '1.34.0';
+    const CHANGELOG = `Version 1.34:
+- New "👥 Bulk add groups" button on the Real-time Protection policy list: paste pairs of groups, check which policies hold the first group, and the toolkit adds the second group to each of them and saves them one by one. Click Apply Changes yourself at the end.
+- The run pauses by itself when the Netskope tab is hidden, can be paused, stopped or continued after a reload, and ends with a summary you can copy.
+
+Version 1.33:
 - Steering Exception Domain Tools: new "Match case" option under the configuration filter of Bulk remove and Bulk add domains. Your choice is remembered.
 
 Version 1.32.1:
@@ -28472,6 +28479,64 @@ Version 1.16:
                         'Add and Remove need a Check of the current list. Editing the list or switching between Users and Groups asks for a new Check.',
                         'Exclusions are never read or changed.',
                         'Stop ends the run after the current item. The summary lists what failed, to copy or download.',
+                    ]);
+                },
+            },
+            {
+                icon: '👥',
+                title: 'Bulk Add Groups',
+                buildContent(body) {
+                    lead(body, 'On the Real-time Protection policy list, add a group to every policy that already holds another group, for many pairs at once.');
+
+                    body.appendChild(hrow([
+                        chip('Apply Changes', '#005587'),
+                        chip('👥 Bulk add groups', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits next to Apply Changes on the policy list.');
+
+                    const box = document.createElement('div');
+                    Object.assign(box.style, {
+                        background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333', margin: '12px 0 4px 0', whiteSpace: 'pre-wrap'
+                    });
+                    box.textContent = BG_EXAMPLE;
+                    body.appendChild(box);
+                    caption(body, 'One pair per line: the group already in the policy, a comma, the group to add. Two columns copied from Excel also work.');
+
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0', fontFamily: 'Arial, sans-serif' });
+                    [
+                        { kind: 'Ready',     bg: '#26890d', pair: 'SG-SCC Allow Anaplan SCCA → APP31194-SG-SCC Allow Anaplan SCCA', note: '3 policies' },
+                        { kind: 'Ready',     bg: '#26890d', pair: 'SG-SCC Allow Anyscale SCCA - CA → APP31194-SG-SCC Allow Anyscale SCCA - CA', note: '1 policy (already there)' },
+                        { kind: 'Not found', bg: '#da291c', pair: 'SG-OLD GROUP → SG-NEW GROUP', note: 'Group to add not found in Netskope' },
+                    ].forEach((r, i) => {
+                        const text = document.createElement('div');
+                        text.appendChild(span(r.pair, { fontSize: '12px', fontWeight: 'bold', color: '#333', display: 'block' }));
+                        text.appendChild(span(r.note, { fontSize: '11px', color: '#777', display: 'block' }));
+                        card.appendChild(hrow([chip(r.kind, r.bg), text],
+                            { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', borderTop: i ? '1px solid #f0f0f0' : 'none' }));
+                    });
+                    body.appendChild(card);
+                    caption(body, 'After Check: which policies each pair touches. Lines with a problem are left out, and policies that already have the group are skipped.');
+
+                    const run = document.createElement('div');
+                    Object.assign(run.style, { border: '1px solid #d5d5d5', borderTop: '4px solid #005587', borderRadius: '6px', padding: '8px 12px',
+                        maxWidth: '300px', margin: '12px 0 4px 0', fontFamily: 'Arial, sans-serif' });
+                    run.appendChild(span('12 of 130', { fontSize: '12px', fontWeight: 'bold', color: '#333', display: 'block' }));
+                    run.appendChild(span('Block risky apps EMEA', { fontSize: '11px', color: '#777', display: 'block', marginBottom: '6px' }));
+                    run.appendChild(hrow([
+                        chip('Pause', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                        chip('Stop', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                    ], { margin: '0' }));
+                    body.appendChild(run);
+                    caption(body, 'Start opens each policy, adds the group, clicks Save and moves on. The card in the corner shows the progress and, at the end, the summary.');
+
+                    bullets(body, [
+                        'Names must be exact: capitals, spaces and dashes count. The group to add must exist once in Netskope, or write its full path.',
+                        BG_TAB_WARNING,
+                        'Continue picks up where it stopped. After a reload the run waits for you to click Continue or Discard.',
+                        'A policy that fails is not saved. The summary lists it with the reason and a link to open it, and can be copied.',
+                        'Click Apply Changes yourself when the run ends.',
                     ]);
                 },
             },
