@@ -33541,13 +33541,18 @@ Version 1.16:
                 removed:    Array.isArray(e.removed) ? e.removed.map(String) : [],
             }));
         if (!entries.length || isNaN(Date.parse(b.at))) return null;
+        const exceptionType = b.exceptionType === 'category' ? 'category' : 'domain';   // older backups hold domains
+        const names = {};
+        if (exceptionType === 'category' && b.names && typeof b.names === 'object') {
+            Object.keys(b.names).forEach(k => { if (typeof b.names[k] === 'string') names[k] = b.names[k]; });
+        }
         return {
             id: typeof b.id === 'string' && b.id ? b.id : 'bk-' + Date.parse(b.at).toString(36),
             at: b.at, host: String(b.host || ''),
             source: b.source === 'import' || b.source === 'addition' ? b.source : 'removal',
             action: b.action === 'addition' || b.source === 'addition' ? 'addition' : 'removal',
-            importedAt: b.importedAt || null, restoredAt: b.restoredAt || null, entries,
-            problems: seBackupProblems(entries),
+            importedAt: b.importedAt || null, restoredAt: b.restoredAt || null, entries, exceptionType, names,
+            problems: seBackupProblems(entries, exceptionType),
         };
     }
 
@@ -33556,25 +33561,30 @@ Version 1.16:
     // A restore writes each entry's full domain list as steering exceptions, so a backup
     // file that was edited by hand must not be able to slip in extra domains.
     // Backups made by this tool always pass these checks.
-    function seBackupProblems(entries) {
+    // Category ids are numbers ("501", "10300") or UUIDs
+    const SE_CATEGORY_ID_RE = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+    function seBackupProblems(entries, type) {
         const problems = [];
+        const valid = type === 'category' ? (d => SE_CATEGORY_ID_RE.test(d)) : (d => SE_DOMAIN_RE.test(d.trim()));
+        const what = type === 'category' ? 'not valid category ids' : 'not valid domains';
         entries.forEach(e => {
             const label = `${seEntryLabel(e.notes, e.rowId)} in ${e.configName}`;
-            const bad = e.domains.filter(d => !SE_DOMAIN_RE.test(d.trim()));
-            if (bad.length) problems.push(`${label}: not valid domains: ${bad.slice(0, 5).join(', ')}`);
+            const bad = e.domains.concat(e.removed).filter(d => !valid(d));
+            if (bad.length) problems.push(`${label}: ${what}: ${bad.slice(0, 5).join(', ')}`);
             if (e.kind === 'create') {
                 // An addition backs up an entry that did not exist: undoing it only ever deletes
-                const badAfter = (e.after || []).filter(d => !SE_DOMAIN_RE.test(d.trim()));
+                const badAfter = (e.after || []).filter(d => !valid(d));
                 if (e.domains.length || !e.after || !e.after.length) problems.push(`${label}: the added entry is not recorded correctly`);
-                if (badAfter.length) problems.push(`${label}: not valid domains: ${badAfter.slice(0, 5).join(', ')}`);
+                if (badAfter.length) problems.push(`${label}: ${what}: ${badAfter.slice(0, 5).join(', ')}`);
                 return;
             }
             if (e.kind === 'extend') {
                 // Domains added to an existing entry: undoing it only ever takes the added ones out
                 const before = new Set(e.domains.map(seNormalize));
                 const after = e.after || [];
-                const badAfter = after.filter(d => !SE_DOMAIN_RE.test(d.trim()));
-                if (badAfter.length) problems.push(`${label}: not valid domains: ${badAfter.slice(0, 5).join(', ')}`);
+                const badAfter = after.filter(d => !valid(d));
+                if (badAfter.length) problems.push(`${label}: ${what}: ${badAfter.slice(0, 5).join(', ')}`);
                 if (!after.length || [...before].some(d => !after.map(seNormalize).includes(d)) || after.length <= e.domains.length) {
                     problems.push(`${label}: the added domains are not recorded correctly`);
                 }
@@ -33652,6 +33662,11 @@ Version 1.16:
         const rowsByConfig = {};
         for (const id of new Set(backup.entries.map(e => e.configId))) {
             progress(`Reading ${backup.entries.find(e => e.configId === id).configName}…`);
+            if (backup.exceptionType === 'category') {
+                // Category rows only show names, so compare the ids each entry holds
+                rowsByConfig[id] = (await seReadCategoryEntries(id)).map(e => ({ settings_id: e.rowId, notes: e.notes, display_value: e.ids }));
+                continue;
+            }
             const rows = await seListExceptions(id);
             rowsByConfig[id] = (Array.isArray(rows) ? rows : []).filter(r => r.type === 'domain' && Array.isArray(r.display_value));
         }
@@ -33712,7 +33727,8 @@ Version 1.16:
         });
     }
 
-    async function seRestoreFromInspection(inspection, progress) {
+    async function seRestoreFromInspection(inspection, progress, type) {
+        const save = type === 'category' ? seSaveCategories : seSaveDomains;
         for (const item of inspection) {
             if (item.state === 'same') continue;
             const e = item.entry;
@@ -33725,11 +33741,11 @@ Version 1.16:
                 // Take out only the domains the addition put in, keeping any later edits
                 const out = new Set(item.stillAdded.map(seNormalize));
                 progress(`Taking the added domains out of ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
-                await seSaveDomains(e.configId, e.rowId, item.current.filter(d => !out.has(seNormalize(d))), e.notes);
+                await save(e.configId, e.rowId, item.current.filter(d => !out.has(seNormalize(d))), e.notes);
                 continue;
             }
             progress(`${item.exists ? 'Restoring' : 'Recreating'} ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
-            await seSaveDomains(e.configId, item.exists ? e.rowId : null, e.domains, e.notes);
+            await save(e.configId, item.exists ? e.rowId : null, e.domains, e.notes);
         }
     }
 
@@ -34707,8 +34723,14 @@ Version 1.16:
         return isNaN(d) ? iso : d.toLocaleString();
     }
 
+    // How a backed up value is shown: categories by the name saved with the backup
+    function seBackupShow(backup, value) {
+        if (backup.exceptionType !== 'category') return value;
+        return backup.names[value] || seCategoryName(value);
+    }
+
     function seBackupChips(backup) {
-        let html = '';
+        let html = backup.exceptionType === 'category' ? '<span class="chip info">Categories</span>' : '<span class="chip gray">Domains</span>';
         if (backup.restoredAt) html += `<span class="chip ok">Restored ${seEscape(seFormatDate(backup.restoredAt))}</span>`;
         if (backup.action === 'addition') html += '<span class="chip ok">Addition</span>';
         if (backup.source === 'import') html += '<span class="chip info">Imported</span>';
@@ -34737,8 +34759,8 @@ Version 1.16:
         }
         list.forEach(b => {
             const configs = [...new Set(b.entries.map(e => e.configName))];
-            const removed = seBackupRemoved(b);
-            const added = seBackupAdded(b);
+            const removed = seBackupRemoved(b).map(v => seBackupShow(b, v));
+            const added = seBackupAdded(b).map(v => seBackupShow(b, v));
             const card = document.createElement('div');
             card.className = 'bk-card';
             card.dataset.action = 'bk-open';
@@ -34806,7 +34828,7 @@ Version 1.16:
             se.bkInspection = inspection;
             seRenderBackupDetail(backup);
             seBkStatus(inspection.every(i => i.state === 'same')
-                ? (backup.action === 'addition' ? 'The added entries and domains are already gone. Nothing to undo.' : 'Every entry is already as it was in this backup. Nothing to restore.')
+                ? (backup.action === 'addition' ? `The added entries and ${backup.exceptionType === 'category' ? 'categories' : 'domains'} are already gone. Nothing to undo.` : 'Every entry is already as it was in this backup. Nothing to restore.')
                 : `Nothing has changed yet. Review the entries, then click ${backup.action === 'addition' ? 'Undo' : 'Restore'}.`);
         } catch (err) {
             console.error('[NS Toolkit] Steering backup check:', err);
@@ -34856,25 +34878,27 @@ Version 1.16:
         }
 
         html += '<div class="card" style="margin-top:12px">';
+        const show = list => list.map(v => seBackupShow(backup, v)).join(', ');
+        const noun = n => backup.exceptionType === 'category' ? (n === 1 ? 'category' : 'categories') : (n === 1 ? 'domain' : 'domains');
         backup.entries.forEach((e, i) => {
             const item = insp && insp[i];
             const info = item ? SE_STATE_INFO[item.state] : null;
             const what = e.kind === 'delete' ? 'Deleted entry' : e.kind === 'edit' ? 'Edited entry' : e.kind === 'create' ? 'Created entry' : e.kind === 'extend' ? 'Existing entry' : 'Entry';
             const removed = e.removed.length ? e.removed : (e.after && e.kind !== 'create' ? e.domains.filter(d => !e.after.includes(d)) : []);
             const facts = e.kind === 'create' || e.kind === 'extend'
-                ? `Added: ${seEscape(seExtendAdded(e).join(', '))}.`
-                : `${removed.length ? `Removed: ${seEscape(removed.join(', '))}.` : ''} Backed up with ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'}.`;
+                ? `Added: ${seEscape(show(seExtendAdded(e)))}.`
+                : `${removed.length ? `Removed: ${seEscape(show(removed))}.` : ''} Backed up with ${e.domains.length} ${noun(e.domains.length)}.`;
             html += `<div class="row">
                 ${info ? `<span class="chip ${info.chip}">${info.label}</span>` : '<span class="chip gray">Checking…</span>'}
                 <div><div><b>${seEscape(seEntryLabel(e.notes, e.rowId))}</b> <span class="muted">in ${seEscape(e.configName)}</span></div>
                 <div class="muted">${what}. ${facts}</div>
                 ${info ? `<div class="muted">${info.text}</div>` : ''}
-                ${item && ['changed', 'createdChanged'].includes(item.state) && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(item.addedSince.join(', '))}. These would be removed.</div>` : ''}
-                ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(item.droppedSince.join(', '))}. These would come back.</div>` : ''}
-                ${item && item.state === 'createdChanged' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed from it since: ${seEscape(item.droppedSince.join(', '))}.</div>` : ''}
-                ${item && item.elsewhere.length ? `<div class="note warn" style="padding:4px 0;border:0">Already in another entry: ${seEscape(item.elsewhere.join(', '))}. Restoring lists them twice.</div>` : ''}
-                ${item && item.state !== 'same' && item.willAdd.length ? `<div class="muted"><b>Adds back as exceptions:</b> ${seEscape(item.willAdd.join(', '))}</div>` : ''}
-                ${e.kind === 'create' || e.kind === 'extend' ? '' : `<details class="muted"><summary style="cursor:pointer">All ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'} a restore writes to this entry</summary>${seEscape(e.domains.join(', '))}</details>`}
+                ${item && ['changed', 'createdChanged'].includes(item.state) && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(show(item.addedSince))}. These would be removed.</div>` : ''}
+                ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(show(item.droppedSince))}. These would come back.</div>` : ''}
+                ${item && item.state === 'createdChanged' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed from it since: ${seEscape(show(item.droppedSince))}.</div>` : ''}
+                ${item && item.elsewhere.length ? `<div class="note warn" style="padding:4px 0;border:0">Already in another entry: ${seEscape(show(item.elsewhere))}. Restoring lists them twice.</div>` : ''}
+                ${item && item.state !== 'same' && item.willAdd.length ? `<div class="muted"><b>Adds back as exceptions:</b> ${seEscape(show(item.willAdd))}</div>` : ''}
+                ${e.kind === 'create' || e.kind === 'extend' ? '' : `<details class="muted"><summary style="cursor:pointer">All ${e.domains.length} ${noun(e.domains.length)} a restore writes to this entry</summary>${seEscape(show(e.domains))}</details>`}
                 </div></div>`;
         });
         html += '</div>';
@@ -34927,13 +34951,13 @@ Version 1.16:
         se.busy = true;
         seUpdateBackupFooter();
         try {
-            await seRestoreFromInspection(insp, msg => seBkStatus(msg));
+            await seRestoreFromInspection(insp, msg => seBkStatus(msg), backup.exceptionType);
             backup.restoredAt = new Date().toISOString();
             seReplaceBackup(backup);
             se.busy = false;
             await seOpenBackup(backup.id);
             seBkStatus(backup.action === 'addition'
-                ? 'Addition undone: new entries were deleted and added domains were taken out of existing entries. Reload the page to see the exceptions table updated.'
+                ? `Addition undone: new entries were deleted and added ${backup.exceptionType === 'category' ? 'categories' : 'domains'} were taken out of existing entries. Reload the page to see the exceptions table updated.`
                 : 'Backup restored. Reload the page to see the exceptions table updated.');
         } catch (err) {
             console.error('[NS Toolkit] Steering restore:', err);
