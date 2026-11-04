@@ -28396,7 +28396,7 @@ Version 1.16:
         },
         {
             key:         'steeringRemover',
-            label:       '🧹 Steering Exception Domain Tools',
+            label:       '🧹 Steering Exception Tools',
             description: 'On the Steering Configuration page, adds "Bulk remove domains" and "Bulk add domains" buttons. Paste domains, pick the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
         },
         {
@@ -33101,6 +33101,7 @@ Version 1.16:
     const SE_BACKUP_LIMIT_KEY = 'toolkit_steeringBackupLimit';  // how many backups to keep
     const SE_FILTER_CASE_KEY  = 'toolkit_steeringFilterMatchCase'; // "Match case" in the configuration filter
     const SE_OLD_BACKUP_KEY   = 'toolkit_steeringBackup';       // the single backup kept by 1.24.x
+    const SE_TAB_KEY          = 'toolkit_steeringTab';          // last tab used: 'domain' or 'category'
     const SE_HOST_ID     = 'ns-steering-remover-host';
     const SE_BUTTON_ID   = 'ns-steering-remover-btn';
     const SE_ADD_BUTTON_ID = 'ns-steering-adder-btn';
@@ -33121,7 +33122,9 @@ Version 1.16:
         domains:        [],
         plan:           null,
         confirming:     false,
-        mode:           'remove',   // the panel either removes or adds domains
+        mode:           'remove',   // the panel either removes or adds
+        type:           'domain',   // what it removes or adds: 'domain' or 'category' (the tab)
+        categories:     new Set(),  // ids of the categories picked in the Categories tab
         lastConfigs:    [],         // names of the configurations the last run changed
     };
 
@@ -33912,6 +33915,16 @@ Version 1.16:
             .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
             .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
             .panel.add { border-top-color: #26890d; }
+            .tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid #e6e6e6; flex: 0 0 auto; }
+            .tabs button { padding: 9px 14px; border: 0; border-bottom: 3px solid transparent; background: transparent;
+                color: #53565a; font: 600 13px Arial, sans-serif; cursor: pointer; margin-bottom: -1px; }
+            .tabs button.active { color: #005587; border-bottom-color: #005587; }
+            .panel.add .tabs button.active { color: #26890d; border-bottom-color: #26890d; }
+            .step { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+                margin-right: 6px; border-radius: 50%; background: #005587; color: #fff; font-size: 11px; font-weight: 700; }
+            .panel.add .step { background: #26890d; }
+            .hint { color: #63666a; font-size: 12px; font-style: italic; }
+            .footer .primary.next { box-shadow: 0 0 0 3px #9fc9e3; }
             .filter-case { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; cursor: pointer; }
             .notes-row { margin-top: 14px; }
             .notes-row textarea { min-height: 54px; font-family: Arial, sans-serif; }
@@ -33944,18 +33957,26 @@ Version 1.16:
             <div class="backdrop" id="se-main-view">
                 <section class="panel" id="se-main-panel" role="dialog" aria-modal="true" aria-labelledby="se-title">
                     <header class="header">
-                        <h2 id="se-title">🧹 Remove domains from Steering Exceptions</h2>
+                        <h2 id="se-title">🧹 Remove from Steering Exceptions</h2>
                         <button type="button" class="close" data-action="close" aria-label="Close">×</button>
                     </header>
+                    <nav class="tabs" role="tablist">
+                        <button type="button" role="tab" id="se-tab-domain" data-action="tab" data-type="domain">Domains</button>
+                        <button type="button" role="tab" id="se-tab-category" data-action="tab" data-type="category">Categories</button>
+                    </nav>
                     <main class="body">
                         <div class="cols">
-                            <div class="col">
-                                <label class="label" for="se-domains" id="se-domains-label">Domains to remove</label>
+                            <div class="col" id="se-domain-input">
+                                <label class="label" for="se-domains"><span class="step">1</span><span id="se-domains-label">Domains to remove</span></label>
                                 <textarea id="se-domains" placeholder="example.com&#10;*.example.com&#10;another.org"></textarea>
                                 <div class="help" id="se-domains-help">One per line. Matching is exact: example.com does not remove *.example.com.</div>
                             </div>
+                            <div class="col" id="se-cat-input" hidden>
+                                <label class="label" for="se-cat-search"><span class="step">1</span><span id="se-cat-label">Categories to remove</span></label>
+                                <div id="se-cat-box"></div>
+                            </div>
                             <div class="col">
-                                <label class="label" for="se-filter">Steering configurations</label>
+                                <label class="label" for="se-filter"><span class="step">2</span>Steering configurations</label>
                                 <input type="text" id="se-filter" placeholder="Filter by name">
                                 <label class="filter-case"><input type="checkbox" id="se-filter-case"${GM_getValue(SE_FILTER_CASE_KEY, false) ? ' checked' : ''}><span>Match case</span></label>
                                 <div class="configs" id="se-configs"></div>
@@ -33963,7 +33984,7 @@ Version 1.16:
                             </div>
                         </div>
                         <div class="notes-row" id="se-notes-row" hidden>
-                            <label class="label" for="se-notes">Notes for the new entries</label>
+                            <label class="label" for="se-notes"><span class="step">3</span>Notes for the new entries</label>
                             <textarea id="se-notes" placeholder="RITM0000000: reason for the exception"></textarea>
                             <label class="option"><input type="checkbox" id="se-no-notes"><span>No notes needed</span></label>
                             <label class="option find"><input type="checkbox" id="se-find-entry"><span>Add to the existing entry with this note, when there is one</span></label>
@@ -33975,6 +33996,7 @@ Version 1.16:
                     <footer class="footer">
                         <button type="button" class="ghost" data-action="backups" id="se-backups-btn">↩ Backups</button>
                         <div class="spacer"></div>
+                        <span class="hint" id="se-next-hint" role="status" aria-live="polite"></span>
                         <button type="button" data-action="close">Close</button>
                         <button type="button" class="primary" data-action="check" id="se-check-btn">Check</button>
                         <button type="button" class="danger" data-action="remove" id="se-remove-btn" disabled>Remove selected</button>
@@ -34010,6 +34032,7 @@ Version 1.16:
             if (action === 'download') seDownloadBackup(seGetBackups().find(b => b.id === se.lastBackupId));
             if (action === 'reload')   location.reload();
             if (se.busy) return;
+            if (action === 'tab' && target.dataset.type !== se.type) seApplyType(target.dataset.type);
             if (action === 'backups')     seShowBackupList();
             if (action === 'bk-main')     seShowView('main');
             if (action === 'bk-list')     seShowBackupList();
@@ -34125,7 +34148,36 @@ Version 1.16:
         return se.mode === 'add' && !seEl('se-no-notes').checked && !seEl('se-notes').value.trim();
     }
 
+    function seInputCount() {
+        return se.type === 'category' ? se.categories.size : seParseDomains(seEl('se-domains').value).length;
+    }
+
+    function sePlanCount() {
+        if (!se.plan) return 0;
+        return se.mode === 'add'
+            ? se.plan.filter(c => c.selected && c.toAdd.length).length
+            : se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0);
+    }
+
+    // The first thing still missing before the action button can be used, or '' when nothing is
+    function seMissingStep() {
+        if (!seSelectedConfigs().length) return 'Choose at least one configuration';
+        if (!seInputCount()) return se.type === 'category' ? 'Pick at least one category' : 'Paste at least one domain';
+        if (seNotesMissing()) return 'Write the notes or tick No notes needed';
+        if (!se.plan) return 'Click Check to see what will change';
+        if (!sePlanCount()) return 'Nothing to change';
+        return '';
+    }
+
+    function seUpdateHint() {
+        const missing = se.busy ? '' : seMissingStep();
+        seEl('se-next-hint').textContent = missing;
+        seEl('se-check-btn').classList.toggle('next', missing === 'Click Check to see what will change');
+        se.shadow.querySelectorAll('.tabs button').forEach(b => { b.disabled = se.busy; });
+    }
+
     function seUpdateRemoveButton() {
+        seUpdateHint();
         const btn = seEl('se-remove-btn');
         se.confirming = false;
         seEl('se-notes').disabled = se.busy || seEl('se-no-notes').checked;
@@ -34135,7 +34187,7 @@ Version 1.16:
             const count = se.plan ? se.plan.filter(c => c.selected && c.toAdd.length).length : 0;
             btn.className = 'success';
             btn.disabled = se.busy || !count || seNotesMissing();
-            btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : 'Add domains';
+            btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : se.type === 'category' ? 'Add categories' : 'Add domains';
             btn.title = seNotesMissing() ? 'Fill in the notes, or tick "No notes needed"' : '';
             seEl('se-check-btn').disabled = se.busy;
             seEl('se-backups-btn').disabled = se.busy;
@@ -34653,12 +34705,28 @@ Version 1.16:
         se.mode = mode;
         const add = mode === 'add';
         seEl('se-main-panel').classList.toggle('add', add);
-        seEl('se-title').textContent = add ? '➕ Add domains to Steering Exceptions' : '🧹 Remove domains from Steering Exceptions';
+        seEl('se-title').textContent = add ? '➕ Add to Steering Exceptions' : '🧹 Remove from Steering Exceptions';
         seEl('se-domains-label').textContent = add ? 'Domains to add' : 'Domains to remove';
+        seEl('se-cat-label').textContent = add ? 'Categories to add' : 'Categories to remove';
         seEl('se-domains-help').textContent = add
             ? 'One per line. A domain a configuration already has is skipped there.'
             : 'One per line. Matching is exact: example.com does not remove *.example.com.';
         seEl('se-notes-row').hidden = !add;
+    }
+
+    // Switches the tab. The Check result belongs to one type, so it is cleared; configurations and notes stay.
+    function seApplyType(type) {
+        se.type = type === 'category' ? 'category' : 'domain';
+        GM_setValue(SE_TAB_KEY, se.type);
+        se.shadow.querySelectorAll('.tabs button').forEach(b => {
+            const on = b.dataset.type === se.type;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        seEl('se-domain-input').hidden = se.type !== 'domain';
+        seEl('se-cat-input').hidden = se.type !== 'category';
+        seResetPlan();
+        if (se.type === 'category' && typeof seShowCategories === 'function') seShowCategories();
     }
 
     function seOpen(insideConfig, mode) {
@@ -34666,6 +34734,7 @@ Version 1.16:
         se.host.dataset.open = 'true';
         if (!se.busy) {
             seApplyMode(mode === 'add' ? 'add' : 'remove');
+            seApplyType(GM_getValue(SE_TAB_KEY, 'domain'));
             se.lastConfigs = [];
             seShowView('main');
             se.openConfig = insideConfig ? se.currentConfig : null;
@@ -34679,7 +34748,7 @@ Version 1.16:
         seUpdateRemoveButton();
         seUpdateRemoveButton();
         if (!se.token) seSetStatus('Waiting for the page to send its session token. This takes a few seconds after the page loads.');
-        setTimeout(() => seEl('se-domains').focus(), 50);
+        setTimeout(() => (se.type === 'category' ? seEl('se-cat-search') : seEl('se-domains'))?.focus(), 50);
     }
 
     function seClose() {
@@ -34744,10 +34813,10 @@ Version 1.16:
         addBtn?.remove();
         if (!anchor) return;
 
-        btn = seMakePageButton(SE_BUTTON_ID, '🧹 Bulk remove domains',
-            'Find domains in steering exceptions and remove them (NS Policies Toolkit)', 'ns-color-red', place, 'remove');
-        addBtn = seMakePageButton(SE_ADD_BUTTON_ID, '➕ Bulk add domains',
-            'Add domains as exceptions to several steering configurations (NS Policies Toolkit)', 'ns-color-green', place, 'add');
+        btn = seMakePageButton(SE_BUTTON_ID, '🧹 Bulk remove',
+            'Find domains or categories in steering exceptions and remove them (NS Policies Toolkit)', 'ns-color-red', place, 'remove');
+        addBtn = seMakePageButton(SE_ADD_BUTTON_ID, '➕ Bulk add',
+            'Add domains or categories as exceptions to several steering configurations (NS Policies Toolkit)', 'ns-color-green', place, 'add');
         addBtn.style.color = '#26890d';
         // Both buttons share one row, so the page layout can never split them apart
         const row = document.createElement('span');
