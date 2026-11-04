@@ -33869,6 +33869,88 @@ Version 1.16:
         return plan;
     }
 
+    // Same plan shape as seBuildPlan, with category ids in hits and notFound
+    async function seBuildCategoryPlan(configIds, ids) {
+        const configs = seGetConfigs();
+        const wanted = new Set(ids);
+        const plan = [];
+        for (const id of configIds) {
+            const actions = [];
+            for (const e of await seReadCategoryEntries(id)) {
+                const hits = ids.filter(c => e.ids.includes(c));
+                if (!hits.length) continue;
+                const keeps = e.ids.filter(c => !wanted.has(c)).length;
+                actions.push({ rowId: e.rowId, notes: e.notes || '', hits, keeps, kind: keeps ? 'edit' : 'delete', selected: true });
+            }
+            plan.push({
+                configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                actions, related: [], notFound: ids.filter(c => !actions.some(a => a.hits.includes(c))),
+            });
+        }
+        return plan;
+    }
+
+    async function seApplyCategoryPlan(plan, ids, progress) {
+        const wanted = new Set(ids);
+        const backup = seCategoryBackup('removal');
+        se.lastBackupId = backup.id;
+        const log = [];
+        const names = list => list.map(seCategoryName);
+
+        for (const cfg of plan) {
+            const chosen = cfg.actions.filter(a => a.selected);
+            if (!chosen.length) continue;
+            const toDelete = [];
+            for (const a of chosen) {
+                progress(`Reading ${seEntryLabel(a.notes, a.rowId)} in ${cfg.name}…`);
+                // Re-read the entry so the edit keeps every category it holds now, whatever its id looks like
+                const current = await seReadCategoryIds(cfg.configId, a.rowId);
+                const now = current ? current.ids : [];
+                const notes = current && current.notes != null ? current.notes : a.notes;
+                const removed = now.filter(c => wanted.has(c));
+                const keep = now.filter(c => !wanted.has(c));
+                if (!removed.length) {
+                    log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'skipped', removed: [] });
+                    continue;
+                }
+                seNameIds(backup, now);
+                backup.entries.push({
+                    configId: cfg.configId, configName: cfg.name, rowId: a.rowId, notes, domains: now,
+                    kind: keep.length ? 'edit' : 'delete', after: keep.length ? keep : null, removed,
+                });
+                seSaveBackup(backup);   // saved before every change
+
+                if (keep.length) {
+                    progress(`Removing ${removed.length} categor${removed.length === 1 ? 'y' : 'ies'} from ${seEntryLabel(notes, a.rowId)}…`);
+                    await seSaveCategories(cfg.configId, a.rowId, keep, notes);
+                    log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'edit', removed: names(removed), keeps: keep.length });
+                } else {
+                    toDelete.push({ a, notes, removed });
+                }
+            }
+            if (toDelete.length) {
+                progress(`Deleting ${toDelete.length} entr${toDelete.length === 1 ? 'y' : 'ies'} in ${cfg.name}…`);
+                await seDeleteEntries(cfg.configId, toDelete.map(t => t.a.rowId));
+                toDelete.forEach(t => log.push({ config: cfg.name, label: seEntryLabel(t.notes, t.a.rowId), kind: 'delete', removed: names(t.removed) }));
+            }
+        }
+
+        // Read every touched configuration again to confirm the categories are gone
+        const stillThere = [];
+        for (const cfg of plan.filter(c => c.actions.some(a => a.selected))) {
+            progress(`Checking ${cfg.name}…`);
+            (await seReadCategoryEntries(cfg.configId)).forEach(e => {
+                const selectedHere = cfg.actions.some(a => a.selected && a.rowId === e.rowId);
+                if (!selectedHere && cfg.actions.some(a => a.rowId === e.rowId)) return;   // unticked on purpose
+                e.ids.filter(c => wanted.has(c)).forEach(c => {
+                    const text = `${seCategoryName(c)} (${cfg.name})`;
+                    if (!stillThere.includes(text)) stillThere.push(text);
+                });
+            });
+        }
+        return { log, stillThere, backup };
+    }
+
     // Backups keep the ids in the same fields as domains (domains, after), with their names alongside
     function seCategoryBackup(source) {
         return { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source, action: source,
@@ -33968,16 +34050,16 @@ Version 1.16:
     }
 
     function seBuildSummary(plan, result) {
-        const lines = [`Steering exception domain removal (${new Date().toISOString().slice(0, 10)})`];
+        const lines = [`Steering exception ${seNoun(1)} removal (${new Date().toISOString().slice(0, 10)})`];
         const byConfig = {};
         result.log.forEach(l => { (byConfig[l.config] = byConfig[l.config] || []).push(l); });
         plan.forEach(cfg => {
             lines.push('', cfg.name + ':');
             (byConfig[cfg.name] || []).forEach(l => {
-                if (l.kind === 'edit')   lines.push(`  Removed ${l.removed.join(', ')} from ${l.label} (${l.keeps} other domain${l.keeps === 1 ? '' : 's'} kept)`);
+                if (l.kind === 'edit')   lines.push(`  Removed ${l.removed.join(', ')} from ${l.label} (${l.keeps} other ${seNoun(l.keeps)} kept)`);
                 if (l.kind === 'delete') lines.push(`  Deleted ${l.label} (it only held ${l.removed.join(', ')})`);
             });
-            if (cfg.notFound.length) lines.push(`  Not present: ${cfg.notFound.join(', ')}`);
+            if (cfg.notFound.length) lines.push(`  Not present: ${cfg.notFound.map(seShow).join(', ')}`);
             if (!(byConfig[cfg.name] || []).some(l => l.kind !== 'skipped') && !cfg.notFound.length) lines.push('  No changes');
         });
         if (result.stillThere.length) lines.push('', 'Still present after removal: ' + result.stillThere.join(', '));
@@ -34377,18 +34459,18 @@ Version 1.16:
                 const row = document.createElement('label');
                 row.className = 'row';
                 const what = a.kind === 'delete'
-                    ? 'Every domain in this entry was requested, so the whole entry is deleted.'
-                    : `Keeps its other ${a.keeps} domain${a.keeps === 1 ? '' : 's'}.`;
+                    ? `Every ${seNoun(1)} in this entry was requested, so the whole entry is deleted.`
+                    : `Keeps its other ${a.keeps} ${seNoun(a.keeps)}.`;
                 row.innerHTML = `<input type="checkbox" data-row="${ci}:${ai}"${a.selected ? ' checked' : ''}>
                     <span class="chip ${a.kind}">${a.kind === 'delete' ? 'Delete entry' : 'Edit entry'}</span>
                     <div><div><b>${seEscape(seEntryLabel(a.notes, a.rowId))}</b></div>
-                    <div class="muted">Removes ${seEscape(a.hits.join(', '))}. ${what}</div></div>`;
+                    <div class="muted">Removes ${seEscape(a.hits.map(seShow).join(', '))}. ${what}</div></div>`;
                 card.appendChild(row);
             });
             if (cfg.notFound.length) {
                 const n = document.createElement('div');
                 n.className = 'note';
-                n.textContent = `Not present: ${cfg.notFound.join(', ')}`;
+                n.textContent = `Not present: ${cfg.notFound.map(seShow).join(', ')}`;
                 card.appendChild(n);
             }
             if (cfg.related.length) {
@@ -34487,12 +34569,12 @@ Version 1.16:
                     : `Every ${seNoun(1)} is already an exception in the selected configurations. Nothing to add.`);
                 return;
             }
-            se.plan = await seBuildPlan(configIds, domains);
+            se.plan = cats ? await seBuildCategoryPlan(configIds, domains) : await seBuildPlan(configIds, domains);
             seRenderPlan();
             const total = se.plan.reduce((n, c) => n + c.actions.length, 0);
             seSetStatus(total
                 ? 'Nothing has changed yet. Untick any entry you want to keep as it is, then click Remove.'
-                : 'None of these domains are in the selected configurations. Nothing to remove.');
+                : `None of these ${seNoun(2)} are in the selected configurations. Nothing to remove.`);
         } catch (err) {
             console.error('[NS Toolkit] Steering check:', err);
             seSetStatus(err.message, true);
@@ -34550,13 +34632,15 @@ Version 1.16:
         seSetBusy(true);
         const plan = se.plan;
         try {
-            const result = await seApplyPlan(plan, se.domains, msg => seSetStatus(msg));
+            const result = se.type === 'category'
+                ? await seApplyCategoryPlan(plan, se.domains, msg => seSetStatus(msg))
+                : await seApplyPlan(plan, se.domains, msg => seSetStatus(msg));
             se.plan = null;
             se.lastConfigs = seChangedConfigs(result.log, ['edit', 'delete']);
             seRenderResult(seBuildSummary(plan, result), result.stillThere);
             seSetStatus(result.stillThere.length
                 ? 'Still present: ' + result.stillThere.join(', ')
-                : 'All selected domains were removed and checked.', !!result.stillThere.length);
+                : `All selected ${seNoun(2)} were removed and checked.`, !!result.stillThere.length);
         } catch (err) {
             console.error('[NS Toolkit] Steering removal:', err);
             se.plan = null;
