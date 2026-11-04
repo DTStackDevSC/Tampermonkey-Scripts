@@ -20,7 +20,7 @@
     console.log('🔗 Domain Extractor loading...');
 
     /* ==========================================================
-     *  VERSION CONTROL
+     *  VERSION DETAILS
      * ==========================================================*/
 
     const SCRIPT_VERSION = '1.0.8';
