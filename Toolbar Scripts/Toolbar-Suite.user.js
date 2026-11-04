@@ -33346,6 +33346,36 @@ Version 1.16:
         });
     }
 
+    // Category entries: the list shows names only, so ids always come from the entry itself.
+    // rowId null creates a new entry, otherwise the entry's category list is replaced.
+    function seSaveCategories(configId, rowId, ids, notes) {
+        const payload = { categories: ids.map(String), config_id: String(configId), editRow: rowId != null, notes: notes || '' };
+        if (rowId != null) payload.rowSelectionId = String(rowId);
+        return sePost('addNewCategoryToConfig', payload);
+    }
+
+    function seCategoryEntries(rows) {
+        return (Array.isArray(rows) ? rows : []).filter(r => r.type === 'category' && Array.isArray(r.display_value));
+    }
+
+    // { ids, notes } of one category entry, or null when it cannot be read
+    async function seReadCategoryIds(configId, rowId) {
+        const d = await seGetException(configId, rowId);
+        if (!d || !d.data || !Array.isArray(d.data.ids)) return null;
+        return { ids: d.data.ids.map(String), notes: d.notes != null ? String(d.notes) : null };
+    }
+
+    // Every category entry of a configuration with its ids: [{ rowId, notes, ids }]
+    async function seReadCategoryEntries(configId) {
+        const out = [];
+        for (const r of seCategoryEntries(await seListExceptions(configId))) {
+            const read = await seReadCategoryIds(configId, r.settings_id);
+            if (!read) throw new Error(`A category entry (${seEntryLabel(r.notes, r.settings_id)}) could not be read. Click Check again.`);
+            out.push({ rowId: r.settings_id, notes: read.notes != null ? read.notes : (r.notes || ''), ids: read.ids });
+        }
+        return out;
+    }
+
     /* ── Matching ── */
 
     function seNormalize(raw) {
@@ -33816,15 +33846,121 @@ Version 1.16:
         return { log, missing, backup };
     }
 
+    // Same plan shape as seBuildAddPlan, with category ids in toAdd and present[].id
+    async function seBuildCategoryAddPlan(configIds, ids, findKey) {
+        const configs = seGetConfigs();
+        const plan = [];
+        for (const id of configIds) {
+            const entries = await seReadCategoryEntries(id);
+            const present = [];
+            ids.forEach(c => {
+                const holder = entries.find(e => e.ids.includes(c));
+                if (holder) present.push({ id: c, label: seEntryLabel(holder.notes, holder.rowId) });
+            });
+            const toAdd = ids.filter(c => !present.some(p => p.id === c));
+            const matches = findKey ? entries.filter(e => seNoteMatches(e.notes, findKey))
+                .map(e => ({ rowId: e.rowId, notes: e.notes || '', count: e.ids.length })) : [];
+            plan.push({
+                configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                toAdd, present, related: [], selected: toAdd.length > 0,
+                findKey, matches, target: matches[0] || null,
+            });
+        }
+        return plan;
+    }
+
+    // Backups keep the ids in the same fields as domains (domains, after), with their names alongside
+    function seCategoryBackup(source) {
+        return { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source, action: source,
+            exceptionType: 'category', names: {}, entries: [] };
+    }
+
+    function seNameIds(backup, ids) {
+        ids.forEach(id => { backup.names[id] = seCategoryName(id); });
+    }
+
+    async function seApplyCategoryAddPlan(plan, notes, progress) {
+        const backup = seCategoryBackup('addition');
+        se.lastBackupId = backup.id;
+        const log = [];
+        const sameSet = (a, b) => a.slice().sort().join('\n') === b.slice().sort().join('\n');
+        const names = ids => ids.map(seCategoryName);
+
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Reading ${cfg.name}…`);
+            // Check again just before adding, in case the configuration changed since the Check
+            const before = await seReadCategoryEntries(cfg.configId);
+            const nowPresent = new Set(before.flatMap(e => e.ids));
+            const toAdd = cfg.toAdd.filter(c => !nowPresent.has(c));
+            if (!toAdd.length) {
+                log.push({ config: cfg.name, kind: 'skipped', added: [] });
+                continue;
+            }
+            seNameIds(backup, toAdd);
+
+            if (cfg.target) {
+                const current = before.find(e => e.rowId === cfg.target.rowId);
+                if (!current) throw new Error(`The entry ${seEntryLabel(cfg.target.notes, cfg.target.rowId)} in ${cfg.name} could not be found. It may have been deleted: click Check again.`);
+                const after = current.ids.concat(toAdd);
+                const label = seEntryLabel(current.notes, current.rowId);
+                seNameIds(backup, current.ids);
+                backup.entries.push({ configId: cfg.configId, configName: cfg.name, rowId: current.rowId, notes: current.notes, domains: current.ids, kind: 'extend', after, removed: [] });
+                seSaveBackup(backup);
+
+                progress(`Adding ${toAdd.length} categor${toAdd.length === 1 ? 'y' : 'ies'} to ${label} in ${cfg.name}…`);
+                await seSaveCategories(cfg.configId, current.rowId, after, current.notes);
+                log.push({ config: cfg.name, kind: 'extend', added: names(toAdd), rowId: current.rowId, label });
+                continue;
+            }
+
+            // Saved before the change so an interrupted run can still be undone
+            const entry = { configId: cfg.configId, configName: cfg.name, rowId: -1, notes, domains: [], kind: 'create', after: toAdd, removed: [] };
+            backup.entries.push(entry);
+            seSaveBackup(backup);
+
+            progress(`Adding ${toAdd.length} categor${toAdd.length === 1 ? 'y' : 'ies'} to ${cfg.name}…`);
+            await seSaveCategories(cfg.configId, null, toAdd, notes);
+
+            // Netskope does not return the new entry's ID, so find it among the entries that are new
+            const oldIds = new Set(before.map(e => e.rowId));
+            const created = (await seReadCategoryEntries(cfg.configId)).filter(e => !oldIds.has(e.rowId));
+            const match = created.filter(e => sameSet(e.ids, toAdd)).pop() || (created.length === 1 ? created[0] : null);
+            if (match) {
+                entry.rowId = match.rowId;
+                entry.after = match.ids;
+                seSaveBackup(backup);
+            }
+            log.push({ config: cfg.name, kind: 'add', added: names(toAdd), rowId: entry.rowId });
+        }
+
+        // Confirm every requested category is now an exception in each configuration
+        const missing = [];
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Checking ${cfg.name}…`);
+            const have = new Set((await seReadCategoryEntries(cfg.configId)).flatMap(e => e.ids));
+            cfg.toAdd.filter(c => !have.has(c)).forEach(c => missing.push(`${seCategoryName(c)} (${cfg.name})`));
+        }
+        return { log, missing, backup };
+    }
+
+    // How a requested value is shown: domains as they are, categories by name
+    function seShow(value) {
+        return se.type === 'category' ? seCategoryName(value) : value;
+    }
+
+    function seNoun(n) {
+        return se.type === 'category' ? (n === 1 ? 'category' : 'categories') : (n === 1 ? 'domain' : 'domains');
+    }
+
     function seBuildAddSummary(plan, result, notes) {
-        const lines = [`Steering exception domain addition (${new Date().toISOString().slice(0, 10)})`];
+        const lines = [`Steering exception ${seNoun(1)} addition (${new Date().toISOString().slice(0, 10)})`];
         if (notes) lines.push(`Notes: ${seFirstLine(notes, 120)}`);
         plan.forEach(cfg => {
             const done = result.log.find(l => l.config === cfg.name && (l.kind === 'add' || l.kind === 'extend'));
             lines.push('', cfg.name + ':');
             if (done && done.kind === 'add') lines.push(`  Added ${done.added.join(', ')} as a new exception entry`);
             if (done && done.kind === 'extend') lines.push(`  Added ${done.added.join(', ')} to the existing entry ${done.label}`);
-            if (cfg.present.length) lines.push(`  Already present: ${cfg.present.map(p => `${p.domain} (in ${p.label})`).join(', ')}`);
+            if (cfg.present.length) lines.push(`  Already present: ${cfg.present.map(p => `${p.domain != null ? p.domain : seShow(p.id)} (in ${p.label})`).join(', ')}`);
             if (!done && !cfg.present.length) lines.push(cfg.selected ? '  No changes' : '  Skipped');
         });
         if (result.missing.length) lines.push('', 'Not found after adding: ' + result.missing.join(', '));
@@ -34276,28 +34412,28 @@ Version 1.16:
                 <span>${cfg.toAdd.length} to add, ${cfg.present.length} already present</span></div>`;
             const row = document.createElement('label');
             row.className = 'row';
-            const count = `${cfg.toAdd.length} domain${cfg.toAdd.length === 1 ? '' : 's'}`;
+            const count = `${cfg.toAdd.length} ${seNoun(cfg.toAdd.length)}`;
             let where = '';
             if (cfg.findKey && !cfg.matches.length) {
                 where = `<div class="muted">No entry here has ${seEscape(cfg.findKey)} in its notes, so a new entry is created.</div>`;
             } else if (cfg.matches.length) {
                 // Several entries can hold the same note: let the user pick, or ask for a new entry
-                const options = cfg.matches.map((m, mi) => `<option value="${mi}"${cfg.target === m ? ' selected' : ''}>${seEscape(seEntryLabel(m.notes, m.rowId))} (${m.count} domain${m.count === 1 ? '' : 's'})</option>`).join('')
+                const options = cfg.matches.map((m, mi) => `<option value="${mi}"${cfg.target === m ? ' selected' : ''}>${seEscape(seEntryLabel(m.notes, m.rowId))} (${m.count} ${seNoun(m.count)})</option>`).join('')
                     + `<option value="new"${cfg.target ? '' : ' selected'}>A new entry with my notes</option>`;
-                where = `<select data-target="${ci}" aria-label="Entry that gets the domains">${options}</select>`
+                where = `<select data-target="${ci}" aria-label="Entry that gets the ${seNoun(2)}">${options}</select>`
                     + (cfg.matches.length > 1 ? `<div class="muted">${cfg.matches.length} entries have ${seEscape(cfg.findKey)} in their notes. Pick the one to use.</div>` : '');
             }
             row.innerHTML = cfg.toAdd.length
                 ? `<input type="checkbox" data-addcfg="${ci}"${cfg.selected ? ' checked' : ''}>
                     ${cfg.target ? '<span class="chip info">Existing entry</span>' : '<span class="chip ok">New entry</span>'}
                     <div><div><b>${cfg.target ? `Adds ${count} to ${seEscape(seEntryLabel(cfg.target.notes, cfg.target.rowId))}` : `Adds ${count}`}</b></div>
-                    <div class="muted">${seEscape(cfg.toAdd.join(', '))}</div>${where}</div>`
-                : '<span class="chip gray">Nothing to add</span><div class="muted">Every domain is already an exception here.</div>';
+                    <div class="muted">${seEscape(cfg.toAdd.map(seShow).join(', '))}</div>${where}</div>`
+                : `<span class="chip gray">Nothing to add</span><div class="muted">Every ${seNoun(1)} is already an exception here.</div>`;
             card.appendChild(row);
             if (cfg.present.length) {
                 const n = document.createElement('div');
                 n.className = 'note';
-                n.textContent = 'Already present, skipped: ' + cfg.present.map(p => `${p.domain} (in ${p.label})`).join(', ');
+                n.textContent = 'Already present, skipped: ' + cfg.present.map(p => `${p.domain != null ? p.domain : seShow(p.id)} (in ${p.label})`).join(', ');
                 card.appendChild(n);
             }
             if (cfg.related.length) {
@@ -34313,7 +34449,7 @@ Version 1.16:
 
     function seRenderResult(summary, problems, mode) {
         const out = seEl('se-results');
-        const warn = mode === 'add' ? '⚠️ Finished, but some domains were not found afterwards' : '⚠️ Finished, but some domains are still present';
+        const warn = mode === 'add' ? `⚠️ Finished, but some ${seNoun(2)} were not found afterwards` : `⚠️ Finished, but some ${seNoun(2)} are still present`;
         out.innerHTML = `
             <label class="label" for="se-summary">${problems.length ? warn : '✅ Done. Summary for the ticket'}</label>
             <textarea id="se-summary" readonly></textarea>
@@ -34328,9 +34464,11 @@ Version 1.16:
 
     async function seRunCheck() {
         if (se.busy) return;
-        const domains = seParseDomains(seEl('se-domains').value);
+        const cats = se.type === 'category';
+        // In the Categories tab, se.domains holds the picked category ids
+        const domains = cats ? [...se.categories] : seParseDomains(seEl('se-domains').value);
         const configIds = seSelectedConfigs();
-        if (!domains.length)   return seSetStatus('Paste at least one domain.', true);
+        if (!domains.length)   return seSetStatus(cats ? 'Pick at least one category.' : 'Paste at least one domain.', true);
         if (!configIds.length) return seSetStatus('Tick at least one steering configuration.', true);
 
         seResetPlan();
@@ -34339,13 +34477,14 @@ Version 1.16:
         try {
             se.domains = domains;
             if (se.mode === 'add') {
-                se.plan = await seBuildAddPlan(configIds, domains, seFindKey());
+                se.plan = cats ? await seBuildCategoryAddPlan(configIds, domains, seFindKey())
+                               : await seBuildAddPlan(configIds, domains, seFindKey());
                 seRenderAddPlan();
                 const total = se.plan.filter(c => c.toAdd.length).length;
                 seSetStatus(total
                     ? (seNotesMissing() ? 'Nothing has changed yet. Fill in the notes (or tick "No notes needed"), then click Add.'
                                         : 'Nothing has changed yet. Untick any configuration you want to leave out, then click Add.')
-                    : 'Every domain is already an exception in the selected configurations. Nothing to add.');
+                    : `Every ${seNoun(1)} is already an exception in the selected configurations. Nothing to add.`);
                 return;
             }
             se.plan = await seBuildPlan(configIds, domains);
@@ -34376,13 +34515,15 @@ Version 1.16:
         seSetBusy(true);
         const plan = se.plan;
         try {
-            const result = await seApplyAddPlan(plan, notes, msg => seSetStatus(msg));
+            const result = se.type === 'category'
+                ? await seApplyCategoryAddPlan(plan, notes, msg => seSetStatus(msg))
+                : await seApplyAddPlan(plan, notes, msg => seSetStatus(msg));
             se.plan = null;
             se.lastConfigs = seChangedConfigs(result.log, ['add', 'extend']);
             seRenderResult(seBuildAddSummary(plan, result, notes), result.missing, 'add');
             seSetStatus(result.missing.length
                 ? 'Not found after adding: ' + result.missing.join(', ')
-                : 'All domains were added and checked.', !!result.missing.length);
+                : `All ${seNoun(2)} were added and checked.`, !!result.missing.length);
         } catch (err) {
             console.error('[NS Toolkit] Steering addition:', err);
             se.plan = null;
