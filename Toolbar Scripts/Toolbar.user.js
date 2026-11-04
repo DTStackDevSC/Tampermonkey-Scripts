@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.15.1
+// @version      2.16.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.15.1';
-    const CHANGELOG = `Version 2.15.1:
+   const SCRIPT_VERSION = '2.16.0';
+    const CHANGELOG = `Version 2.16.0:
+- NS Policies Toolkit: the steering buttons are now "🧹 Bulk remove" and "➕ Bulk add", and their window has two tabs, Domains and Categories.
+- NS Policies Toolkit: categories can be added to or removed from steering exceptions in bulk, picked from a searchable list of every predefined and custom category of the tenant. Check, notes, adding to the entry with the same ticket, backups and undo work as they do for domains.
+- NS Policies Toolkit: in the steering window the steps are numbered, and a line next to the grey button says what is still missing.
+
+Version 2.15.1:
 - Change Tracker: profiles named with "Newly Registered Domain" (singular) also count as Newly Registered Domains profiles.
 
 Version 2.15.0:
@@ -27875,8 +27880,13 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.36.0';
-    const CHANGELOG = `Version 1.36:
+    const SCRIPT_VERSION = '1.37.0';
+    const CHANGELOG = `Version 1.37:
+- Steering Exception Tools: the buttons are now "🧹 Bulk remove" and "➕ Bulk add", and their window has two tabs, Domains and Categories.
+- Categories can be added to or removed from steering exceptions in bulk. Pick them from a searchable list of every predefined and custom category of the tenant, tagged Predefined or Custom. A category a configuration already has is skipped, removing one keeps the other categories of the entry, and every change is backed up so it can be undone from ↩ Backups.
+- The steps of the window are numbered, Check is highlighted when it is the next step, and a line next to the grey button says what is still missing.
+
+Version 1.36:
 - Bulk add groups: while a run goes, the page is locked so a stray click or key cannot change the policy being edited. The card in the corner keeps working, and Pause unlocks the page.
 
 Version 1.35:
@@ -28396,8 +28406,8 @@ Version 1.16:
         },
         {
             key:         'steeringRemover',
-            label:       '🧹 Steering Exception Domain Tools',
-            description: 'On the Steering Configuration page, adds "Bulk remove domains" and "Bulk add domains" buttons. Paste domains, pick the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
+            label:       '🧹 Steering Exception Tools',
+            description: 'On the Steering Configuration page, adds "Bulk remove" and "Bulk add" buttons. Paste domains or pick categories, choose the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
         },
         {
             key:         'sourceManager',
@@ -29402,16 +29412,52 @@ Version 1.16:
             },
             {
                 icon: '🧹',
-                title: 'Steering Exception Domain Tools',
+                title: 'Steering Exception Tools',
                 buildContent(body) {
-                    lead(body, 'On the Steering Configuration page, remove or add a list of domains across the exceptions of several steering configurations at once.');
+                    lead(body, 'On the Steering Configuration page, remove or add domains or categories across the exceptions of several steering configurations at once.');
 
                     body.appendChild(hrow([
                         chip('+ Add Filter', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
-                        chip('🧹 Bulk remove domains', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
-                        chip('➕ Bulk add domains', '#fff', { color: '#26890d', border: '1px solid #26890d' }),
+                        chip('🧹 Bulk remove', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
+                        chip('➕ Bulk add', '#fff', { color: '#26890d', border: '1px solid #26890d' }),
                     ], { marginBottom: '6px' }));
                     caption(body, 'Both buttons sit side by side. Inside a steering configuration they come after Add Filter. On the Steering Configuration list they sit below the search bar, lined up with New Configuration.');
+
+                    // Tabs and the category picker
+                    const tabs = hrow([
+                        span('Domains', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px' }),
+                        span('Categories', { fontSize: '12px', fontWeight: 'bold', color: '#005587', padding: '4px 10px', borderBottom: '3px solid #005587' }),
+                    ], { gap: '2px', margin: '12px 0 6px 0', borderBottom: '1px solid #e6e6e6' });
+                    body.appendChild(tabs);
+                    const picker = document.createElement('div');
+                    Object.assign(picker.style, { border: '1px solid #d0d0f0', borderRadius: '6px', padding: '8px 10px', background: '#fff', maxWidth: '360px' });
+                    picker.appendChild(span('🔍 Search categories', { display: 'block', fontSize: '12px', color: '#bbb', fontStyle: 'italic', border: '1px solid #ccc', borderRadius: '4px', padding: '4px 8px' }));
+                    picker.appendChild(hrow([
+                        span('1 selected', { fontSize: '11px', color: '#777' }),
+                        chip('Abortion ✕', '#e3f0f8', { color: '#005587' }),
+                    ], { gap: '6px', margin: '6px 0' }));
+                    [['Abortion', 'Predefined', true], ['DCM - Slack URL Uploads - Allow', 'Custom', false]].forEach(([name, kind, on]) => {
+                        picker.appendChild(hrow([
+                            span(on ? '✓' : '', { width: '13px', height: '13px', borderRadius: '3px', background: on ? '#667eea' : '#fff', border: on ? 'none' : '1px solid #b0b0b0', color: '#fff', fontSize: '10px', lineHeight: '13px', textAlign: 'center', display: 'inline-block' }),
+                            span(name, { fontSize: '12px', color: '#333' }),
+                            chip(kind, kind === 'Custom' ? '#fff1d6' : '#e3f0f8', { color: kind === 'Custom' ? '#6b4400' : '#005587' }),
+                        ], { gap: '8px', margin: '3px 0' }));
+                    });
+                    body.appendChild(picker);
+                    caption(body, 'The Categories tab lists every predefined and custom category of the tenant, read when you open it. Search, tick the ones you want, and remove a pick with ✕ on its chip.');
+                    bullets(body, [
+                        'The tab you used last opens next time. Switching tab clears the Check result but keeps the configurations and notes.',
+                        'Categories work like domains: Check shows where each one is, a category a configuration already has is skipped, and every change is backed up so it can be undone.',
+                        'Removing a category keeps every other category of the entry, whatever it is.',
+                    ]);
+
+                    // The hint next to the action button
+                    body.appendChild(hrow([
+                        span('Click Check to see what will change', { fontSize: '11px', color: '#63666a', fontStyle: 'italic' }),
+                        chip('Check', '#005587', { border: '2px solid #9fc9e3' }),
+                        chip('Remove selected', '#da291c', { border: 'none' }),
+                    ], { justifyContent: 'flex-end', margin: '12px 0 0 0' }));
+                    caption(body, 'The steps are numbered, and while the action button is grey a line next to it says what is still missing: a configuration, a domain or category, the notes, or Check.');
 
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0' });
@@ -29470,7 +29516,7 @@ Version 1.16:
                         'When it finishes, it checks again that the domains are gone and gives you a summary to copy into the ticket, plus a backup file to download.',
                     ]);
 
-                    body.appendChild(span('➕ Bulk add domains', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
+                    body.appendChild(span('➕ Bulk add', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
                     const addCard = document.createElement('div');
                     Object.assign(addCard.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', fontFamily: 'Arial, sans-serif' });
                     const addHead = document.createElement('div');
@@ -29776,7 +29822,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
-                    togglesWrap.appendChild(toggle('🧹 Steering Exception Domain Tools', true, 'Bulk remove and bulk add domains across steering exceptions, with backups to undo.'));
+                    togglesWrap.appendChild(toggle('🧹 Steering Exception Tools', true, 'Bulk remove and bulk add domains or categories across steering exceptions, with backups to undo.'));
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
                     togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
 
@@ -33101,6 +33147,7 @@ Version 1.16:
     const SE_BACKUP_LIMIT_KEY = 'toolkit_steeringBackupLimit';  // how many backups to keep
     const SE_FILTER_CASE_KEY  = 'toolkit_steeringFilterMatchCase'; // "Match case" in the configuration filter
     const SE_OLD_BACKUP_KEY   = 'toolkit_steeringBackup';       // the single backup kept by 1.24.x
+    const SE_TAB_KEY          = 'toolkit_steeringTab';          // last tab used: 'domain' or 'category'
     const SE_HOST_ID     = 'ns-steering-remover-host';
     const SE_BUTTON_ID   = 'ns-steering-remover-btn';
     const SE_ADD_BUTTON_ID = 'ns-steering-adder-btn';
@@ -33121,7 +33168,9 @@ Version 1.16:
         domains:        [],
         plan:           null,
         confirming:     false,
-        mode:           'remove',   // the panel either removes or adds domains
+        mode:           'remove',   // the panel either removes or adds
+        type:           'domain',   // what it removes or adds: 'domain' or 'category' (the tab)
+        categories:     new Set(),  // ids of the categories picked in the Categories tab
         lastConfigs:    [],         // names of the configurations the last run changed
     };
 
@@ -33343,6 +33392,36 @@ Version 1.16:
         });
     }
 
+    // Category entries: the list shows names only, so ids always come from the entry itself.
+    // rowId null creates a new entry, otherwise the entry's category list is replaced.
+    function seSaveCategories(configId, rowId, ids, notes) {
+        const payload = { categories: ids.map(String), config_id: String(configId), editRow: rowId != null, notes: notes || '' };
+        if (rowId != null) payload.rowSelectionId = String(rowId);
+        return sePost('addNewCategoryToConfig', payload);
+    }
+
+    function seCategoryEntries(rows) {
+        return (Array.isArray(rows) ? rows : []).filter(r => r.type === 'category' && Array.isArray(r.display_value));
+    }
+
+    // { ids, notes } of one category entry, or null when it cannot be read
+    async function seReadCategoryIds(configId, rowId) {
+        const d = await seGetException(configId, rowId);
+        if (!d || !d.data || !Array.isArray(d.data.ids)) return null;
+        return { ids: d.data.ids.map(String), notes: d.notes != null ? String(d.notes) : null };
+    }
+
+    // Every category entry of a configuration with its ids: [{ rowId, notes, ids }]
+    async function seReadCategoryEntries(configId) {
+        const out = [];
+        for (const r of seCategoryEntries(await seListExceptions(configId))) {
+            const read = await seReadCategoryIds(configId, r.settings_id);
+            if (!read) throw new Error(`A category entry (${seEntryLabel(r.notes, r.settings_id)}) could not be read. Click Check again.`);
+            out.push({ rowId: r.settings_id, notes: read.notes != null ? read.notes : (r.notes || ''), ids: read.ids });
+        }
+        return out;
+    }
+
     /* ── Matching ── */
 
     function seNormalize(raw) {
@@ -33508,13 +33587,18 @@ Version 1.16:
                 removed:    Array.isArray(e.removed) ? e.removed.map(String) : [],
             }));
         if (!entries.length || isNaN(Date.parse(b.at))) return null;
+        const exceptionType = b.exceptionType === 'category' ? 'category' : 'domain';   // older backups hold domains
+        const names = {};
+        if (exceptionType === 'category' && b.names && typeof b.names === 'object') {
+            Object.keys(b.names).forEach(k => { if (typeof b.names[k] === 'string') names[k] = b.names[k]; });
+        }
         return {
             id: typeof b.id === 'string' && b.id ? b.id : 'bk-' + Date.parse(b.at).toString(36),
             at: b.at, host: String(b.host || ''),
             source: b.source === 'import' || b.source === 'addition' ? b.source : 'removal',
             action: b.action === 'addition' || b.source === 'addition' ? 'addition' : 'removal',
-            importedAt: b.importedAt || null, restoredAt: b.restoredAt || null, entries,
-            problems: seBackupProblems(entries),
+            importedAt: b.importedAt || null, restoredAt: b.restoredAt || null, entries, exceptionType, names,
+            problems: seBackupProblems(entries, exceptionType),
         };
     }
 
@@ -33523,25 +33607,30 @@ Version 1.16:
     // A restore writes each entry's full domain list as steering exceptions, so a backup
     // file that was edited by hand must not be able to slip in extra domains.
     // Backups made by this tool always pass these checks.
-    function seBackupProblems(entries) {
+    // Category ids are numbers ("501", "10300") or UUIDs
+    const SE_CATEGORY_ID_RE = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+    function seBackupProblems(entries, type) {
         const problems = [];
+        const valid = type === 'category' ? (d => SE_CATEGORY_ID_RE.test(d)) : (d => SE_DOMAIN_RE.test(d.trim()));
+        const what = type === 'category' ? 'not valid category ids' : 'not valid domains';
         entries.forEach(e => {
             const label = `${seEntryLabel(e.notes, e.rowId)} in ${e.configName}`;
-            const bad = e.domains.filter(d => !SE_DOMAIN_RE.test(d.trim()));
-            if (bad.length) problems.push(`${label}: not valid domains: ${bad.slice(0, 5).join(', ')}`);
+            const bad = e.domains.concat(e.removed).filter(d => !valid(d));
+            if (bad.length) problems.push(`${label}: ${what}: ${bad.slice(0, 5).join(', ')}`);
             if (e.kind === 'create') {
                 // An addition backs up an entry that did not exist: undoing it only ever deletes
-                const badAfter = (e.after || []).filter(d => !SE_DOMAIN_RE.test(d.trim()));
+                const badAfter = (e.after || []).filter(d => !valid(d));
                 if (e.domains.length || !e.after || !e.after.length) problems.push(`${label}: the added entry is not recorded correctly`);
-                if (badAfter.length) problems.push(`${label}: not valid domains: ${badAfter.slice(0, 5).join(', ')}`);
+                if (badAfter.length) problems.push(`${label}: ${what}: ${badAfter.slice(0, 5).join(', ')}`);
                 return;
             }
             if (e.kind === 'extend') {
                 // Domains added to an existing entry: undoing it only ever takes the added ones out
                 const before = new Set(e.domains.map(seNormalize));
                 const after = e.after || [];
-                const badAfter = after.filter(d => !SE_DOMAIN_RE.test(d.trim()));
-                if (badAfter.length) problems.push(`${label}: not valid domains: ${badAfter.slice(0, 5).join(', ')}`);
+                const badAfter = after.filter(d => !valid(d));
+                if (badAfter.length) problems.push(`${label}: ${what}: ${badAfter.slice(0, 5).join(', ')}`);
                 if (!after.length || [...before].some(d => !after.map(seNormalize).includes(d)) || after.length <= e.domains.length) {
                     problems.push(`${label}: the added domains are not recorded correctly`);
                 }
@@ -33619,6 +33708,11 @@ Version 1.16:
         const rowsByConfig = {};
         for (const id of new Set(backup.entries.map(e => e.configId))) {
             progress(`Reading ${backup.entries.find(e => e.configId === id).configName}…`);
+            if (backup.exceptionType === 'category') {
+                // Category rows only show names, so compare the ids each entry holds
+                rowsByConfig[id] = (await seReadCategoryEntries(id)).map(e => ({ settings_id: e.rowId, notes: e.notes, display_value: e.ids }));
+                continue;
+            }
             const rows = await seListExceptions(id);
             rowsByConfig[id] = (Array.isArray(rows) ? rows : []).filter(r => r.type === 'domain' && Array.isArray(r.display_value));
         }
@@ -33679,7 +33773,8 @@ Version 1.16:
         });
     }
 
-    async function seRestoreFromInspection(inspection, progress) {
+    async function seRestoreFromInspection(inspection, progress, type) {
+        const save = type === 'category' ? seSaveCategories : seSaveDomains;
         for (const item of inspection) {
             if (item.state === 'same') continue;
             const e = item.entry;
@@ -33692,11 +33787,11 @@ Version 1.16:
                 // Take out only the domains the addition put in, keeping any later edits
                 const out = new Set(item.stillAdded.map(seNormalize));
                 progress(`Taking the added domains out of ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
-                await seSaveDomains(e.configId, e.rowId, item.current.filter(d => !out.has(seNormalize(d))), e.notes);
+                await save(e.configId, e.rowId, item.current.filter(d => !out.has(seNormalize(d))), e.notes);
                 continue;
             }
             progress(`${item.exists ? 'Restoring' : 'Recreating'} ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
-            await seSaveDomains(e.configId, item.exists ? e.rowId : null, e.domains, e.notes);
+            await save(e.configId, item.exists ? e.rowId : null, e.domains, e.notes);
         }
     }
 
@@ -33813,15 +33908,203 @@ Version 1.16:
         return { log, missing, backup };
     }
 
+    // Same plan shape as seBuildAddPlan, with category ids in toAdd and present[].id
+    async function seBuildCategoryAddPlan(configIds, ids, findKey) {
+        const configs = seGetConfigs();
+        const plan = [];
+        for (const id of configIds) {
+            const entries = await seReadCategoryEntries(id);
+            const present = [];
+            ids.forEach(c => {
+                const holder = entries.find(e => e.ids.includes(c));
+                if (holder) present.push({ id: c, label: seEntryLabel(holder.notes, holder.rowId) });
+            });
+            const toAdd = ids.filter(c => !present.some(p => p.id === c));
+            const matches = findKey ? entries.filter(e => seNoteMatches(e.notes, findKey))
+                .map(e => ({ rowId: e.rowId, notes: e.notes || '', count: e.ids.length })) : [];
+            plan.push({
+                configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                toAdd, present, related: [], selected: toAdd.length > 0,
+                findKey, matches, target: matches[0] || null,
+            });
+        }
+        return plan;
+    }
+
+    // Same plan shape as seBuildPlan, with category ids in hits and notFound
+    async function seBuildCategoryPlan(configIds, ids) {
+        const configs = seGetConfigs();
+        const wanted = new Set(ids);
+        const plan = [];
+        for (const id of configIds) {
+            const actions = [];
+            for (const e of await seReadCategoryEntries(id)) {
+                const hits = ids.filter(c => e.ids.includes(c));
+                if (!hits.length) continue;
+                const keeps = e.ids.filter(c => !wanted.has(c)).length;
+                actions.push({ rowId: e.rowId, notes: e.notes || '', hits, keeps, kind: keeps ? 'edit' : 'delete', selected: true });
+            }
+            plan.push({
+                configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                actions, related: [], notFound: ids.filter(c => !actions.some(a => a.hits.includes(c))),
+            });
+        }
+        return plan;
+    }
+
+    async function seApplyCategoryPlan(plan, ids, progress) {
+        const wanted = new Set(ids);
+        const backup = seCategoryBackup('removal');
+        se.lastBackupId = backup.id;
+        const log = [];
+        const names = list => list.map(seCategoryName);
+
+        for (const cfg of plan) {
+            const chosen = cfg.actions.filter(a => a.selected);
+            if (!chosen.length) continue;
+            const toDelete = [];
+            for (const a of chosen) {
+                progress(`Reading ${seEntryLabel(a.notes, a.rowId)} in ${cfg.name}…`);
+                // Re-read the entry so the edit keeps every category it holds now, whatever its id looks like
+                const current = await seReadCategoryIds(cfg.configId, a.rowId);
+                const now = current ? current.ids : [];
+                const notes = current && current.notes != null ? current.notes : a.notes;
+                const removed = now.filter(c => wanted.has(c));
+                const keep = now.filter(c => !wanted.has(c));
+                if (!removed.length) {
+                    log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'skipped', removed: [] });
+                    continue;
+                }
+                seNameIds(backup, now);
+                backup.entries.push({
+                    configId: cfg.configId, configName: cfg.name, rowId: a.rowId, notes, domains: now,
+                    kind: keep.length ? 'edit' : 'delete', after: keep.length ? keep : null, removed,
+                });
+                seSaveBackup(backup);   // saved before every change
+
+                if (keep.length) {
+                    progress(`Removing ${removed.length} categor${removed.length === 1 ? 'y' : 'ies'} from ${seEntryLabel(notes, a.rowId)}…`);
+                    await seSaveCategories(cfg.configId, a.rowId, keep, notes);
+                    log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'edit', removed: names(removed), keeps: keep.length });
+                } else {
+                    toDelete.push({ a, notes, removed });
+                }
+            }
+            if (toDelete.length) {
+                progress(`Deleting ${toDelete.length} entr${toDelete.length === 1 ? 'y' : 'ies'} in ${cfg.name}…`);
+                await seDeleteEntries(cfg.configId, toDelete.map(t => t.a.rowId));
+                toDelete.forEach(t => log.push({ config: cfg.name, label: seEntryLabel(t.notes, t.a.rowId), kind: 'delete', removed: names(t.removed) }));
+            }
+        }
+
+        // Read every touched configuration again to confirm the categories are gone
+        const stillThere = [];
+        for (const cfg of plan.filter(c => c.actions.some(a => a.selected))) {
+            progress(`Checking ${cfg.name}…`);
+            (await seReadCategoryEntries(cfg.configId)).forEach(e => {
+                const selectedHere = cfg.actions.some(a => a.selected && a.rowId === e.rowId);
+                if (!selectedHere && cfg.actions.some(a => a.rowId === e.rowId)) return;   // unticked on purpose
+                e.ids.filter(c => wanted.has(c)).forEach(c => {
+                    const text = `${seCategoryName(c)} (${cfg.name})`;
+                    if (!stillThere.includes(text)) stillThere.push(text);
+                });
+            });
+        }
+        return { log, stillThere, backup };
+    }
+
+    // Backups keep the ids in the same fields as domains (domains, after), with their names alongside
+    function seCategoryBackup(source) {
+        return { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source, action: source,
+            exceptionType: 'category', names: {}, entries: [] };
+    }
+
+    function seNameIds(backup, ids) {
+        ids.forEach(id => { backup.names[id] = seCategoryName(id); });
+    }
+
+    async function seApplyCategoryAddPlan(plan, notes, progress) {
+        const backup = seCategoryBackup('addition');
+        se.lastBackupId = backup.id;
+        const log = [];
+        const sameSet = (a, b) => a.slice().sort().join('\n') === b.slice().sort().join('\n');
+        const names = ids => ids.map(seCategoryName);
+
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Reading ${cfg.name}…`);
+            // Check again just before adding, in case the configuration changed since the Check
+            const before = await seReadCategoryEntries(cfg.configId);
+            const nowPresent = new Set(before.flatMap(e => e.ids));
+            const toAdd = cfg.toAdd.filter(c => !nowPresent.has(c));
+            if (!toAdd.length) {
+                log.push({ config: cfg.name, kind: 'skipped', added: [] });
+                continue;
+            }
+            seNameIds(backup, toAdd);
+
+            if (cfg.target) {
+                const current = before.find(e => e.rowId === cfg.target.rowId);
+                if (!current) throw new Error(`The entry ${seEntryLabel(cfg.target.notes, cfg.target.rowId)} in ${cfg.name} could not be found. It may have been deleted: click Check again.`);
+                const after = current.ids.concat(toAdd);
+                const label = seEntryLabel(current.notes, current.rowId);
+                seNameIds(backup, current.ids);
+                backup.entries.push({ configId: cfg.configId, configName: cfg.name, rowId: current.rowId, notes: current.notes, domains: current.ids, kind: 'extend', after, removed: [] });
+                seSaveBackup(backup);
+
+                progress(`Adding ${toAdd.length} categor${toAdd.length === 1 ? 'y' : 'ies'} to ${label} in ${cfg.name}…`);
+                await seSaveCategories(cfg.configId, current.rowId, after, current.notes);
+                log.push({ config: cfg.name, kind: 'extend', added: names(toAdd), rowId: current.rowId, label });
+                continue;
+            }
+
+            // Saved before the change so an interrupted run can still be undone
+            const entry = { configId: cfg.configId, configName: cfg.name, rowId: -1, notes, domains: [], kind: 'create', after: toAdd, removed: [] };
+            backup.entries.push(entry);
+            seSaveBackup(backup);
+
+            progress(`Adding ${toAdd.length} categor${toAdd.length === 1 ? 'y' : 'ies'} to ${cfg.name}…`);
+            await seSaveCategories(cfg.configId, null, toAdd, notes);
+
+            // Netskope does not return the new entry's ID, so find it among the entries that are new
+            const oldIds = new Set(before.map(e => e.rowId));
+            const created = (await seReadCategoryEntries(cfg.configId)).filter(e => !oldIds.has(e.rowId));
+            const match = created.filter(e => sameSet(e.ids, toAdd)).pop() || (created.length === 1 ? created[0] : null);
+            if (match) {
+                entry.rowId = match.rowId;
+                entry.after = match.ids;
+                seSaveBackup(backup);
+            }
+            log.push({ config: cfg.name, kind: 'add', added: names(toAdd), rowId: entry.rowId });
+        }
+
+        // Confirm every requested category is now an exception in each configuration
+        const missing = [];
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Checking ${cfg.name}…`);
+            const have = new Set((await seReadCategoryEntries(cfg.configId)).flatMap(e => e.ids));
+            cfg.toAdd.filter(c => !have.has(c)).forEach(c => missing.push(`${seCategoryName(c)} (${cfg.name})`));
+        }
+        return { log, missing, backup };
+    }
+
+    // How a requested value is shown: domains as they are, categories by name
+    function seShow(value) {
+        return se.type === 'category' ? seCategoryName(value) : value;
+    }
+
+    function seNoun(n) {
+        return se.type === 'category' ? (n === 1 ? 'category' : 'categories') : (n === 1 ? 'domain' : 'domains');
+    }
+
     function seBuildAddSummary(plan, result, notes) {
-        const lines = [`Steering exception domain addition (${new Date().toISOString().slice(0, 10)})`];
+        const lines = [`Steering exception ${seNoun(1)} addition (${new Date().toISOString().slice(0, 10)})`];
         if (notes) lines.push(`Notes: ${seFirstLine(notes, 120)}`);
         plan.forEach(cfg => {
             const done = result.log.find(l => l.config === cfg.name && (l.kind === 'add' || l.kind === 'extend'));
             lines.push('', cfg.name + ':');
             if (done && done.kind === 'add') lines.push(`  Added ${done.added.join(', ')} as a new exception entry`);
             if (done && done.kind === 'extend') lines.push(`  Added ${done.added.join(', ')} to the existing entry ${done.label}`);
-            if (cfg.present.length) lines.push(`  Already present: ${cfg.present.map(p => `${p.domain} (in ${p.label})`).join(', ')}`);
+            if (cfg.present.length) lines.push(`  Already present: ${cfg.present.map(p => `${p.domain != null ? p.domain : seShow(p.id)} (in ${p.label})`).join(', ')}`);
             if (!done && !cfg.present.length) lines.push(cfg.selected ? '  No changes' : '  Skipped');
         });
         if (result.missing.length) lines.push('', 'Not found after adding: ' + result.missing.join(', '));
@@ -33829,16 +34112,16 @@ Version 1.16:
     }
 
     function seBuildSummary(plan, result) {
-        const lines = [`Steering exception domain removal (${new Date().toISOString().slice(0, 10)})`];
+        const lines = [`Steering exception ${seNoun(1)} removal (${new Date().toISOString().slice(0, 10)})`];
         const byConfig = {};
         result.log.forEach(l => { (byConfig[l.config] = byConfig[l.config] || []).push(l); });
         plan.forEach(cfg => {
             lines.push('', cfg.name + ':');
             (byConfig[cfg.name] || []).forEach(l => {
-                if (l.kind === 'edit')   lines.push(`  Removed ${l.removed.join(', ')} from ${l.label} (${l.keeps} other domain${l.keeps === 1 ? '' : 's'} kept)`);
+                if (l.kind === 'edit')   lines.push(`  Removed ${l.removed.join(', ')} from ${l.label} (${l.keeps} other ${seNoun(l.keeps)} kept)`);
                 if (l.kind === 'delete') lines.push(`  Deleted ${l.label} (it only held ${l.removed.join(', ')})`);
             });
-            if (cfg.notFound.length) lines.push(`  Not present: ${cfg.notFound.join(', ')}`);
+            if (cfg.notFound.length) lines.push(`  Not present: ${cfg.notFound.map(seShow).join(', ')}`);
             if (!(byConfig[cfg.name] || []).some(l => l.kind !== 'skipped') && !cfg.notFound.length) lines.push('  No changes');
         });
         if (result.stillThere.length) lines.push('', 'Still present after removal: ' + result.stillThere.join(', '));
@@ -33912,6 +34195,23 @@ Version 1.16:
             .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
             .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
             .panel.add { border-top-color: #26890d; }
+            .tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid #e6e6e6; flex: 0 0 auto; }
+            .tabs button { padding: 9px 14px; border: 0; border-bottom: 3px solid transparent; background: transparent;
+                color: #53565a; font: 600 13px Arial, sans-serif; cursor: pointer; margin-bottom: -1px; }
+            .tabs button.active { color: #005587; border-bottom-color: #005587; }
+            .panel.add .tabs button.active { color: #26890d; border-bottom-color: #26890d; }
+            .step { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
+                margin-right: 6px; border-radius: 50%; background: #005587; color: #fff; font-size: 11px; font-weight: 700; }
+            .panel.add .step { background: #26890d; }
+            .hint { color: #63666a; font-size: 12px; font-style: italic; }
+            .cat-list { height: 190px; }
+            .cat-name { flex: 1; min-width: 0; }
+            .cat-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; font-size: 12px; color: #63666a; }
+            .cchip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 10px;
+                background: #e3f0f8; color: #005587; font-size: 12px; font-weight: 600; }
+            .cchip button { border: 0; background: transparent; color: #005587; cursor: pointer; font-size: 12px; padding: 0 3px; }
+            .tag.custom { color: #6b4400; background: #fff1d6; }
+            .footer .primary.next { box-shadow: 0 0 0 3px #9fc9e3; }
             .filter-case { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; cursor: pointer; }
             .notes-row { margin-top: 14px; }
             .notes-row textarea { min-height: 54px; font-family: Arial, sans-serif; }
@@ -33944,18 +34244,29 @@ Version 1.16:
             <div class="backdrop" id="se-main-view">
                 <section class="panel" id="se-main-panel" role="dialog" aria-modal="true" aria-labelledby="se-title">
                     <header class="header">
-                        <h2 id="se-title">🧹 Remove domains from Steering Exceptions</h2>
+                        <h2 id="se-title">🧹 Remove from Steering Exceptions</h2>
                         <button type="button" class="close" data-action="close" aria-label="Close">×</button>
                     </header>
+                    <nav class="tabs" role="tablist">
+                        <button type="button" role="tab" id="se-tab-domain" data-action="tab" data-type="domain">Domains</button>
+                        <button type="button" role="tab" id="se-tab-category" data-action="tab" data-type="category">Categories</button>
+                    </nav>
                     <main class="body">
                         <div class="cols">
-                            <div class="col">
-                                <label class="label" for="se-domains" id="se-domains-label">Domains to remove</label>
+                            <div class="col" id="se-domain-input">
+                                <label class="label" for="se-domains"><span class="step">1</span><span id="se-domains-label">Domains to remove</span></label>
                                 <textarea id="se-domains" placeholder="example.com&#10;*.example.com&#10;another.org"></textarea>
                                 <div class="help" id="se-domains-help">One per line. Matching is exact: example.com does not remove *.example.com.</div>
                             </div>
+                            <div class="col" id="se-cat-input" hidden>
+                                <label class="label" for="se-cat-search"><span class="step">1</span><span id="se-cat-label">Categories to remove</span></label>
+                                <input type="text" id="se-cat-search" placeholder="Search categories" autocomplete="off">
+                                <div class="cat-chips" id="se-cat-chips"></div>
+                                <div class="configs cat-list" id="se-cat-list"></div>
+                                <div class="help" id="se-cat-status"></div>
+                            </div>
                             <div class="col">
-                                <label class="label" for="se-filter">Steering configurations</label>
+                                <label class="label" for="se-filter"><span class="step">2</span>Steering configurations</label>
                                 <input type="text" id="se-filter" placeholder="Filter by name">
                                 <label class="filter-case"><input type="checkbox" id="se-filter-case"${GM_getValue(SE_FILTER_CASE_KEY, false) ? ' checked' : ''}><span>Match case</span></label>
                                 <div class="configs" id="se-configs"></div>
@@ -33963,7 +34274,7 @@ Version 1.16:
                             </div>
                         </div>
                         <div class="notes-row" id="se-notes-row" hidden>
-                            <label class="label" for="se-notes">Notes for the new entries</label>
+                            <label class="label" for="se-notes"><span class="step">3</span>Notes for the new entries</label>
                             <textarea id="se-notes" placeholder="RITM0000000: reason for the exception"></textarea>
                             <label class="option"><input type="checkbox" id="se-no-notes"><span>No notes needed</span></label>
                             <label class="option find"><input type="checkbox" id="se-find-entry"><span>Add to the existing entry with this note, when there is one</span></label>
@@ -33975,6 +34286,7 @@ Version 1.16:
                     <footer class="footer">
                         <button type="button" class="ghost" data-action="backups" id="se-backups-btn">↩ Backups</button>
                         <div class="spacer"></div>
+                        <span class="hint" id="se-next-hint" role="status" aria-live="polite"></span>
                         <button type="button" data-action="close">Close</button>
                         <button type="button" class="primary" data-action="check" id="se-check-btn">Check</button>
                         <button type="button" class="danger" data-action="remove" id="se-remove-btn" disabled>Remove selected</button>
@@ -34010,6 +34322,9 @@ Version 1.16:
             if (action === 'download') seDownloadBackup(seGetBackups().find(b => b.id === se.lastBackupId));
             if (action === 'reload')   location.reload();
             if (se.busy) return;
+            if (action === 'tab' && target.dataset.type !== se.type) seApplyType(target.dataset.type);
+            if (action === 'cat-unpick') { se.categories.delete(target.dataset.id); seRenderCategoryList(); seRenderCategoryChips(); seResetPlan(); }
+            if (action === 'cat-reload') seShowCategories(true);
             if (action === 'backups')     seShowBackupList();
             if (action === 'bk-main')     seShowView('main');
             if (action === 'bk-list')     seShowBackupList();
@@ -34021,6 +34336,7 @@ Version 1.16:
         shadow.addEventListener('input', (e) => {
             if (e.target.id === 'se-filter') seRenderConfigList();
             if (e.target.id === 'se-domains') seResetPlan();
+            if (e.target.id === 'se-cat-search') seRenderCategoryList();
             if (e.target.id === 'se-notes') {
                 // The note decides which entry gets the domains, so a new note needs a new Check
                 if (seEl('se-find-entry').checked && se.plan) seResetPlan();
@@ -34049,6 +34365,11 @@ Version 1.16:
                 seUpdateRemoveButton();
             }
             if (e.target.dataset.cfg !== undefined) seResetPlan();
+            if (e.target.dataset.cat !== undefined) {
+                if (e.target.checked) se.categories.add(e.target.dataset.cat); else se.categories.delete(e.target.dataset.cat);
+                seRenderCategoryChips();
+                seResetPlan();
+            }
             if (e.target.dataset.row !== undefined && se.plan) {
                 const [ci, ai] = e.target.dataset.row.split(':').map(Number);
                 se.plan[ci].actions[ai].selected = e.target.checked;
@@ -34125,7 +34446,36 @@ Version 1.16:
         return se.mode === 'add' && !seEl('se-no-notes').checked && !seEl('se-notes').value.trim();
     }
 
+    function seInputCount() {
+        return se.type === 'category' ? se.categories.size : seParseDomains(seEl('se-domains').value).length;
+    }
+
+    function sePlanCount() {
+        if (!se.plan) return 0;
+        return se.mode === 'add'
+            ? se.plan.filter(c => c.selected && c.toAdd.length).length
+            : se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0);
+    }
+
+    // The first thing still missing before the action button can be used, or '' when nothing is
+    function seMissingStep() {
+        if (!seSelectedConfigs().length) return 'Choose at least one configuration';
+        if (!seInputCount()) return se.type === 'category' ? 'Pick at least one category' : 'Paste at least one domain';
+        if (seNotesMissing()) return 'Write the notes or tick No notes needed';
+        if (!se.plan) return 'Click Check to see what will change';
+        if (!sePlanCount()) return 'Nothing to change';
+        return '';
+    }
+
+    function seUpdateHint() {
+        const missing = se.busy ? '' : seMissingStep();
+        seEl('se-next-hint').textContent = missing;
+        seEl('se-check-btn').classList.toggle('next', missing === 'Click Check to see what will change');
+        se.shadow.querySelectorAll('.tabs button').forEach(b => { b.disabled = se.busy; });
+    }
+
     function seUpdateRemoveButton() {
+        seUpdateHint();
         const btn = seEl('se-remove-btn');
         se.confirming = false;
         seEl('se-notes').disabled = se.busy || seEl('se-no-notes').checked;
@@ -34135,7 +34485,7 @@ Version 1.16:
             const count = se.plan ? se.plan.filter(c => c.selected && c.toAdd.length).length : 0;
             btn.className = 'success';
             btn.disabled = se.busy || !count || seNotesMissing();
-            btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : 'Add domains';
+            btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : se.type === 'category' ? 'Add categories' : 'Add domains';
             btn.title = seNotesMissing() ? 'Fill in the notes, or tick "No notes needed"' : '';
             seEl('se-check-btn').disabled = se.busy;
             seEl('se-backups-btn').disabled = se.busy;
@@ -34153,6 +34503,8 @@ Version 1.16:
     function seSetBusy(busy) {
         se.busy = busy;
         seEl('se-domains').disabled = busy;
+        seEl('se-cat-search').disabled = busy;
+        se.shadow.querySelectorAll('#se-cat-list input, #se-cat-chips button').forEach(i => { i.disabled = busy; });
         seUpdateRemoveButton();
     }
 
@@ -34169,18 +34521,18 @@ Version 1.16:
                 const row = document.createElement('label');
                 row.className = 'row';
                 const what = a.kind === 'delete'
-                    ? 'Every domain in this entry was requested, so the whole entry is deleted.'
-                    : `Keeps its other ${a.keeps} domain${a.keeps === 1 ? '' : 's'}.`;
+                    ? `Every ${seNoun(1)} in this entry was requested, so the whole entry is deleted.`
+                    : `Keeps its other ${a.keeps} ${seNoun(a.keeps)}.`;
                 row.innerHTML = `<input type="checkbox" data-row="${ci}:${ai}"${a.selected ? ' checked' : ''}>
                     <span class="chip ${a.kind}">${a.kind === 'delete' ? 'Delete entry' : 'Edit entry'}</span>
                     <div><div><b>${seEscape(seEntryLabel(a.notes, a.rowId))}</b></div>
-                    <div class="muted">Removes ${seEscape(a.hits.join(', '))}. ${what}</div></div>`;
+                    <div class="muted">Removes ${seEscape(a.hits.map(seShow).join(', '))}. ${what}</div></div>`;
                 card.appendChild(row);
             });
             if (cfg.notFound.length) {
                 const n = document.createElement('div');
                 n.className = 'note';
-                n.textContent = `Not present: ${cfg.notFound.join(', ')}`;
+                n.textContent = `Not present: ${cfg.notFound.map(seShow).join(', ')}`;
                 card.appendChild(n);
             }
             if (cfg.related.length) {
@@ -34204,28 +34556,28 @@ Version 1.16:
                 <span>${cfg.toAdd.length} to add, ${cfg.present.length} already present</span></div>`;
             const row = document.createElement('label');
             row.className = 'row';
-            const count = `${cfg.toAdd.length} domain${cfg.toAdd.length === 1 ? '' : 's'}`;
+            const count = `${cfg.toAdd.length} ${seNoun(cfg.toAdd.length)}`;
             let where = '';
             if (cfg.findKey && !cfg.matches.length) {
                 where = `<div class="muted">No entry here has ${seEscape(cfg.findKey)} in its notes, so a new entry is created.</div>`;
             } else if (cfg.matches.length) {
                 // Several entries can hold the same note: let the user pick, or ask for a new entry
-                const options = cfg.matches.map((m, mi) => `<option value="${mi}"${cfg.target === m ? ' selected' : ''}>${seEscape(seEntryLabel(m.notes, m.rowId))} (${m.count} domain${m.count === 1 ? '' : 's'})</option>`).join('')
+                const options = cfg.matches.map((m, mi) => `<option value="${mi}"${cfg.target === m ? ' selected' : ''}>${seEscape(seEntryLabel(m.notes, m.rowId))} (${m.count} ${seNoun(m.count)})</option>`).join('')
                     + `<option value="new"${cfg.target ? '' : ' selected'}>A new entry with my notes</option>`;
-                where = `<select data-target="${ci}" aria-label="Entry that gets the domains">${options}</select>`
+                where = `<select data-target="${ci}" aria-label="Entry that gets the ${seNoun(2)}">${options}</select>`
                     + (cfg.matches.length > 1 ? `<div class="muted">${cfg.matches.length} entries have ${seEscape(cfg.findKey)} in their notes. Pick the one to use.</div>` : '');
             }
             row.innerHTML = cfg.toAdd.length
                 ? `<input type="checkbox" data-addcfg="${ci}"${cfg.selected ? ' checked' : ''}>
                     ${cfg.target ? '<span class="chip info">Existing entry</span>' : '<span class="chip ok">New entry</span>'}
                     <div><div><b>${cfg.target ? `Adds ${count} to ${seEscape(seEntryLabel(cfg.target.notes, cfg.target.rowId))}` : `Adds ${count}`}</b></div>
-                    <div class="muted">${seEscape(cfg.toAdd.join(', '))}</div>${where}</div>`
-                : '<span class="chip gray">Nothing to add</span><div class="muted">Every domain is already an exception here.</div>';
+                    <div class="muted">${seEscape(cfg.toAdd.map(seShow).join(', '))}</div>${where}</div>`
+                : `<span class="chip gray">Nothing to add</span><div class="muted">Every ${seNoun(1)} is already an exception here.</div>`;
             card.appendChild(row);
             if (cfg.present.length) {
                 const n = document.createElement('div');
                 n.className = 'note';
-                n.textContent = 'Already present, skipped: ' + cfg.present.map(p => `${p.domain} (in ${p.label})`).join(', ');
+                n.textContent = 'Already present, skipped: ' + cfg.present.map(p => `${p.domain != null ? p.domain : seShow(p.id)} (in ${p.label})`).join(', ');
                 card.appendChild(n);
             }
             if (cfg.related.length) {
@@ -34241,7 +34593,7 @@ Version 1.16:
 
     function seRenderResult(summary, problems, mode) {
         const out = seEl('se-results');
-        const warn = mode === 'add' ? '⚠️ Finished, but some domains were not found afterwards' : '⚠️ Finished, but some domains are still present';
+        const warn = mode === 'add' ? `⚠️ Finished, but some ${seNoun(2)} were not found afterwards` : `⚠️ Finished, but some ${seNoun(2)} are still present`;
         out.innerHTML = `
             <label class="label" for="se-summary">${problems.length ? warn : '✅ Done. Summary for the ticket'}</label>
             <textarea id="se-summary" readonly></textarea>
@@ -34256,9 +34608,11 @@ Version 1.16:
 
     async function seRunCheck() {
         if (se.busy) return;
-        const domains = seParseDomains(seEl('se-domains').value);
+        const cats = se.type === 'category';
+        // In the Categories tab, se.domains holds the picked category ids
+        const domains = cats ? [...se.categories] : seParseDomains(seEl('se-domains').value);
         const configIds = seSelectedConfigs();
-        if (!domains.length)   return seSetStatus('Paste at least one domain.', true);
+        if (!domains.length)   return seSetStatus(cats ? 'Pick at least one category.' : 'Paste at least one domain.', true);
         if (!configIds.length) return seSetStatus('Tick at least one steering configuration.', true);
 
         seResetPlan();
@@ -34267,21 +34621,22 @@ Version 1.16:
         try {
             se.domains = domains;
             if (se.mode === 'add') {
-                se.plan = await seBuildAddPlan(configIds, domains, seFindKey());
+                se.plan = cats ? await seBuildCategoryAddPlan(configIds, domains, seFindKey())
+                               : await seBuildAddPlan(configIds, domains, seFindKey());
                 seRenderAddPlan();
                 const total = se.plan.filter(c => c.toAdd.length).length;
                 seSetStatus(total
                     ? (seNotesMissing() ? 'Nothing has changed yet. Fill in the notes (or tick "No notes needed"), then click Add.'
                                         : 'Nothing has changed yet. Untick any configuration you want to leave out, then click Add.')
-                    : 'Every domain is already an exception in the selected configurations. Nothing to add.');
+                    : `Every ${seNoun(1)} is already an exception in the selected configurations. Nothing to add.`);
                 return;
             }
-            se.plan = await seBuildPlan(configIds, domains);
+            se.plan = cats ? await seBuildCategoryPlan(configIds, domains) : await seBuildPlan(configIds, domains);
             seRenderPlan();
             const total = se.plan.reduce((n, c) => n + c.actions.length, 0);
             seSetStatus(total
                 ? 'Nothing has changed yet. Untick any entry you want to keep as it is, then click Remove.'
-                : 'None of these domains are in the selected configurations. Nothing to remove.');
+                : `None of these ${seNoun(2)} are in the selected configurations. Nothing to remove.`);
         } catch (err) {
             console.error('[NS Toolkit] Steering check:', err);
             seSetStatus(err.message, true);
@@ -34304,13 +34659,15 @@ Version 1.16:
         seSetBusy(true);
         const plan = se.plan;
         try {
-            const result = await seApplyAddPlan(plan, notes, msg => seSetStatus(msg));
+            const result = se.type === 'category'
+                ? await seApplyCategoryAddPlan(plan, notes, msg => seSetStatus(msg))
+                : await seApplyAddPlan(plan, notes, msg => seSetStatus(msg));
             se.plan = null;
             se.lastConfigs = seChangedConfigs(result.log, ['add', 'extend']);
             seRenderResult(seBuildAddSummary(plan, result, notes), result.missing, 'add');
             seSetStatus(result.missing.length
                 ? 'Not found after adding: ' + result.missing.join(', ')
-                : 'All domains were added and checked.', !!result.missing.length);
+                : `All ${seNoun(2)} were added and checked.`, !!result.missing.length);
         } catch (err) {
             console.error('[NS Toolkit] Steering addition:', err);
             se.plan = null;
@@ -34337,13 +34694,15 @@ Version 1.16:
         seSetBusy(true);
         const plan = se.plan;
         try {
-            const result = await seApplyPlan(plan, se.domains, msg => seSetStatus(msg));
+            const result = se.type === 'category'
+                ? await seApplyCategoryPlan(plan, se.domains, msg => seSetStatus(msg))
+                : await seApplyPlan(plan, se.domains, msg => seSetStatus(msg));
             se.plan = null;
             se.lastConfigs = seChangedConfigs(result.log, ['edit', 'delete']);
             seRenderResult(seBuildSummary(plan, result), result.stillThere);
             seSetStatus(result.stillThere.length
                 ? 'Still present: ' + result.stillThere.join(', ')
-                : 'All selected domains were removed and checked.', !!result.stillThere.length);
+                : `All selected ${seNoun(2)} were removed and checked.`, !!result.stillThere.length);
         } catch (err) {
             console.error('[NS Toolkit] Steering removal:', err);
             se.plan = null;
@@ -34410,8 +34769,17 @@ Version 1.16:
         return isNaN(d) ? iso : d.toLocaleString();
     }
 
+    // How a backed up value is shown. Categories use the tenant's own name: a backup file can be
+    // edited, so the name saved in it is only shown, marked, when the tenant does not know the id.
+    function seBackupShow(backup, value) {
+        if (backup.exceptionType !== 'category') return value;
+        const live = se.catalog && se.catalog.byId.get(String(value));
+        if (live) return live.name;
+        return backup.names[value] ? `${backup.names[value]} (name saved in the backup, id ${value})` : `Category ${value}`;
+    }
+
     function seBackupChips(backup) {
-        let html = '';
+        let html = backup.exceptionType === 'category' ? '<span class="chip info">Categories</span>' : '<span class="chip gray">Domains</span>';
         if (backup.restoredAt) html += `<span class="chip ok">Restored ${seEscape(seFormatDate(backup.restoredAt))}</span>`;
         if (backup.action === 'addition') html += '<span class="chip ok">Addition</span>';
         if (backup.source === 'import') html += '<span class="chip info">Imported</span>';
@@ -34440,8 +34808,8 @@ Version 1.16:
         }
         list.forEach(b => {
             const configs = [...new Set(b.entries.map(e => e.configName))];
-            const removed = seBackupRemoved(b);
-            const added = seBackupAdded(b);
+            const removed = seBackupRemoved(b).map(v => seBackupShow(b, v));
+            const added = seBackupAdded(b).map(v => seBackupShow(b, v));
             const card = document.createElement('div');
             card.className = 'bk-card';
             card.dataset.action = 'bk-open';
@@ -34497,6 +34865,11 @@ Version 1.16:
         se.bkSelected = id;
         se.bkInspection = null;
         se.bkConfirm = false;
+        if (backup.exceptionType === 'category' && !se.catalog) {
+            seBkStatus('Loading categories…');
+            try { await seLoadCatalog(); } catch (e) { /* names fall back to the ids */ }
+            if (se.bkSelected !== id) return;
+        }
         seRenderBackupDetail(backup);
 
         const blocker = seRestoreBlocker(backup);
@@ -34509,7 +34882,7 @@ Version 1.16:
             se.bkInspection = inspection;
             seRenderBackupDetail(backup);
             seBkStatus(inspection.every(i => i.state === 'same')
-                ? (backup.action === 'addition' ? 'The added entries and domains are already gone. Nothing to undo.' : 'Every entry is already as it was in this backup. Nothing to restore.')
+                ? (backup.action === 'addition' ? `The added entries and ${backup.exceptionType === 'category' ? 'categories' : 'domains'} are already gone. Nothing to undo.` : 'Every entry is already as it was in this backup. Nothing to restore.')
                 : `Nothing has changed yet. Review the entries, then click ${backup.action === 'addition' ? 'Undo' : 'Restore'}.`);
         } catch (err) {
             console.error('[NS Toolkit] Steering backup check:', err);
@@ -34559,25 +34932,27 @@ Version 1.16:
         }
 
         html += '<div class="card" style="margin-top:12px">';
+        const show = list => list.map(v => seBackupShow(backup, v)).join(', ');
+        const noun = n => backup.exceptionType === 'category' ? (n === 1 ? 'category' : 'categories') : (n === 1 ? 'domain' : 'domains');
         backup.entries.forEach((e, i) => {
             const item = insp && insp[i];
             const info = item ? SE_STATE_INFO[item.state] : null;
             const what = e.kind === 'delete' ? 'Deleted entry' : e.kind === 'edit' ? 'Edited entry' : e.kind === 'create' ? 'Created entry' : e.kind === 'extend' ? 'Existing entry' : 'Entry';
             const removed = e.removed.length ? e.removed : (e.after && e.kind !== 'create' ? e.domains.filter(d => !e.after.includes(d)) : []);
             const facts = e.kind === 'create' || e.kind === 'extend'
-                ? `Added: ${seEscape(seExtendAdded(e).join(', '))}.`
-                : `${removed.length ? `Removed: ${seEscape(removed.join(', '))}.` : ''} Backed up with ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'}.`;
+                ? `Added: ${seEscape(show(seExtendAdded(e)))}.`
+                : `${removed.length ? `Removed: ${seEscape(show(removed))}.` : ''} Backed up with ${e.domains.length} ${noun(e.domains.length)}.`;
             html += `<div class="row">
                 ${info ? `<span class="chip ${info.chip}">${info.label}</span>` : '<span class="chip gray">Checking…</span>'}
                 <div><div><b>${seEscape(seEntryLabel(e.notes, e.rowId))}</b> <span class="muted">in ${seEscape(e.configName)}</span></div>
                 <div class="muted">${what}. ${facts}</div>
                 ${info ? `<div class="muted">${info.text}</div>` : ''}
-                ${item && ['changed', 'createdChanged'].includes(item.state) && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(item.addedSince.join(', '))}. These would be removed.</div>` : ''}
-                ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(item.droppedSince.join(', '))}. These would come back.</div>` : ''}
-                ${item && item.state === 'createdChanged' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed from it since: ${seEscape(item.droppedSince.join(', '))}.</div>` : ''}
-                ${item && item.elsewhere.length ? `<div class="note warn" style="padding:4px 0;border:0">Already in another entry: ${seEscape(item.elsewhere.join(', '))}. Restoring lists them twice.</div>` : ''}
-                ${item && item.state !== 'same' && item.willAdd.length ? `<div class="muted"><b>Adds back as exceptions:</b> ${seEscape(item.willAdd.join(', '))}</div>` : ''}
-                ${e.kind === 'create' || e.kind === 'extend' ? '' : `<details class="muted"><summary style="cursor:pointer">All ${e.domains.length} domain${e.domains.length === 1 ? '' : 's'} a restore writes to this entry</summary>${seEscape(e.domains.join(', '))}</details>`}
+                ${item && ['changed', 'createdChanged'].includes(item.state) && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(show(item.addedSince))}. These would be removed.</div>` : ''}
+                ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(show(item.droppedSince))}. These would come back.</div>` : ''}
+                ${item && item.state === 'createdChanged' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed from it since: ${seEscape(show(item.droppedSince))}.</div>` : ''}
+                ${item && item.elsewhere.length ? `<div class="note warn" style="padding:4px 0;border:0">Already in another entry: ${seEscape(show(item.elsewhere))}. Restoring lists them twice.</div>` : ''}
+                ${item && item.state !== 'same' && item.willAdd.length ? `<div class="muted"><b>Adds back as exceptions:</b> ${seEscape(show(item.willAdd))}</div>` : ''}
+                ${e.kind === 'create' || e.kind === 'extend' ? '' : `<details class="muted"><summary style="cursor:pointer">All ${e.domains.length} ${noun(e.domains.length)} a restore writes to this entry</summary>${seEscape(show(e.domains))}</details>`}
                 </div></div>`;
         });
         html += '</div>';
@@ -34630,13 +35005,13 @@ Version 1.16:
         se.busy = true;
         seUpdateBackupFooter();
         try {
-            await seRestoreFromInspection(insp, msg => seBkStatus(msg));
+            await seRestoreFromInspection(insp, msg => seBkStatus(msg), backup.exceptionType);
             backup.restoredAt = new Date().toISOString();
             seReplaceBackup(backup);
             se.busy = false;
             await seOpenBackup(backup.id);
             seBkStatus(backup.action === 'addition'
-                ? 'Addition undone: new entries were deleted and added domains were taken out of existing entries. Reload the page to see the exceptions table updated.'
+                ? `Addition undone: new entries were deleted and added ${backup.exceptionType === 'category' ? 'categories' : 'domains'} were taken out of existing entries. Reload the page to see the exceptions table updated.`
                 : 'Backup restored. Reload the page to see the exceptions table updated.');
         } catch (err) {
             console.error('[NS Toolkit] Steering restore:', err);
@@ -34653,12 +35028,108 @@ Version 1.16:
         se.mode = mode;
         const add = mode === 'add';
         seEl('se-main-panel').classList.toggle('add', add);
-        seEl('se-title').textContent = add ? '➕ Add domains to Steering Exceptions' : '🧹 Remove domains from Steering Exceptions';
+        seEl('se-title').textContent = add ? '➕ Add to Steering Exceptions' : '🧹 Remove from Steering Exceptions';
         seEl('se-domains-label').textContent = add ? 'Domains to add' : 'Domains to remove';
+        seEl('se-cat-label').textContent = add ? 'Categories to add' : 'Categories to remove';
         seEl('se-domains-help').textContent = add
             ? 'One per line. A domain a configuration already has is skipped there.'
             : 'One per line. Matching is exact: example.com does not remove *.example.com.';
         seEl('se-notes-row').hidden = !add;
+    }
+
+    /* ── Categories: the tenant's list and the picker ── */
+
+    const SE_CAT_SHOWN = 100;
+
+    async function seGetJson(url) {
+        const res = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!res.ok) throw new Error(`Netskope answered ${res.status}. Your session may have expired: reload the page.`);
+        try { return await res.json(); } catch (e) { throw new Error('Netskope sent an unexpected answer.'); }
+    }
+
+    // Every predefined and custom category of the tenant, read when the panel needs it.
+    // The console's own picker stops at the first 100 custom categories, so every page is read here.
+    function seLoadCatalog(force) {
+        if (se.catalogPromise && !force) return se.catalogPromise;
+        se.catalog = null;
+        se.catalogPromise = (async () => {
+            const pre = await seGetJson('/api/v2/services/cci/allcategory?category=all');
+            const list = (Array.isArray(pre && pre.data) ? pre.data : [])
+                .filter(c => c && c.category_id != null && c.category_name)
+                .map(c => ({ id: String(c.category_id), name: String(c.category_name), kind: 'predefined' }));
+            const filter = encodeURIComponent('status in ("pending-create", "pending-update", "applied")');
+            for (let offset = 0, total = Infinity; offset < total && offset < 5000; offset += 100) {
+                const page = await seGetJson(`/api/v2/profiles/customcategories?limit=100&offset=${offset}&sortby=name&sortorder=asc&filter=${filter}`);
+                const els = Array.isArray(page && page.elements) ? page.elements : [];
+                els.filter(c => c && c.id != null && c.name).forEach(c => list.push({ id: String(c.id), name: String(c.name), kind: 'custom' }));
+                total = Number(page && page.total_count) || 0;
+                if (!els.length) break;
+            }
+            list.sort((a, b) => a.name.localeCompare(b.name) || (a.kind === 'predefined' ? -1 : 1));
+            se.catalog = { list, byId: new Map(list.map(c => [c.id, c])) };
+            return se.catalog;
+        })();
+        se.catalogPromise.catch(() => { se.catalogPromise = null; });
+        return se.catalogPromise;
+    }
+
+    function seCategoryName(id) {
+        const c = se.catalog && se.catalog.byId.get(String(id));
+        return c ? c.name : `Category ${id}`;
+    }
+
+    async function seShowCategories(force) {
+        const status = seEl('se-cat-status');
+        seRenderCategoryChips();
+        if (se.catalog && !force) return seRenderCategoryList();
+        seEl('se-cat-list').innerHTML = '';
+        status.textContent = 'Loading categories…';
+        try {
+            await seLoadCatalog(force);
+            status.textContent = `${se.catalog.list.length} categories in this tenant. `;
+            status.insertAdjacentHTML('beforeend', '<button type="button" class="link-btn" data-action="cat-reload" id="se-cat-reload" style="padding:1px 6px;font-size:11px">↺ Reload</button>');
+            seRenderCategoryList();
+            seRenderCategoryChips();
+        } catch (err) {
+            console.error('[NS Toolkit] Category list:', err);
+            status.textContent = `The categories could not be loaded: ${err.message} `;
+            status.insertAdjacentHTML('beforeend', '<button type="button" class="link-btn" data-action="cat-reload" id="se-cat-reload" style="padding:1px 6px;font-size:11px">↺ Reload</button>');
+        }
+    }
+
+    function seRenderCategoryList() {
+        const box = seEl('se-cat-list');
+        if (!se.catalog) return;
+        const q = seEl('se-cat-search').value.trim().toLowerCase();
+        const matches = se.catalog.list.filter(c => !q || c.name.toLowerCase().includes(q));
+        box.innerHTML = matches.slice(0, SE_CAT_SHOWN).map(c => `<label class="cfg cat" data-id="${seEscape(c.id)}">
+                <input type="checkbox" data-cat="${seEscape(c.id)}"${se.categories.has(c.id) ? ' checked' : ''}${se.busy ? ' disabled' : ''}>
+                <span class="cat-name">${seEscape(c.name)}</span><span class="tag${c.kind === 'custom' ? ' custom' : ''}">${c.kind === 'custom' ? 'Custom' : 'Predefined'}</span></label>`).join('');
+        if (!matches.length) box.innerHTML = '<div class="help" style="padding:6px 10px">No category matches this search.</div>';
+        if (matches.length > SE_CAT_SHOWN) box.insertAdjacentHTML('beforeend', `<div class="help" id="se-cat-more" style="padding:6px 10px">${matches.length - SE_CAT_SHOWN} more, refine the search</div>`);
+    }
+
+    function seRenderCategoryChips() {
+        const box = seEl('se-cat-chips');
+        const ids = [...se.categories];
+        box.innerHTML = ids.length
+            ? `<span id="se-cat-count">${ids.length} selected</span>` + ids.map(id => `<span class="cchip" data-id="${seEscape(id)}">${seEscape(seCategoryName(id))}<button type="button" data-action="cat-unpick" data-id="${seEscape(id)}" aria-label="Remove ${seEscape(seCategoryName(id))}"${se.busy ? ' disabled' : ''}>✕</button></span>`).join('')
+            : '<span id="se-cat-count">None selected yet</span>';
+    }
+
+    // Switches the tab. The Check result belongs to one type, so it is cleared; configurations and notes stay.
+    function seApplyType(type) {
+        se.type = type === 'category' ? 'category' : 'domain';
+        GM_setValue(SE_TAB_KEY, se.type);
+        se.shadow.querySelectorAll('.tabs button').forEach(b => {
+            const on = b.dataset.type === se.type;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        seEl('se-domain-input').hidden = se.type !== 'domain';
+        seEl('se-cat-input').hidden = se.type !== 'category';
+        seResetPlan();
+        if (se.type === 'category') seShowCategories();
     }
 
     function seOpen(insideConfig, mode) {
@@ -34666,6 +35137,9 @@ Version 1.16:
         se.host.dataset.open = 'true';
         if (!se.busy) {
             seApplyMode(mode === 'add' ? 'add' : 'remove');
+            se.catalog = null;
+            se.catalogPromise = null;   // read again on every open, so new categories show up
+            seApplyType(GM_getValue(SE_TAB_KEY, 'domain'));
             se.lastConfigs = [];
             seShowView('main');
             se.openConfig = insideConfig ? se.currentConfig : null;
@@ -34679,7 +35153,7 @@ Version 1.16:
         seUpdateRemoveButton();
         seUpdateRemoveButton();
         if (!se.token) seSetStatus('Waiting for the page to send its session token. This takes a few seconds after the page loads.');
-        setTimeout(() => seEl('se-domains').focus(), 50);
+        setTimeout(() => (se.type === 'category' ? seEl('se-cat-search') : seEl('se-domains'))?.focus(), 50);
     }
 
     function seClose() {
@@ -34744,10 +35218,10 @@ Version 1.16:
         addBtn?.remove();
         if (!anchor) return;
 
-        btn = seMakePageButton(SE_BUTTON_ID, '🧹 Bulk remove domains',
-            'Find domains in steering exceptions and remove them (NS Policies Toolkit)', 'ns-color-red', place, 'remove');
-        addBtn = seMakePageButton(SE_ADD_BUTTON_ID, '➕ Bulk add domains',
-            'Add domains as exceptions to several steering configurations (NS Policies Toolkit)', 'ns-color-green', place, 'add');
+        btn = seMakePageButton(SE_BUTTON_ID, '🧹 Bulk remove',
+            'Find domains or categories in steering exceptions and remove them (NS Policies Toolkit)', 'ns-color-red', place, 'remove');
+        addBtn = seMakePageButton(SE_ADD_BUTTON_ID, '➕ Bulk add',
+            'Add domains or categories as exceptions to several steering configurations (NS Policies Toolkit)', 'ns-color-green', place, 'add');
         addBtn.style.color = '#26890d';
         // Both buttons share one row, so the page layout can never split them apart
         const row = document.createElement('span');

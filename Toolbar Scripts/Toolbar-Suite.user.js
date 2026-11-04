@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.15.1
+// @version      2.16.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.15.1';
-    const CHANGELOG = `Version 2.15.1:
+   const SCRIPT_VERSION = '2.16.0';
+    const CHANGELOG = `Version 2.16.0:
+- NS Policies Toolkit: the steering buttons are now "🧹 Bulk remove" and "➕ Bulk add", and their window has two tabs, Domains and Categories.
+- NS Policies Toolkit: categories can be added to or removed from steering exceptions in bulk, picked from a searchable list of every predefined and custom category of the tenant. Check, notes, adding to the entry with the same ticket, backups and undo work as they do for domains.
+- NS Policies Toolkit: in the steering window the steps are numbered, and a line next to the grey button says what is still missing.
+
+Version 2.15.1:
 - Change Tracker: profiles named with "Newly Registered Domain" (singular) also count as Newly Registered Domains profiles.
 
 Version 2.15.0:
@@ -27875,8 +27880,13 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.36.0';
-    const CHANGELOG = `Version 1.36:
+    const SCRIPT_VERSION = '1.37.0';
+    const CHANGELOG = `Version 1.37:
+- Steering Exception Tools: the buttons are now "🧹 Bulk remove" and "➕ Bulk add", and their window has two tabs, Domains and Categories.
+- Categories can be added to or removed from steering exceptions in bulk. Pick them from a searchable list of every predefined and custom category of the tenant, tagged Predefined or Custom. A category a configuration already has is skipped, removing one keeps the other categories of the entry, and every change is backed up so it can be undone from ↩ Backups.
+- The steps of the window are numbered, Check is highlighted when it is the next step, and a line next to the grey button says what is still missing.
+
+Version 1.36:
 - Bulk add groups: while a run goes, the page is locked so a stray click or key cannot change the policy being edited. The card in the corner keeps working, and Pause unlocks the page.
 
 Version 1.35:
@@ -28397,7 +28407,7 @@ Version 1.16:
         {
             key:         'steeringRemover',
             label:       '🧹 Steering Exception Tools',
-            description: 'On the Steering Configuration page, adds "Bulk remove domains" and "Bulk add domains" buttons. Paste domains, pick the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
+            description: 'On the Steering Configuration page, adds "Bulk remove" and "Bulk add" buttons. Paste domains or pick categories, choose the steering configurations, check them, then remove or add them in one go. Every change is backed up so it can be undone.',
         },
         {
             key:         'sourceManager',
@@ -29402,16 +29412,52 @@ Version 1.16:
             },
             {
                 icon: '🧹',
-                title: 'Steering Exception Domain Tools',
+                title: 'Steering Exception Tools',
                 buildContent(body) {
-                    lead(body, 'On the Steering Configuration page, remove or add a list of domains across the exceptions of several steering configurations at once.');
+                    lead(body, 'On the Steering Configuration page, remove or add domains or categories across the exceptions of several steering configurations at once.');
 
                     body.appendChild(hrow([
                         chip('+ Add Filter', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
-                        chip('🧹 Bulk remove domains', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
-                        chip('➕ Bulk add domains', '#fff', { color: '#26890d', border: '1px solid #26890d' }),
+                        chip('🧹 Bulk remove', '#fff', { color: '#da291c', border: '1px solid #da291c' }),
+                        chip('➕ Bulk add', '#fff', { color: '#26890d', border: '1px solid #26890d' }),
                     ], { marginBottom: '6px' }));
                     caption(body, 'Both buttons sit side by side. Inside a steering configuration they come after Add Filter. On the Steering Configuration list they sit below the search bar, lined up with New Configuration.');
+
+                    // Tabs and the category picker
+                    const tabs = hrow([
+                        span('Domains', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px' }),
+                        span('Categories', { fontSize: '12px', fontWeight: 'bold', color: '#005587', padding: '4px 10px', borderBottom: '3px solid #005587' }),
+                    ], { gap: '2px', margin: '12px 0 6px 0', borderBottom: '1px solid #e6e6e6' });
+                    body.appendChild(tabs);
+                    const picker = document.createElement('div');
+                    Object.assign(picker.style, { border: '1px solid #d0d0f0', borderRadius: '6px', padding: '8px 10px', background: '#fff', maxWidth: '360px' });
+                    picker.appendChild(span('🔍 Search categories', { display: 'block', fontSize: '12px', color: '#bbb', fontStyle: 'italic', border: '1px solid #ccc', borderRadius: '4px', padding: '4px 8px' }));
+                    picker.appendChild(hrow([
+                        span('1 selected', { fontSize: '11px', color: '#777' }),
+                        chip('Abortion ✕', '#e3f0f8', { color: '#005587' }),
+                    ], { gap: '6px', margin: '6px 0' }));
+                    [['Abortion', 'Predefined', true], ['DCM - Slack URL Uploads - Allow', 'Custom', false]].forEach(([name, kind, on]) => {
+                        picker.appendChild(hrow([
+                            span(on ? '✓' : '', { width: '13px', height: '13px', borderRadius: '3px', background: on ? '#667eea' : '#fff', border: on ? 'none' : '1px solid #b0b0b0', color: '#fff', fontSize: '10px', lineHeight: '13px', textAlign: 'center', display: 'inline-block' }),
+                            span(name, { fontSize: '12px', color: '#333' }),
+                            chip(kind, kind === 'Custom' ? '#fff1d6' : '#e3f0f8', { color: kind === 'Custom' ? '#6b4400' : '#005587' }),
+                        ], { gap: '8px', margin: '3px 0' }));
+                    });
+                    body.appendChild(picker);
+                    caption(body, 'The Categories tab lists every predefined and custom category of the tenant, read when you open it. Search, tick the ones you want, and remove a pick with ✕ on its chip.');
+                    bullets(body, [
+                        'The tab you used last opens next time. Switching tab clears the Check result but keeps the configurations and notes.',
+                        'Categories work like domains: Check shows where each one is, a category a configuration already has is skipped, and every change is backed up so it can be undone.',
+                        'Removing a category keeps every other category of the entry, whatever it is.',
+                    ]);
+
+                    // The hint next to the action button
+                    body.appendChild(hrow([
+                        span('Click Check to see what will change', { fontSize: '11px', color: '#63666a', fontStyle: 'italic' }),
+                        chip('Check', '#005587', { border: '2px solid #9fc9e3' }),
+                        chip('Remove selected', '#da291c', { border: 'none' }),
+                    ], { justifyContent: 'flex-end', margin: '12px 0 0 0' }));
+                    caption(body, 'The steps are numbered, and while the action button is grey a line next to it says what is still missing: a configuration, a domain or category, the notes, or Check.');
 
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0' });
@@ -29470,7 +29516,7 @@ Version 1.16:
                         'When it finishes, it checks again that the domains are gone and gives you a summary to copy into the ticket, plus a backup file to download.',
                     ]);
 
-                    body.appendChild(span('➕ Bulk add domains', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
+                    body.appendChild(span('➕ Bulk add', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
                     const addCard = document.createElement('div');
                     Object.assign(addCard.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', fontFamily: 'Arial, sans-serif' });
                     const addHead = document.createElement('div');
@@ -29776,7 +29822,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
-                    togglesWrap.appendChild(toggle('🧹 Steering Exception Domain Tools', true, 'Bulk remove and bulk add domains across steering exceptions, with backups to undo.'));
+                    togglesWrap.appendChild(toggle('🧹 Steering Exception Tools', true, 'Bulk remove and bulk add domains or categories across steering exceptions, with backups to undo.'));
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
                     togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
 
@@ -34723,10 +34769,13 @@ Version 1.16:
         return isNaN(d) ? iso : d.toLocaleString();
     }
 
-    // How a backed up value is shown: categories by the name saved with the backup
+    // How a backed up value is shown. Categories use the tenant's own name: a backup file can be
+    // edited, so the name saved in it is only shown, marked, when the tenant does not know the id.
     function seBackupShow(backup, value) {
         if (backup.exceptionType !== 'category') return value;
-        return backup.names[value] || seCategoryName(value);
+        const live = se.catalog && se.catalog.byId.get(String(value));
+        if (live) return live.name;
+        return backup.names[value] ? `${backup.names[value]} (name saved in the backup, id ${value})` : `Category ${value}`;
     }
 
     function seBackupChips(backup) {
@@ -34816,6 +34865,11 @@ Version 1.16:
         se.bkSelected = id;
         se.bkInspection = null;
         se.bkConfirm = false;
+        if (backup.exceptionType === 'category' && !se.catalog) {
+            seBkStatus('Loading categories…');
+            try { await seLoadCatalog(); } catch (e) { /* names fall back to the ids */ }
+            if (se.bkSelected !== id) return;
+        }
         seRenderBackupDetail(backup);
 
         const blocker = seRestoreBlocker(backup);
