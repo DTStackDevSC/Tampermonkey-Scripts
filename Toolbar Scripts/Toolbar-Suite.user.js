@@ -33924,6 +33924,13 @@ Version 1.16:
                 margin-right: 6px; border-radius: 50%; background: #005587; color: #fff; font-size: 11px; font-weight: 700; }
             .panel.add .step { background: #26890d; }
             .hint { color: #63666a; font-size: 12px; font-style: italic; }
+            .cat-list { height: 190px; }
+            .cat-name { flex: 1; min-width: 0; }
+            .cat-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 6px; font-size: 12px; color: #63666a; }
+            .cchip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: 10px;
+                background: #e3f0f8; color: #005587; font-size: 12px; font-weight: 600; }
+            .cchip button { border: 0; background: transparent; color: #005587; cursor: pointer; font-size: 12px; padding: 0 3px; }
+            .tag.custom { color: #6b4400; background: #fff1d6; }
             .footer .primary.next { box-shadow: 0 0 0 3px #9fc9e3; }
             .filter-case { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; cursor: pointer; }
             .notes-row { margin-top: 14px; }
@@ -33973,7 +33980,10 @@ Version 1.16:
                             </div>
                             <div class="col" id="se-cat-input" hidden>
                                 <label class="label" for="se-cat-search"><span class="step">1</span><span id="se-cat-label">Categories to remove</span></label>
-                                <div id="se-cat-box"></div>
+                                <input type="text" id="se-cat-search" placeholder="Search categories" autocomplete="off">
+                                <div class="cat-chips" id="se-cat-chips"></div>
+                                <div class="configs cat-list" id="se-cat-list"></div>
+                                <div class="help" id="se-cat-status"></div>
                             </div>
                             <div class="col">
                                 <label class="label" for="se-filter"><span class="step">2</span>Steering configurations</label>
@@ -34033,6 +34043,8 @@ Version 1.16:
             if (action === 'reload')   location.reload();
             if (se.busy) return;
             if (action === 'tab' && target.dataset.type !== se.type) seApplyType(target.dataset.type);
+            if (action === 'cat-unpick') { se.categories.delete(target.dataset.id); seRenderCategoryList(); seRenderCategoryChips(); seResetPlan(); }
+            if (action === 'cat-reload') seShowCategories(true);
             if (action === 'backups')     seShowBackupList();
             if (action === 'bk-main')     seShowView('main');
             if (action === 'bk-list')     seShowBackupList();
@@ -34044,6 +34056,7 @@ Version 1.16:
         shadow.addEventListener('input', (e) => {
             if (e.target.id === 'se-filter') seRenderConfigList();
             if (e.target.id === 'se-domains') seResetPlan();
+            if (e.target.id === 'se-cat-search') seRenderCategoryList();
             if (e.target.id === 'se-notes') {
                 // The note decides which entry gets the domains, so a new note needs a new Check
                 if (seEl('se-find-entry').checked && se.plan) seResetPlan();
@@ -34072,6 +34085,11 @@ Version 1.16:
                 seUpdateRemoveButton();
             }
             if (e.target.dataset.cfg !== undefined) seResetPlan();
+            if (e.target.dataset.cat !== undefined) {
+                if (e.target.checked) se.categories.add(e.target.dataset.cat); else se.categories.delete(e.target.dataset.cat);
+                seRenderCategoryChips();
+                seResetPlan();
+            }
             if (e.target.dataset.row !== undefined && se.plan) {
                 const [ci, ai] = e.target.dataset.row.split(':').map(Number);
                 se.plan[ci].actions[ai].selected = e.target.checked;
@@ -34205,6 +34223,8 @@ Version 1.16:
     function seSetBusy(busy) {
         se.busy = busy;
         seEl('se-domains').disabled = busy;
+        seEl('se-cat-search').disabled = busy;
+        se.shadow.querySelectorAll('#se-cat-list input, #se-cat-chips button').forEach(i => { i.disabled = busy; });
         seUpdateRemoveButton();
     }
 
@@ -34714,6 +34734,86 @@ Version 1.16:
         seEl('se-notes-row').hidden = !add;
     }
 
+    /* ── Categories: the tenant's list and the picker ── */
+
+    const SE_CAT_SHOWN = 100;
+
+    async function seGetJson(url) {
+        const res = await fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest' } });
+        if (!res.ok) throw new Error(`Netskope answered ${res.status}. Your session may have expired: reload the page.`);
+        try { return await res.json(); } catch (e) { throw new Error('Netskope sent an unexpected answer.'); }
+    }
+
+    // Every predefined and custom category of the tenant, read when the panel needs it.
+    // The console's own picker stops at the first 100 custom categories, so every page is read here.
+    function seLoadCatalog(force) {
+        if (se.catalogPromise && !force) return se.catalogPromise;
+        se.catalog = null;
+        se.catalogPromise = (async () => {
+            const pre = await seGetJson('/api/v2/services/cci/allcategory?category=all');
+            const list = (Array.isArray(pre && pre.data) ? pre.data : [])
+                .filter(c => c && c.category_id != null && c.category_name)
+                .map(c => ({ id: String(c.category_id), name: String(c.category_name), kind: 'predefined' }));
+            const filter = encodeURIComponent('status in ("pending-create", "pending-update", "applied")');
+            for (let offset = 0, total = Infinity; offset < total && offset < 5000; offset += 100) {
+                const page = await seGetJson(`/api/v2/profiles/customcategories?limit=100&offset=${offset}&sortby=name&sortorder=asc&filter=${filter}`);
+                const els = Array.isArray(page && page.elements) ? page.elements : [];
+                els.filter(c => c && c.id != null && c.name).forEach(c => list.push({ id: String(c.id), name: String(c.name), kind: 'custom' }));
+                total = Number(page && page.total_count) || 0;
+                if (!els.length) break;
+            }
+            list.sort((a, b) => a.name.localeCompare(b.name) || (a.kind === 'predefined' ? -1 : 1));
+            se.catalog = { list, byId: new Map(list.map(c => [c.id, c])) };
+            return se.catalog;
+        })();
+        se.catalogPromise.catch(() => { se.catalogPromise = null; });
+        return se.catalogPromise;
+    }
+
+    function seCategoryName(id) {
+        const c = se.catalog && se.catalog.byId.get(String(id));
+        return c ? c.name : `Category ${id}`;
+    }
+
+    async function seShowCategories(force) {
+        const status = seEl('se-cat-status');
+        seRenderCategoryChips();
+        if (se.catalog && !force) return seRenderCategoryList();
+        seEl('se-cat-list').innerHTML = '';
+        status.textContent = 'Loading categories…';
+        try {
+            await seLoadCatalog(force);
+            status.textContent = `${se.catalog.list.length} categories in this tenant. `;
+            status.insertAdjacentHTML('beforeend', '<button type="button" class="link-btn" data-action="cat-reload" id="se-cat-reload" style="padding:1px 6px;font-size:11px">↺ Reload</button>');
+            seRenderCategoryList();
+            seRenderCategoryChips();
+        } catch (err) {
+            console.error('[NS Toolkit] Category list:', err);
+            status.textContent = `The categories could not be loaded: ${err.message} `;
+            status.insertAdjacentHTML('beforeend', '<button type="button" class="link-btn" data-action="cat-reload" id="se-cat-reload" style="padding:1px 6px;font-size:11px">↺ Reload</button>');
+        }
+    }
+
+    function seRenderCategoryList() {
+        const box = seEl('se-cat-list');
+        if (!se.catalog) return;
+        const q = seEl('se-cat-search').value.trim().toLowerCase();
+        const matches = se.catalog.list.filter(c => !q || c.name.toLowerCase().includes(q));
+        box.innerHTML = matches.slice(0, SE_CAT_SHOWN).map(c => `<label class="cfg cat" data-id="${seEscape(c.id)}">
+                <input type="checkbox" data-cat="${seEscape(c.id)}"${se.categories.has(c.id) ? ' checked' : ''}${se.busy ? ' disabled' : ''}>
+                <span class="cat-name">${seEscape(c.name)}</span><span class="tag${c.kind === 'custom' ? ' custom' : ''}">${c.kind === 'custom' ? 'Custom' : 'Predefined'}</span></label>`).join('');
+        if (!matches.length) box.innerHTML = '<div class="help" style="padding:6px 10px">No category matches this search.</div>';
+        if (matches.length > SE_CAT_SHOWN) box.insertAdjacentHTML('beforeend', `<div class="help" id="se-cat-more" style="padding:6px 10px">${matches.length - SE_CAT_SHOWN} more, refine the search</div>`);
+    }
+
+    function seRenderCategoryChips() {
+        const box = seEl('se-cat-chips');
+        const ids = [...se.categories];
+        box.innerHTML = ids.length
+            ? `<span id="se-cat-count">${ids.length} selected</span>` + ids.map(id => `<span class="cchip" data-id="${seEscape(id)}">${seEscape(seCategoryName(id))}<button type="button" data-action="cat-unpick" data-id="${seEscape(id)}" aria-label="Remove ${seEscape(seCategoryName(id))}"${se.busy ? ' disabled' : ''}>✕</button></span>`).join('')
+            : '<span id="se-cat-count">None selected yet</span>';
+    }
+
     // Switches the tab. The Check result belongs to one type, so it is cleared; configurations and notes stay.
     function seApplyType(type) {
         se.type = type === 'category' ? 'category' : 'domain';
@@ -34726,7 +34826,7 @@ Version 1.16:
         seEl('se-domain-input').hidden = se.type !== 'domain';
         seEl('se-cat-input').hidden = se.type !== 'category';
         seResetPlan();
-        if (se.type === 'category' && typeof seShowCategories === 'function') seShowCategories();
+        if (se.type === 'category') seShowCategories();
     }
 
     function seOpen(insideConfig, mode) {
@@ -34734,6 +34834,8 @@ Version 1.16:
         se.host.dataset.open = 'true';
         if (!se.busy) {
             seApplyMode(mode === 'add' ? 'add' : 'remove');
+            se.catalog = null;
+            se.catalogPromise = null;   // read again on every open, so new categories show up
             seApplyType(GM_getValue(SE_TAB_KEY, 'domain'));
             se.lastConfigs = [];
             seShowView('main');
