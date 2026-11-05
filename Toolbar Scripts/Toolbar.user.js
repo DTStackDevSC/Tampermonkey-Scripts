@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.16.1
+// @version      2.16.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.16.1';
-    const CHANGELOG = `Version 2.16.1:
+   const SCRIPT_VERSION = '2.16.2';
+    const CHANGELOG = `Version 2.16.2:
+- NS Policies Toolkit: on tenants where Netskope sometimes answers a steering change with "backend error, please try again" although the change went through, bulk add, bulk remove and restore no longer stop. They check whether the change is there, carry on when it is, and try again up to twice when it is not, so nothing is added twice.
+
+Version 2.16.1:
 - NS Policies Toolkit: when Netskope refuses a steering change without saying why, the message now shows Netskope's full answer, so the cause can be found.
 
 Version 2.16.0:
@@ -27883,8 +27886,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.37.1';
-    const CHANGELOG = `Version 1.37.1:
+    const SCRIPT_VERSION = '1.37.2';
+    const CHANGELOG = `Version 1.37.2:
+- Steering Exception Tools: when Netskope answers a change with "backend error, please try again", the run no longer stops. It checks whether the change went through, carries on when it did, and tries again up to twice when it did not, so nothing is added twice.
+
+Version 1.37.1:
 - Steering Exception Tools: when Netskope refuses a change without saying why, the message now shows Netskope's full answer, so the cause can be found.
 
 Version 1.37:
@@ -33364,16 +33370,22 @@ Version 1.16:
         });
         if (!res.ok) {
             const text = await res.text().catch(() => '');
-            throw new Error(`Netskope answered ${res.status} to ${endpoint}. Your session may have expired: reload the page.` +
+            const err = new Error(`Netskope answered ${res.status} to ${endpoint}. Your session may have expired: reload the page.` +
                 (text ? `\nNetskope's answer: ${seAnswerText(text)}` : ''));
+            err.transient = [502, 503, 504].includes(res.status);
+            throw err;
         }
 
         let json;
         try { json = await res.json(); } catch (e) { throw new Error(`Netskope sent an unexpected answer to ${endpoint}.`); }
         // When Netskope gives no message, show its whole answer so the cause can be found
         if (!json || json.status !== 'success') {
-            throw new Error(json && json.msg ? `Netskope refused ${endpoint}: ${json.msg}`
+            const err = new Error(json && json.msg ? `Netskope refused ${endpoint}: ${json.msg}`
                 : `Netskope refused ${endpoint} without saying why. Its full answer: ${seAnswerText(json)}`);
+            // Some tenants answer a write with this backend error although the change went through
+            err.transient = !!json && (json.errorCode === 'Communication Error' ||
+                (Array.isArray(json.errors) && json.errors.some(x => /try again/i.test(String(x)))));
+            throw err;
         }
 
         // Write calls wrap the backend's own result in a JSON string
@@ -33442,6 +33454,67 @@ Version 1.16:
             out.push({ rowId: r.settings_id, notes: read.notes != null ? read.notes : (r.notes || ''), ids: read.ids });
         }
         return out;
+    }
+
+    /* ── Writes that survive a passing backend error ── */
+
+    const seWait = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const SE_WRITE_TRIES = 3;
+
+    // Runs a write. When Netskope answers with a passing backend error, the change may still have
+    // gone through, so it reads the configuration again (landed) before trying once more: a blind
+    // retry would create the same entry twice.
+    async function seWriteChecked(write, landed, progress, label) {
+        for (let attempt = 1; ; attempt++) {
+            try {
+                return await write();
+            } catch (err) {
+                if (!err.transient || attempt >= SE_WRITE_TRIES) throw err;
+                progress(`Netskope had a backend error while ${label}. Checking whether the change went through…`);
+                await seWait(2000 * attempt);
+                if (await landed()) return;
+                progress(`The change did not go through. Trying again (${attempt + 1} of ${SE_WRITE_TRIES})…`);
+            }
+        }
+    }
+
+    const seSameValues = (a, b) => a.map(seNormalize).sort().join('\n') === b.map(seNormalize).sort().join('\n');
+
+    // The values (domains or category ids) an entry holds now, or null when it is gone
+    async function seEntryValues(type, configId, rowId) {
+        if (type === 'category') {
+            const read = await seReadCategoryIds(configId, rowId);
+            return read ? read.ids : null;
+        }
+        const d = await seGetException(configId, rowId);
+        return d && d.data && Array.isArray(d.data.domains) ? d.data.domains : null;
+    }
+
+    // Checks for each kind of write: the entry holds exactly these values, a new entry holds them, the entries are gone
+    function seLandedEdit(type, configId, rowId, values) {
+        return async () => { const now = await seEntryValues(type, configId, rowId); return !!now && seSameValues(now, values); };
+    }
+
+    function seLandedCreate(type, configId, oldIds, values) {
+        return async () => {
+            const rows = type === 'category'
+                ? (await seReadCategoryEntries(configId)).map(e => ({ id: e.rowId, values: e.ids }))
+                : seDomainEntries(await seListExceptions(configId)).map(e => ({ id: e.settings_id, values: e.display_value }));
+            return rows.some(r => !oldIds.has(r.id) && seSameValues(r.values, values));
+        };
+    }
+
+    function seLandedDelete(configId, rowIds) {
+        return async () => {
+            const rows = await seListExceptions(configId);
+            const left = new Set((Array.isArray(rows) ? rows : []).map(r => String(r.settings_id)));
+            return rowIds.every(id => !left.has(String(id)));
+        };
+    }
+
+    async function seCurrentIds(configId) {
+        const rows = await seListExceptions(configId);
+        return new Set((Array.isArray(rows) ? rows : []).map(r => r.settings_id));
     }
 
     /* ── Matching ── */
@@ -33554,7 +33627,8 @@ Version 1.16:
 
                 if (keep.length) {
                     progress(`Removing ${removed.length} domain${removed.length === 1 ? '' : 's'} from ${seEntryLabel(notes, a.rowId)}…`);
-                    await seSaveDomains(cfg.configId, a.rowId, keep, notes);
+                    await seWriteChecked(() => seSaveDomains(cfg.configId, a.rowId, keep, notes),
+                        seLandedEdit('domain', cfg.configId, a.rowId, keep), progress, `editing ${seEntryLabel(notes, a.rowId)}`);
                     log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'edit', removed, keeps: keep.length });
                 } else {
                     toDelete.push({ a, notes, removed });
@@ -33563,7 +33637,8 @@ Version 1.16:
 
             if (toDelete.length) {
                 progress(`Deleting ${toDelete.length} entr${toDelete.length === 1 ? 'y' : 'ies'} in ${cfg.name}…`);
-                await seDeleteEntries(cfg.configId, toDelete.map(t => t.a.rowId));
+                const ids = toDelete.map(t => t.a.rowId);
+                await seWriteChecked(() => seDeleteEntries(cfg.configId, ids), seLandedDelete(cfg.configId, ids), progress, `deleting entries in ${cfg.name}`);
                 toDelete.forEach(t => log.push({ config: cfg.name, label: seEntryLabel(t.notes, t.a.rowId), kind: 'delete', removed: t.removed }));
             }
         }
@@ -33802,18 +33877,21 @@ Version 1.16:
             const e = item.entry;
             if (e.kind === 'create') {
                 progress(`Deleting the added entry ${seEntryLabel(e.notes, item.rowId)} in ${e.configName}…`);
-                await seDeleteEntries(e.configId, [item.rowId]);
+                await seWriteChecked(() => seDeleteEntries(e.configId, [item.rowId]), seLandedDelete(e.configId, [item.rowId]), progress, 'deleting the added entry');
                 continue;
             }
             if (e.kind === 'extend') {
                 // Take out only the domains the addition put in, keeping any later edits
                 const out = new Set(item.stillAdded.map(seNormalize));
                 progress(`Taking the added domains out of ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
-                await save(e.configId, e.rowId, item.current.filter(d => !out.has(seNormalize(d))), e.notes);
+                const left = item.current.filter(d => !out.has(seNormalize(d)));
+                await seWriteChecked(() => save(e.configId, e.rowId, left, e.notes), seLandedEdit(type, e.configId, e.rowId, left), progress, 'taking the added values out');
                 continue;
             }
             progress(`${item.exists ? 'Restoring' : 'Recreating'} ${seEntryLabel(e.notes, e.rowId)} in ${e.configName}…`);
-            await save(e.configId, item.exists ? e.rowId : null, e.domains, e.notes);
+            const landed = item.exists ? seLandedEdit(type, e.configId, e.rowId, e.domains)
+                : seLandedCreate(type, e.configId, await seCurrentIds(e.configId), e.domains);
+            await seWriteChecked(() => save(e.configId, item.exists ? e.rowId : null, e.domains, e.notes), landed, progress, 'restoring the entry');
         }
     }
 
@@ -33896,7 +33974,8 @@ Version 1.16:
                 seSaveBackup(backup);
 
                 progress(`Adding ${toAdd.length} domain${toAdd.length === 1 ? '' : 's'} to ${label} in ${cfg.name}…`);
-                await seSaveDomains(cfg.configId, cfg.target.rowId, after, entryNotes);
+                await seWriteChecked(() => seSaveDomains(cfg.configId, cfg.target.rowId, after, entryNotes),
+                    seLandedEdit('domain', cfg.configId, cfg.target.rowId, after), progress, `adding to ${label}`);
                 log.push({ config: cfg.name, kind: 'extend', added: toAdd, rowId: cfg.target.rowId, label });
                 continue;
             }
@@ -33907,7 +33986,8 @@ Version 1.16:
             seSaveBackup(backup);
 
             progress(`Adding ${toAdd.length} domain${toAdd.length === 1 ? '' : 's'} to ${cfg.name}…`);
-            await seSaveDomains(cfg.configId, null, toAdd, notes);
+            await seWriteChecked(() => seSaveDomains(cfg.configId, null, toAdd, notes),
+                seLandedCreate('domain', cfg.configId, new Set(before.map(e => e.settings_id)), toAdd), progress, `adding to ${cfg.name}`);
 
             // Netskope does not return the new entry's ID, so find it among the entries that are new
             const oldIds = new Set(before.map(e => e.settings_id));
@@ -34006,7 +34086,8 @@ Version 1.16:
 
                 if (keep.length) {
                     progress(`Removing ${removed.length} categor${removed.length === 1 ? 'y' : 'ies'} from ${seEntryLabel(notes, a.rowId)}…`);
-                    await seSaveCategories(cfg.configId, a.rowId, keep, notes);
+                    await seWriteChecked(() => seSaveCategories(cfg.configId, a.rowId, keep, notes),
+                        seLandedEdit('category', cfg.configId, a.rowId, keep), progress, `editing ${seEntryLabel(notes, a.rowId)}`);
                     log.push({ config: cfg.name, label: seEntryLabel(notes, a.rowId), kind: 'edit', removed: names(removed), keeps: keep.length });
                 } else {
                     toDelete.push({ a, notes, removed });
@@ -34014,7 +34095,8 @@ Version 1.16:
             }
             if (toDelete.length) {
                 progress(`Deleting ${toDelete.length} entr${toDelete.length === 1 ? 'y' : 'ies'} in ${cfg.name}…`);
-                await seDeleteEntries(cfg.configId, toDelete.map(t => t.a.rowId));
+                const ids = toDelete.map(t => t.a.rowId);
+                await seWriteChecked(() => seDeleteEntries(cfg.configId, ids), seLandedDelete(cfg.configId, ids), progress, `deleting entries in ${cfg.name}`);
                 toDelete.forEach(t => log.push({ config: cfg.name, label: seEntryLabel(t.notes, t.a.rowId), kind: 'delete', removed: names(t.removed) }));
             }
         }
@@ -34074,7 +34156,8 @@ Version 1.16:
                 seSaveBackup(backup);
 
                 progress(`Adding ${toAdd.length} categor${toAdd.length === 1 ? 'y' : 'ies'} to ${label} in ${cfg.name}…`);
-                await seSaveCategories(cfg.configId, current.rowId, after, current.notes);
+                await seWriteChecked(() => seSaveCategories(cfg.configId, current.rowId, after, current.notes),
+                    seLandedEdit('category', cfg.configId, current.rowId, after), progress, `adding to ${label}`);
                 log.push({ config: cfg.name, kind: 'extend', added: names(toAdd), rowId: current.rowId, label });
                 continue;
             }
@@ -34085,7 +34168,8 @@ Version 1.16:
             seSaveBackup(backup);
 
             progress(`Adding ${toAdd.length} categor${toAdd.length === 1 ? 'y' : 'ies'} to ${cfg.name}…`);
-            await seSaveCategories(cfg.configId, null, toAdd, notes);
+            await seWriteChecked(() => seSaveCategories(cfg.configId, null, toAdd, notes),
+                seLandedCreate('category', cfg.configId, new Set(before.map(e => e.rowId)), toAdd), progress, `adding to ${cfg.name}`);
 
             // Netskope does not return the new entry's ID, so find it among the entries that are new
             const oldIds = new Set(before.map(e => e.rowId));
