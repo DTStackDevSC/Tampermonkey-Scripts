@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.17.1
+// @version      2.17.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -18,6 +18,7 @@
 // @grant        unsafeWindow
 // @connect      sharepoint.com
 // @connect      deloitte.com
+// @connect      goskope.com
 // @run-at       document-start
 // ==/UserScript==
 
@@ -28,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.17.1';
-    const CHANGELOG = `Version 2.17.1:
+   const SCRIPT_VERSION = '2.17.2';
+    const CHANGELOG = `Version 2.17.2:
+- URL List Editor and Change Tracker: fixed the Netskope API calls (URL Lists, and the Newly Registered Domains check with the API) failing with "Network error" even with a valid API key. Tampermonkey may ask once to allow the Netskope tenants: choose to always allow. A failed call now also says why it did not reach Netskope.
+
+Version 2.17.1:
 - NS Policies Toolkit: the "📥 Export to Excel" button now shows on tenants where the SSL Decryption list has "Add Policy" instead of "New Policy".
 
 Version 2.17.0:
@@ -11586,8 +11590,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.5';
-    const CHANGELOG = `Version 1.6.5:
+    const SCRIPT_VERSION = '1.6.6';
+    const CHANGELOG = `Version 1.6.6:
+- Fixed the API calls failing with "Network error": Tampermonkey was not allowed to reach the Netskope tenants since the tool moved into the Tools Toolbar. A failed call now also says why it did not reach Netskope.
+
+Version 1.6.5:
 - The API token saved here can also be used by the Change Tracker for its Newly Registered Domains reviews, when you turn that on there. It is only ever sent to your own Netskope tenants.
 
 Version 1.6.4:
@@ -13495,6 +13502,16 @@ Version 1.4.1:
      *  API FUNCTIONS
      * ==========================================================*/
 
+    // The message for a request that never reached Netskope. Tampermonkey refuses hosts the script
+    // does not list in @connect (or that were set to "Never" in its settings) the same way.
+    function apiNetworkError(host, r) {
+        const detail = String((r && (r.error || r.statusText)) || '').trim();
+        if (/not permitted|refused|@connect|blacklist|not allowed/i.test(detail)) {
+            return `Tampermonkey did not allow the request to ${host} (${detail}). In Tampermonkey, open the Tools Toolbar script, Settings tab, and remove ${host} from any "blocked" or "never" list, or allow it when Tampermonkey asks.`;
+        }
+        return `Network error: the request did not reach ${host}${detail ? ` (${detail})` : ''}. Check that the tenant host is right and that this browser can open https://${host}.`;
+    }
+
     async function makeApiRequest(method, endpoint, data, onSuccess, onError) {
         const tenant = getActiveTenant();
 
@@ -13526,7 +13543,7 @@ Version 1.4.1:
                     if (onError) onError(errorMsg);
                 }
             },
-            onerror: () => { if (onError) onError('Network error'); }
+            onerror: (r) => { if (onError) onError(apiNetworkError(tenant, r)); }
         });
     }
 
@@ -15215,7 +15232,7 @@ Version 1.4.1:
                     const ok = r.status >= 200 && r.status < 300;
                     resolve({ ok, status: r.status, data, error: ok ? null : (data && (data.message || data.error)) || `HTTP ${r.status}` });
                 },
-                onerror: () => resolve({ ok: false, status: 0, error: 'Network error' }),
+                onerror: (r) => resolve({ ok: false, status: 0, error: apiNetworkError(host, r) }),
                 ontimeout: () => resolve({ ok: false, status: 0, error: 'Netskope did not answer in time' }),
             }));
         },
