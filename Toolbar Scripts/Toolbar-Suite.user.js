@@ -686,7 +686,7 @@ Version 1.0.0:
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
         { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
-        { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'URL List Editor', description: 'Create and update Netskope URL lists from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+        { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Destination Profile Editor', description: 'Find, create and edit Netskope Destination Profiles from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
         { id: 'policyDeletionReminder', pages: ['https://*.goskope.com/*'], name: 'Policy Deletion Reminder', description: 'Register a reminder to delete a temporary policy', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
           exact: [], prefixes: ['pdr'] },
@@ -12329,7 +12329,7 @@ Version 1.4.1:
 
         // Subtitle
         const subtitle = document.createElement('p');
-        subtitle.textContent = 'Netskope URL List Manager — Host configuration';
+        subtitle.textContent = 'Destination Profile Editor: host configuration';
         Object.assign(subtitle.style, {
             margin: '0 0 16px 0', color: '#888',
             fontSize: '12px', fontStyle: 'italic'
@@ -12511,7 +12511,7 @@ Version 1.4.1:
     };
 
     let isInitialized = false;
-    let currentUrlLists = [];
+    let currentProfiles = [];
     let temporaryTenant = null;
     let _lastCategoryData = null;
 
@@ -12781,7 +12781,7 @@ Version 1.4.1:
             padding: '4px 10px', fontSize: '11px', backgroundColor: '#667eea', color: 'white', border: 'none',
             borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap'
         }, { textContent: '🔑 Manage keys', id: 'api-manage-keys' });
-        manage.onclick = () => netskopeApi.openManager({ host: tenant, caller: 'URL Lists' });
+        manage.onclick = () => netskopeApi.openManager({ host: tenant, caller: 'Destination Profiles' });
         row.appendChild(manage);
         container.appendChild(row);
     }
@@ -12812,10 +12812,10 @@ Version 1.4.1:
     }
 
     async function applyTenantSwitch(tenantType, tenantHost) {
-        if (tenantHost && netskopeApi.status(tenantHost).hasKey) await netskopeApi.unlock(tenantHost, { caller: 'URL Lists' });
+        if (tenantHost && netskopeApi.status(tenantHost).hasKey) await netskopeApi.unlock(tenantHost, { caller: 'Destination Profiles' });
 
         temporaryTenant = tenantHost || null;
-        currentUrlLists = [];
+        currentProfiles = [];
         resetModal();
 
         const tenantDisplay = document.getElementById('tenant-display');
@@ -13422,12 +13422,12 @@ Version 1.4.1:
 
         // Title
         const titleDiv = UI.createElement('div', { position: 'absolute', top: '12px', left: '12px', fontSize: '12px', color: '#333', fontWeight: 'bold' });
-        titleDiv.textContent = '🌐 Netskope URL List Manager';
+        titleDiv.textContent = '🌐 Destination Profile Editor';
         modal.appendChild(titleDiv);
 
         // Description
         const descP = UI.createElement('p', { fontSize: '13px', color: '#666', margin: '0', textAlign: 'center' });
-        descP.textContent = 'Manage URL lists in your Netskope tenant via API';
+        descP.textContent = 'Find, create and edit Destination Profiles in your Netskope tenant via API';
         modal.appendChild(descP);
 
         // Version row
@@ -13511,12 +13511,12 @@ Version 1.4.1:
 
         // Action buttons
         const actionBtns = UI.createElement('div', { display: 'flex', gap: '10px', width: '100%', flexWrap: 'wrap' });
-        actionBtns.appendChild(UI.createButton('🔍 Fetch URL Lists',  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fetchUrlLists));
-        actionBtns.appendChild(UI.createButton('✨ Create New List', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', showCreateForm));
+        actionBtns.appendChild(UI.createButton('🔍 Fetch Destination Profiles',  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fetchProfiles));
+        actionBtns.appendChild(UI.createButton('✨ Create Destination Profile', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', showCreateForm));
         actionBtns.appendChild(UI.createButton('🔎 Domain Lookup', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', showDomainLookup));
         actionBtns.appendChild(UI.createButton('🏷️ Category by ID', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', showCustomCategoryLookup));
         actionBtns.lastChild.style.color = '#333';
-        actionBtns.appendChild(UI.createButton('🔗 URL List by ID', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => showUrlListByIdLookup()));
+        actionBtns.appendChild(UI.createButton('🔗 Profile by ID', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => showProfileByIdLookup()));
         modal.appendChild(actionBtns);
 
         modal.appendChild(UI.createElement('div', {
@@ -13549,7 +13549,7 @@ Version 1.4.1:
         const tenant = detectTenant();
 
         // Unlocked now so the lists load without a prompt later; Cancel still opens the tool
-        if (tenant && netskopeApi.status(tenant).hasKey) await netskopeApi.unlock(tenant, { caller: 'URL Lists' });
+        if (tenant && netskopeApi.status(tenant).hasKey) await netskopeApi.unlock(tenant, { caller: 'Destination Profiles' });
 
         modal.style.display = 'flex';
         if (backdrop) backdrop.style.display = 'block';
@@ -13620,510 +13620,341 @@ Version 1.4.1:
      *  API FUNCTIONS
      * ==========================================================*/
 
-    // Every call goes through the toolbar's Netskope API module, which unlocks the key when needed
-    async function makeApiRequest(method, endpoint, data, onSuccess, onError) {
+    /* ==========================================================
+     *  DESTINATION PROFILES
+     *  Changes are written pending (interactive=true) and applied with
+     *  /deploy and a change note asked by the Netskope API module, so
+     *  the audit log keeps it. label_ids are never sent: a save cannot
+     *  clear the labels of a profile.
+     * ==========================================================*/
+
+    const DP_PATH = '/api/v2/profiles/destinations';
+    const DP_EMPTY = '#No values';           // Netskope needs one value at least
+    const DP_TYPES = [
+        { value: 'insensitive', label: 'Exact, not case sensitive' },
+        { value: 'sensitive',   label: 'Exact, case sensitive' },
+        { value: 'regex',       label: 'Regex' },
+    ];
+    const DP_STATUS = {
+        'applied':        { text: 'Applied',        bg: '#d4edda', border: '#c3e6cb', color: '#155724' },
+        'pending-create': { text: 'Pending create', bg: '#fff3cd', border: '#ffeaa7', color: '#856404' },
+        'pending-update': { text: 'Pending update', bg: '#fff3cd', border: '#ffeaa7', color: '#856404' },
+        'pending-delete': { text: 'Pending delete', bg: '#f8d7da', border: '#f5c6cb', color: '#721c24' },
+    };
+    const dpTypeLabel = t => (DP_TYPES.find(x => x.value === t) || { label: t || '—' }).label;
+    const dpBadge = (status) => {
+        const b = DP_STATUS[status] || { text: status || 'unknown', bg: '#e9ecef', border: '#dee2e6', color: '#495057' };
+        return `<span style="padding:1px 8px;border-radius:10px;font-size:11px;font-weight:bold;background:${b.bg};border:1px solid ${b.border};color:${b.color};white-space:nowrap">${escapeHtml(b.text)}</span>`;
+    };
+    const dpFormatDate = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString(); } catch (e) { return iso; } };
+    const dpValuesFrom = text => String(text || '').split('\n').map(v => v.trim()).filter(Boolean);
+    const dpConsoleUrl = host => `https://${host}/ns#/destination-profile`;
+
+    // One call through the toolbar's Netskope API module; key problems become a status line
+    async function dpCall(method, path, body) {
         const tenant = getActiveTenant();
-        if (!tenant) return UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning');
-        const r = await netskopeApi.request(tenant, method, endpoint, data || null, { caller: 'URL Lists' });
+        if (!tenant) { UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning'); return { ok: false, handled: true }; }
+        const r = await netskopeApi.request(tenant, method, path, body == null ? null : body, { caller: 'Destination Profiles' });
         buildTokenUI(tenant);
+        if (!r.ok && ['noKey', 'expired', 'locked'].includes(r.code)) { UI.showStatus('⚠️ ' + r.error, 'warning'); r.handled = true; }
+        return Object.assign(r, { tenant });
+    }
+
+    // Callback form kept for the category lookup
+    async function makeApiRequest(method, endpoint, data, onSuccess, onError) {
+        const r = await dpCall(method, endpoint, data);
         if (r.ok) return onSuccess(r.data);
-        if (['noKey', 'expired', 'locked'].includes(r.code)) return UI.showStatus('⚠️ ' + r.error, 'warning');
-        if (onError) onError(r.error || `Error ${r.status}`);
+        if (!r.handled && onError) onError(r.error || `Error ${r.status}`);
     }
 
-    async function fetchUrlLists() {
+    // Every profile of the tenant, 100 per page
+    async function fetchAllProfiles() {
+        const all = [];
+        for (let offset = 0, total = Infinity; offset < total; offset += 100) {
+            UI.showStatus(`🔄 Fetching Destination Profiles from Netskope… ${all.length ? `(${all.length} so far)` : ''}`, 'info');
+            const r = await dpCall('GET', `${DP_PATH}?limit=100&offset=${offset}&sortby=name&sortorder=asc`);
+            if (!r.ok) return r;
+            const els = (r.data && Array.isArray(r.data.elements)) ? r.data.elements : [];
+            all.push(...els);
+            total = Number(r.data && r.data.total_count) || 0;
+            if (!els.length) break;
+        }
+        return { ok: true, profiles: all };
+    }
+
+    async function fetchProfiles() {
         resetModal();
-        UI.showStatus('🔄 Fetching URL lists from Netskope...', 'info');
-        await makeApiRequest('GET', '/api/v2/policy/urllist', null,
-            (data) => {
-                currentUrlLists = Array.isArray(data) ? data : [];
-                currentUrlLists.length === 0
-                    ? UI.showStatus('ℹ️ No URL lists found in this tenant', 'info')
-                    : (UI.showStatus(`✅ Found ${currentUrlLists.length} URL lists`, 'success'), displayUrlLists(currentUrlLists));
-            },
-            (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-        );
+        const r = await fetchAllProfiles();
+        if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); return; }
+        currentProfiles = r.profiles;
+        if (!currentProfiles.length) return UI.showStatus('ℹ️ No Destination Profiles found in this tenant', 'info');
+        UI.showStatus(`✅ Found ${currentProfiles.length} Destination Profiles`, 'success');
+        displayProfiles(currentProfiles);
     }
 
-    function displayUrlLists(lists) {
+    function dpQuery(raw) {
+        return String(raw || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+    }
+
+    // Matching entries of one profile; comment lines (#...) are not destinations
+    function dpMatches(profile, query) {
+        return (profile.values || []).filter(v => { const e = String(v).trim().toLowerCase(); return e && !e.startsWith('#') && domainMatches(query, e); });
+    }
+
+    function displayProfiles(list) {
         const container = document.getElementById('url-lists-container');
         if (!container) return;
-
-        container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = `
-            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Available URL Lists</h3>
+            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Destination Profiles</h3>
             <div style="margin-bottom: 8px;">
-                <input id="urllist-search" type="text" placeholder="🔍 Filter lists by name..."
+                <input id="urllist-search" type="text" placeholder="🔍 Filter profiles by name..."
                     style="width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; color: #333;">
             </div>
             <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: stretch;">
-                <input id="urllist-domain-search" type="text" placeholder="🔎 Search URL or domain across all lists…"
-                    style="flex: 1; padding: 8px 12px; border: 2px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: monospace; color: #333; background-color: #fff; transition: border-color 0.2s;">
+                <input id="urllist-domain-search" type="text" placeholder="🔎 Search a URL or domain in every profile…"
+                    style="flex: 1; padding: 8px 12px; border: 2px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: monospace; color: #333; background-color: #fff;">
                 <button id="urllist-domain-search-btn" style="padding: 8px 14px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; white-space: nowrap; flex-shrink: 0;">🔎 Search</button>
             </div>
-            <div id="urllist-wrapper" style="flex: 1; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; min-height: 200px;"></div>
-        `;
+            <div id="urllist-wrapper" style="flex: 1; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; min-height: 200px;"></div>`;
+        const wrapper = document.getElementById('urllist-wrapper');
+        const search = document.getElementById('urllist-search');
+        const domainSearch = document.getElementById('urllist-domain-search');
 
-        const wrapper          = document.getElementById('urllist-wrapper');
-        const search           = document.getElementById('urllist-search');
-        const domainSearch     = document.getElementById('urllist-domain-search');
-        const domainSearchBtn  = document.getElementById('urllist-domain-search-btn');
-
-        function renderLists(filteredLists) {
-            wrapper.innerHTML = filteredLists.length === 0
-                ? '<div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">No lists found</div>'
-                : filteredLists.map(list => {
-                    const urlCount = list.data?.urls?.length || 0;
-                    return `
-                        <div class="url-list-item" data-list-id="${escapeHtml(String(list.id))}" style="padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #fff; cursor: pointer; transition: all 0.2s ease;">
-                            <div style="font-weight: bold; font-size: 14px; color: #333; margin-bottom: 5px;">${escapeHtml(String(list.name || 'Unnamed List'))}</div>
-                            <div style="font-size: 12px; color: #666;">ID: ${escapeHtml(String(list.id))} • ${urlCount} URLs</div>
-                        </div>`;
+        function renderList(items) {
+            wrapper.innerHTML = items.length === 0
+                ? '<div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">No profiles found</div>'
+                : items.map(p => {
+                    const n = (p.values || []).filter(v => !String(v).trim().startsWith('#')).length;
+                    return `<div class="dp-item" data-dp-id="${escapeHtml(String(p.id))}" style="padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #fff; cursor: pointer;">
+                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:5px">
+                            <span style="font-weight: bold; font-size: 14px; color: #333;">${escapeHtml(String(p.name || 'Unnamed profile'))}</span>${dpBadge(p.status)}</div>
+                        <div style="font-size: 12px; color: #666;">${escapeHtml(dpTypeLabel(p.type))} • ${n} value${n === 1 ? '' : 's'} • modified by ${escapeHtml(p.modify_by || '—')}, ${escapeHtml(dpFormatDate(p.modify_time))}</div>
+                    </div>`;
                 }).join('');
-
-            wrapper.querySelectorAll('.url-list-item').forEach(item => {
+            wrapper.querySelectorAll('.dp-item').forEach(item => {
                 item.onmouseover = () => { item.style.backgroundColor = '#f0f0f0'; item.style.borderColor = '#667eea'; };
-                item.onmouseout  = () => { item.style.backgroundColor = '#fff';    item.style.borderColor = '#ccc'; };
-                item.onclick     = () => { const list = lists.find(l => l.id == item.dataset.listId); if (list) showUpdateForm(list); };
+                item.onmouseout  = () => { item.style.backgroundColor = '#fff'; item.style.borderColor = '#ccc'; };
+                item.onclick = () => showProfileByIdLookup(item.dataset.dpId, () => { resetModal(); displayProfiles(currentProfiles); });
             });
         }
-
+        const byName = () => { const term = search.value.toLowerCase().trim(); renderList(list.filter(p => (p.name || '').toLowerCase().includes(term))); };
         function runDomainSearch() {
-            const raw = domainSearch.value.trim();
-            if (!raw) {
-                const nameTerm = search.value.toLowerCase().trim();
-                renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(nameTerm)));
-                return;
-            }
-            const query = raw.toLowerCase()
-                .replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
-            const matches = [];
-            for (const list of lists) {
-                const urls = list.data?.urls || [];
-                const matchedEntries = urls.filter(e => domainMatches(query, e.toLowerCase().trim()));
-                if (matchedEntries.length > 0) matches.push({ list, matchedEntries, totalUrls: urls.length });
-            }
+            const query = dpQuery(domainSearch.value);
+            if (!query) return byName();
+            const matches = list.map(p => ({ profile: p, matchedEntries: dpMatches(p, query) })).filter(m => m.matchedEntries.length);
             renderLookupResults(wrapper, query, matches);
         }
-
-        renderLists(lists);
-
-        search.oninput = (e) => {
-            if (domainSearch.value.trim()) return;
-            const term = e.target.value.toLowerCase().trim();
-            renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(term)));
-        };
-
-        domainSearch.onfocus = () => { domainSearch.style.borderColor = '#f5576c'; };
-        domainSearch.onblur  = () => { domainSearch.style.borderColor = domainSearch.value.trim() ? '#f5576c' : '#ccc'; };
-        domainSearch.oninput = (e) => {
-            if (!e.target.value.trim()) {
-                domainSearch.style.borderColor = '#ccc';
-                const nameTerm = search.value.toLowerCase().trim();
-                renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(nameTerm)));
-            }
-        };
+        renderList(list);
+        search.oninput = () => { if (!domainSearch.value.trim()) byName(); };
+        domainSearch.oninput = () => { if (!domainSearch.value.trim()) byName(); };
         domainSearch.onkeydown = (e) => { if (e.key === 'Enter') runDomainSearch(); };
-        domainSearchBtn.onclick = runDomainSearch;
+        document.getElementById('urllist-domain-search-btn').onclick = runDomainSearch;
+    }
+
+    /* ── Writing a change, then applying it with a note ── */
+
+    // After a pending write: asks the note and applies, or leaves it pending and opens the console
+    async function dpApply(host, profile, summary) {
+        const note = await netskopeApi.askChangeNote({ caller: 'Destination Profiles', ticket: getTicketNumber(), summary });
+        if (note === null) {
+            GM_openInTab(dpConsoleUrl(host), { active: false, insert: true });
+            UI.showStatus(`⏸ "${profile.name}" is saved and pending. Apply it in the console with your comment (the Destination Profiles page opened in a new tab).`, 'warning');
+            return false;
+        }
+        UI.showStatus('🔄 Applying the change…', 'info');
+        const r = await netskopeApi.deploy(host, [profile.id], note, { caller: 'Destination Profiles' });
+        if (!r.ok) {
+            UI.showStatus(`⚠️ "${profile.name}" is saved but stays pending: Netskope did not apply it (${r.error}). Apply it in the console.`, 'error');
+            return false;
+        }
+        UI.showStatus(`✅ Applied "${profile.name}" with the note "${note}".`, 'success');
+        return true;
+    }
+
+    function dpField(label, input, counter) {
+        const wrap = UI.createElement('div', { width: '100%', marginBottom: '10px' });
+        const head = UI.createElement('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' });
+        head.appendChild(UI.createElement('label', { fontWeight: 'bold', fontSize: '13px', color: '#555', marginBottom: '5px' }, { textContent: label, htmlFor: input.id }));
+        if (counter) {
+            const c = UI.createElement('span', { fontSize: '11px', color: '#888' });
+            const sync = () => { c.textContent = `${input.value.length}/${input.maxLength}`; };
+            input.addEventListener('input', sync);
+            sync();
+            head.appendChild(c);
+        }
+        wrap.appendChild(head);
+        wrap.appendChild(input);
+        return wrap;
+    }
+
+    function dpInput(id, max, placeholder, value) {
+        return UI.createElement('input', { width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' },
+            { id, type: 'text', maxLength: max, placeholder, value: value || '' });
+    }
+
+    function dpTypeSelect(id, value) {
+        const sel = UI.createElement('select', { width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }, { id });
+        DP_TYPES.forEach(t => sel.appendChild(Object.assign(document.createElement('option'), { value: t.value, textContent: t.label })));
+        sel.value = value || 'insensitive';
+        return sel;
+    }
+
+    function dpValuesArea(id, values) {
+        const wrap = UI.createTextArea(id, 'Values (one per line, # lines are comments)', 'example.com\n*.example.com', 10);
+        wrap.style.flex = '1';
+        const ta = wrap.querySelector('textarea');
+        if (ta && values) ta.value = values.join('\n');
+        return { wrap, ta };
     }
 
     function showCreateForm() {
         resetModal();
         const container = document.getElementById('create-form-container');
         if (!container) return;
-
-        container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-        container.innerHTML = `
-            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Create New URL List</h3>
-            <div style="font-size: 11px; color: #666; margin-bottom: 10px; font-style: italic;">Note: List names can only contain letters, numbers, spaces, underscores (_), and hyphens (-)</div>
-        `;
-
-        container.appendChild(UI.createInput('create-list-name', 'text', 'List Name', 'e.g., Marketing_Domains or Sales-Team-2024', ''));
-        const textarea = UI.createTextArea('create-urls-input', 'Enter URLs (one per line)', 'example.com\ntest.example.com\n*.domain.com', 10);
-        textarea.style.flex = '1';
-        container.appendChild(textarea);
-        const createTextareaEl = textarea.querySelector('textarea');
-        if (createTextareaEl) container.appendChild(createUrlListLogButtons(createTextareaEl));
-
-        const btnContainer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
-        btnContainer.appendChild(UI.createButton('✨ Create List', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', submitCreateList));
-        btnContainer.appendChild(UI.createButton('✖️ Cancel', 'white', resetModal));
-        btnContainer.lastChild.style.border = '1px solid #ccc';
-        btnContainer.lastChild.style.color  = '#333';
-        container.appendChild(btnContainer);
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
+        container.innerHTML = '<h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Create Destination Profile</h3>';
+        container.appendChild(dpField('Name', dpInput('dp-create-name', 100, 'e.g. ES - Newly Registered Domains - Allow'), true));
+        container.appendChild(dpField('Description', dpInput('dp-create-desc', 200, 'Optional, e.g. the RITM'), true));
+        container.appendChild(dpField('Match type', dpTypeSelect('dp-create-type', 'insensitive')));
+        const { wrap, ta } = dpValuesArea('dp-create-values');
+        container.appendChild(wrap);
+        if (ta) container.appendChild(createUrlListLogButtons(ta));
+        const btns = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
+        btns.appendChild(UI.createButton('✨ Create Profile', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', submitCreateProfile));
+        btns.appendChild(UI.createButton('✖️ Cancel', 'white', resetModal));
+        Object.assign(btns.lastChild.style, { border: '1px solid #ccc', color: '#333' });
+        container.appendChild(btns);
     }
 
-    function showUpdateForm(list) {
-        resetModal();
-        const container = document.getElementById('update-form-container');
-        if (!container) return;
-
-        container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-        container.innerHTML = `
-            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Update: ${escapeHtml(String(list.name || ''))}</h3>
-            <div style="font-size: 12px; color: #666; margin-bottom: 10px;">List ID: ${escapeHtml(String(list.id))}</div>
-        `;
-
-        const textarea   = UI.createTextArea('update-urls-input', 'URLs (one per line)', 'example.com\ntest.example.com', 10);
-        textarea.style.flex = '1';
-        const textareaEl = textarea.querySelector('textarea');
-        if (textareaEl) textareaEl.value = (list.data?.urls || []).join('\n');
-        container.appendChild(textarea);
-        if (textareaEl) container.appendChild(createUrlListLogButtons(textareaEl));
-
-        const btnContainer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
-        btnContainer.appendChild(UI.createButton('🔄 Update List', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', () => submitUpdateList(list.id, list.name)));
-        btnContainer.appendChild(UI.createButton('✖️ Cancel', 'white', () => { resetModal(); displayUrlLists(currentUrlLists); }));
-        btnContainer.lastChild.style.border = '1px solid #ccc';
-        btnContainer.lastChild.style.color  = '#333';
-        container.appendChild(btnContainer);
+    async function submitCreateProfile() {
+        const name = document.getElementById('dp-create-name')?.value.trim();
+        const description = document.getElementById('dp-create-desc')?.value.trim() || '';
+        const type = document.getElementById('dp-create-type')?.value || 'insensitive';
+        let values = dpValuesFrom(document.getElementById('dp-create-values')?.value);
+        if (!name) return UI.showStatus('⚠️ Please enter a profile name', 'warning');
+        if (!values.length) values = [DP_EMPTY];
+        UI.showStatus('🔄 Creating the Destination Profile…', 'info');
+        const r = await dpCall('POST', `${DP_PATH}?interactive=true`, { name, type, description, values });
+        if (!r.ok) {
+            if (r.handled) return;
+            return UI.showStatus(r.status === 409 ? `⚠️ A Destination Profile called "${name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
+        }
+        const profile = r.data && r.data.id ? r.data : { id: null, name };
+        if (!profile.id) return UI.showStatus('⚠️ Netskope did not return the new profile. Check it in the console.', 'warning');
+        currentProfiles = [];
+        await dpApply(r.tenant, profile, `Created "${name}"`);
     }
 
-    async function submitCreateList() {
-        const listName  = document.getElementById('create-list-name')?.value.trim();
-        const urlsInput = document.getElementById('create-urls-input')?.value.trim();
-
-        if (!listName)   return UI.showStatus('⚠️ Please enter a list name', 'warning');
-        if (/[<>\/!@#$%^&*(){};\+=,?\.|:'"]/.test(listName)) return UI.showStatus('⚠️ List name contains invalid characters.', 'warning');
-        if (!urlsInput)  return UI.showStatus('⚠️ Please enter at least one URL', 'warning');
-
-        const urls = urlsInput.split('\n').map(u => u.trim()).filter(Boolean);
-        if (!urls.length) return UI.showStatus('⚠️ No valid URLs found', 'warning');
-
-        UI.showStatus('🔄 Creating URL list...', 'info');
-        await makeApiRequest('POST', '/api/v2/policy/urllist', { data: { type: 'exact', urls }, name: listName },
-            () => { const t = getActiveTenant(); UI.showStatus(`✅ URL list "${listName}" created successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
-            (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-        );
-    }
-
-    async function submitUpdateList(listId, listName) {
-        const urlsInput = document.getElementById('update-urls-input')?.value.trim();
-        if (!urlsInput) return UI.showStatus('⚠️ Please enter at least one URL', 'warning');
-
-        const urls = urlsInput.split('\n').map(u => u.trim()).filter(Boolean);
-        if (!urls.length) return UI.showStatus('⚠️ No valid URLs found', 'warning');
-
-        UI.showStatus('🔄 Updating URL list...', 'info');
-        await makeApiRequest('PATCH', `/api/v2/policy/urllist/${listId}/replace`, { data: { type: 'exact', urls } },
-            () => { const t = getActiveTenant(); UI.showStatus(`✅ URL list "${listName}" updated successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
-            (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-        );
-    }
-
-    /* ==========================================================
-     *  DOMAIN LOOKUP
-     * ==========================================================*/
+    /* ── Domain lookup: one domain in every profile ── */
 
     function showDomainLookup() {
         resetModal();
         const container = document.getElementById('domain-lookup-container');
         if (!container) return;
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
-        // Header
-        const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
-        header.textContent = '🔎 Domain Lookup';
-        container.appendChild(header);
-
-        // Description
-        const desc = UI.createElement('div', {
-            fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5'
-        });
-        desc.innerHTML = 'Search for a domain or URL across all URL lists in this tenant.<br>' +
-            '<span style="color: #888; font-size: 11px;">Supports exact match, substring match, and wildcard entries (e.g. <code>*.example.com</code>).</span>';
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🔎 Domain Lookup' }));
+        const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
+        desc.innerHTML = 'Search for a domain or URL in every Destination Profile of this tenant.<br><span style="color: #888; font-size: 11px;">Exact, substring and wildcard entries (e.g. <code>*.example.com</code>) match; comment lines do not.</span>';
         container.appendChild(desc);
-
-        // Search row
-        const searchRow = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
-
-        const searchInput = UI.createElement('input', {
-            flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px',
-            fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace',
-            outline: 'none', transition: 'border-color 0.2s'
-        }, { id: 'domain-lookup-input', type: 'text', placeholder: 'e.g. example.com or sub.example.com' });
-
-        searchInput.onfocus = () => searchInput.style.borderColor = '#667eea';
-        searchInput.onblur  = () => searchInput.style.borderColor = '#ccc';
-
-        const searchBtn = UI.createButton('🔎 Search', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', executeDomainLookup);
-        searchBtn.style.flex = '0 0 120px';
-
-        searchRow.appendChild(searchInput);
-        searchRow.appendChild(searchBtn);
-        container.appendChild(searchRow);
-
-        // Results area
-        const resultsArea = UI.createElement('div', {
-            flex: '1', overflowY: 'auto', minHeight: '150px'
-        }, { id: 'domain-lookup-results' });
-        container.appendChild(resultsArea);
-
-        // Cancel button
+        const row = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
+        const input = UI.createElement('input', { flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
+            { id: 'domain-lookup-input', type: 'text', placeholder: 'e.g. example.com or sub.example.com' });
+        const btn = UI.createButton('🔎 Search', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', executeDomainLookup);
+        btn.style.flex = '0 0 120px';
+        row.appendChild(input);
+        row.appendChild(btn);
+        container.appendChild(row);
+        container.appendChild(UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'domain-lookup-results' }));
         const cancelRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
-        const cancelBtn = UI.createButton('✖️ Cancel', 'white', resetModal);
-        cancelBtn.style.border = '1px solid #ccc';
-        cancelBtn.style.color  = '#333';
-        cancelRow.appendChild(cancelBtn);
+        const cancel = UI.createButton('✖️ Cancel', 'white', resetModal);
+        Object.assign(cancel.style, { border: '1px solid #ccc', color: '#333' });
+        cancelRow.appendChild(cancel);
         container.appendChild(cancelRow);
-
-        // Enter key support
-        searchInput.onkeydown = (e) => { if (e.key === 'Enter') executeDomainLookup(); };
-        setTimeout(() => searchInput.focus(), 100);
+        input.onkeydown = (e) => { if (e.key === 'Enter') executeDomainLookup(); };
+        setTimeout(() => input.focus(), 100);
     }
 
     async function executeDomainLookup() {
         const input = document.getElementById('domain-lookup-input');
         const resultsArea = document.getElementById('domain-lookup-results');
         if (!input || !resultsArea) return;
-
-        const query = input.value.trim().toLowerCase()
-            .replace(/^https?:\/\//, '')   // strip protocol
-            .replace(/\/.*$/, '')          // strip path
-            .replace(/:\d+$/, '');         // strip port
-
+        const query = dpQuery(input.value);
         if (!query) return UI.showStatus('⚠️ Please enter a domain or URL to search', 'warning');
-
-        // If we don't have cached lists, fetch them first
-        if (!currentUrlLists.length) {
-            UI.showStatus('🔄 Fetching URL lists before searching...', 'info');
-            resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #888; font-size: 13px;">⏳ Fetching URL lists from Netskope...</div>';
-
-            await new Promise((resolve, reject) => {
-                makeApiRequest('GET', '/api/v2/policy/urllist', null,
-                    (data) => {
-                        currentUrlLists = Array.isArray(data) ? data : [];
-                        resolve();
-                    },
-                    (error) => {
-                        UI.showStatus(`❌ Failed to fetch URL lists: ${error}`, 'error');
-                        reject(error);
-                    }
-                );
-            }).catch(() => {
-                resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #dc3545; font-size: 13px;">Failed to fetch URL lists. Please check your API configuration.</div>';
-                return;
-            });
+        if (!currentProfiles.length) {
+            resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #888; font-size: 13px;">⏳ Fetching Destination Profiles from Netskope...</div>';
+            const r = await fetchAllProfiles();
+            if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); resultsArea.innerHTML = ''; return; }
+            currentProfiles = r.profiles;
         }
-
-        if (!currentUrlLists.length) {
-            resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #999; font-size: 13px;">No URL lists found in this tenant.</div>';
-            UI.hideStatus();
-            return;
-        }
-
-        // Perform the search
-        const matches = [];
-
-        for (const list of currentUrlLists) {
-            const urls = list.data?.urls || [];
-            const matchedEntries = [];
-
-            for (const entry of urls) {
-                const entryLower = entry.toLowerCase().trim();
-                if (domainMatches(query, entryLower)) {
-                    matchedEntries.push(entry);
-                }
-            }
-
-            if (matchedEntries.length > 0) {
-                matches.push({
-                    list,
-                    matchedEntries,
-                    totalUrls: urls.length
-                });
-            }
-        }
-
-        // Render results
+        const matches = currentProfiles.map(p => ({ profile: p, matchedEntries: dpMatches(p, query) })).filter(m => m.matchedEntries.length);
         renderLookupResults(resultsArea, query, matches);
     }
 
-    /**
-     * Check whether a search query matches a URL list entry.
-     *
-     * Matching logic:
-     *   1. Exact match  — entry is identical to the query
-     *   2. Substring    — entry appears inside query or query inside entry
-     *   3. Wildcard     — entry starts with *. and the query ends with the
-     *                     wildcard's base domain (or is exactly that domain)
-     *   4. Reverse wild — query itself contains a wildcard pattern that
-     *                     the entry satisfies
-     */
-    function domainMatches(query, entry) {
-        // 1. Exact match
-        if (query === entry) return true;
-
-        // 2. Substring match (either direction)
-        if (entry.includes(query) || query.includes(entry)) return true;
-
-        // 3. Wildcard entry (e.g. *.example.com matches sub.example.com and example.com)
-        if (entry.startsWith('*.')) {
-            const wildBase = entry.slice(2); // "example.com"
-            if (query === wildBase || query.endsWith('.' + wildBase)) return true;
-        }
-
-        // 4. Query is a wildcard (user typed *.example.com)
-        if (query.startsWith('*.')) {
-            const queryBase = query.slice(2);
-            if (entry === queryBase || entry.endsWith('.' + queryBase)) return true;
-            // Also match if the entry itself is a wildcard for the same base
-            if (entry.startsWith('*.') && entry.slice(2) === queryBase) return true;
-        }
-
-        return false;
-    }
+    /* ── Domain search results ── */
 
     function renderLookupResults(resultsArea, query, matches) {
         resultsArea.innerHTML = '';
-
-        // Summary bar
+        const found = matches.length > 0;
         const summary = UI.createElement('div', {
-            padding: '10px 14px', borderRadius: '6px', marginBottom: '12px',
-            fontSize: '13px', fontWeight: 'bold',
-            backgroundColor: matches.length > 0 ? '#d4edda' : '#f8d7da',
-            border: '1px solid ' + (matches.length > 0 ? '#c3e6cb' : '#f5c6cb'),
-            color: matches.length > 0 ? '#155724' : '#721c24'
+            padding: '10px 14px', borderRadius: '6px', marginBottom: '12px', fontSize: '13px', fontWeight: 'bold',
+            backgroundColor: found ? '#d4edda' : '#f8d7da', border: '1px solid ' + (found ? '#c3e6cb' : '#f5c6cb'), color: found ? '#155724' : '#721c24'
         });
-
-        if (matches.length > 0) {
-            const totalMatched = matches.reduce((sum, m) => sum + m.matchedEntries.length, 0);
-            summary.textContent = `✅ Found "${query}" in ${matches.length} URL list${matches.length !== 1 ? 's' : ''} (${totalMatched} matching entr${totalMatched !== 1 ? 'ies' : 'y'})`;
-        } else {
-            summary.textContent = `❌ "${query}" was not found in any of the ${currentUrlLists.length} URL lists`;
-        }
+        const total = matches.reduce((n, m) => n + m.matchedEntries.length, 0);
+        summary.textContent = found
+            ? `✅ Found "${query}" in ${matches.length} Destination Profile${matches.length !== 1 ? 's' : ''} (${total} matching entr${total !== 1 ? 'ies' : 'y'})`
+            : `❌ "${query}" was not found in any of the ${currentProfiles.length} Destination Profiles`;
         resultsArea.appendChild(summary);
         UI.hideStatus();
-
-        if (matches.length === 0) {
-            const hint = UI.createElement('div', {
-                padding: '12px', fontSize: '12px', color: '#666',
-                backgroundColor: '#f8f9fa', borderRadius: '6px',
-                lineHeight: '1.5', marginTop: '8px'
-            });
-            hint.innerHTML = '💡 <strong>Tips:</strong> Try searching with just the root domain (e.g. <code>example.com</code>), ' +
-                'or use a wildcard pattern (e.g. <code>*.example.com</code>). ' +
-                'Make sure the URL lists have been fetched recently — click <strong>🔎 Search</strong> again to re-fetch.';
+        if (!found) {
+            const hint = UI.createElement('div', { padding: '12px', fontSize: '12px', color: '#666', backgroundColor: '#f8f9fa', borderRadius: '6px', lineHeight: '1.5' });
+            hint.innerHTML = '💡 <strong>Tips:</strong> try the root domain (e.g. <code>example.com</code>) or a wildcard (e.g. <code>*.example.com</code>).';
             resultsArea.appendChild(hint);
             return;
         }
-
-        // Sort: most matched entries first
         matches.sort((a, b) => b.matchedEntries.length - a.matchedEntries.length);
-
-        for (const { list, matchedEntries, totalUrls } of matches) {
-            const card = UI.createElement('div', {
-                padding: '12px', marginBottom: '10px',
-                border: '1px solid #ccc', borderRadius: '8px',
-                backgroundColor: '#fff', transition: 'all 0.2s ease'
-            });
-
-            // Card header (clickable → go to update form)
-            const cardHeader = UI.createElement('div', {
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                cursor: 'pointer', marginBottom: '8px'
-            });
-
-            const listInfo = UI.createElement('div');
-            listInfo.innerHTML = `
-                <div style="font-weight: bold; font-size: 14px; color: #333;">${escapeHtml(String(list.name || 'Unnamed List'))}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 2px;">ID: ${escapeHtml(String(list.id))} • ${totalUrls} total URLs • ${matchedEntries.length} match${matchedEntries.length !== 1 ? 'es' : ''}</div>
-            `;
-
-            const editBtn = UI.createElement('button', {
-                padding: '5px 12px', fontSize: '11px', fontWeight: 'bold',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white', border: 'none', borderRadius: '4px',
-                cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0'
-            }, { textContent: '✏️ Edit List' });
-
-            editBtn.onclick = (e) => {
-                e.stopPropagation();
-                showUpdateForm(list);
-            };
-
-            cardHeader.appendChild(listInfo);
-            cardHeader.appendChild(editBtn);
-            card.appendChild(cardHeader);
-
-            // Matched entries (collapsible)
-            const matchedSection = UI.createElement('div');
-
-            const toggleBtn = UI.createElement('div', {
-                fontSize: '12px', color: '#667eea', cursor: 'pointer',
-                fontWeight: 'bold', marginBottom: '6px', userSelect: 'none'
-            });
-            toggleBtn.textContent = `▶ Show matched entries (${matchedEntries.length})`;
-
-            const matchedList = UI.createElement('div', {
-                display: 'none', padding: '8px',
-                backgroundColor: '#f8f9fa', borderRadius: '6px',
-                maxHeight: '200px', overflowY: 'auto',
-                fontFamily: 'monospace', fontSize: '12px',
-                lineHeight: '1.6', border: '1px solid #e9ecef'
-            });
-
-            for (const entry of matchedEntries) {
-                const entryDiv = UI.createElement('div', { padding: '2px 6px' });
-                // Highlight the matching portion
-                const entryLower = entry.toLowerCase();
-                const queryLower = query.toLowerCase();
-                const idx = entryLower.indexOf(queryLower);
-
-                if (idx !== -1) {
-                    const before  = entry.substring(0, idx);
-                    const matched = entry.substring(idx, idx + query.length);
-                    const after   = entry.substring(idx + query.length);
-                    entryDiv.innerHTML = `${escapeHtml(before)}<span style="background-color: #fff3cd; font-weight: bold; border-radius: 2px; padding: 0 1px;">${escapeHtml(matched)}</span>${escapeHtml(after)}`;
-                } else {
-                    entryDiv.innerHTML = `<span style="background-color: #e8f4f8;">${escapeHtml(entry)}</span>`;
-                }
-                matchedList.appendChild(entryDiv);
-            }
-
-            let expanded = false;
-            toggleBtn.onclick = () => {
-                expanded = !expanded;
-                matchedList.style.display = expanded ? 'block' : 'none';
-                toggleBtn.textContent = expanded
-                    ? `▼ Hide matched entries (${matchedEntries.length})`
-                    : `▶ Show matched entries (${matchedEntries.length})`;
-            };
-
-            matchedSection.appendChild(toggleBtn);
-            matchedSection.appendChild(matchedList);
-            card.appendChild(matchedSection);
-
-            // Hover effects on the whole card
-            card.onmouseover = () => { card.style.borderColor = '#667eea'; card.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.15)'; };
-            card.onmouseout  = () => { card.style.borderColor = '#ccc'; card.style.boxShadow = 'none'; };
-
+        for (const { profile, matchedEntries } of matches) {
+            const card = UI.createElement('div', { padding: '12px', marginBottom: '10px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#fff' });
+            const head = UI.createElement('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px' });
+            const info = UI.createElement('div');
+            info.innerHTML = `<div style="font-weight: bold; font-size: 14px; color: #333;">${escapeHtml(String(profile.name || 'Unnamed profile'))} ${dpBadge(profile.status)}</div>
+                <div style="font-size: 11px; color: #888; margin-top: 2px;">${escapeHtml(dpTypeLabel(profile.type))} • ${matchedEntries.length} match${matchedEntries.length !== 1 ? 'es' : ''}</div>`;
+            const edit = UI.createElement('button', { padding: '5px 12px', fontSize: '11px', fontWeight: 'bold', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }, { textContent: '✏️ Edit' });
+            edit.onclick = () => showProfileByIdLookup(profile.id, () => { resetModal(); displayProfiles(currentProfiles); });
+            head.appendChild(info);
+            head.appendChild(edit);
+            card.appendChild(head);
+            const listEl = UI.createElement('div', { padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '6px', maxHeight: '160px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.6', border: '1px solid #e9ecef' });
+            matchedEntries.forEach(e => listEl.appendChild(UI.createElement('div', { padding: '2px 6px' }, { textContent: e })));
+            card.appendChild(listEl);
             resultsArea.appendChild(card);
         }
+    }
+
+    /**
+     * Whether a search query matches an entry: exact, substring either way, a wildcard
+     * entry (*.example.com) covering the query, or a wildcard query covering the entry.
+     */
+    function domainMatches(query, entry) {
+        if (query === entry) return true;
+        if (entry.includes(query) || query.includes(entry)) return true;
+        if (entry.startsWith('*.')) {
+            const wildBase = entry.slice(2);
+            if (query === wildBase || query.endsWith('.' + wildBase)) return true;
+        }
+        if (query.startsWith('*.')) {
+            const queryBase = query.slice(2);
+            if (entry === queryBase || entry.endsWith('.' + queryBase)) return true;
+            if (entry.startsWith('*.') && entry.slice(2) === queryBase) return true;
+        }
+        return false;
     }
 
     /** Escape HTML characters to prevent XSS in rendered results */
     function escapeHtml(str) {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-        return str.replace(/[&<>"']/g, c => map[c]);
+        return String(str).replace(/[&<>"']/g, c => map[c]);
     }
 
     /* ==========================================================
@@ -14134,390 +13965,239 @@ Version 1.4.1:
         resetModal();
         const container = document.getElementById('custom-category-container');
         if (!container) return;
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
-        const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
-        header.textContent = '🏷️ Custom Category by ID';
-        container.appendChild(header);
-
-        const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
-        desc.textContent = 'Look up a Custom Category by its numeric ID to see its name, status, URL list assignments, and audit info.';
-        container.appendChild(desc);
-
-        const inputRow = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
-
-        const idInput = UI.createElement('input', {
-            flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px',
-            fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace',
-            outline: 'none', transition: 'border-color 0.2s'
-        }, { id: 'custom-category-id-input', type: 'text', placeholder: 'e.g. 10042' });
-
-        idInput.onfocus = () => { idInput.style.borderColor = '#f7971e'; };
-        idInput.onblur  = () => { idInput.style.borderColor = '#ccc'; };
-
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🏷️ Custom Category by ID' }));
+        container.appendChild(UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' },
+            { textContent: 'Look up a Custom Category by its numeric ID to see its name, status, Destination Profiles and audit info.' }));
+        const row = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
+        const idInput = UI.createElement('input', { flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
+            { id: 'custom-category-id-input', type: 'text', placeholder: 'e.g. 10042' });
         const lookupBtn = UI.createButton('🔍 Lookup', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', executeCustomCategoryLookup);
         Object.assign(lookupBtn.style, { flex: '0 0 120px', color: '#333' });
-
-        inputRow.appendChild(idInput);
-        inputRow.appendChild(lookupBtn);
-        container.appendChild(inputRow);
-
-        const resultsArea = UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'custom-category-results' });
-        container.appendChild(resultsArea);
-
+        row.appendChild(idInput);
+        row.appendChild(lookupBtn);
+        container.appendChild(row);
+        container.appendChild(UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'custom-category-results' }));
         const cancelRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
         const cancelBtn = UI.createButton('✖️ Cancel', 'white', resetModal);
-        cancelBtn.style.border = '1px solid #ccc';
-        cancelBtn.style.color  = '#333';
+        Object.assign(cancelBtn.style, { border: '1px solid #ccc', color: '#333' });
         cancelRow.appendChild(cancelBtn);
         container.appendChild(cancelRow);
-
         idInput.onkeydown = (e) => { if (e.key === 'Enter') executeCustomCategoryLookup(); };
         setTimeout(() => idInput.focus(), 100);
     }
 
     async function executeCustomCategoryLookup() {
-        const input      = document.getElementById('custom-category-id-input');
+        const input = document.getElementById('custom-category-id-input');
         const resultsArea = document.getElementById('custom-category-results');
         if (!input || !resultsArea) return;
-
         const id = input.value.trim();
         if (!id) return UI.showStatus('⚠️ Please enter a category ID', 'warning');
         if (!/^\d+$/.test(id)) return UI.showStatus('⚠️ Category ID must be a numeric value', 'warning');
-
         UI.showStatus('🔄 Looking up custom category...', 'info');
         resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching category data...</div>';
-
         await makeApiRequest('GET', `/api/v2/profiles/customcategories/${id}?details=true`, null,
-            (data) => {
-                UI.hideStatus();
-                renderCustomCategoryResult(resultsArea, data);
-            },
+            (data) => { UI.hideStatus(); renderCustomCategoryResult(resultsArea, data); },
             (error) => {
                 UI.showStatus(`❌ Failed: ${error}`, 'error');
                 resultsArea.innerHTML = `<div style="text-align:center;padding:30px;color:#dc3545;font-size:13px;">Could not retrieve category. ${escapeHtml(String(error))}</div>`;
-            }
-        );
+            });
     }
 
     function renderCustomCategoryResult(resultsArea, data) {
         _lastCategoryData = data;
         resultsArea.innerHTML = '';
+        const card = UI.createElement('div', { padding: '16px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#fff', fontSize: '13px', fontFamily: 'Arial, sans-serif' });
+        const title = UI.createElement('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
+        title.appendChild(UI.createElement('div', { fontWeight: 'bold', fontSize: '16px', color: '#333' }, { textContent: data.name || '(unnamed)' }));
+        const badge = UI.createElement('span');
+        badge.innerHTML = dpBadge(String(data.status || '').toLowerCase());
+        title.appendChild(badge);
+        card.appendChild(title);
+        card.appendChild(UI.createElement('div', { fontSize: '12px', color: '#888', marginBottom: '14px' }, { textContent: `ID: ${data.id}` }));
+        if (data.description) card.appendChild(UI.createElement('div', { marginBottom: '12px', color: '#555', fontSize: '13px' }, { textContent: `Description: ${data.description}` }));
 
-        const STATUS_BADGE = {
-            'applied': { bg: '#d4edda', border: '#c3e6cb', color: '#155724' },
-            'pending': { bg: '#fff3cd', border: '#ffeaa7', color: '#856404' },
-            'error':   { bg: '#f8d7da', border: '#f5c6cb', color: '#721c24' }
-        };
-        const badge = STATUS_BADGE[(data.status || '').toLowerCase()] || { bg: '#e9ecef', border: '#dee2e6', color: '#495057' };
-
-        const formatDate = (iso) => {
-            if (!iso) return '—';
-            try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
-        };
-
-        const card = UI.createElement('div', {
-            padding: '16px', border: '1px solid #ccc', borderRadius: '8px',
-            backgroundColor: '#fff', fontSize: '13px', fontFamily: 'Arial, sans-serif'
-        });
-
-        // Name + status
-        const titleRow = UI.createElement('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
-        const nameEl = UI.createElement('div', { fontWeight: 'bold', fontSize: '16px', color: '#333' });
-        nameEl.textContent = data.name || '(unnamed)';
-        const statusBadge = UI.createElement('span', {
-            padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold',
-            backgroundColor: badge.bg, border: `1px solid ${badge.border}`, color: badge.color
-        });
-        statusBadge.textContent = data.status || 'unknown';
-        titleRow.appendChild(nameEl);
-        titleRow.appendChild(statusBadge);
-        card.appendChild(titleRow);
-
-        // ID
-        const idRow = UI.createElement('div', { fontSize: '12px', color: '#888', marginBottom: '14px' });
-        idRow.textContent = `ID: ${data.id}`;
-        card.appendChild(idRow);
-
-        // Description
-        if (data.description) {
-            const descRow = UI.createElement('div', { marginBottom: '12px', color: '#555', fontSize: '13px' });
-            descRow.innerHTML = `<strong>Description:</strong> ${escapeHtml(data.description)}`;
-            card.appendChild(descRow);
-        }
-
-        // Helper: labelled pill list; pass onPillClick to make pills clickable
-        const renderPillField = (label, items, onPillClick) => {
+        const nameOf = id => (currentProfiles.find(p => String(p.id) === String(id)) || {}).name;
+        const field = (label, items, clickable) => {
             const wrap = UI.createElement('div', { marginBottom: '10px' });
-            const lbl = UI.createElement('div', { fontWeight: 'bold', color: '#555', marginBottom: '5px', fontSize: '12px' });
-            lbl.textContent = label;
-            wrap.appendChild(lbl);
-            if (!items || items.length === 0) {
-                const none = UI.createElement('span', { color: '#aaa', fontStyle: 'italic', fontSize: '12px' });
-                none.textContent = '(none)';
-                wrap.appendChild(none);
-            } else {
-                const pillRow = UI.createElement('div', { display: 'flex', flexWrap: 'wrap', gap: '6px' });
-                items.forEach(item => {
-                    const clickable = !!onPillClick;
-                    const pill = UI.createElement('span', {
-                        padding: '3px 10px',
-                        backgroundColor: clickable ? '#d1ecf1' : '#e8f4f8',
-                        border: `1px solid ${clickable ? '#7cc8dc' : '#bee5eb'}`,
-                        borderRadius: '12px', fontSize: '12px', color: '#0c5460', fontFamily: 'monospace',
-                        cursor: clickable ? 'pointer' : 'default',
-                        display: 'inline-flex', alignItems: 'center', gap: '4px',
-                        transition: clickable ? 'all 0.15s ease' : 'none',
-                        userSelect: 'none'
-                    });
-                    pill.textContent = item;
-                    if (clickable) {
-                        const arrow = document.createElement('span');
-                        arrow.textContent = '↗';
-                        Object.assign(arrow.style, { fontSize: '11px', opacity: '0.7', lineHeight: '1' });
-                        pill.appendChild(arrow);
-                        pill.title = `Open URL list ${item} in the editable lookup view`;
-                        pill.onmouseover = () => {
-                            pill.style.backgroundColor = '#9ddff0';
-                            pill.style.borderColor     = '#0083b0';
-                            pill.style.color           = '#005f7a';
-                            pill.style.boxShadow       = '0 2px 6px rgba(0, 131, 176, 0.25)';
-                            pill.style.transform       = 'translateY(-1px)';
-                            arrow.style.opacity        = '1';
-                        };
-                        pill.onmouseout = () => {
-                            pill.style.backgroundColor = '#d1ecf1';
-                            pill.style.borderColor     = '#7cc8dc';
-                            pill.style.color           = '#0c5460';
-                            pill.style.boxShadow       = 'none';
-                            pill.style.transform       = 'translateY(0)';
-                            arrow.style.opacity        = '0.7';
-                        };
-                        pill.onclick = () => onPillClick(item);
-                    }
-                    pillRow.appendChild(pill);
-                });
-                wrap.appendChild(pillRow);
-            }
+            wrap.appendChild(UI.createElement('div', { fontWeight: 'bold', color: '#555', marginBottom: '5px', fontSize: '12px' }, { textContent: label }));
+            if (!items || !items.length) { wrap.appendChild(UI.createElement('span', { color: '#aaa', fontStyle: 'italic', fontSize: '12px' }, { textContent: '(none)' })); return wrap; }
+            const pills = UI.createElement('div', { display: 'flex', flexWrap: 'wrap', gap: '6px' });
+            items.forEach(item => {
+                const pill = UI.createElement('span', {
+                    padding: '3px 10px', backgroundColor: clickable ? '#d1ecf1' : '#e8f4f8', border: `1px solid ${clickable ? '#7cc8dc' : '#bee5eb'}`,
+                    borderRadius: '12px', fontSize: '12px', color: '#0c5460', fontFamily: 'monospace', cursor: clickable ? 'pointer' : 'default', userSelect: 'none'
+                }, { textContent: clickable ? `${nameOf(item) || item} ↗` : String(item) });
+                if (clickable) {
+                    pill.dataset.dpId = String(item);
+                    pill.title = `Open Destination Profile ${item}`;
+                    pill.onclick = () => showProfileByIdLookup(String(item), restoreCategoryLookupView);
+                }
+                pills.appendChild(pill);
+            });
+            wrap.appendChild(pills);
             return wrap;
         };
-
-        const urlListClickHandler = (id) => lookupUrlListFromCategory(String(id));
-        card.appendChild(renderPillField('Included URL Lists:', data.included_url_lists, urlListClickHandler));
-        card.appendChild(renderPillField('Excluded URL Lists:', data.excluded_url_lists, urlListClickHandler));
-        card.appendChild(renderPillField('Included Predefined Categories:', data.included_predefined_categories));
-
+        card.appendChild(field('Included Destination Profiles:', data.included_destination_profiles, true));
+        card.appendChild(field('Excluded Destination Profiles:', data.excluded_destination_profiles, true));
+        card.appendChild(field('Included Predefined Categories:', data.included_predefined_categories, false));
+        const oldLists = [].concat(data.included_url_lists || [], data.excluded_url_lists || []);
+        if (oldLists.length) card.appendChild(field('Old URL List IDs (no longer used):', oldLists, false));
         card.appendChild(UI.createElement('hr', { border: 'none', borderTop: '1px solid #eee', margin: '10px 0' }));
-
-        // Audit grid
-        const grid = UI.createElement('div', {
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px',
-            fontSize: '12px', color: '#666'
-        });
-        const mkCell = (label, value) => {
+        const grid = UI.createElement('div', { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', color: '#666' });
+        [['Created by:', data.create_by], ['Created:', dpFormatDate(data.create_time)], ['Modified by:', data.modify_by], ['Modified:', dpFormatDate(data.modify_time)]].forEach(([l, v]) => {
             const cell = UI.createElement('div');
-            cell.innerHTML = `<span style="font-weight:bold;">${escapeHtml(label)}</span><br>${escapeHtml(value || '—')}`;
-            return cell;
-        };
-        grid.appendChild(mkCell('Created by:', data.create_by));
-        grid.appendChild(mkCell('Created:', formatDate(data.create_time)));
-        grid.appendChild(mkCell('Modified by:', data.modify_by));
-        grid.appendChild(mkCell('Modified:', formatDate(data.modify_time)));
+            cell.innerHTML = `<span style="font-weight:bold;">${escapeHtml(l)}</span><br>${escapeHtml(v || '—')}`;
+            grid.appendChild(cell);
+        });
         card.appendChild(grid);
-
         resultsArea.appendChild(card);
-    }
-
-    /* ==========================================================
-     *  URL LIST BY ID LOOKUP
-     * ==========================================================*/
-
-    function lookupUrlListFromCategory(id) {
-        showUrlListByIdLookup(id, restoreCategoryLookupView);
     }
 
     function restoreCategoryLookupView() {
         showCustomCategoryLookup();
         if (!_lastCategoryData) return;
-        const idInput     = document.getElementById('custom-category-id-input');
+        const idInput = document.getElementById('custom-category-id-input');
         const resultsArea = document.getElementById('custom-category-results');
-        if (idInput)      idInput.value = String(_lastCategoryData.id || '');
-        if (resultsArea)  renderCustomCategoryResult(resultsArea, _lastCategoryData);
+        if (idInput) idInput.value = String(_lastCategoryData.id || '');
+        if (resultsArea) renderCustomCategoryResult(resultsArea, _lastCategoryData);
     }
 
-    function showUrlListByIdLookup(prefillId, backFn) {
+    /* ==========================================================
+     *  DESTINATION PROFILE BY ID (the edit view)
+     * ==========================================================*/
+
+    function showProfileByIdLookup(prefillId, backFn) {
         resetModal();
         const container = document.getElementById('urllist-id-lookup-container');
         if (!container) return;
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
-        const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
-        header.textContent = '🔗 URL List Lookup by ID';
-        container.appendChild(header);
-
-        const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
-        desc.textContent = 'Fetch and edit a URL list by its numeric ID.';
-        container.appendChild(desc);
-
-        const inputRow = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
-
-        const idInput = UI.createElement('input', {
-            flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px',
-            fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace',
-            outline: 'none', transition: 'border-color 0.2s'
-        }, { id: 'urllist-id-lookup-input', type: 'text', placeholder: 'e.g. 43' });
-
-        idInput.onfocus = () => { idInput.style.borderColor = '#00b4db'; };
-        idInput.onblur  = () => { idInput.style.borderColor = '#ccc'; };
-
-        const lookupBtn = UI.createElement('button', {
-            flex: '0 0 120px', padding: '10px 20px', border: 'none', borderRadius: '6px',
-            cursor: 'pointer', background: 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)',
-            color: 'white', fontWeight: 'bold', fontSize: '14px'
-        }, { textContent: '🔍 Lookup' });
-
-        inputRow.appendChild(idInput);
-        inputRow.appendChild(lookupBtn);
-        container.appendChild(inputRow);
-
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🔗 Destination Profile by ID' }));
+        const row = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
+        const idInput = UI.createElement('input', { flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
+            { id: 'urllist-id-lookup-input', type: 'text', placeholder: 'e.g. 56a5524e-74e3-4579-9471-39700db5f9fc' });
+        const lookupBtn = UI.createButton('🔍 Lookup', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => doLookup());
+        lookupBtn.style.flex = '0 0 120px';
+        row.appendChild(idInput);
+        row.appendChild(lookupBtn);
+        container.appendChild(row);
         const resultsArea = UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'urllist-id-lookup-results' });
         container.appendChild(resultsArea);
-
-        const footerRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
-        const cancelBtn = UI.createButton(backFn ? '← Back to Category' : '✖️ Cancel', 'white', backFn || resetModal);
-        cancelBtn.style.border = '1px solid #ccc';
-        cancelBtn.style.color  = '#333';
-        footerRow.appendChild(cancelBtn);
-        container.appendChild(footerRow);
+        const footer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
+        const back = UI.createButton(backFn === restoreCategoryLookupView ? '← Back to Category' : backFn ? '← Back' : '✖️ Cancel', 'white', backFn || resetModal);
+        Object.assign(back.style, { border: '1px solid #ccc', color: '#333' });
+        footer.appendChild(back);
+        container.appendChild(footer);
 
         async function doLookup() {
             const id = idInput.value.trim();
-            if (!id) return UI.showStatus('⚠️ Please enter a URL list ID', 'warning');
-            if (!/^\d+$/.test(id)) return UI.showStatus('⚠️ URL list ID must be numeric', 'warning');
-
-            UI.showStatus('🔄 Looking up URL list...', 'info');
-            resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching URL list data...</div>';
-
-            await makeApiRequest('GET', `/api/v2/policy/urllist/${id}`, null,
-                (data) => {
-                    UI.hideStatus();
-                    renderUrlListByIdResult(resultsArea, data, backFn || (() => showUrlListByIdLookup(id)));
-                },
-                (error) => {
-                    UI.showStatus(`❌ Failed: ${error}`, 'error');
-                    resultsArea.innerHTML = `<div style="text-align:center;padding:30px;color:#dc3545;font-size:13px;">Could not retrieve URL list. ${escapeHtml(String(error))}</div>`;
-                }
-            );
+            if (!id) return UI.showStatus('⚠️ Please enter a Destination Profile ID', 'warning');
+            if (!/^[A-Za-z0-9-]+$/.test(id)) return UI.showStatus('⚠️ That does not look like a Destination Profile ID', 'warning');
+            UI.showStatus('🔄 Looking up the Destination Profile…', 'info');
+            resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching the profile…</div>';
+            const r = await dpCall('GET', `${DP_PATH}/${encodeURIComponent(id)}`);
+            if (!r.ok) {
+                if (!r.handled) UI.showStatus(r.status === 404 ? '⚠️ No Destination Profile has this ID.' : `❌ Failed: ${r.error}`, r.status === 404 ? 'warning' : 'error');
+                resultsArea.innerHTML = '';
+                return;
+            }
+            UI.hideStatus();
+            renderProfileEditor(resultsArea, r.data, doLookup);
         }
-
-        lookupBtn.onclick = doLookup;
         idInput.onkeydown = (e) => { if (e.key === 'Enter') doLookup(); };
-
-        if (prefillId) {
-            idInput.value = prefillId;
-            doLookup();
-        } else {
-            setTimeout(() => idInput.focus(), 100);
-        }
+        if (prefillId) { idInput.value = prefillId; doLookup(); } else setTimeout(() => idInput.focus(), 100);
     }
 
-    function renderUrlListByIdResult(resultsArea, data, backFn) {
+    function renderProfileEditor(resultsArea, data, reload) {
         resultsArea.innerHTML = '';
+        const info = UI.createElement('div', { padding: '12px 14px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#f8f9fa', marginBottom: '12px', fontSize: '12px', color: '#555' });
+        const n = (data.values || []).filter(v => !String(v).trim().startsWith('#')).length;
+        info.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px">
+                <span style="font-weight:bold;font-size:15px;color:#333">${escapeHtml(data.name || '(unnamed)')}</span>${dpBadge(data.status)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:6px">
+                <span><strong>ID:</strong> <span style="font-family:monospace">${escapeHtml(String(data.id))}</span></span>
+                <span><strong>Values:</strong> ${n}</span></div>
+            <div style="font-size:11px;color:#888">Created by <strong>${escapeHtml(data.create_by || '—')}</strong> on ${escapeHtml(dpFormatDate(data.create_time))} ·
+                modified by <strong>${escapeHtml(data.modify_by || '—')}</strong> on ${escapeHtml(dpFormatDate(data.modify_time))}</div>`;
+        resultsArea.appendChild(info);
 
-        const formatDate = (iso) => {
-            if (!iso) return '—';
-            try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
-        };
+        const nameIn = dpInput('dp-edit-name', 100, '', data.name);
+        const descIn = dpInput('dp-edit-desc', 200, 'Optional', data.description);
+        const typeIn = dpTypeSelect('dp-edit-type', data.type);
+        resultsArea.appendChild(dpField('Name', nameIn, true));
+        resultsArea.appendChild(dpField('Description', descIn, true));
+        resultsArea.appendChild(dpField('Match type', typeIn));
+        const { wrap, ta } = dpValuesArea('dp-edit-values', data.values || []);
+        wrap.style.flex = '0 0 auto';
+        resultsArea.appendChild(wrap);
+        if (ta) resultsArea.appendChild(createUrlListLogButtons(ta));
 
-        // Metadata card
-        const infoCard = UI.createElement('div', {
-            padding: '12px 14px', border: '1px solid #ccc', borderRadius: '8px',
-            backgroundColor: '#f8f9fa', marginBottom: '12px', fontSize: '12px', color: '#555'
-        });
+        const warning = UI.createElement('div', { display: 'none', marginTop: '10px', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', lineHeight: '1.5',
+            color: '#856404', backgroundColor: '#fff3cd', border: '1px solid #ffeaa7' }, { id: 'dp-rename-warning' });
+        resultsArea.appendChild(warning);
+        const btns = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '14px' });
+        const save = UI.createButton('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', () => saveProfile());
+        btns.appendChild(save);
+        resultsArea.appendChild(btns);
+        let renameConfirmed = false;
+        nameIn.addEventListener('input', () => { renameConfirmed = false; warning.style.display = 'none'; save.textContent = '💾 Save Changes'; });
 
-        const nameRow = UI.createElement('div', { fontWeight: 'bold', fontSize: '15px', color: '#333', marginBottom: '6px' });
-        nameRow.textContent = data.name || '(unnamed)';
-        infoCard.appendChild(nameRow);
-
-        const metaRow = UI.createElement('div', { display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '6px', fontSize: '12px', color: '#666' });
-        const mkMeta = (label, value) => {
-            const s = document.createElement('span');
-            s.innerHTML = `<strong>${escapeHtml(label)}</strong> ${escapeHtml(String(value ?? '—'))}`;
-            return s;
-        };
-        metaRow.appendChild(mkMeta('ID:', data.id));
-        metaRow.appendChild(mkMeta('Type:', data.data?.type || '—'));
-        metaRow.appendChild(mkMeta('URLs:', (data.data?.urls || []).length));
-        if (data.pending !== undefined) {
-            const hasPending = Number(data.pending) > 0;
-            const pSpan = document.createElement('span');
-            pSpan.innerHTML = '<strong>Pending:</strong> ';
-            const pBadge = UI.createElement('span', {
-                padding: '1px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold',
-                backgroundColor: hasPending ? '#fff3cd' : '#d4edda',
-                color:           hasPending ? '#856404' : '#155724',
-                border:          `1px solid ${hasPending ? '#ffeaa7' : '#c3e6cb'}`
-            });
-            pBadge.textContent = hasPending ? `${data.pending} pending` : 'none';
-            pSpan.appendChild(pBadge);
-            metaRow.appendChild(pSpan);
+        async function saveProfile() {
+            const name = nameIn.value.trim();
+            const values0 = dpValuesFrom(ta.value);
+            const values = values0.length ? values0 : [DP_EMPTY];
+            const changes = {};
+            if (name !== data.name) changes.name = name;
+            if (descIn.value.trim() !== (data.description || '')) changes.description = descIn.value.trim();
+            const valuesChanged = JSON.stringify(values) !== JSON.stringify(data.values || []);
+            if (typeIn.value !== data.type) { changes.type = typeIn.value; changes.values = values; }
+            else if (valuesChanged) changes.values = values;
+            if (!name) return UI.showStatus('⚠️ The name cannot be empty', 'warning');
+            if (!Object.keys(changes).length) return UI.showStatus('ℹ️ Nothing changed', 'info');
+            if (changes.name && !renameConfirmed) {
+                warning.innerHTML = `⚠️ <strong>Renaming can break other parts of the scripts.</strong> Several features find Destination Profiles by their exact name:
+                    the Change Tracker <strong>Newly Registered Domains</strong> check and its shared list of NRD profiles, and the Destination Profile entries
+                    logged in tickets under the old name "${escapeHtml(data.name)}". Other parts of the scripts that use the profile name may stop working too.
+                    Click again to save with the new name "${escapeHtml(name)}".`;
+                warning.style.display = 'block';
+                save.textContent = '💾 Save with the new name';
+                renameConfirmed = true;
+                return;
+            }
+            save.disabled = true;
+            try {
+                UI.showStatus('🔄 Checking the profile in Netskope…', 'info');
+                // Saved from the profile as it is now, never from an older copy
+                const fresh = await dpCall('GET', `${DP_PATH}/${encodeURIComponent(data.id)}`);
+                if (!fresh.ok) { if (!fresh.handled) UI.showStatus(`❌ Failed: ${fresh.error}`, 'error'); return; }
+                const now = fresh.data || {};
+                if (now.modify_time !== data.modify_time || JSON.stringify(now.values || []) !== JSON.stringify(data.values || [])) {
+                    UI.showStatus('⚠️ This profile changed in Netskope since you opened it. Nothing was saved: reload it and make your change again.', 'warning');
+                    if (![...btns.children].some(b => /Reload/.test(b.textContent))) {
+                        const r = UI.createButton('↺ Reload the profile', 'white', () => reload());
+                        Object.assign(r.style, { border: '1px solid #ccc', color: '#333' });
+                        btns.appendChild(r);
+                    }
+                    return;
+                }
+                if (now.status === 'pending-delete') return UI.showStatus('⚠️ This profile is waiting to be deleted in Netskope, so it cannot be changed.', 'warning');
+                UI.showStatus('🔄 Saving…', 'info');
+                const r = await dpCall('PATCH', `${DP_PATH}/${encodeURIComponent(data.id)}?interactive=true`, changes);
+                if (!r.ok) {
+                    if (r.handled) return;
+                    return UI.showStatus(r.status === 409 && changes.name ? `⚠️ A Destination Profile called "${name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
+                }
+                const what = [changes.name && 'name', changes.description !== undefined && 'description', changes.type && 'match type', changes.values && 'values'].filter(Boolean).join(', ');
+                currentProfiles = [];
+                const applied = await dpApply(r.tenant, Object.assign({}, data, r.data || {}, { id: data.id, name }), `Changed the ${what} of "${name}"`);
+                if (applied) reload();
+            } finally {
+                save.disabled = false;
+            }
         }
-        infoCard.appendChild(metaRow);
-
-        const auditRow = UI.createElement('div', { fontSize: '11px', color: '#888' });
-        auditRow.innerHTML = `Modified by <strong>${escapeHtml(data.modify_by || '—')}</strong> on ${escapeHtml(formatDate(data.modify_time))}` +
-            (data.modify_type ? `  ·  <em>${escapeHtml(data.modify_type)}</em>` : '');
-        infoCard.appendChild(auditRow);
-        resultsArea.appendChild(infoCard);
-
-        // Editable URLs textarea
-        const textareaWrapper = UI.createTextArea('urllist-id-lookup-urls', 'URLs (one per line)', 'example.com\n*.domain.com', 10);
-        textareaWrapper.style.flex = '0 0 auto';
-        textareaWrapper.style.marginBottom = '6px';
-        const textareaEl = textareaWrapper.querySelector('textarea');
-        if (textareaEl) textareaEl.value = (data.data?.urls || []).join('\n');
-        resultsArea.appendChild(textareaWrapper);
-
-        if (textareaEl) resultsArea.appendChild(createUrlListLogButtons(textareaEl));
-
-        // Action buttons
-        const btnRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '14px' });
-
-        const saveBtn = UI.createButton('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', async () => {
-            if (!textareaEl) return;
-            const urlsInput = textareaEl.value.trim();
-            if (!urlsInput) return UI.showStatus('⚠️ Please enter at least one URL', 'warning');
-            const urls = urlsInput.split('\n').map(u => u.trim()).filter(Boolean);
-            if (!urls.length) return UI.showStatus('⚠️ No valid URLs found', 'warning');
-            UI.showStatus('🔄 Updating URL list...', 'info');
-            await makeApiRequest('PATCH', `/api/v2/policy/urllist/${data.id}/replace`, { data: { type: 'exact', urls } },
-                () => {
-                    const t = getActiveTenant();
-                    UI.showStatus(`✅ URL list "${escapeHtml(data.name)}" updated successfully! Opening URL List page...`, 'success');
-                    GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true });
-                    setTimeout(UI.hideStatus, 8000);
-                },
-                (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-            );
-        });
-
-        const backBtn = UI.createButton(backFn ? '← Back' : '✖️ Close', 'white', backFn || resetModal);
-        backBtn.style.border = '1px solid #ccc';
-        backBtn.style.color  = '#333';
-
-        btnRow.appendChild(saveBtn);
-        btnRow.appendChild(backBtn);
-        resultsArea.appendChild(btnRow);
     }
 
     /* ==========================================================
@@ -14635,7 +14315,7 @@ Version 1.4.1:
         };
 
         const titleEl = document.createElement('div');
-        titleEl.textContent = '📜 Add URL List Log Entry';
+        titleEl.textContent = '📜 Add Log Entry';
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '16px' });
 
         const ritmLbl = mkLbl('RITM Number');
@@ -14986,7 +14666,7 @@ Version 1.4.1:
         });
 
         const titleEl = document.createElement('div');
-        titleEl.textContent = `📜 URL List Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
+        titleEl.textContent = `📜 Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
         modal.appendChild(titleEl);
 
@@ -15101,7 +14781,7 @@ Version 1.4.1:
             scrollArea.innerHTML = '';
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
-                empty.textContent = allGroups.length === 0 ? 'No log entries found in this URL list.' : 'No entries match the current filters.';
+                empty.textContent = allGroups.length === 0 ? 'No log entries found in these values.' : 'No entries match the current filters.';
                 Object.assign(empty.style, { fontSize: '13px', color: '#999', textAlign: 'center', padding: '24px 0', fontStyle: 'italic' });
                 scrollArea.appendChild(empty);
             } else {
@@ -15284,7 +14964,7 @@ Version 1.4.1:
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Netskope URL List Manager', position: 2 }
+                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Destination Profile Editor', position: 2 }
             }));
             addToolbarNotificationDot();
         };
