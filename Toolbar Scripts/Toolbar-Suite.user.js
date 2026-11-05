@@ -24160,6 +24160,7 @@ Version 1.4.3:
     const NRD_LOOKUP_PATH = '/api/v2/nsiq/urllookup';
     const NRD_DEST_PATH   = '/api/v2/profiles/destinations';
     const NRD_PLACEHOLDER = '#No values';
+    const NRD_CHANGE_NOTE = 'Domain is no longer categorized as Newly Registered Domain';   // audit note of every NRD removal
     const nrdApiOn = () => GM_getValue(NRD_API_KEY, null) || {};
     const nrdApiCall = (host, method, path, body) => netskopeApi.request(host, method, path, body, { caller: 'Change Tracker' });
     const nrdHasKey = (host) => { const st = netskopeApi.status(host); return st.hasKey && !st.expired; };
@@ -24208,7 +24209,7 @@ Version 1.4.3:
     }
 
     const nrdApiError = (r, what) => r.status === 403
-        ? `the token has no permission for ${what}. Ask for a token that includes it.`
+        ? `Netskope refused it (403${r.error && !/^HTTP 403$/.test(r.error) ? `: ${r.error}` : ''}). The token may have no permission for ${what}: ask for a token that includes it.`
         : r.code === 'noKey' ? 'no API key saved for this tenant: set one in 🔑 Netskope API keys.'
         : r.code === 'expired' ? 'the API key expired: set a new one in 🔑 Netskope API keys.'
         : r.code === 'locked' ? 'the API key stays locked.'
@@ -24271,7 +24272,7 @@ Version 1.4.3:
             const k = `${r.host}\n${r.item.profile}`;
             (groups.get(k) || groups.set(k, []).get(k)).push(r);
         });
-        const removed = [];
+        const changed = [];   // { host, id, name, rows } written pending, applied below
         for (const rows of groups.values()) {
             const { host } = rows[0];
             const name = rows[0].item.profile;
@@ -24286,11 +24287,20 @@ Version 1.4.3:
                 continue;
             }
             const d = again.data;
-            const res = await nrdApiCall(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}`,
-                { name: d.name, description: d.description || '', type: d.type, label_ids: d.label_ids || [], values });
+            // Written pending, then applied with the audit note: only the values change
+            const res = await nrdApiCall(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}?interactive=true`, { values });
             if (!res.ok) { notes.push(`${name}: not changed, ${nrdApiError(res, 'PATCH /api/v2/profiles/destinations')}`); continue; }
-            if (!res.data || res.data.status !== 'applied') pending = true;
-            removed.push(...rows);
+            changed.push({ host, id: String(d.id), name, rows });
+        }
+        const removed = [];
+        for (const host of [...new Set(changed.map(c => c.host))]) {
+            const mine = changed.filter(c => c.host === host);
+            const dep = await netskopeApi.deploy(host, mine.map(c => c.id), NRD_CHANGE_NOTE, { caller: 'Change Tracker' });
+            const applied = new Set(dep.ok ? dep.applied : []);
+            mine.forEach(c => {
+                if (applied.has(c.id)) removed.push(...c.rows);
+                else { pending = true; notes.push(`${c.name}: saved but not applied${dep.ok ? '' : ` (${nrdApiError(dep, '/api/v2/profiles/destinations/deploy')})`}, so it was not logged. Apply it in Netskope, then mark the domains as removed.`); }
+            });
         }
         // Logged only after Netskope confirmed the change
         const logGroups = (list) => list.reduce((m, r) => { const k = `${r.item.ticket}\n${r.item.tenantType}\n${r.item.profile}`; (m.get(k) || m.set(k, []).get(k)).push(r); return m; }, new Map());
@@ -24309,7 +24319,7 @@ Version 1.4.3:
         await nrdCheck({ force: true });
         const kept = plan.rows.filter(r => r.action === 'keep').length;
         const parts = [`✔ ${removed.length} removed from the profiles, ${kept} kept ${NRD_KEEP_DAYS} more days.`];
-        if (removed.length && pending) parts.push('Click Apply Changes in Netskope for the change to take effect.');
+        if (removed.length) parts.push(`Applied in Netskope with the note "${NRD_CHANGE_NOTE}".`);
         return parts.concat(notes).join(' ');
     }
 
