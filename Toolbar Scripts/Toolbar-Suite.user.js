@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.19.0
+// @version      2.19.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.19.0';
-    const CHANGELOG = `Version 2.19.0:
+   const SCRIPT_VERSION = '2.19.1';
+    const CHANGELOG = `Version 2.19.1:
+- Destination Profile Editor: smaller buttons, fields and spacing, so the window takes less of the screen. When editing a profile the whole window now scrolls as one, instead of squeezing the profile into a small box.
+
+Version 2.19.0:
 - The URL List Editor is now the Destination Profile Editor: fetch every Destination Profile, search a domain in all of them, create profiles and edit their name, description, match type and values, with the same log toolbar. URL Lists are no longer used.
 - Every Destination Profile change is applied in Netskope with a change note that shows in its audit log. A window asks for it after each save, reminds that it is usually the RITM and fills it in with 🎫 Insert RITM. "Leave pending" applies nothing and opens the console instead.
 - Change Tracker: Newly Registered Domains removed through the API are applied in Netskope with the note "Domain is no longer categorized as Newly Registered Domain".
@@ -12150,8 +12153,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.0';
-    const CHANGELOG = `Version 2.0.0:
+    const SCRIPT_VERSION = '2.0.1';
+    const CHANGELOG = `Version 2.0.1:
+- Smaller buttons, fields and spacing, so the window takes less of the screen. When editing a profile the whole window now scrolls as one, instead of squeezing the profile into a small box.
+
+Version 2.0.0:
 - Now the Destination Profile Editor: everything works on Destination Profiles instead of URL Lists. Fetch every profile with its match type and status, filter by name and search a domain in all of them (wildcards included, comment lines left out).
 - Create a profile with a name, a description, a match type (Exact not case sensitive, Exact case sensitive, or Regex) and its values.
 - Open a profile from a result, by its ID or from a custom category, and change its name, description, match type or values. The profile is read again before saving, so a change made meanwhile in Netskope is never overwritten, and its labels are never touched. Renaming warns first, since other parts of the scripts find profiles by name.
@@ -12592,8 +12598,8 @@ Version 1.4.1:
 
         createButton(text, gradient, onClick) {
             const btn = this.createElement('button', {
-                padding: '10px 20px', border: 'none', borderRadius: '6px', cursor: 'pointer',
-                background: gradient, color: 'white', fontWeight: 'bold', fontSize: '14px', flex: '1'
+                padding: '6px 12px', border: 'none', borderRadius: '5px', cursor: 'pointer', lineHeight: '1.3',
+                background: gradient, color: 'white', fontWeight: 'bold', fontSize: '12px', flex: '1'
             }, { textContent: text, onclick: onClick });
             return btn;
         },
@@ -13431,9 +13437,9 @@ Version 1.4.1:
         const modal = UI.createElement('div', {
             position: 'fixed', top: '60px', left: '50%', transform: 'translateX(-50%)',
             backgroundColor: '#f9f9f9', border: '1px solid #ccc',
-            boxShadow: '0px 4px 12px rgba(0,0,0,0.1)', padding: '50px 20px 20px 20px',
+            boxShadow: '0px 4px 12px rgba(0,0,0,0.1)', padding: '40px 20px 16px 20px',
             zIndex: '999998', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
-            display: 'none', flexDirection: 'column', alignItems: 'center', gap: '15px',
+            display: 'none', flexDirection: 'column', alignItems: 'center', gap: '10px',
             minWidth: '650px', maxWidth: '750px', bottom: '20px',
             overflowY: 'auto', boxSizing: 'border-box'
         }, { id: 'netskope-urllist-modal' });
@@ -13533,13 +13539,14 @@ Version 1.4.1:
         modal.appendChild(UI.createElement('hr', { width: '100%', border: 'none', borderTop: '1px solid #ddd', margin: '10px 0' }));
 
         // Action buttons
-        const actionBtns = UI.createElement('div', { display: 'flex', gap: '10px', width: '100%', flexWrap: 'wrap' });
+        const actionBtns = UI.createElement('div', { display: 'flex', gap: '6px', width: '100%', flexWrap: 'wrap' });
         actionBtns.appendChild(UI.createButton('🔍 Fetch Destination Profiles',  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fetchProfiles));
         actionBtns.appendChild(UI.createButton('✨ Create Destination Profile', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', showCreateForm));
         actionBtns.appendChild(UI.createButton('🔎 Domain Lookup', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', showDomainLookup));
         actionBtns.appendChild(UI.createButton('🏷️ Category by ID', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', showCustomCategoryLookup));
         actionBtns.lastChild.style.color = '#333';
         actionBtns.appendChild(UI.createButton('🔗 Profile by ID', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => showProfileByIdLookup()));
+        [...actionBtns.children].forEach(b => Object.assign(b.style, { flex: '1 1 0', minWidth: '0', padding: '5px 6px', fontSize: '11px' }));
         modal.appendChild(actionBtns);
 
         modal.appendChild(UI.createElement('div', {
@@ -13796,9 +13803,9 @@ Version 1.4.1:
     }
 
     function dpField(label, input, counter) {
-        const wrap = UI.createElement('div', { width: '100%', marginBottom: '10px' });
-        const head = UI.createElement('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' });
-        head.appendChild(UI.createElement('label', { fontWeight: 'bold', fontSize: '13px', color: '#555', marginBottom: '5px' }, { textContent: label, htmlFor: input.id }));
+        const wrap = UI.createElement('div', { width: '100%', marginBottom: '8px' });
+        const head = UI.createElement('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px' });
+        head.appendChild(UI.createElement('label', { fontWeight: 'bold', fontSize: '12px', color: '#555' }, { textContent: label, htmlFor: input.id }));
         if (counter) {
             const c = UI.createElement('span', { fontSize: '11px', color: '#888' });
             const sync = () => { c.textContent = `${input.value.length}/${input.maxLength}`; };
@@ -13812,12 +13819,12 @@ Version 1.4.1:
     }
 
     function dpInput(id, max, placeholder, value) {
-        return UI.createElement('input', { width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' },
+        return UI.createElement('input', { width: '100%', padding: '5px 8px', border: '1px solid #ccc', borderRadius: '5px', fontSize: '13px', boxSizing: 'border-box' },
             { id, type: 'text', maxLength: max, placeholder, value: value || '' });
     }
 
     function dpTypeSelect(id, value) {
-        const sel = UI.createElement('select', { width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }, { id });
+        const sel = UI.createElement('select', { width: '100%', padding: '5px 8px', border: '1px solid #ccc', borderRadius: '5px', fontSize: '13px', boxSizing: 'border-box' }, { id });
         DP_TYPES.forEach(t => sel.appendChild(Object.assign(document.createElement('option'), { value: t.value, textContent: t.label })));
         sel.value = value || 'insensitive';
         return sel;
@@ -14095,22 +14102,22 @@ Version 1.4.1:
         resetModal();
         const container = document.getElementById('urllist-id-lookup-container');
         if (!container) return;
-        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '0 0 auto' });
         container.innerHTML = '';
-        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🔗 Destination Profile by ID' }));
-        const row = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
-        const idInput = UI.createElement('input', { flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '4px 0 5px 0' }, { textContent: '🔗 Destination Profile by ID' }));
+        const row = UI.createElement('div', { display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'stretch' });
+        const idInput = UI.createElement('input', { flex: '1', padding: '6px 10px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
             { id: 'urllist-id-lookup-input', type: 'text', placeholder: 'e.g. 56a5524e-74e3-4579-9471-39700db5f9fc' });
         const lookupBtn = UI.createButton('🔍 Lookup', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => doLookup());
-        lookupBtn.style.flex = '0 0 120px';
+        lookupBtn.style.flex = '0 0 100px';
         row.appendChild(idInput);
         row.appendChild(lookupBtn);
         container.appendChild(row);
-        const resultsArea = UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'urllist-id-lookup-results' });
+        const resultsArea = UI.createElement('div', {}, { id: 'urllist-id-lookup-results' });
         container.appendChild(resultsArea);
         const footer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
         const back = UI.createButton(backFn === restoreCategoryLookupView ? '← Back to Category' : backFn ? '← Back' : '✖️ Cancel', 'white', backFn || resetModal);
-        Object.assign(back.style, { border: '1px solid #ccc', color: '#333' });
+        Object.assign(back.style, { border: '1px solid #ccc', color: '#333', flex: '0 0 auto' });
         footer.appendChild(back);
         container.appendChild(footer);
 
@@ -14135,12 +14142,12 @@ Version 1.4.1:
 
     function renderProfileEditor(resultsArea, data, reload) {
         resultsArea.innerHTML = '';
-        const info = UI.createElement('div', { padding: '12px 14px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#f8f9fa', marginBottom: '12px', fontSize: '12px', color: '#555' });
+        const info = UI.createElement('div', { padding: '8px 12px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#f8f9fa', marginBottom: '10px', fontSize: '12px', color: '#555' });
         const n = (data.values || []).filter(v => !String(v).trim().startsWith('#')).length;
         info.innerHTML = `
-            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px">
-                <span style="font-weight:bold;font-size:15px;color:#333">${escapeHtml(data.name || '(unnamed)')}</span>${dpBadge(data.status)}</div>
-            <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:4px">
+                <span style="font-weight:bold;font-size:14px;color:#333">${escapeHtml(data.name || '(unnamed)')}</span>${dpBadge(data.status)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:4px">
                 <span><strong>ID:</strong> <span style="font-family:monospace">${escapeHtml(String(data.id))}</span></span>
                 <span><strong>Values:</strong> ${n}</span></div>
             <div style="font-size:11px;color:#888">Created by <strong>${escapeHtml(data.create_by || '—')}</strong> on ${escapeHtml(dpFormatDate(data.create_time))} ·
@@ -14161,7 +14168,7 @@ Version 1.4.1:
         const warning = UI.createElement('div', { display: 'none', marginTop: '10px', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', lineHeight: '1.5',
             color: '#856404', backgroundColor: '#fff3cd', border: '1px solid #ffeaa7' }, { id: 'dp-rename-warning' });
         resultsArea.appendChild(warning);
-        const btns = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '14px' });
+        const btns = UI.createElement('div', { display: 'flex', gap: '8px', marginTop: '10px' });
         const save = UI.createButton('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', () => saveProfile());
         btns.appendChild(save);
         resultsArea.appendChild(btns);
@@ -14873,7 +14880,7 @@ Version 1.4.1:
         const addBtn = document.createElement('button');
         addBtn.textContent = '+ Log Entry';
         addBtn.title = 'Insert a #RITM | Date | Name header at the cursor position';
-        addBtn.style.cssText = `padding: 4px 10px; border: 1px solid #0073e6; border-radius: 4px; background: #0073e6; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        addBtn.style.cssText = `padding: 3px 8px; border: 1px solid #0073e6; border-radius: 4px; background: #0073e6; color: #fff; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 1.4;`;
         addBtn.addEventListener('mouseenter', () => { addBtn.style.background = '#005bb5'; });
         addBtn.addEventListener('mouseleave', () => { addBtn.style.background = '#0073e6'; });
         addBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showUrlLogEntryModal(textareaEl); });
@@ -14881,14 +14888,14 @@ Version 1.4.1:
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = '🗑 Delete Selected';
         deleteBtn.title = 'Select domains in the textarea first, then click to comment them out and add a Deleted log header';
-        deleteBtn.style.cssText = `padding: 4px 10px; border: 1px solid #e53935; border-radius: 4px; background: #e53935; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        deleteBtn.style.cssText = `padding: 3px 8px; border: 1px solid #e53935; border-radius: 4px; background: #e53935; color: #fff; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 1.4;`;
         deleteBtn.addEventListener('mouseenter', () => { deleteBtn.style.background = '#c62828'; });
         deleteBtn.addEventListener('mouseleave', () => { deleteBtn.style.background = '#e53935'; });
         deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showUrlDeleteSelectionModal(textareaEl); });
 
         const viewBtn = document.createElement('button');
         viewBtn.textContent = '📜 View History';
-        viewBtn.style.cssText = `padding: 4px 10px; border: 1px solid #4caf50; border-radius: 4px; background: #4caf50; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        viewBtn.style.cssText = `padding: 3px 8px; border: 1px solid #4caf50; border-radius: 4px; background: #4caf50; color: #fff; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 1.4;`;
         viewBtn.addEventListener('mouseenter', () => { viewBtn.style.background = '#388e3c'; });
         viewBtn.addEventListener('mouseleave', () => { viewBtn.style.background = '#4caf50'; });
         viewBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); showUrlListLogViewerModal(textareaEl); });
@@ -14896,7 +14903,7 @@ Version 1.4.1:
         const ritmBtn = document.createElement('button');
         ritmBtn.textContent = '🎫 Insert RITM';
         ritmBtn.title = 'Insert the current ServiceNow ticket number at cursor position';
-        ritmBtn.style.cssText = `padding: 4px 10px; border: 1px solid #764ba2; border-radius: 4px; background: #764ba2; color: #fff; cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.4;`;
+        ritmBtn.style.cssText = `padding: 3px 8px; border: 1px solid #764ba2; border-radius: 4px; background: #764ba2; color: #fff; cursor: pointer; font-size: 11px; font-weight: 600; line-height: 1.4;`;
         ritmBtn.addEventListener('mouseenter', () => { ritmBtn.style.background = '#5a3680'; });
         ritmBtn.addEventListener('mouseleave', () => { ritmBtn.style.background = '#764ba2'; });
         ritmBtn.addEventListener('click', (e) => {
