@@ -3765,7 +3765,9 @@ Version 1.0.0:
             { label: 'Hours', value: 1 }, { label: 'Days', value: 24 },
             { label: 'Weeks', value: 168 }, { label: 'Months', value: 720 },
         ];
-        const TEST_PATH = '/api/v2/policy/urllist';
+        const TEST_PATH = '/api/v2/profiles/destinations?limit=1';
+        const DEPLOY_PATH = '/api/v2/profiles/destinations/deploy';
+        const NOTE_MAX = 100;   // Netskope's limit for change_note
         const memory = {};             // host → passphrase, for this tab
         const unlocking = {};          // host → the prompt already waiting, shared by every call
         const listeners = new Set();
@@ -4075,6 +4077,59 @@ Version 1.0.0:
             }));
         }
 
+        /* ── Applying Destination Profile changes with an audit note ── */
+
+        // Asks the note that goes with the change into Netskope's audit. Answers the note, or null for "Leave pending".
+        function askChangeNote({ caller, ticket, summary } = {}) {
+            return new Promise(resolve => {
+                const d = openDialog('nsapi-changenote', `
+                    <div class="head"><h2>✅ Apply changes</h2></div>
+                    <div class="body">
+                        ${summary ? `<p><b>${esc(summary)}</b></p>` : ''}
+                        <p>The change is saved and pending. Apply it now with a change note: it shows in Netskope's audit log.</p>
+                        <input type="text" id="nsapi-note" maxlength="${NOTE_MAX}" placeholder="Change note" autocomplete="off" style="width:100%">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px">
+                            <span class="help">Usually the RITM number, as in Apply Changes in the console.</span>
+                            <span class="help" id="nsapi-note-count">0/${NOTE_MAX}</span>
+                        </div>
+                        <button type="button" class="small" id="nsapi-note-ritm" style="margin-top:8px"${ticket ? '' : ' hidden'}>🎫 Insert RITM${ticket ? ` (${esc(ticket)})` : ''}</button>
+                    </div>
+                    <div class="foot">
+                        <button type="button" id="nsapi-note-later" title="Nothing is applied: apply it later in the console">Leave pending</button>
+                        <button type="button" class="primary" id="nsapi-note-apply" disabled>Apply now</button>
+                    </div>`);
+                const note = d.querySelector('#nsapi-note'), count = d.querySelector('#nsapi-note-count'), apply = d.querySelector('#nsapi-note-apply');
+                const sync = () => { count.textContent = `${note.value.length}/${NOTE_MAX}`; apply.disabled = !note.value.trim(); };
+                const finish = (v) => { d.close(); d.remove(); resolve(v); };
+                note.addEventListener('input', sync);
+                note.onkeydown = e => { if (e.key === 'Enter' && note.value.trim()) { e.preventDefault(); finish(note.value.trim()); } };
+                d.querySelector('#nsapi-note-ritm').onclick = () => {
+                    const start = note.selectionStart ?? note.value.length, end = note.selectionEnd ?? note.value.length;
+                    note.value = (note.value.slice(0, start) + ticket + note.value.slice(end)).slice(0, NOTE_MAX);
+                    sync();
+                    note.focus();
+                };
+                apply.onclick = () => finish(note.value.trim());
+                d.querySelector('#nsapi-note-later').onclick = () => finish(null);
+                d.addEventListener('cancel', e => { e.preventDefault(); finish(null); });
+                setTimeout(() => note.focus(), 30);
+            });
+        }
+
+        // Applies pending Destination Profiles (at most 50 per call) with the audit note
+        async function deploy(host, ids, note, { caller } = {}) {
+            const text = String(note || '').trim().slice(0, NOTE_MAX);
+            if (!text) return { ok: false, status: 0, error: 'A change note is needed to apply changes.' };
+            const list = [...new Set((ids || []).map(String))];
+            const applied = [];
+            for (let i = 0; i < list.length; i += 50) {
+                const r = await request(host, 'POST', DEPLOY_PATH, { ids: list.slice(i, i + 50), change_note: text }, { caller });
+                if (!r.ok) return Object.assign(r, { applied });
+                applied.push(...((r.data && r.data.applied) || []).map(String));
+            }
+            return { ok: true, status: 200, applied };
+        }
+
         /* ── The "🔑 Netskope API keys" window ── */
 
         function stateOf(host) {
@@ -4174,9 +4229,9 @@ Version 1.0.0:
                     b.disabled = true;
                     msg.textContent = 'Testing…';
                     const r = await request(h, 'GET', TEST_PATH, null, { caller: 'Test' });
-                    msg.textContent = r.ok ? '✔ The key works: Netskope answered with your URL lists.'
+                    msg.textContent = r.ok ? '✔ The key works: Netskope answered with your Destination Profiles.'
                         : r.status === 401 ? '⛔ Netskope refused the key (401): it may be expired or revoked. Replace it.'
-                        : r.status === 403 ? '⚠ The key works but has no permission for URL lists (403). Tools that need other permissions may still work.'
+                        : r.status === 403 ? '⚠ The key works but has no permission for Destination Profiles (403). Tools that need other permissions may still work.'
                         : '⛔ ' + r.error;
                     b.disabled = false;
                 }
@@ -4189,7 +4244,7 @@ Version 1.0.0:
         }
 
         const api = {
-            tenants, status, request, unlock, lock, openManager, saveKey,
+            tenants, status, request, unlock, lock, openManager, saveKey, askChangeNote, deploy,
             onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); },
         };
         // Test only: the automated tests switch this on in their own storage
