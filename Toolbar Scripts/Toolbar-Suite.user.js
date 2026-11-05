@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.17.2
+// @version      2.18.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.17.2';
-    const CHANGELOG = `Version 2.17.2:
+   const SCRIPT_VERSION = '2.18.0';
+    const CHANGELOG = `Version 2.18.0:
+- New 🔑 Netskope API keys in the toolbar settings: one place to set, replace, test, lock or remove the Netskope API key of each tenant. It is part of the toolbar, so it works whatever tools you chose. Your saved keys are kept.
+- The passphrase of a key is now asked in one window that always shows above everything else, even other open panels, and several requests share one prompt.
+- URL List Editor: the API key form is replaced by a status line with "🔑 Manage keys".
+- Change Tracker: the Newly Registered Domains API settings use the same keys, with "🔑 Manage key", and keep working with the URL List Editor turned off.
+
+Version 2.17.2:
 - URL List Editor and Change Tracker: fixed the Netskope API calls (URL Lists, and the Newly Registered Domains check with the API) failing with "Network error" even with a valid API key. Tampermonkey may ask once to allow the Netskope tenants: choose to always allow. A failed call now also says why it did not reach Netskope.
 
 Version 2.17.1:
@@ -1769,6 +1775,40 @@ Version 1.0.0:
                     bullets(body, [
                         'Compact mode shrinks the whole toolbar at once.',
                         'Animation speed controls how fast the menu opens and closes.'
+                    ]);
+                }
+            },
+            {
+                icon: '🔑',
+                title: 'Netskope API keys',
+                buildContent: (body) => {
+                    lead(body, 'One place for the Netskope API key of every tenant, used by every tool that calls the Netskope API.');
+                    const win = document.createElement('div');
+                    Object.assign(win.style, { border: '1px solid #e3e3ef', borderRadius: '8px', padding: '10px 12px', maxWidth: '460px', fontFamily: 'Arial, sans-serif' });
+                    [['EMA', 'ema.goskope.com', 'Unlocked · Expires 01/01/2027', '#d4edda', '#155724', 'Replace key'],
+                     ['EU', 'eu.goskope.com', 'No key', '#f0f0f0', '#555', 'Set key']].forEach(([type, host, state, bg, color, set]) => {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, { borderBottom: '1px solid #f0f0f0', padding: '6px 0' });
+                        row.appendChild(hrow([
+                            span(type, { fontWeight: 'bold', fontSize: '12px' }), span(host, { fontFamily: 'monospace', fontSize: '11px', color: '#777' }),
+                            span(state, { marginLeft: 'auto', fontSize: '11px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '10px', background: bg, color }),
+                        ], { margin: '0 0 4px 0' }));
+                        row.appendChild(hrow([set, 'Test', 'Lock', 'Remove'].map(l => chip(l, '#fff', { color: l === 'Remove' ? '#dc3545' : '#333', border: `1px solid ${l === 'Remove' ? '#dc3545' : '#bbb'}` })), { gap: '6px', margin: '0' }));
+                        win.appendChild(row);
+                    });
+                    body.appendChild(win);
+                    caption(body, 'Settings, Netskope API, 🔑 Netskope API keys. Tools that need a key also open it, for example 🔑 Manage keys in URL Lists.');
+                    const prompt = document.createElement('div');
+                    Object.assign(prompt.style, { border: '2px solid #667eea', borderRadius: '10px', padding: '10px 12px', maxWidth: '360px', margin: '12px 0 0 0', fontFamily: 'Arial, sans-serif' });
+                    prompt.appendChild(span('🔐 Unlock the EMA API key', { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '6px' }));
+                    prompt.appendChild(span('URL Lists needs the Netskope API key of EMA. Enter its passphrase…', { display: 'block', fontSize: '11px', color: '#555', marginBottom: '6px' }));
+                    prompt.appendChild(hrow([chip('Forgot it?', '#fff', { color: '#dc3545', border: '1px solid #dc3545' }), chip('Cancel', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Unlock', '#667eea')], { gap: '6px', margin: '0' }));
+                    body.appendChild(prompt);
+                    bullets(body, [
+                        'Each tenant has its own key and its own passphrase. Keys are encrypted in this browser and are only sent to your own tenants.',
+                        'The passphrase is asked once per browser session and per site, in a window that always shows above everything else, even other open panels.',
+                        'Forgot it? deletes that key (it cannot be read without the passphrase) so you can save it again with a new one.',
+                        'This works whatever tools you chose: it is part of the toolbar itself.',
                     ]);
                 }
             },
@@ -3782,9 +3822,16 @@ Version 1.0.0:
 
         /* ── Session passphrase: this tab, and the site's session storage ── */
 
-        function sessionGet(host) {
-            if (memory[host]) return memory[host];
-            try { const v = sessionStorage.getItem(K.session(host)); if (v) memory[host] = v; return v || null; } catch (e) { return null; }
+        // The site's session storage is readable and writable by the page, so a passphrase found there is only
+        // trusted once it matches the saved hash (checked by sessionLoad before any use)
+        function sessionGet(host) { return memory[host] || null; }
+        async function sessionLoad(host) {
+            if (memory[host]) return true;
+            let v = null;
+            try { v = sessionStorage.getItem(K.session(host)); } catch (e) { v = null; }
+            if (v && await verify(host, v)) { memory[host] = v; return true; }
+            if (v) sessionClear(host);
+            return false;
         }
         function sessionSet(host, passphrase) {
             memory[host] = passphrase;
@@ -3841,11 +3888,16 @@ Version 1.0.0:
             emit();
         }
 
+        // Keys from very old versions were saved without a passphrase hash, only obfuscated
+        const isLegacy = host => !!GM_getValue(K.token(host), '') && !GM_getValue(K.hash(host), '');
+
         async function readKey(host) {
             const data = GM_getValue(K.token(host), '');
+            if (!data) return null;
+            if (isLegacy(host)) return crypt.legacy(data);
             const passphrase = sessionGet(host);
-            if (!data || !passphrase) return null;
-            try { return await crypt.decrypt(data, passphrase); } catch (e) { return crypt.legacy(data); }
+            if (!passphrase) return null;
+            try { return await crypt.decrypt(data, passphrase); } catch (e) { sessionClear(host); emit(); return null; }
         }
 
         function emit() { listeners.forEach(fn => { try { fn(); } catch (e) { console.error('[Netskope API] listener:', e); } }); }
@@ -3919,9 +3971,9 @@ Version 1.0.0:
         function unlock(host, { caller } = {}) {
             const t = tenantOf(host);
             if (!t || !hasKey(t.host)) return Promise.resolve(false);
-            if (sessionGet(t.host)) return Promise.resolve(true);
+            if (isLegacy(t.host) || sessionGet(t.host)) return Promise.resolve(true);
             if (unlocking[t.host]) return unlocking[t.host];
-            unlocking[t.host] = new Promise(resolve => {
+            unlocking[t.host] = sessionLoad(t.host).then(loaded => loaded || new Promise(resolve => {
                 const d = openDialog('nsapi-unlock', `
                     <div class="head"><h2>🔐 Unlock the ${esc(t.type)} API key</h2></div>
                     <div class="body">
@@ -3937,7 +3989,7 @@ Version 1.0.0:
                 const pass = d.querySelector('#nsapi-pass'), err = d.querySelector('#nsapi-unlock-err');
                 const forgot = d.querySelector('#nsapi-forgot-btn'), go = d.querySelector('#nsapi-unlock-btn');
                 let forgetting = false;
-                const finish = (ok) => { d.close(); d.remove(); delete unlocking[t.host]; resolve(ok); };
+                const finish = (ok) => { d.close(); d.remove(); resolve(ok); };
                 const tryIt = async () => {
                     if (!pass.value) { err.textContent = 'Enter the passphrase.'; return; }
                     go.disabled = true;
@@ -3964,7 +4016,7 @@ Version 1.0.0:
                     openManager({ host: t.host, caller });
                 };
                 setTimeout(() => pass.focus(), 30);
-            });
+            })).finally(() => { delete unlocking[t.host]; });
             return unlocking[t.host];
         }
 
@@ -12037,8 +12089,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.6';
-    const CHANGELOG = `Version 1.6.6:
+    const SCRIPT_VERSION = '1.7.0';
+    const CHANGELOG = `Version 1.7.0:
+- The API key of each tenant is now managed in the toolbar's 🔑 Netskope API keys. The API Configuration panel shows the state of the key and a "🔑 Manage keys" button. Your saved keys and passphrases still work.
+- The passphrase prompt is the toolbar's own, always above every window.
+
+Version 1.6.6:
 - Fixed the API calls failing with "Network error": Tampermonkey was not allowed to reach the Netskope tenants since the tool moved into the Tools Toolbar. A failed call now also says why it did not reach Netskope.
 
 Version 1.6.5:
@@ -12391,12 +12447,6 @@ Version 1.4.1:
         return tenant && tenant.host ? tenant.host : null;
     }
 
-    const EXPIRY_SCALES = [
-        { label: 'Hours', value: 1 },
-        { label: 'Days', value: 24 },
-        { label: 'Weeks', value: 168 },
-        { label: 'Months', value: 720 }
-    ];
 
     const STATUS_COLORS = {
         success: { bg: '#d4edda', border: '#c3e6cb', text: '#155724' },
@@ -12407,43 +12457,8 @@ Version 1.4.1:
 
     let isInitialized = false;
     let currentUrlLists = [];
-    let sessionPassphrases = {};
     let temporaryTenant = null;
     let _lastCategoryData = null;
-
-    /* ==========================================================
-     *  SESSION MANAGEMENT (Tenant-Specific)
-     * ==========================================================*/
-
-    const SessionManager = {
-        getPassphrase(tenant) {
-            if (!tenant) return null;
-            if (sessionPassphrases[tenant]) return sessionPassphrases[tenant];
-            const stored = sessionStorage.getItem(`netskope_session_key_${tenant}`);
-            if (stored) {
-                sessionPassphrases[tenant] = stored;
-                return stored;
-            }
-            return null;
-        },
-        setPassphrase(tenant, value) {
-            if (!tenant) return;
-            sessionPassphrases[tenant] = value;
-            sessionStorage.setItem(`netskope_session_key_${tenant}`, value);
-        },
-        clear(tenant) {
-            if (tenant) {
-                delete sessionPassphrases[tenant];
-                sessionStorage.removeItem(`netskope_session_key_${tenant}`);
-            } else {
-                sessionPassphrases = {};
-                Object.keys(sessionStorage).forEach(key => {
-                    if (key.startsWith('netskope_session_key_')) sessionStorage.removeItem(key);
-                });
-            }
-        },
-        hasPassphrase(tenant) { return !!this.getPassphrase(tenant); }
-    };
 
     /* ==========================================================
      *  VERSION MANAGEMENT
@@ -12470,122 +12485,6 @@ Version 1.4.1:
         },
 
         shouldShowChangelog() { return this.isNewer() && !this.changelogSeen; }
-    };
-
-    /* ==========================================================
-     *  TOKEN ENCRYPTION (AES-256 with PBKDF2)
-     * ==========================================================*/
-
-    const TokenCrypto = {
-        async hashPassphrase(passphrase) {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(passphrase);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-        },
-
-        async deriveKey(passphrase, salt) {
-            const encoder = new TextEncoder();
-            const passphraseKey = await crypto.subtle.importKey('raw', encoder.encode(passphrase), 'PBKDF2', false, ['deriveBits', 'deriveKey']);
-            return crypto.subtle.deriveKey(
-                { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
-                passphraseKey,
-                { name: 'AES-GCM', length: 256 },
-                true,
-                ['encrypt', 'decrypt']
-            );
-        },
-
-        async encrypt(token, passphrase) {
-            const encoder = new TextEncoder();
-            const salt = crypto.getRandomValues(new Uint8Array(16));
-            const iv   = crypto.getRandomValues(new Uint8Array(12));
-            const key  = await this.deriveKey(passphrase, salt);
-            const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(token));
-            const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength);
-            combined.set(salt, 0);
-            combined.set(iv, salt.length);
-            combined.set(new Uint8Array(encrypted), salt.length + iv.length);
-            return btoa(String.fromCharCode(...combined));
-        },
-
-        async decrypt(encryptedData, passphrase) {
-            try {
-                const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
-                const salt      = combined.slice(0, 16);
-                const iv        = combined.slice(16, 28);
-                const encrypted = combined.slice(28);
-                const key       = await this.deriveKey(passphrase, salt);
-                const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, encrypted);
-                return new TextDecoder().decode(decrypted);
-            } catch (e) {
-                throw new Error('Invalid passphrase or corrupted data');
-            }
-        },
-
-        legacyDeobfuscate(obfuscatedToken) {
-            if (!obfuscatedToken) return '';
-            try {
-                const decoded = atob(obfuscatedToken);
-                const shift = 7;
-                let token = '';
-                for (let i = 0; i < decoded.length; i++) {
-                    token += String.fromCharCode(decoded.charCodeAt(i) - shift - (i % 5));
-                }
-                return token;
-            } catch (e) { return obfuscatedToken; }
-        }
-    };
-
-    /* ==========================================================
-     *  STORAGE MANAGEMENT
-     * ==========================================================*/
-
-    const Storage = {
-        async getToken(tenant) {
-            const encrypted = GM_getValue(`netskope_token_${tenant}`, '');
-            if (!encrypted) return '';
-            const passphrase = SessionManager.getPassphrase(tenant);
-            if (!passphrase) throw new Error('NO_PASSPHRASE');
-            try {
-                return await TokenCrypto.decrypt(encrypted, passphrase);
-            } catch (e) {
-                try { return TokenCrypto.legacyDeobfuscate(encrypted); }
-                catch (le) { throw new Error('INVALID_PASSPHRASE'); }
-            }
-        },
-
-        getExpiry(tenant)   { return GM_getValue(`netskope_token_expiry_${tenant}`, null); },
-
-        async saveToken(tenant, token, hours, passphrase) {
-            const expiryDate = new Date();
-            expiryDate.setHours(expiryDate.getHours() + hours);
-            const encrypted      = await TokenCrypto.encrypt(token, passphrase);
-            const passphraseHash = await TokenCrypto.hashPassphrase(passphrase);
-            GM_setValue(`netskope_token_${tenant}`, encrypted);
-            GM_setValue(`netskope_passphrase_hash_${tenant}`, passphraseHash);
-            GM_setValue(`netskope_token_expiry_${tenant}`, { expiryDate: expiryDate.getTime(), duration: hours });
-            SessionManager.setPassphrase(tenant, passphrase);
-        },
-
-        removeToken(tenant) {
-            GM_setValue(`netskope_token_${tenant}`, '');
-            GM_setValue(`netskope_passphrase_hash_${tenant}`, '');
-            GM_setValue(`netskope_token_expiry_${tenant}`, null);
-        },
-
-        isTokenExpired(tenant) {
-            const d = this.getExpiry(tenant);
-            return d ? new Date().getTime() > d.expiryDate : false;
-        },
-
-        hasToken(tenant)   { return !!GM_getValue(`netskope_token_${tenant}`, ''); },
-
-        async verifyPassphrase(tenant, passphrase) {
-            const storedHash = GM_getValue(`netskope_passphrase_hash_${tenant}`, '');
-            if (!storedHash) return false;
-            return (await TokenCrypto.hashPassphrase(passphrase)) === storedHash;
-        }
     };
 
     /* ==========================================================
@@ -12643,94 +12542,6 @@ Version 1.4.1:
         hideStatus() {
             const statusArea = document.getElementById('urllist-status');
             if (statusArea) statusArea.style.display = 'none';
-        },
-
-        async promptPassphrase(title, message, isNewPassphrase = false) {
-            return new Promise((resolve, reject) => {
-                const overlay = this.createElement('div', {
-                    position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-                    background: 'rgba(0, 0, 0, 0.7)', zIndex: '1000002',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }, { id: 'passphrase-prompt-overlay' });
-
-                const modal = this.createElement('div', {
-                    background: '#ffffff', border: '2px solid #667eea', padding: '25px',
-                    borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                    maxWidth: '450px', width: '90%', fontFamily: 'Arial, sans-serif'
-                });
-
-                modal.innerHTML = `
-                    <h3 style="margin: 0 0 10px 0; color: #333; font-size: 18px; display: flex; align-items: center; gap: 8px;">
-                        🔐 ${title}
-                    </h3>
-                    <p style="margin: 0 0 20px 0; color: #666; font-size: 14px; line-height: 1.5;">${message}</p>
-                    <div style="margin-bottom: 15px;">
-                        <input type="password" id="passphrase-input" placeholder="Enter passphrase"
-                            style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; font-family: monospace;">
-                    </div>
-                    ${isNewPassphrase ? `
-                    <div style="margin-bottom: 15px;">
-                        <input type="password" id="passphrase-confirm" placeholder="Confirm passphrase"
-                            style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box; font-family: monospace;">
-                    </div>` : ''}
-                    <div id="passphrase-error" style="display: none; padding: 8px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; color: #721c24; font-size: 12px; margin-bottom: 15px;"></div>
-                    <div style="display: flex; gap: 10px; margin-bottom: ${isNewPassphrase ? '0' : '10px'};">
-                        <button id="passphrase-confirm-btn" style="flex: 1; padding: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">Confirm</button>
-                        <button id="passphrase-cancel-btn" style="flex: 1; padding: 10px; background: #e0e0e0; color: #333; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px;">Cancel</button>
-                    </div>
-                    ${!isNewPassphrase ? `
-                    <button id="passphrase-forgot-btn" style="width: 100%; padding: 8px; background: transparent; color: #dc3545; border: 1px solid #dc3545; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; transition: all 0.2s;">
-                        🗑️ Forgot Passphrase? Delete Token
-                    </button>` : ''}
-                `;
-
-                overlay.appendChild(modal);
-                document.body.appendChild(overlay);
-
-                const input       = document.getElementById('passphrase-input');
-                const confirmInp  = document.getElementById('passphrase-confirm');
-                const errorDiv    = document.getElementById('passphrase-error');
-                const confirmBtn  = document.getElementById('passphrase-confirm-btn');
-                const cancelBtn   = document.getElementById('passphrase-cancel-btn');
-                const forgotBtn   = document.getElementById('passphrase-forgot-btn');
-                const cleanup     = () => overlay.remove();
-
-                const showError = (msg) => {
-                    errorDiv.textContent = msg;
-                    errorDiv.style.display = 'block';
-                    input.style.borderColor = '#dc3545';
-                    if (confirmInp) confirmInp.style.borderColor = '#dc3545';
-                };
-
-                const handleConfirm = () => {
-                    const passphrase = input.value.trim();
-                    if (!passphrase) { showError('Passphrase cannot be empty'); return; }
-                    if (isNewPassphrase && passphrase !== confirmInp?.value.trim()) { showError('Passphrases do not match'); return; }
-                    cleanup();
-                    resolve(passphrase);
-                };
-
-                confirmBtn.onclick = handleConfirm;
-                cancelBtn.onclick  = () => { cleanup(); reject(new Error('USER_CANCELLED')); };
-                if (forgotBtn) {
-                    forgotBtn.onclick    = () => { cleanup(); reject(new Error('FORGOT_PASSPHRASE')); };
-                    forgotBtn.onmouseover = () => { forgotBtn.style.backgroundColor = '#dc3545'; forgotBtn.style.color = 'white'; };
-                    forgotBtn.onmouseout  = () => { forgotBtn.style.backgroundColor = 'transparent'; forgotBtn.style.color = '#dc3545'; };
-                }
-
-                input.onkeydown = (e) => {
-                    if (e.key === 'Enter') isNewPassphrase && confirmInp ? confirmInp.focus() : handleConfirm();
-                    else if (e.key === 'Escape') { cleanup(); reject(new Error('USER_CANCELLED')); }
-                };
-                if (confirmInp) {
-                    confirmInp.onkeydown = (e) => {
-                        if (e.key === 'Enter') handleConfirm();
-                        else if (e.key === 'Escape') { cleanup(); reject(new Error('USER_CANCELLED')); }
-                    };
-                }
-
-                setTimeout(() => input.focus(), 100);
-            });
         }
     };
 
@@ -12891,139 +12702,33 @@ Version 1.4.1:
      *  TOKEN UI BUILDERS
      * ==========================================================*/
 
-    async function buildTokenUI(tenant) {
+    // The key of the tenant lives in the toolbar's Netskope API keys: here only its state and a way there
+    function buildTokenUI(tenant) {
         const container = document.getElementById('api-token-container');
         if (!container) return;
         container.innerHTML = '';
-
         if (!tenant) {
             container.innerHTML = '<div style="padding: 10px; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; font-size: 13px; color: #856404;">Please select a Member Firm first</div>';
             return;
         }
-
-        Storage.hasToken(tenant) ? buildSavedTokenUI(container, tenant, Storage.getExpiry(tenant)) : buildNewTokenUI(container, tenant);
-    }
-
-    function buildSavedTokenUI(container, tenant, expiryData) {
-        container.innerHTML = `
-            <div style="margin-bottom: 10px;">
-                <label style="display: block; font-weight: bold; font-size: 13px; color: #555; margin-bottom: 5px;">Saved API Token:</label>
-                <div style="padding: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #e9ecef; font-size: 13px; color: #495057; font-family: monospace; letter-spacing: 2px;">
-                    ••••••••••••••••••••••••••••••••••••••••
-                </div>
-            </div>
-        `;
-
-        const passphraseStatus = UI.createElement('div', {
-            marginBottom: '10px', padding: '8px',
-            backgroundColor: SessionManager.hasPassphrase(tenant) ? '#d4edda' : '#fff3cd',
-            border: '1px solid ' + (SessionManager.hasPassphrase(tenant) ? '#c3e6cb' : '#ffeaa7'),
-            borderRadius: '6px', fontSize: '12px',
-            color: SessionManager.hasPassphrase(tenant) ? '#155724' : '#856404',
-            fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-        });
-
-        const statusText = UI.createElement('span');
-        statusText.textContent = SessionManager.hasPassphrase(tenant) ? '🔓 Session unlocked for this browser session' : '🔒 Passphrase required on next tool open';
-        passphraseStatus.appendChild(statusText);
-
-        if (SessionManager.hasPassphrase(tenant)) {
-            const clearBtn = UI.createElement('button', { padding: '4px 8px', fontSize: '11px', backgroundColor: '#856404', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }, { textContent: 'Lock' });
-            clearBtn.onclick = () => {
-                if (confirm('This will lock your session. You\'ll need to enter your passphrase again when using the tool. Continue?')) {
-                    SessionManager.clear(tenant);
-                    UI.showStatus('🔒 Session locked. Passphrase will be required on next use.', 'info');
-                    buildSavedTokenUI(container, tenant, expiryData);
-                }
-            };
-            passphraseStatus.appendChild(clearBtn);
-        }
-        container.appendChild(passphraseStatus);
-
-        if (expiryData) {
-            const expiryDate = new Date(expiryData.expiryDate);
-            const timeLeft   = expiryDate - new Date();
-            const daysLeft   = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
-            let expiryText, expiryColor, expiryBg;
-
-            if (timeLeft < 0)       { [expiryText, expiryColor, expiryBg] = ['⚠️ EXPIRED', '#721c24', '#f8d7da']; }
-            else if (daysLeft === 0) { const h = Math.floor(timeLeft / (1000 * 60 * 60)); [expiryText, expiryColor, expiryBg] = [`⏰ Expires in ${h} hours`, '#856404', '#fff3cd']; }
-            else if (daysLeft < 7)  { [expiryText, expiryColor, expiryBg] = [`⚠️ Expires in ${daysLeft} days`, '#856404', '#fff3cd']; }
-            else                    { [expiryText, expiryColor, expiryBg] = [`✅ Expires in ${daysLeft} days (${expiryDate.toLocaleDateString()})`, '#155724', '#d4edda']; }
-
-            const expiryDiv = UI.createElement('div', { marginBottom: '10px' });
-            expiryDiv.innerHTML = `<label style="display: block; font-weight: bold; font-size: 13px; color: #555; margin-bottom: 5px;">Token Expiry:</label><div style="padding: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: ${expiryBg}; font-size: 13px; color: ${expiryColor}; font-weight: bold;">${expiryText}</div>`;
-            container.appendChild(expiryDiv);
-        }
-
-        const removeBtn = UI.createButton('🗑️ Remove Token', '#dc3545', () => {
-            if (confirm(`Are you sure you want to remove the API token for ${tenant}?`)) {
-                Storage.removeToken(tenant);
-                SessionManager.clear(tenant);
-                UI.showStatus('✅ API token removed successfully!', 'success');
-                buildTokenUI(tenant);
-            }
-        });
-        removeBtn.style.width = '100%';
-        container.appendChild(removeBtn);
-    }
-
-    function buildNewTokenUI(container, tenant) {
-        container.appendChild(UI.createInput('api-token-input', 'password', 'API Token v2', 'Your Netskope API token', ''));
-
-        const passphraseSection = UI.createElement('div', { width: '100%', marginBottom: '10px', padding: '12px', backgroundColor: '#f0f4ff', border: '1px solid #667eea', borderRadius: '6px' });
-        passphraseSection.innerHTML = `
-            <div style="margin-bottom: 8px; color: #333; font-weight: bold; font-size: 13px; display: flex; align-items: center; gap: 6px;">🔐 Encryption Passphrase</div>
-            <div style="margin-bottom: 12px; color: #666; font-size: 11px; line-height: 1.4;">Create a passphrase to encrypt your API token. You'll need this passphrase each browser session. <strong>Choose something memorable!</strong></div>
-            <div style="margin-bottom: 10px;"><input type="password" id="api-passphrase-input" placeholder="Enter passphrase" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: monospace;"></div>
-            <div><input type="password" id="api-passphrase-confirm" placeholder="Confirm passphrase" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: monospace;"></div>
-        `;
-        container.appendChild(passphraseSection);
-
-        const expiryContainer = UI.createElement('div', { width: '100%', marginBottom: '10px' });
-        expiryContainer.innerHTML = `
-            <label style="display: block; font-weight: bold; font-size: 13px; color: #555; margin-bottom: 5px;">Token Valid For:</label>
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <input id="token-expiry-number" type="number" min="1" value="1" style="flex: 0 0 80px; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; text-align: center;">
-                <select id="token-expiry-scale" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                    ${EXPIRY_SCALES.map(s => `<option value="${s.value}" ${s.value === 720 ? 'selected' : ''}>${s.label}</option>`).join('')}
-                </select>
-            </div>
-        `;
-        container.appendChild(expiryContainer);
-
-        const saveBtn = UI.createButton('💾 Save API Token', '#4CAF50', () => saveApiConfig(tenant));
-        saveBtn.style.width = '100%';
-        container.appendChild(saveBtn);
-    }
-
-    async function saveApiConfig(tenant) {
-        const token             = document.getElementById('api-token-input')?.value.trim();
-        const passphrase        = document.getElementById('api-passphrase-input')?.value.trim();
-        const passphraseConfirm = document.getElementById('api-passphrase-confirm')?.value.trim();
-        const numberValue       = parseInt(document.getElementById('token-expiry-number')?.value);
-        const scaleValue        = parseInt(document.getElementById('token-expiry-scale')?.value);
-
-        if (!token)                        return UI.showStatus('⚠️ Please enter your API token', 'warning');
-        if (!passphrase)                   return UI.showStatus('⚠️ Please enter an encryption passphrase', 'warning');
-        if (passphrase !== passphraseConfirm) return UI.showStatus('⚠️ Passphrases do not match', 'warning');
-        if (!numberValue || numberValue < 1)  return UI.showStatus('⚠️ Please enter a valid duration (minimum 1)', 'warning');
-        if (!tenant)                       return UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning');
-
-        try {
-            UI.showStatus('🔐 Encrypting and saving token...', 'info');
-            await Storage.saveToken(tenant, token, numberValue * scaleValue, passphrase);
-            UI.showStatus('✅ API token saved and encrypted successfully!', 'success');
-            await buildTokenUI(tenant);
-
-            const apiConfigContent = document.getElementById('api-config-content');
-            const collapseIcon     = document.getElementById('api-config-collapse-icon');
-            if (apiConfigContent) apiConfigContent.style.display = 'none';
-            if (collapseIcon)     collapseIcon.style.transform   = 'rotate(-90deg)';
-        } catch (error) {
-            console.error('Failed to save token:', error);
-            UI.showStatus('❌ Failed to encrypt and save token', 'error');
-        }
+        const st = netskopeApi.status(tenant);
+        const text = !st.hasKey ? '🔑 No API key saved for this tenant.'
+            : st.expired ? '⚠️ The API key of this tenant expired.'
+            : `${st.unlocked ? '🔓 API key unlocked' : '🔒 API key saved, locked'}${st.expiresAt ? `, expires ${new Date(st.expiresAt).toLocaleDateString()}` : ''}.`;
+        const ok = st.hasKey && !st.expired;
+        const row = UI.createElement('div', {
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px',
+            borderRadius: '6px', fontSize: '12px', fontWeight: 'bold',
+            backgroundColor: ok ? '#d4edda' : '#fff3cd', border: '1px solid ' + (ok ? '#c3e6cb' : '#ffeaa7'), color: ok ? '#155724' : '#856404'
+        }, { id: 'api-key-state' });
+        row.appendChild(UI.createElement('span', {}, { textContent: text }));
+        const manage = UI.createElement('button', {
+            padding: '4px 10px', fontSize: '11px', backgroundColor: '#667eea', color: 'white', border: 'none',
+            borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap'
+        }, { textContent: '🔑 Manage keys', id: 'api-manage-keys' });
+        manage.onclick = () => netskopeApi.openManager({ host: tenant, caller: 'URL Lists' });
+        row.appendChild(manage);
+        container.appendChild(row);
     }
 
     /* ==========================================================
@@ -13052,38 +12757,7 @@ Version 1.4.1:
     }
 
     async function applyTenantSwitch(tenantType, tenantHost) {
-        if (tenantHost && Storage.hasToken(tenantHost) && !SessionManager.hasPassphrase(tenantHost)) {
-            let attempts = 0;
-            const maxAttempts = 3;
-            while (attempts < maxAttempts) {
-                try {
-                    const passphrase = await UI.promptPassphrase(
-                        attempts === 0 ? `Unlock ${tenantType} Token` : `Unlock ${tenantType} Token (Attempt ${attempts + 1}/${maxAttempts})`,
-                        attempts === 0
-                            ? `Enter the passphrase for your ${tenantType} API token (${tenantHost}).`
-                            : '❌ Invalid passphrase. Please try again.',
-                        false
-                    );
-                    if (await Storage.verifyPassphrase(tenantHost, passphrase)) {
-                        SessionManager.setPassphrase(tenantHost, passphrase);
-                        break;
-                    } else {
-                        attempts++;
-                        if (attempts >= maxAttempts) {
-                            alert('❌ Maximum unlock attempts reached.');
-                            const sel = document.getElementById('tenant-switch-select');
-                            if (sel) sel.value = temporaryTenant || '';
-                            return;
-                        }
-                    }
-                } catch (err) {
-                    const sel = document.getElementById('tenant-switch-select');
-                    if (sel) sel.value = temporaryTenant || '';
-                    if (err.message !== 'USER_CANCELLED') alert('❌ Failed to unlock token: ' + err.message);
-                    return;
-                }
-            }
-        }
+        if (tenantHost && netskopeApi.status(tenantHost).hasKey) await netskopeApi.unlock(tenantHost, { caller: 'URL Lists' });
 
         temporaryTenant = tenantHost || null;
         currentUrlLists = [];
@@ -13112,7 +12786,7 @@ Version 1.4.1:
             }
         }
 
-        await buildTokenUI(getActiveTenant());
+        buildTokenUI(getActiveTenant());
     }
 
     /* ==========================================================
@@ -13238,7 +12912,7 @@ Version 1.4.1:
                     bullets(body, [
                         'First run: a setup prompt asks you to enter the Netskope tenant hostnames for each region (EMA, EU, CE, APAC, AME). These are saved in script storage and only need to be entered once.',
                         'In the setup prompt, "Import from a backup file" restores your hosts and tokens from a toolbar backup.',
-                        'If a saved API token exists for the detected tenant, you will be prompted for your passphrase to unlock the session before the panel opens.',
+                        'If the detected tenant has an API key, the toolbar asks for its passphrase to unlock it before the panel opens. Cancel still opens the panel.',
                         'The toolbar button shows a pulsing dot when a new version has been installed and the changelog has not been viewed yet.',
                     ]);
                 }
@@ -13247,46 +12921,21 @@ Version 1.4.1:
                 icon: '🔑',
                 title: 'API Configuration',
                 buildContent(body) {
-                    lead(body, 'Each Netskope tenant needs its own API token, encrypted with a passphrase you choose.');
-                    const tenantRow = document.createElement('div');
-                    Object.assign(tenantRow.style, { marginBottom: '10px' });
-                    const tenantLabel = document.createElement('div');
-                    tenantLabel.textContent = 'Detected Tenant:';
-                    Object.assign(tenantLabel.style, { fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '4px', fontFamily: 'Arial, sans-serif' });
-                    tenantRow.appendChild(tenantLabel);
-                    const tenantDisplay = document.createElement('div');
-                    tenantDisplay.textContent = 'my-tenant.goskope.com';
-                    Object.assign(tenantDisplay.style, {
-                        padding: '7px 10px', border: '1px solid #c3e6cb', borderRadius: '6px',
-                        background: '#d4edda', color: '#155724', fontWeight: 'bold',
-                        fontSize: '13px', fontFamily: 'monospace', display: 'inline-block'
+                    lead(body, 'The API key of each tenant lives in the toolbar\'s 🔑 Netskope API keys; this panel shows its state.');
+                    const keyRow = document.createElement('div');
+                    Object.assign(keyRow.style, {
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px',
+                        borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', background: '#d4edda',
+                        border: '1px solid #c3e6cb', color: '#155724', fontFamily: 'Arial, sans-serif', maxWidth: '420px'
                     });
-                    tenantRow.appendChild(tenantDisplay);
-                    body.appendChild(tenantRow);
-                    const expiries = [
-                        { bg: '#d4edda', color: '#155724', border: '#c3e6cb', text: '✅ Expires in 28 days (01/01/2027)' },
-                        { bg: '#fff3cd', color: '#856404', border: '#ffeaa7', text: '⚠️ Expires in 3 days' },
-                        { bg: '#f8d7da', color: '#721c24', border: '#f5c6cb', text: '⚠️ API Token EXPIRED' },
-                    ];
-                    const expiryWrap = document.createElement('div');
-                    expiryWrap.style.marginBottom = '10px';
-                    for (const e of expiries) {
-                        const el = document.createElement('div');
-                        el.textContent = e.text;
-                        Object.assign(el.style, {
-                            padding: '5px 10px', border: `1px solid ${e.border}`, borderRadius: '5px',
-                            background: e.bg, color: e.color, fontSize: '12px', fontWeight: 'bold',
-                            marginBottom: '4px', fontFamily: 'Arial, sans-serif'
-                        });
-                        expiryWrap.appendChild(el);
-                    }
-                    body.appendChild(expiryWrap);
+                    keyRow.appendChild(span('🔓 API key unlocked, expires 01/01/2027.'));
+                    keyRow.appendChild(span('🔑 Manage keys', { background: '#667eea', color: '#fff', borderRadius: '4px', padding: '3px 9px', fontSize: '11px' }));
+                    body.appendChild(keyRow);
+                    caption(body, 'Yellow when the tenant has no key, the key is locked or it expired.');
                     bullets(body, [
-                        'Token saved: the API Configuration panel collapses automatically. Expand it to review expiry or remove the token.',
-                        'Passphrase: encrypts your token with AES-256. You enter it once per browser session and the session stays unlocked until you close the tab or click Lock.',
-                        'Forgot passphrase: the "Forgot Passphrase? Delete Token" option removes the encrypted token so you can save a new one with a fresh passphrase.',
-                        'Token expiry: tokens nearing expiry show a yellow warning banner; expired tokens show a red banner with a click-to-update link.',
-                        'The Change Tracker can use the token saved here for its Newly Registered Domains reviews, when you turn the API on there. The token then also needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.',
+                        '🔑 Manage keys opens the Netskope API keys window on top: set, replace, test, lock or remove the key of each tenant.',
+                        'When the tool needs the key, the toolbar asks for its passphrase once per browser session, in a window that always shows above everything.',
+                        'The same keys serve the Change Tracker Newly Registered Domains reviews and any other tool that needs the Netskope API.',
                     ]);
                 }
             },
@@ -13581,7 +13230,7 @@ Version 1.4.1:
                     bullets(body, [
                         'Tenant hosts: one hostname per region, entered without https:// or a trailing slash. Input borders turn green when a value is saved.',
                         'Tenant override: the ⚡ Override dropdown in the API Configuration header lets you switch to any configured tenant for the current session without changing the auto-detection logic.',
-                        'If the override tenant has a saved token and the session is not yet unlocked, you will be prompted for the passphrase when switching.',
+                        'If the override tenant has an API key that is not unlocked yet, the toolbar asks for its passphrase when switching.',
                     ]);
                 }
             },
@@ -13844,41 +13493,8 @@ Version 1.4.1:
 
         const tenant = detectTenant();
 
-        if (tenant && Storage.hasToken(tenant) && !SessionManager.hasPassphrase(tenant)) {
-            let attempts = 0;
-            const maxAttempts = 3;
-
-            while (attempts < maxAttempts) {
-                try {
-                    const passphrase = await UI.promptPassphrase(
-                        attempts === 0 ? 'Unlock API Token' : `Unlock API Token (Attempt ${attempts + 1}/${maxAttempts})`,
-                        attempts === 0
-                            ? 'Your API token is encrypted. Please enter your passphrase to unlock it for this browser session.'
-                            : '❌ Invalid passphrase. Please try again.',
-                        false
-                    );
-
-                    if (await Storage.verifyPassphrase(tenant, passphrase)) {
-                        SessionManager.setPassphrase(tenant, passphrase);
-                        break;
-                    } else {
-                        attempts++;
-                        if (attempts >= maxAttempts) { alert('❌ Maximum unlock attempts reached.'); return; }
-                    }
-                } catch (error) {
-                    if (error.message === 'USER_CANCELLED') return;
-                    if (error.message === 'FORGOT_PASSPHRASE') {
-                        if (confirm('⚠️ WARNING: This will permanently delete your encrypted API token.\n\nYou will need to save a new API token with a new passphrase.\n\nAre you sure?')) {
-                            Storage.removeToken(tenant);
-                            SessionManager.clear(tenant);
-                            break;
-                        } else return;
-                    }
-                    alert('❌ Failed to unlock token. Error: ' + error.message);
-                    return;
-                }
-            }
-        }
+        // Unlocked now so the lists load without a prompt later; Cancel still opens the tool
+        if (tenant && netskopeApi.status(tenant).hasKey) await netskopeApi.unlock(tenant, { caller: 'URL Lists' });
 
         modal.style.display = 'flex';
         if (backdrop) backdrop.style.display = 'block';
@@ -13897,9 +13513,10 @@ Version 1.4.1:
             }
         }
 
-        await buildTokenUI(tenant);
+        buildTokenUI(tenant);
 
-        const hasToken         = Storage.hasToken(tenant);
+        const keyState         = netskopeApi.status(tenant);
+        const hasToken         = keyState.hasKey;
         const apiConfigContent = document.getElementById('api-config-content');
         const collapseIcon     = document.getElementById('api-config-collapse-icon');
         const expiryAlert      = document.getElementById('api-expiry-alert');
@@ -13908,9 +13525,8 @@ Version 1.4.1:
             apiConfigContent.style.display = 'none';
             collapseIcon.style.transform   = 'rotate(-90deg)';
 
-            const expiry = Storage.getExpiry(tenant);
-            if (expiry && expiryAlert) {
-                const expiryDate = new Date(expiry.expiryDate);
+            if (keyState.expiresAt && expiryAlert) {
+                const expiryDate = new Date(keyState.expiresAt);
                 const timeLeft   = expiryDate - new Date();
                 const daysLeft   = Math.floor(timeLeft / (1000 * 60 * 60 * 24));
 
@@ -13949,49 +13565,15 @@ Version 1.4.1:
      *  API FUNCTIONS
      * ==========================================================*/
 
-    // The message for a request that never reached Netskope. Tampermonkey refuses hosts the script
-    // does not list in @connect (or that were set to "Never" in its settings) the same way.
-    function apiNetworkError(host, r) {
-        const detail = String((r && (r.error || r.statusText)) || '').trim();
-        if (/not permitted|refused|@connect|blacklist|not allowed/i.test(detail)) {
-            return `Tampermonkey did not allow the request to ${host} (${detail}). In Tampermonkey, open the Tools Toolbar script, Settings tab, and remove ${host} from any "blocked" or "never" list, or allow it when Tampermonkey asks.`;
-        }
-        return `Network error: the request did not reach ${host}${detail ? ` (${detail})` : ''}. Check that the tenant host is right and that this browser can open https://${host}.`;
-    }
-
+    // Every call goes through the toolbar's Netskope API module, which unlocks the key when needed
     async function makeApiRequest(method, endpoint, data, onSuccess, onError) {
         const tenant = getActiveTenant();
-
-        if (!tenant)                        return UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning');
-        if (!Storage.hasToken(tenant))      return UI.showStatus('⚠️ Please save your API token first', 'warning');
-        if (Storage.isTokenExpired(tenant)) return UI.showStatus('⚠️ API token has expired. Please update your token.', 'warning');
-
-        let token;
-        try {
-            token = await Storage.getToken(tenant);
-        } catch (error) {
-            if (error.message === 'NO_PASSPHRASE')    { UI.showStatus('⚠️ Passphrase required. Please reopen the tool.', 'warning'); return; }
-            if (error.message === 'INVALID_PASSPHRASE') { UI.showStatus('❌ Invalid passphrase. Please close and reopen the tool.', 'error'); SessionManager.clear(); return; }
-            UI.showStatus('❌ Failed to retrieve token', 'error');
-            return;
-        }
-
-        GM_xmlhttpRequest({
-            method,
-            url: `https://${tenant}${endpoint}`,
-            headers: { 'Netskope-Api-Token': token, 'Content-Type': 'application/json' },
-            data: data ? JSON.stringify(data) : undefined,
-            onload: (response) => {
-                if (response.status >= 200 && response.status < 300) {
-                    try { onSuccess(JSON.parse(response.responseText)); } catch (e) { onSuccess(null); }
-                } else {
-                    let errorMsg = `Error ${response.status}`;
-                    try { const d = JSON.parse(response.responseText); errorMsg = d.message || d.error || errorMsg; } catch (e) { errorMsg = response.responseText || errorMsg; }
-                    if (onError) onError(errorMsg);
-                }
-            },
-            onerror: (r) => { if (onError) onError(apiNetworkError(tenant, r)); }
-        });
+        if (!tenant) return UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning');
+        const r = await netskopeApi.request(tenant, method, endpoint, data || null, { caller: 'URL Lists' });
+        buildTokenUI(tenant);
+        if (r.ok) return onSuccess(r.data);
+        if (['noKey', 'expired', 'locked'].includes(r.code)) return UI.showStatus('⚠️ ' + r.error, 'warning');
+        if (onError) onError(r.error || `Error ${r.status}`);
     }
 
     async function fetchUrlLists() {
@@ -15643,47 +15225,6 @@ Version 1.4.1:
         initializeModal();
         console.log('✅ Netskope URL List Manager initialized!');
     }
-
-    // Lets the Change Tracker call the Netskope API with the tokens saved here, without ever handing a token out.
-    suiteBridge.netskopeApi = {
-        hasToken: (host) => !!host && Storage.hasToken(host) && !Storage.isTokenExpired(host),
-        saveToken: (host, token, hours, passphrase) => Storage.saveToken(host, token, hours, passphrase),
-        tokenExpiry: (host) => { const e = Storage.getExpiry(host); return (e && e.expiryDate) || null; },
-        async request(host, method, path, body) {
-            // Only the tenants set up in this browser: a token is never sent anywhere else
-            if (!Object.values(TENANT_TYPE_TO_KEY).some(k => String(GM_getValue(k, '') || '').trim().toLowerCase() === String(host || '').toLowerCase())) {
-                return { ok: false, status: 0, error: 'This host is not one of your Netskope tenants.' };
-            }
-            if (!host || !Storage.hasToken(host)) return { ok: false, status: 0, error: 'noToken' };
-            if (Storage.isTokenExpired(host)) return { ok: false, status: 0, error: 'expired' };
-            if (!SessionManager.hasPassphrase(host)) {
-                for (let attempt = 0; attempt < 3 && !SessionManager.hasPassphrase(host); attempt++) {
-                    let passphrase;
-                    try {
-                        passphrase = await UI.promptPassphrase('Unlock API Token',
-                            attempt ? '❌ Invalid passphrase. Please try again.' : `The Change Tracker needs your ${host} API token. Enter its passphrase to unlock it for this browser session.`, false);
-                    } catch (e) { return { ok: false, status: 0, error: 'The API token stays locked.' }; }
-                    if (await Storage.verifyPassphrase(host, passphrase)) SessionManager.setPassphrase(host, passphrase);
-                }
-                if (!SessionManager.hasPassphrase(host)) return { ok: false, status: 0, error: 'Wrong passphrase: the API token stays locked.' };
-            }
-            let token;
-            try { token = await Storage.getToken(host); } catch (e) { return { ok: false, status: 0, error: 'The API token could not be unlocked.' }; }
-            return new Promise(resolve => GM_xmlhttpRequest({
-                method, url: `https://${host}${path}`, timeout: 60000,
-                headers: { 'Netskope-Api-Token': token, 'Content-Type': 'application/json', Accept: 'application/json' },
-                data: body ? JSON.stringify(body) : undefined,
-                onload: (r) => {
-                    let data = null;
-                    try { data = r.responseText ? JSON.parse(r.responseText) : null; } catch (e) { data = null; }
-                    const ok = r.status >= 200 && r.status < 300;
-                    resolve({ ok, status: r.status, data, error: ok ? null : (data && (data.message || data.error)) || `HTTP ${r.status}` });
-                },
-                onerror: (r) => resolve({ ok: false, status: 0, error: apiNetworkError(host, r) }),
-                ontimeout: () => resolve({ ok: false, status: 0, error: 'Netskope did not answer in time' }),
-            }));
-        },
-    };
 
         return function register() {
             initialize();
@@ -18178,8 +17719,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.6.1';
-    const CHANGELOG = `Version 2.6.1:
+    const SCRIPT_VERSION = '2.7.0';
+    const CHANGELOG = `Version 2.7.0:
+- Newly Registered Domains: the Netskope API uses the keys in the toolbar's 🔑 Netskope API keys. "🔑 Manage key" opens them, and the API keeps working when the URL List Editor is turned off.
+
+Version 2.6.1:
 - Newly Registered Domains: profiles whose name contains "Newly Registered Domain" (singular) now also count by themselves, like the ones with "Newly Registered Domains".
 
 Version 2.6.0:
@@ -24380,8 +23924,8 @@ Version 1.4.3:
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
                         'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
                         '"↺ Check now" next to it in Configure looks right away, without waiting for the next automatic check.',
-                        'The API can be set up from the review ("Set up the API") or in the profiles window: add the token there, test it and turn it on per tenant. The token is shared with the URL Lists Editor.',
-                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
+                        'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the Netskope API keys of the toolbar, then test it and turn it on per tenant.',
+                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
                     ]);
                 }
@@ -24875,14 +24419,15 @@ Version 1.4.3:
         return parts.join(' ');
     }
 
-    /* ── Netskope API mode (optional, uses the URL Lists Editor tokens) ── */
+    /* ── Netskope API mode (optional, through the toolbar's Netskope API keys) ── */
 
     const NRD_API_KEY     = 'changeTrackerNrdApi';   // { EMA: true, ... } in this browser only
     const NRD_LOOKUP_PATH = '/api/v2/nsiq/urllookup';
     const NRD_DEST_PATH   = '/api/v2/profiles/destinations';
     const NRD_PLACEHOLDER = '#No values';
     const nrdApiOn = () => GM_getValue(NRD_API_KEY, null) || {};
-    const nrdBridge = () => suiteBridge.netskopeApi || null;
+    const nrdApiCall = (host, method, path, body) => netskopeApi.request(host, method, path, body, { caller: 'Change Tracker' });
+    const nrdHasKey = (host) => { const st = netskopeApi.status(host); return st.hasKey && !st.expired; };
     const nrdLookupKey = (domain) => String(domain || '').trim().replace(/^\*\./, '').toLowerCase();
     const nrdIsNrdCategory = (cats) => (cats || []).some(c => /newly registered domain|newly observed domain/i.test(c));
 
@@ -24906,11 +24451,10 @@ Version 1.4.3:
 
     // { ok, map: { 'a.com': ['Business'] } } with the predefined categories, 50 domains per call
     async function nrdApiLookup(host, domains) {
-        const bridge = nrdBridge();
         const keys = [...new Set(domains.map(nrdLookupKey).filter(Boolean))];
         const map = {};
         for (let i = 0; i < keys.length; i += 50) {
-            const r = await bridge.request(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: keys.slice(i, i + 50) } });
+            const r = await nrdApiCall(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: keys.slice(i, i + 50) } });
             if (!r.ok) return { ok: false, status: r.status, error: r.error };
             ((r.data && r.data.result) || []).forEach(x => {
                 map[String(x.url).toLowerCase()] = (x.categories || []).filter(c => c.type === 'predefined').map(c => c.name || '');
@@ -24920,39 +24464,35 @@ Version 1.4.3:
     }
 
     async function nrdApiProfile(host, name) {
-        const bridge = nrdBridge();
-        const list = await bridge.request(host, 'GET', `${NRD_DEST_PATH}?filter=${encodeURIComponent(`name co "${name}"`)}`);
+        const list = await nrdApiCall(host, 'GET', `${NRD_DEST_PATH}?filter=${encodeURIComponent(`name co "${name}"`)}`);
         if (!list.ok) return list;
         const matches = ((list.data && list.data.elements) || []).filter(p => p.name === name);
         if (!matches.length) return { ok: false, error: `no Destination Profile called "${name}"` };
         if (matches.length > 1) return { ok: false, error: `${matches.length} profiles are called "${name}"` };
-        return bridge.request(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(matches[0].id)}?details=true`);
+        return nrdApiCall(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(matches[0].id)}?details=true`);
     }
 
     const nrdApiError = (r, what) => r.status === 403
         ? `the token has no permission for ${what}. Ask for a token that includes it.`
-        : r.error === 'noToken' ? 'no API token saved for this tenant in the URL Lists Editor.'
-        : r.error === 'expired' ? 'the API token expired: save a new one in the URL Lists Editor.'
+        : r.code === 'noKey' ? 'no API key saved for this tenant: set one in 🔑 Netskope API keys.'
+        : r.code === 'expired' ? 'the API key expired: set a new one in 🔑 Netskope API keys.'
+        : r.code === 'locked' ? 'the API key stays locked.'
         : (r.error || `Netskope answered ${r.status}`);
 
     // Tests the token of one tenant without changing anything.
     async function nrdApiTest(type) {
-        const bridge = nrdBridge();
-        if (!bridge) return '⚠ Turn on the URL Lists Editor in the toolbar settings to use the Netskope API.';
         const host = nrdHostOf(type);
         if (!host) return `⚠ No ${type} tenant host is set up in the URL Lists Editor.`;
-        if (!bridge.hasToken(host)) return `⚠ No API token for ${type}: save one in the URL Lists Editor.`;
-        const look = await bridge.request(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: ['example.com'] } });
+        if (!nrdHasKey(host)) return `⚠ No API token for ${type}: set one in 🔑 Netskope API keys.`;
+        const look = await nrdApiCall(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: ['example.com'] } });
         if (!look.ok) return `⛔ ${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`;
-        const dest = await bridge.request(host, 'GET', `${NRD_DEST_PATH}?limit=1`);
+        const dest = await nrdApiCall(host, 'GET', `${NRD_DEST_PATH}?limit=1`);
         if (!dest.ok) return `⛔ ${type}: ${nrdApiError(dest, '/api/v2/profiles/destinations')}`;
         return `✔ ${type}: the token can look up categories and read Destination Profiles. Changing a profile also needs PATCH on /api/v2/profiles/destinations, checked when you apply.`;
     }
 
     // Builds the proposal for the due domains of the tenants with the API on.
     async function nrdApiPlan(due) {
-        const bridge = nrdBridge();
-        if (!bridge) return { ok: false, message: 'Turn on the URL Lists Editor in the toolbar settings to use the Netskope API.' };
         const on = nrdApiOn();
         const rows = [], notes = [], notTracked = [], profiles = [];
         const byTenant = new Map();
@@ -24960,7 +24500,7 @@ Version 1.4.3:
         if (!byTenant.size) return { ok: false, message: 'The Netskope API is not turned on for these tenants: open ⚙ Profiles.' };
         for (const [type, items] of byTenant) {
             const host = nrdHostOf(type);
-            if (!host || !bridge.hasToken(host)) { notes.push(`No API token for ${type}: save one in the URL Lists Editor.`); continue; }
+            if (!host || !nrdHasKey(host)) { notes.push(`No API token for ${type}: set one in 🔑 Netskope API keys.`); continue; }
             const look = await nrdApiLookup(host, items.map(i => i.domain));
             if (!look.ok) { notes.push(`${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`); continue; }
             items.forEach(it => {
@@ -24989,7 +24529,6 @@ Version 1.4.3:
 
     // Removes the domains marked "remove" profile by profile, then logs everything in the original tickets.
     async function nrdApiApply(plan) {
-        const bridge = nrdBridge();
         const notes = [];
         let pending = false;
         const groups = new Map();
@@ -25006,13 +24545,13 @@ Version 1.4.3:
             if (first.data.status && first.data.status !== 'applied') { notes.push(`${name}: skipped, it has pending changes in Netskope. Apply or discard them first.`); continue; }
             const values = nrdRebuildValues(first.data.values, new Set(rows.map(r => String(r.item.domain).trim().toLowerCase())));
             // Nobody may have changed it while the proposal was being reviewed
-            const again = await bridge.request(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(first.data.id)}?details=true`);
+            const again = await nrdApiCall(host, 'GET', `${NRD_DEST_PATH}/${encodeURIComponent(first.data.id)}?details=true`);
             if (!again.ok || JSON.stringify(again.data.values) !== JSON.stringify(first.data.values) || again.data.modify_time !== first.data.modify_time) {
                 notes.push(`${name}: it changed in Netskope while you were reviewing, nothing was changed. Check again.`);
                 continue;
             }
             const d = again.data;
-            const res = await bridge.request(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}`,
+            const res = await nrdApiCall(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}`,
                 { name: d.name, description: d.description || '', type: d.type, label_ids: d.label_ids || [], values });
             if (!res.ok) { notes.push(`${name}: not changed, ${nrdApiError(res, 'PATCH /api/v2/profiles/destinations')}`); continue; }
             if (!res.data || res.data.status !== 'applied') pending = true;
@@ -25137,11 +24676,11 @@ Version 1.4.3:
         ruleTitle.textContent = 'Found by the name, in the last 90 days';
         const ruleList = css(mk('div', { id:'ct-nrd-rule-list' }), { fontSize:'12px', color:'#555', lineHeight:'1.6' });
         ruleList.textContent = 'Loading…';
-        // The Netskope API is a personal choice per tenant: it uses this browser's URL Lists Editor tokens
+        // The Netskope API is a personal choice per tenant: it uses the toolbar's Netskope API keys
         const apiTitle = css(mk('div'), { fontSize:'12px', fontWeight:'bold', margin:'16px 0 4px' });
         apiTitle.textContent = 'Netskope API (this browser only, optional)';
         const apiHelp = css(mk('div'), { fontSize:'11px', color:'#666', lineHeight:'1.5', marginBottom:'6px' });
-        apiHelp.textContent = 'With the API on, the review looks up the categories and takes the domains out of the profile for you. It uses the API token saved in the URL Lists Editor, which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.';
+        apiHelp.textContent = 'With the API on, the review looks up the categories and takes the domains out of the profile for you. It uses the key of the tenant in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.';
         const apiBox = css(mk('div', { id:'ct-nrd-api' }), { display:'flex', flexDirection:'column', gap:'6px' });
         const smallBtn = { padding:'2px 8px', fontSize:'11px', border:'1px solid #c0c8f0', borderRadius:'4px', background:'#fff', color:'#667eea', cursor:'pointer' };
         Object.keys(TENANT_TYPE_TO_KEY).forEach(type => {
@@ -25157,45 +24696,24 @@ Version 1.4.3:
             test.textContent = 'Test';
             const addTok = css(mk('button', { type:'button' }), smallBtn);
             addTok.dataset.nrdTokenAdd = type;
+            addTok.textContent = '🔑 Manage key';
             const status = css(mk('span'), { color:'#555', flex:'1 1 100%' });
             status.dataset.nrdApiStatus = type;
             const res = css(mk('span'), { color:'#555', flex:'1 1 100%' });
             res.dataset.nrdApiResult = type;
-            // Token form: saves into the URL Lists Editor storage, so both tools share the same token
-            const form = css(mk('div'), { display:'none', flex:'1 1 100%', gap:'6px', flexWrap:'wrap', alignItems:'center' });
-            const field = (key, type2, placeholder, width) => {
-                const i = css(mk('input', { type: type2, placeholder }), { padding:'4px', fontSize:'12px', border:'1px solid #ccc', borderRadius:'4px', width });
-                i.dataset[key] = type;
-                return i;
-            };
-            const tokIn = field('nrdTokenInput', 'password', 'API token (v2)', '200px');
-            const daysIn = field('nrdTokenDays', 'number', 'Valid for (days)', '110px');
-            daysIn.value = '90';
-            daysIn.min = '1';
-            const passIn = field('nrdTokenPass', 'password', 'Passphrase to encrypt it', '160px');
-            const saveTok = css(mk('button', { type:'button' }), Object.assign({}, smallBtn, { background:'#667eea', color:'#fff', border:'none' }));
-            saveTok.dataset.nrdTokenSave = type;
-            saveTok.textContent = 'Save token';
-            const formHelp = css(mk('div'), { flex:'1 1 100%', fontSize:'11px', color:'#777' });
-            formHelp.textContent = 'The token is encrypted in this browser with your passphrase and shared with the URL Lists Editor. You enter the passphrase once per browser session.';
-            form.append(tokIn, daysIn, passIn, saveTok, formHelp);
 
             const refresh = (extra) => {
-                const bridge = nrdBridge();
-                let text, canToken = false;
-                if (!bridge) text = 'Turn on the URL Lists Editor in the toolbar settings (Tools) to use the API.';
-                else if (!host) text = 'No host set up for this tenant in the URL Lists Editor.';
-                else if (!bridge.hasToken(host)) { text = 'No API token saved.'; canToken = true; }
+                let text;
+                if (!host) text = 'No host set up for this tenant in the URL Lists Editor.';
                 else {
-                    const exp = bridge.tokenExpiry(host);
-                    text = `Token saved${exp ? ', valid until ' + nrdDate(exp) : ''}.`;
-                    canToken = true;
+                    const st = netskopeApi.status(host);
+                    text = !st.hasKey ? 'No API key saved.' : st.expired ? 'The API key expired.'
+                        : `Key saved${st.expiresAt ? ', valid until ' + nrdDate(st.expiresAt) : ''}.`;
+                    text += cb.checked ? ' API on.' : ' API off.';
                 }
-                if (bridge && host) text += cb.checked ? ' API on.' : ' API off.';
                 status.textContent = text + (extra ? ' ' + extra : '');
-                cb.disabled = test.disabled = !bridge || !host;
-                addTok.style.display = canToken ? '' : 'none';
-                addTok.textContent = bridge && host && bridge.hasToken(host) ? 'Replace token' : '+ Add token';
+                cb.disabled = test.disabled = !host;
+                addTok.style.display = host ? '' : 'none';
             };
             cb.onchange = () => {
                 const on = nrdApiOn();
@@ -25204,20 +24722,11 @@ Version 1.4.3:
                 refresh(cb.checked ? `✔ The review can now use the API for ${type}.` : '');
             };
             test.onclick = () => nrdRun(test, 'Testing…', async () => { res.textContent = await nrdApiTest(type); });
-            addTok.onclick = () => { form.style.display = form.style.display === 'none' ? 'flex' : 'none'; };
-            saveTok.onclick = () => nrdRun(saveTok, 'Saving…', async () => {
-                const days = Math.round(Number(daysIn.value));
-                if (!tokIn.value.trim() || !passIn.value) { res.textContent = '⚠ Enter the token and a passphrase.'; return; }
-                if (!(days >= 1 && days <= 365)) { res.textContent = '⚠ Enter how many days the token is valid, 1 to 365.'; return; }
-                await nrdBridge().saveToken(host, tokIn.value.trim(), days * 24, passIn.value);
-                tokIn.value = passIn.value = '';
-                form.style.display = 'none';
-                refresh('✔ Token saved.');
-                res.textContent = 'Testing the token…';
-                res.textContent = await nrdApiTest(type);
-            });
+            addTok.onclick = () => netskopeApi.openManager({ host, caller: 'Change Tracker' });
+            // The state follows the keys window while this window is open
+            const stop = netskopeApi.onChange(() => { if (!row.isConnected) return stop(); refresh(); });
             refresh();
-            row.append(lab, test, addTok, status, form, res);
+            row.append(lab, test, addTok, status, res);
             apiBox.appendChild(row);
         });
         modal.append(hdr, help, rows, addBtn, saveBtn, msg, ruleTitle, ruleList, apiTitle, apiHelp, apiBox);
@@ -25974,7 +25483,7 @@ Version 1.4.3:
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue,
-                bridge: suiteBridge, nrdRebuildValues, nrdApiLookup,
+                nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary };
         }
 
