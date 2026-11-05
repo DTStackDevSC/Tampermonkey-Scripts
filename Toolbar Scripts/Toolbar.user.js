@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.18.0
+// @version      2.19.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.18.0';
-    const CHANGELOG = `Version 2.18.0:
+   const SCRIPT_VERSION = '2.19.0';
+    const CHANGELOG = `Version 2.19.0:
+- The URL List Editor is now the Destination Profile Editor: fetch every Destination Profile, search a domain in all of them, create profiles and edit their name, description, match type and values, with the same log toolbar. URL Lists are no longer used.
+- Every Destination Profile change is applied in Netskope with a change note that shows in its audit log. A window asks for it after each save, reminds that it is usually the RITM and fills it in with 🎫 Insert RITM. "Leave pending" applies nothing and opens the console instead.
+- Change Tracker: Newly Registered Domains removed through the API are applied in Netskope with the note "Domain is no longer categorized as Newly Registered Domain".
+- 🔑 Netskope API keys: Test now checks access to Destination Profiles.
+
+Version 2.18.0:
 - New 🔑 Netskope API keys in the toolbar settings: one place to set, replace, test, lock or remove the Netskope API key of each tenant. It is part of the toolbar, so it works whatever tools you chose. Your saved keys are kept.
 - The passphrase of a key is now asked in one window that always shows above everything else, even other open panels, and several requests share one prompt.
 - URL List Editor: the API key form is replaced by a status line with "🔑 Manage keys".
@@ -686,7 +692,7 @@ Version 1.0.0:
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
         { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
-        { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'URL List Editor', description: 'Create and update Netskope URL lists from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+        { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Destination Profile Editor', description: 'Find, create and edit Netskope Destination Profiles from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
         { id: 'policyDeletionReminder', pages: ['https://*.goskope.com/*'], name: 'Policy Deletion Reminder', description: 'Register a reminder to delete a temporary policy', site: 'netskope', script: '|Toolbar| Policy Deletion Reminder',
           exact: [], prefixes: ['pdr'] },
@@ -3765,7 +3771,9 @@ Version 1.0.0:
             { label: 'Hours', value: 1 }, { label: 'Days', value: 24 },
             { label: 'Weeks', value: 168 }, { label: 'Months', value: 720 },
         ];
-        const TEST_PATH = '/api/v2/policy/urllist';
+        const TEST_PATH = '/api/v2/profiles/destinations?limit=1';
+        const DEPLOY_PATH = '/api/v2/profiles/destinations/deploy';
+        const NOTE_MAX = 100;   // Netskope's limit for change_note
         const memory = {};             // host → passphrase, for this tab
         const unlocking = {};          // host → the prompt already waiting, shared by every call
         const listeners = new Set();
@@ -4075,6 +4083,59 @@ Version 1.0.0:
             }));
         }
 
+        /* ── Applying Destination Profile changes with an audit note ── */
+
+        // Asks the note that goes with the change into Netskope's audit. Answers the note, or null for "Leave pending".
+        function askChangeNote({ caller, ticket, summary } = {}) {
+            return new Promise(resolve => {
+                const d = openDialog('nsapi-changenote', `
+                    <div class="head"><h2>✅ Apply changes</h2></div>
+                    <div class="body">
+                        ${summary ? `<p><b>${esc(summary)}</b></p>` : ''}
+                        <p>The change is saved and pending. Apply it now with a change note: it shows in Netskope's audit log.</p>
+                        <input type="text" id="nsapi-note" maxlength="${NOTE_MAX}" placeholder="Change note" autocomplete="off" style="width:100%">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px">
+                            <span class="help">Usually the RITM number, as in Apply Changes in the console.</span>
+                            <span class="help" id="nsapi-note-count">0/${NOTE_MAX}</span>
+                        </div>
+                        <button type="button" class="small" id="nsapi-note-ritm" style="margin-top:8px"${ticket ? '' : ' hidden'}>🎫 Insert RITM${ticket ? ` (${esc(ticket)})` : ''}</button>
+                    </div>
+                    <div class="foot">
+                        <button type="button" id="nsapi-note-later" title="Nothing is applied: apply it later in the console">Leave pending</button>
+                        <button type="button" class="primary" id="nsapi-note-apply" disabled>Apply now</button>
+                    </div>`);
+                const note = d.querySelector('#nsapi-note'), count = d.querySelector('#nsapi-note-count'), apply = d.querySelector('#nsapi-note-apply');
+                const sync = () => { count.textContent = `${note.value.length}/${NOTE_MAX}`; apply.disabled = !note.value.trim(); };
+                const finish = (v) => { d.close(); d.remove(); resolve(v); };
+                note.addEventListener('input', sync);
+                note.onkeydown = e => { if (e.key === 'Enter' && note.value.trim()) { e.preventDefault(); finish(note.value.trim()); } };
+                d.querySelector('#nsapi-note-ritm').onclick = () => {
+                    const start = note.selectionStart ?? note.value.length, end = note.selectionEnd ?? note.value.length;
+                    note.value = (note.value.slice(0, start) + ticket + note.value.slice(end)).slice(0, NOTE_MAX);
+                    sync();
+                    note.focus();
+                };
+                apply.onclick = () => finish(note.value.trim());
+                d.querySelector('#nsapi-note-later').onclick = () => finish(null);
+                d.addEventListener('cancel', e => { e.preventDefault(); finish(null); });
+                setTimeout(() => note.focus(), 30);
+            });
+        }
+
+        // Applies pending Destination Profiles (at most 50 per call) with the audit note
+        async function deploy(host, ids, note, { caller } = {}) {
+            const text = String(note || '').trim().slice(0, NOTE_MAX);
+            if (!text) return { ok: false, status: 0, error: 'A change note is needed to apply changes.' };
+            const list = [...new Set((ids || []).map(String))];
+            const applied = [];
+            for (let i = 0; i < list.length; i += 50) {
+                const r = await request(host, 'POST', DEPLOY_PATH, { ids: list.slice(i, i + 50), change_note: text }, { caller });
+                if (!r.ok) return Object.assign(r, { applied });
+                applied.push(...((r.data && r.data.applied) || []).map(String));
+            }
+            return { ok: true, status: 200, applied };
+        }
+
         /* ── The "🔑 Netskope API keys" window ── */
 
         function stateOf(host) {
@@ -4174,9 +4235,9 @@ Version 1.0.0:
                     b.disabled = true;
                     msg.textContent = 'Testing…';
                     const r = await request(h, 'GET', TEST_PATH, null, { caller: 'Test' });
-                    msg.textContent = r.ok ? '✔ The key works: Netskope answered with your URL lists.'
+                    msg.textContent = r.ok ? '✔ The key works: Netskope answered with your Destination Profiles.'
                         : r.status === 401 ? '⛔ Netskope refused the key (401): it may be expired or revoked. Replace it.'
-                        : r.status === 403 ? '⚠ The key works but has no permission for URL lists (403). Tools that need other permissions may still work.'
+                        : r.status === 403 ? '⚠ The key works but has no permission for Destination Profiles (403). Tools that need other permissions may still work.'
                         : '⛔ ' + r.error;
                     b.disabled = false;
                 }
@@ -4189,7 +4250,7 @@ Version 1.0.0:
         }
 
         const api = {
-            tenants, status, request, unlock, lock, openManager, saveKey,
+            tenants, status, request, unlock, lock, openManager, saveKey, askChangeNote, deploy,
             onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); },
         };
         // Test only: the automated tests switch this on in their own storage
@@ -12089,8 +12150,15 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.0';
-    const CHANGELOG = `Version 1.7.0:
+    const SCRIPT_VERSION = '2.0.0';
+    const CHANGELOG = `Version 2.0.0:
+- Now the Destination Profile Editor: everything works on Destination Profiles instead of URL Lists. Fetch every profile with its match type and status, filter by name and search a domain in all of them (wildcards included, comment lines left out).
+- Create a profile with a name, a description, a match type (Exact not case sensitive, Exact case sensitive, or Regex) and its values.
+- Open a profile from a result, by its ID or from a custom category, and change its name, description, match type or values. The profile is read again before saving, so a change made meanwhile in Netskope is never overwritten, and its labels are never touched. Renaming warns first, since other parts of the scripts find profiles by name.
+- After each save, the Apply changes window asks for a change note (usually the RITM, filled in with 🎫 Insert RITM) and applies the change in Netskope, so it shows in the audit log. Leave pending opens the console to apply it there instead.
+- Category by ID shows the Destination Profiles of the category as links.
+
+Version 1.7.0:
 - The API key of each tenant is now managed in the toolbar's 🔑 Netskope API keys. The API Configuration panel shows the state of the key and a "🔑 Manage keys" button. Your saved keys and passphrases still work.
 - The passphrase prompt is the toolbar's own, always above every window.
 
@@ -12274,7 +12342,7 @@ Version 1.4.1:
 
         // Subtitle
         const subtitle = document.createElement('p');
-        subtitle.textContent = 'Netskope URL List Manager — Host configuration';
+        subtitle.textContent = 'Destination Profile Editor: host configuration';
         Object.assign(subtitle.style, {
             margin: '0 0 16px 0', color: '#888',
             fontSize: '12px', fontStyle: 'italic'
@@ -12456,7 +12524,7 @@ Version 1.4.1:
     };
 
     let isInitialized = false;
-    let currentUrlLists = [];
+    let currentProfiles = [];
     let temporaryTenant = null;
     let _lastCategoryData = null;
 
@@ -12726,7 +12794,7 @@ Version 1.4.1:
             padding: '4px 10px', fontSize: '11px', backgroundColor: '#667eea', color: 'white', border: 'none',
             borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap'
         }, { textContent: '🔑 Manage keys', id: 'api-manage-keys' });
-        manage.onclick = () => netskopeApi.openManager({ host: tenant, caller: 'URL Lists' });
+        manage.onclick = () => netskopeApi.openManager({ host: tenant, caller: 'Destination Profiles' });
         row.appendChild(manage);
         container.appendChild(row);
     }
@@ -12757,10 +12825,10 @@ Version 1.4.1:
     }
 
     async function applyTenantSwitch(tenantType, tenantHost) {
-        if (tenantHost && netskopeApi.status(tenantHost).hasKey) await netskopeApi.unlock(tenantHost, { caller: 'URL Lists' });
+        if (tenantHost && netskopeApi.status(tenantHost).hasKey) await netskopeApi.unlock(tenantHost, { caller: 'Destination Profiles' });
 
         temporaryTenant = tenantHost || null;
-        currentUrlLists = [];
+        currentProfiles = [];
         resetModal();
 
         const tenantDisplay = document.getElementById('tenant-display');
@@ -12903,12 +12971,12 @@ Version 1.4.1:
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent(body) {
-                    lead(body, 'Click the URL List Manager icon in the floating toolbar to open the tool.');
+                    lead(body, 'Click the Destination Profile Editor icon in the floating toolbar to open the tool.');
                     const pin = { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: '2px solid #667eea' };
                     body.appendChild(hrow([
                         menuMock([ toolSquare('📊'), menuSep(), toolSquare('≡', pin), menuSep(), toolSquare('🔎'), toolSquare('🔗') ])
                     ], { margin: '0 0 10px 0' }));
-                    caption(body, 'The ≡ URL List Manager button in the toolbar opens the main panel.');
+                    caption(body, 'The ≡ Destination Profile Editor button in the toolbar opens the main panel.');
                     bullets(body, [
                         'First run: a setup prompt asks you to enter the Netskope tenant hostnames for each region (EMA, EU, CE, APAC, AME). These are saved in script storage and only need to be entered once.',
                         'In the setup prompt, "Import from a backup file" restores your hosts and tokens from a toolbar backup.',
@@ -12941,14 +13009,14 @@ Version 1.4.1:
             },
             {
                 icon: '📋',
-                title: 'URL Lists',
+                title: 'Destination Profiles',
                 buildContent(body) {
-                    lead(body, 'Fetch all URL lists in the tenant, then filter by name or search by domain to find what you need.');
+                    lead(body, 'Fetch every Destination Profile of the tenant, then filter by name or search a domain to find what you need.');
                     const btnRow = document.createElement('div');
                     Object.assign(btnRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' });
                     for (const b of [
-                        { label: '🔍 Fetch URL Lists',  bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
-                        { label: '✨ Create New List', bg: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' },
+                        { label: '🔍 Fetch Destination Profiles',  bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+                        { label: '✨ Create Destination Profile', bg: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' },
                     ]) {
                         const btn = document.createElement('span');
                         btn.textContent = b.label;
@@ -12971,21 +13039,21 @@ Version 1.4.1:
                         row.textContent = placeholder;
                         return row;
                     };
-                    filterWrap.appendChild(mkFInput('🔍 Filter lists by name...'));
-                    filterWrap.appendChild(mkFInput('🔎 Search URL or domain across all lists…', '#f5576c'));
+                    filterWrap.appendChild(mkFInput('🔍 Filter profiles by name...'));
+                    filterWrap.appendChild(mkFInput('🔎 Search a URL or domain in every profile…', '#f5576c'));
                     body.appendChild(filterWrap);
                     const listCard = document.createElement('div');
                     Object.assign(listCard.style, {
                         padding: '10px 12px', border: '1px solid #667eea', borderRadius: '6px',
                         background: '#f0f0ff', maxWidth: '300px', marginBottom: '10px'
                     });
-                    listCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">Marketing_Domains</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">ID: 42 • 157 URLs</div>';
+                    listCard.innerHTML = '<div style="display:flex;justify-content:space-between;font-family:Arial,sans-serif;"><span style="font-weight:bold;font-size:13px;color:#333;">ES - Newly Registered Domains - Allow</span><span style="font-size:11px;font-weight:bold;color:#155724;background:#d4edda;border-radius:10px;padding:0 8px;">Applied</span></div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">Exact, not case sensitive • 24 values • modified by ana@…</div>';
                     body.appendChild(listCard);
-                    caption(body, 'Click any list card to open the edit view for that list.');
+                    caption(body, 'Click any profile to open its edit view. Every page of profiles is read, however many there are.');
                     bullets(body, [
-                        'Name filter: type part of a list name to narrow the visible results in real time.',
-                        'Domain search: type a URL or domain and click 🔎 Search to find every list that contains a match. Clearing the field restores the normal list view.',
-                        'Create New List: opens a form to enter a list name and URLs. After saving, the Netskope URL Lists page opens in a new tab.',
+                        'Name filter: type part of a profile name to narrow the results in real time.',
+                        'Domain search: type a URL or domain and click 🔎 Search to find every profile that holds it, wildcards included. Comment lines (# …) are not searched.',
+                        'Create Destination Profile: name (up to 100 characters), description (up to 200), match type (Exact not case sensitive, Exact case sensitive, or Regex) and values, with the log toolbar. Then Apply changes asks for the change note.',
                     ]);
                 }
             },
@@ -12993,7 +13061,7 @@ Version 1.4.1:
                 icon: '🔎',
                 title: 'Domain Lookup',
                 buildContent(body) {
-                    lead(body, 'Search for any domain or URL across every URL list in the tenant at once.');
+                    lead(body, 'Search for any domain or URL in every Destination Profile of the tenant at once.');
                     const searchRow = document.createElement('div');
                     Object.assign(searchRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '360px' });
                     const searchInput = document.createElement('div');
@@ -13017,13 +13085,13 @@ Version 1.4.1:
                         padding: '10px 12px', border: '1px solid #ccc', borderRadius: '8px',
                         background: '#fff', maxWidth: '360px', marginBottom: '10px'
                     });
-                    resultCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">Marketing_Domains</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;margin-bottom:6px;">ID: 42 • 157 total URLs • 3 matches</div><div style="font-size:12px;color:#667eea;font-weight:bold;cursor:pointer;font-family:Arial,sans-serif;">▶ Show matched entries (3)</div>';
+                    resultCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">API Evernote</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;margin-bottom:6px;">Exact, case sensitive • 1 match</div><div style="font-family:monospace;font-size:12px;color:#333;background:#f8f9fa;border-radius:4px;padding:2px 6px;">api.evernote.com</div>';
                     body.appendChild(resultCard);
                     bullets(body, [
                         'Protocol and port are stripped automatically — paste a full URL and only the domain is matched.',
-                        'Wildcard support: searching example.com also matches *.example.com entries in the lists, and searching *.example.com matches sub.example.com and similar entries.',
-                        'If URL lists have not been fetched yet, the tool fetches them automatically before searching.',
-                        'Click "✏️ Edit List" on any result card to open that list directly in the edit view.',
+                        'Wildcard support: searching example.com also matches *.example.com entries, and searching *.example.com matches sub.example.com and similar entries. Comment lines are not searched.',
+                        'If the profiles have not been fetched yet, the tool fetches them automatically before searching.',
+                        'Click "✏️ Edit" on any result card to open that profile in the edit view.',
                     ]);
                 }
             },
@@ -13031,7 +13099,7 @@ Version 1.4.1:
                 icon: '📝',
                 title: 'URL Log Toolbar',
                 buildContent(body) {
-                    lead(body, 'Four buttons below the URL textarea help you track which ticket added or removed each domain.');
+                    lead(body, 'Four buttons below the values of a profile help you track which ticket added or removed each domain.');
                     const logBtns = [
                         { label: '+ Log Entry',       bg: '#0073e6', color: '#fff', desc: 'Inserts a #RITM | Date | Name header line at the current cursor position. Pre-fills the ticket number from the open ServiceNow ticket and today\'s date.' },
                         { label: '🗑 Delete Selected', bg: '#e53935', color: '#fff', desc: 'Select domain lines in the textarea first, then click to comment them out (prefix #) and prepend a deletion log header with RITM, date, and name.' },
@@ -13077,7 +13145,7 @@ Version 1.4.1:
                 icon: '🏷️',
                 title: 'Category by ID',
                 buildContent(body) {
-                    lead(body, 'Look up a Netskope custom category by its numeric ID to see its name, status, and URL list assignments.');
+                    lead(body, 'Look up a Netskope custom category by its numeric ID to see its name, status and Destination Profiles.');
                     const inputRow = document.createElement('div');
                     Object.assign(inputRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '320px' });
                     const idInput = document.createElement('div');
@@ -13117,7 +13185,7 @@ Version 1.4.1:
                     Object.assign(idEl.style, { fontSize: '11px', color: '#888', marginBottom: '10px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(idEl);
                     const pillLabel = document.createElement('div');
-                    pillLabel.textContent = 'Included URL Lists:';
+                    pillLabel.textContent = 'Included Destination Profiles:';
                     Object.assign(pillLabel.style, { fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '5px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(pillLabel);
                     const pillRow = document.createElement('div');
@@ -13134,7 +13202,7 @@ Version 1.4.1:
                     card.appendChild(pillRow);
                     body.appendChild(card);
                     bullets(body, [
-                        'Included and Excluded URL List IDs appear as clickable pills (↗). Clicking one opens that list in the URL List by ID view.',
+                        'Included and Excluded Destination Profiles appear as clickable pills (↗). Clicking one opens that profile in the edit view. Old URL List ids, if any, are shown as plain text.',
                         'A "← Back to Category" button returns you to the category result without re-fetching.',
                         'Status badge: green = applied, yellow = pending, red = error.',
                         'Audit info (created by, modified by, timestamps) is shown at the bottom of the result card.',
@@ -13143,9 +13211,9 @@ Version 1.4.1:
             },
             {
                 icon: '🔗',
-                title: 'URL List by ID',
+                title: 'Profile by ID and editing',
                 buildContent(body) {
-                    lead(body, 'Fetch any URL list by its numeric ID to view its metadata and edit its URL entries in place.');
+                    lead(body, 'Open a Destination Profile by its ID (or from a result) to edit its name, description, match type and values.');
                     const inputRow = document.createElement('div');
                     Object.assign(inputRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '300px' });
                     const idInput = document.createElement('div');
@@ -13153,7 +13221,7 @@ Version 1.4.1:
                         flex: '1', padding: '8px 10px', border: '2px solid #00b4db', borderRadius: '6px',
                         background: '#fff', fontSize: '12px', color: '#aaa', fontFamily: 'monospace', fontStyle: 'italic'
                     });
-                    idInput.textContent = 'e.g. 43';
+                    idInput.textContent = 'e.g. 56a5524e-74e3-4579-9471-39700db5f9fc';
                     const lookupBtn = document.createElement('span');
                     lookupBtn.textContent = '🔍 Lookup';
                     Object.assign(lookupBtn.style, {
@@ -13169,15 +13237,25 @@ Version 1.4.1:
                         padding: '10px 12px', border: '1px solid #ccc', borderRadius: '8px',
                         background: '#f8f9fa', maxWidth: '360px', marginBottom: '10px'
                     });
-                    metaCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;margin-bottom:5px;">Marketing_Domains</div><div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#666;font-family:Arial,sans-serif;margin-bottom:4px;"><span><strong>ID:</strong> 43</span><span><strong>Type:</strong> exact</span><span><strong>URLs:</strong> 157</span><span style="padding:1px 7px;border-radius:10px;background:#d4edda;color:#155724;border:1px solid #c3e6cb;font-size:11px;font-weight:bold;">none</span></div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">Modified by <strong>j.smith@example.com</strong> on 01/06/2026</div>';
+                    metaCard.innerHTML = '<div style="display:flex;justify-content:space-between;font-family:Arial,sans-serif;margin-bottom:5px;"><span style="font-weight:bold;font-size:13px;color:#333;">API Evernote</span><span style="padding:1px 7px;border-radius:10px;background:#d4edda;color:#155724;border:1px solid #c3e6cb;font-size:11px;font-weight:bold;">Applied</span></div><div style="font-size:11px;color:#666;font-family:Arial,sans-serif;">ID 56a5524e-… · 1 value · modified by ana@… on 15/09/2026</div>';
                     body.appendChild(metaCard);
                     body.appendChild(hrow([
                         chip('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'),
                         chip('← Back', '#fff', { color: '#555', border: '1px solid #ccc' }),
                     ], { margin: '0 0 10px 0' }));
+                    const note = document.createElement('div');
+                    Object.assign(note.style, { border: '2px solid #667eea', borderRadius: '10px', padding: '10px 12px', maxWidth: '380px', margin: '4px 0 10px 0', fontFamily: 'Arial, sans-serif' });
+                    note.appendChild(span('✅ Apply changes', { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '6px' }));
+                    note.appendChild(span('RITM0123456', { display: 'block', fontFamily: 'monospace', fontSize: '12px', border: '1px solid #bbb', borderRadius: '5px', padding: '5px 8px', marginBottom: '4px' }));
+                    note.appendChild(span('Usually the RITM number, as in Apply Changes in the console.   11/100', { display: 'block', fontSize: '11px', color: '#777', marginBottom: '6px' }));
+                    note.appendChild(hrow([chip('🎫 Insert RITM', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Leave pending', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Apply now', '#667eea')], { gap: '6px', margin: '0' }));
+                    body.appendChild(note);
+                    caption(body, 'After every create or save: the change note goes into Netskope\'s audit log.');
                     bullets(body, [
-                        'The URL textarea and log button toolbar appear below the metadata card. Edit entries and click "💾 Save Changes" to push the update to Netskope.',
-                        'Pending badge: shows how many changes are queued for deployment in the tenant (yellow = pending, green = none).',
+                        'Save Changes reads the profile again first. If someone changed it in Netskope meanwhile, nothing is saved and ↺ Reload the profile appears.',
+                        'Only what you changed is sent, and the labels of the profile are never touched. A profile left without values is saved with "#No values".',
+                        'Apply now (it needs a change note, usually the RITM, and 🎫 Insert RITM fills it in) applies the change in Netskope. Leave pending keeps it pending and opens the console to apply it there.',
+                        'Renaming warns first: other parts of the scripts find profiles by their exact name, such as the Change Tracker Newly Registered Domains check.',
                         'When opened from a Category by ID result, "← Back to Category" restores the category view without re-fetching.',
                     ]);
                 }
@@ -13226,7 +13304,7 @@ Version 1.4.1:
                     Object.assign(overrideText.style, { fontSize: '12px', color: '#856404', fontFamily: 'Arial, sans-serif', fontWeight: 'bold' });
                     overrideRow.appendChild(overrideText);
                     body.appendChild(overrideRow);
-                    caption(body, 'Switching tenants resets the URL list view. The override clears when the modal is closed.');
+                    caption(body, 'Switching tenants resets the profile view. The override clears when the modal is closed.');
                     bullets(body, [
                         'Tenant hosts: one hostname per region, entered without https:// or a trailing slash. Input borders turn green when a value is saved.',
                         'Tenant override: the ⚡ Override dropdown in the API Configuration header lets you switch to any configured tenant for the current session without changing the auto-detection logic.',
@@ -13257,7 +13335,7 @@ Version 1.4.1:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Netskope URL List Manager • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Destination Profile Editor • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -13367,12 +13445,12 @@ Version 1.4.1:
 
         // Title
         const titleDiv = UI.createElement('div', { position: 'absolute', top: '12px', left: '12px', fontSize: '12px', color: '#333', fontWeight: 'bold' });
-        titleDiv.textContent = '🌐 Netskope URL List Manager';
+        titleDiv.textContent = '🌐 Destination Profile Editor';
         modal.appendChild(titleDiv);
 
         // Description
         const descP = UI.createElement('p', { fontSize: '13px', color: '#666', margin: '0', textAlign: 'center' });
-        descP.textContent = 'Manage URL lists in your Netskope tenant via API';
+        descP.textContent = 'Find, create and edit Destination Profiles in your Netskope tenant via API';
         modal.appendChild(descP);
 
         // Version row
@@ -13456,12 +13534,12 @@ Version 1.4.1:
 
         // Action buttons
         const actionBtns = UI.createElement('div', { display: 'flex', gap: '10px', width: '100%', flexWrap: 'wrap' });
-        actionBtns.appendChild(UI.createButton('🔍 Fetch URL Lists',  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fetchUrlLists));
-        actionBtns.appendChild(UI.createButton('✨ Create New List', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', showCreateForm));
+        actionBtns.appendChild(UI.createButton('🔍 Fetch Destination Profiles',  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', fetchProfiles));
+        actionBtns.appendChild(UI.createButton('✨ Create Destination Profile', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', showCreateForm));
         actionBtns.appendChild(UI.createButton('🔎 Domain Lookup', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', showDomainLookup));
         actionBtns.appendChild(UI.createButton('🏷️ Category by ID', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', showCustomCategoryLookup));
         actionBtns.lastChild.style.color = '#333';
-        actionBtns.appendChild(UI.createButton('🔗 URL List by ID', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => showUrlListByIdLookup()));
+        actionBtns.appendChild(UI.createButton('🔗 Profile by ID', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => showProfileByIdLookup()));
         modal.appendChild(actionBtns);
 
         modal.appendChild(UI.createElement('div', {
@@ -13494,7 +13572,7 @@ Version 1.4.1:
         const tenant = detectTenant();
 
         // Unlocked now so the lists load without a prompt later; Cancel still opens the tool
-        if (tenant && netskopeApi.status(tenant).hasKey) await netskopeApi.unlock(tenant, { caller: 'URL Lists' });
+        if (tenant && netskopeApi.status(tenant).hasKey) await netskopeApi.unlock(tenant, { caller: 'Destination Profiles' });
 
         modal.style.display = 'flex';
         if (backdrop) backdrop.style.display = 'block';
@@ -13565,510 +13643,341 @@ Version 1.4.1:
      *  API FUNCTIONS
      * ==========================================================*/
 
-    // Every call goes through the toolbar's Netskope API module, which unlocks the key when needed
-    async function makeApiRequest(method, endpoint, data, onSuccess, onError) {
+    /* ==========================================================
+     *  DESTINATION PROFILES
+     *  Changes are written pending (interactive=true) and applied with
+     *  /deploy and a change note asked by the Netskope API module, so
+     *  the audit log keeps it. label_ids are never sent: a save cannot
+     *  clear the labels of a profile.
+     * ==========================================================*/
+
+    const DP_PATH = '/api/v2/profiles/destinations';
+    const DP_EMPTY = '#No values';           // Netskope needs one value at least
+    const DP_TYPES = [
+        { value: 'insensitive', label: 'Exact, not case sensitive' },
+        { value: 'sensitive',   label: 'Exact, case sensitive' },
+        { value: 'regex',       label: 'Regex' },
+    ];
+    const DP_STATUS = {
+        'applied':        { text: 'Applied',        bg: '#d4edda', border: '#c3e6cb', color: '#155724' },
+        'pending-create': { text: 'Pending create', bg: '#fff3cd', border: '#ffeaa7', color: '#856404' },
+        'pending-update': { text: 'Pending update', bg: '#fff3cd', border: '#ffeaa7', color: '#856404' },
+        'pending-delete': { text: 'Pending delete', bg: '#f8d7da', border: '#f5c6cb', color: '#721c24' },
+    };
+    const dpTypeLabel = t => (DP_TYPES.find(x => x.value === t) || { label: t || '—' }).label;
+    const dpBadge = (status) => {
+        const b = DP_STATUS[status] || { text: status || 'unknown', bg: '#e9ecef', border: '#dee2e6', color: '#495057' };
+        return `<span style="padding:1px 8px;border-radius:10px;font-size:11px;font-weight:bold;background:${b.bg};border:1px solid ${b.border};color:${b.color};white-space:nowrap">${escapeHtml(b.text)}</span>`;
+    };
+    const dpFormatDate = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString(); } catch (e) { return iso; } };
+    const dpValuesFrom = text => String(text || '').split('\n').map(v => v.trim()).filter(Boolean);
+    const dpConsoleUrl = host => `https://${host}/ns#/destination-profile`;
+
+    // One call through the toolbar's Netskope API module; key problems become a status line
+    async function dpCall(method, path, body) {
         const tenant = getActiveTenant();
-        if (!tenant) return UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning');
-        const r = await netskopeApi.request(tenant, method, endpoint, data || null, { caller: 'URL Lists' });
+        if (!tenant) { UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning'); return { ok: false, handled: true }; }
+        const r = await netskopeApi.request(tenant, method, path, body == null ? null : body, { caller: 'Destination Profiles' });
         buildTokenUI(tenant);
+        if (!r.ok && ['noKey', 'expired', 'locked'].includes(r.code)) { UI.showStatus('⚠️ ' + r.error, 'warning'); r.handled = true; }
+        return Object.assign(r, { tenant });
+    }
+
+    // Callback form kept for the category lookup
+    async function makeApiRequest(method, endpoint, data, onSuccess, onError) {
+        const r = await dpCall(method, endpoint, data);
         if (r.ok) return onSuccess(r.data);
-        if (['noKey', 'expired', 'locked'].includes(r.code)) return UI.showStatus('⚠️ ' + r.error, 'warning');
-        if (onError) onError(r.error || `Error ${r.status}`);
+        if (!r.handled && onError) onError(r.error || `Error ${r.status}`);
     }
 
-    async function fetchUrlLists() {
+    // Every profile of the tenant, 100 per page
+    async function fetchAllProfiles() {
+        const all = [];
+        for (let offset = 0, total = Infinity; offset < total; offset += 100) {
+            UI.showStatus(`🔄 Fetching Destination Profiles from Netskope… ${all.length ? `(${all.length} so far)` : ''}`, 'info');
+            const r = await dpCall('GET', `${DP_PATH}?limit=100&offset=${offset}&sortby=name&sortorder=asc`);
+            if (!r.ok) return r;
+            const els = (r.data && Array.isArray(r.data.elements)) ? r.data.elements : [];
+            all.push(...els);
+            total = Number(r.data && r.data.total_count) || 0;
+            if (!els.length) break;
+        }
+        return { ok: true, profiles: all };
+    }
+
+    async function fetchProfiles() {
         resetModal();
-        UI.showStatus('🔄 Fetching URL lists from Netskope...', 'info');
-        await makeApiRequest('GET', '/api/v2/policy/urllist', null,
-            (data) => {
-                currentUrlLists = Array.isArray(data) ? data : [];
-                currentUrlLists.length === 0
-                    ? UI.showStatus('ℹ️ No URL lists found in this tenant', 'info')
-                    : (UI.showStatus(`✅ Found ${currentUrlLists.length} URL lists`, 'success'), displayUrlLists(currentUrlLists));
-            },
-            (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-        );
+        const r = await fetchAllProfiles();
+        if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); return; }
+        currentProfiles = r.profiles;
+        if (!currentProfiles.length) return UI.showStatus('ℹ️ No Destination Profiles found in this tenant', 'info');
+        UI.showStatus(`✅ Found ${currentProfiles.length} Destination Profiles`, 'success');
+        displayProfiles(currentProfiles);
     }
 
-    function displayUrlLists(lists) {
+    function dpQuery(raw) {
+        return String(raw || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+    }
+
+    // Matching entries of one profile; comment lines (#...) are not destinations
+    function dpMatches(profile, query) {
+        return (profile.values || []).filter(v => { const e = String(v).trim().toLowerCase(); return e && !e.startsWith('#') && domainMatches(query, e); });
+    }
+
+    function displayProfiles(list) {
         const container = document.getElementById('url-lists-container');
         if (!container) return;
-
-        container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = `
-            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Available URL Lists</h3>
+            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Destination Profiles</h3>
             <div style="margin-bottom: 8px;">
-                <input id="urllist-search" type="text" placeholder="🔍 Filter lists by name..."
+                <input id="urllist-search" type="text" placeholder="🔍 Filter profiles by name..."
                     style="width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; color: #333;">
             </div>
             <div style="margin-bottom: 10px; display: flex; gap: 8px; align-items: stretch;">
-                <input id="urllist-domain-search" type="text" placeholder="🔎 Search URL or domain across all lists…"
-                    style="flex: 1; padding: 8px 12px; border: 2px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: monospace; color: #333; background-color: #fff; transition: border-color 0.2s;">
+                <input id="urllist-domain-search" type="text" placeholder="🔎 Search a URL or domain in every profile…"
+                    style="flex: 1; padding: 8px 12px; border: 2px solid #ccc; border-radius: 6px; font-size: 13px; box-sizing: border-box; font-family: monospace; color: #333; background-color: #fff;">
                 <button id="urllist-domain-search-btn" style="padding: 8px 14px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; white-space: nowrap; flex-shrink: 0;">🔎 Search</button>
             </div>
-            <div id="urllist-wrapper" style="flex: 1; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; min-height: 200px;"></div>
-        `;
+            <div id="urllist-wrapper" style="flex: 1; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 10px; min-height: 200px;"></div>`;
+        const wrapper = document.getElementById('urllist-wrapper');
+        const search = document.getElementById('urllist-search');
+        const domainSearch = document.getElementById('urllist-domain-search');
 
-        const wrapper          = document.getElementById('urllist-wrapper');
-        const search           = document.getElementById('urllist-search');
-        const domainSearch     = document.getElementById('urllist-domain-search');
-        const domainSearchBtn  = document.getElementById('urllist-domain-search-btn');
-
-        function renderLists(filteredLists) {
-            wrapper.innerHTML = filteredLists.length === 0
-                ? '<div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">No lists found</div>'
-                : filteredLists.map(list => {
-                    const urlCount = list.data?.urls?.length || 0;
-                    return `
-                        <div class="url-list-item" data-list-id="${escapeHtml(String(list.id))}" style="padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #fff; cursor: pointer; transition: all 0.2s ease;">
-                            <div style="font-weight: bold; font-size: 14px; color: #333; margin-bottom: 5px;">${escapeHtml(String(list.name || 'Unnamed List'))}</div>
-                            <div style="font-size: 12px; color: #666;">ID: ${escapeHtml(String(list.id))} • ${urlCount} URLs</div>
-                        </div>`;
+        function renderList(items) {
+            wrapper.innerHTML = items.length === 0
+                ? '<div style="text-align: center; padding: 20px; color: #999; font-size: 13px;">No profiles found</div>'
+                : items.map(p => {
+                    const n = (p.values || []).filter(v => !String(v).trim().startsWith('#')).length;
+                    return `<div class="dp-item" data-dp-id="${escapeHtml(String(p.id))}" style="padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 6px; background-color: #fff; cursor: pointer;">
+                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:5px">
+                            <span style="font-weight: bold; font-size: 14px; color: #333;">${escapeHtml(String(p.name || 'Unnamed profile'))}</span>${dpBadge(p.status)}</div>
+                        <div style="font-size: 12px; color: #666;">${escapeHtml(dpTypeLabel(p.type))} • ${n} value${n === 1 ? '' : 's'} • modified by ${escapeHtml(p.modify_by || '—')}, ${escapeHtml(dpFormatDate(p.modify_time))}</div>
+                    </div>`;
                 }).join('');
-
-            wrapper.querySelectorAll('.url-list-item').forEach(item => {
+            wrapper.querySelectorAll('.dp-item').forEach(item => {
                 item.onmouseover = () => { item.style.backgroundColor = '#f0f0f0'; item.style.borderColor = '#667eea'; };
-                item.onmouseout  = () => { item.style.backgroundColor = '#fff';    item.style.borderColor = '#ccc'; };
-                item.onclick     = () => { const list = lists.find(l => l.id == item.dataset.listId); if (list) showUpdateForm(list); };
+                item.onmouseout  = () => { item.style.backgroundColor = '#fff'; item.style.borderColor = '#ccc'; };
+                item.onclick = () => showProfileByIdLookup(item.dataset.dpId, () => { resetModal(); displayProfiles(currentProfiles); });
             });
         }
-
+        const byName = () => { const term = search.value.toLowerCase().trim(); renderList(list.filter(p => (p.name || '').toLowerCase().includes(term))); };
         function runDomainSearch() {
-            const raw = domainSearch.value.trim();
-            if (!raw) {
-                const nameTerm = search.value.toLowerCase().trim();
-                renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(nameTerm)));
-                return;
-            }
-            const query = raw.toLowerCase()
-                .replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
-            const matches = [];
-            for (const list of lists) {
-                const urls = list.data?.urls || [];
-                const matchedEntries = urls.filter(e => domainMatches(query, e.toLowerCase().trim()));
-                if (matchedEntries.length > 0) matches.push({ list, matchedEntries, totalUrls: urls.length });
-            }
+            const query = dpQuery(domainSearch.value);
+            if (!query) return byName();
+            const matches = list.map(p => ({ profile: p, matchedEntries: dpMatches(p, query) })).filter(m => m.matchedEntries.length);
             renderLookupResults(wrapper, query, matches);
         }
-
-        renderLists(lists);
-
-        search.oninput = (e) => {
-            if (domainSearch.value.trim()) return;
-            const term = e.target.value.toLowerCase().trim();
-            renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(term)));
-        };
-
-        domainSearch.onfocus = () => { domainSearch.style.borderColor = '#f5576c'; };
-        domainSearch.onblur  = () => { domainSearch.style.borderColor = domainSearch.value.trim() ? '#f5576c' : '#ccc'; };
-        domainSearch.oninput = (e) => {
-            if (!e.target.value.trim()) {
-                domainSearch.style.borderColor = '#ccc';
-                const nameTerm = search.value.toLowerCase().trim();
-                renderLists(lists.filter(l => (l.name || '').toLowerCase().includes(nameTerm)));
-            }
-        };
+        renderList(list);
+        search.oninput = () => { if (!domainSearch.value.trim()) byName(); };
+        domainSearch.oninput = () => { if (!domainSearch.value.trim()) byName(); };
         domainSearch.onkeydown = (e) => { if (e.key === 'Enter') runDomainSearch(); };
-        domainSearchBtn.onclick = runDomainSearch;
+        document.getElementById('urllist-domain-search-btn').onclick = runDomainSearch;
+    }
+
+    /* ── Writing a change, then applying it with a note ── */
+
+    // After a pending write: asks the note and applies, or leaves it pending and opens the console
+    async function dpApply(host, profile, summary) {
+        const note = await netskopeApi.askChangeNote({ caller: 'Destination Profiles', ticket: getTicketNumber(), summary });
+        if (note === null) {
+            GM_openInTab(dpConsoleUrl(host), { active: false, insert: true });
+            UI.showStatus(`⏸ "${profile.name}" is saved and pending. Apply it in the console with your comment (the Destination Profiles page opened in a new tab).`, 'warning');
+            return false;
+        }
+        UI.showStatus('🔄 Applying the change…', 'info');
+        const r = await netskopeApi.deploy(host, [profile.id], note, { caller: 'Destination Profiles' });
+        if (!r.ok) {
+            UI.showStatus(`⚠️ "${profile.name}" is saved but stays pending: Netskope did not apply it (${r.error}). Apply it in the console.`, 'error');
+            return false;
+        }
+        UI.showStatus(`✅ Applied "${profile.name}" with the note "${note}".`, 'success');
+        return true;
+    }
+
+    function dpField(label, input, counter) {
+        const wrap = UI.createElement('div', { width: '100%', marginBottom: '10px' });
+        const head = UI.createElement('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' });
+        head.appendChild(UI.createElement('label', { fontWeight: 'bold', fontSize: '13px', color: '#555', marginBottom: '5px' }, { textContent: label, htmlFor: input.id }));
+        if (counter) {
+            const c = UI.createElement('span', { fontSize: '11px', color: '#888' });
+            const sync = () => { c.textContent = `${input.value.length}/${input.maxLength}`; };
+            input.addEventListener('input', sync);
+            sync();
+            head.appendChild(c);
+        }
+        wrap.appendChild(head);
+        wrap.appendChild(input);
+        return wrap;
+    }
+
+    function dpInput(id, max, placeholder, value) {
+        return UI.createElement('input', { width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' },
+            { id, type: 'text', maxLength: max, placeholder, value: value || '' });
+    }
+
+    function dpTypeSelect(id, value) {
+        const sel = UI.createElement('select', { width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }, { id });
+        DP_TYPES.forEach(t => sel.appendChild(Object.assign(document.createElement('option'), { value: t.value, textContent: t.label })));
+        sel.value = value || 'insensitive';
+        return sel;
+    }
+
+    function dpValuesArea(id, values) {
+        const wrap = UI.createTextArea(id, 'Values (one per line, # lines are comments)', 'example.com\n*.example.com', 10);
+        wrap.style.flex = '1';
+        const ta = wrap.querySelector('textarea');
+        if (ta && values) ta.value = values.join('\n');
+        return { wrap, ta };
     }
 
     function showCreateForm() {
         resetModal();
         const container = document.getElementById('create-form-container');
         if (!container) return;
-
-        container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-        container.innerHTML = `
-            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Create New URL List</h3>
-            <div style="font-size: 11px; color: #666; margin-bottom: 10px; font-style: italic;">Note: List names can only contain letters, numbers, spaces, underscores (_), and hyphens (-)</div>
-        `;
-
-        container.appendChild(UI.createInput('create-list-name', 'text', 'List Name', 'e.g., Marketing_Domains or Sales-Team-2024', ''));
-        const textarea = UI.createTextArea('create-urls-input', 'Enter URLs (one per line)', 'example.com\ntest.example.com\n*.domain.com', 10);
-        textarea.style.flex = '1';
-        container.appendChild(textarea);
-        const createTextareaEl = textarea.querySelector('textarea');
-        if (createTextareaEl) container.appendChild(createUrlListLogButtons(createTextareaEl));
-
-        const btnContainer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
-        btnContainer.appendChild(UI.createButton('✨ Create List', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', submitCreateList));
-        btnContainer.appendChild(UI.createButton('✖️ Cancel', 'white', resetModal));
-        btnContainer.lastChild.style.border = '1px solid #ccc';
-        btnContainer.lastChild.style.color  = '#333';
-        container.appendChild(btnContainer);
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
+        container.innerHTML = '<h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Create Destination Profile</h3>';
+        container.appendChild(dpField('Name', dpInput('dp-create-name', 100, 'e.g. ES - Newly Registered Domains - Allow'), true));
+        container.appendChild(dpField('Description', dpInput('dp-create-desc', 200, 'Optional, e.g. the RITM'), true));
+        container.appendChild(dpField('Match type', dpTypeSelect('dp-create-type', 'insensitive')));
+        const { wrap, ta } = dpValuesArea('dp-create-values');
+        container.appendChild(wrap);
+        if (ta) container.appendChild(createUrlListLogButtons(ta));
+        const btns = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
+        btns.appendChild(UI.createButton('✨ Create Profile', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', submitCreateProfile));
+        btns.appendChild(UI.createButton('✖️ Cancel', 'white', resetModal));
+        Object.assign(btns.lastChild.style, { border: '1px solid #ccc', color: '#333' });
+        container.appendChild(btns);
     }
 
-    function showUpdateForm(list) {
-        resetModal();
-        const container = document.getElementById('update-form-container');
-        if (!container) return;
-
-        container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-        container.innerHTML = `
-            <h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Update: ${escapeHtml(String(list.name || ''))}</h3>
-            <div style="font-size: 12px; color: #666; margin-bottom: 10px;">List ID: ${escapeHtml(String(list.id))}</div>
-        `;
-
-        const textarea   = UI.createTextArea('update-urls-input', 'URLs (one per line)', 'example.com\ntest.example.com', 10);
-        textarea.style.flex = '1';
-        const textareaEl = textarea.querySelector('textarea');
-        if (textareaEl) textareaEl.value = (list.data?.urls || []).join('\n');
-        container.appendChild(textarea);
-        if (textareaEl) container.appendChild(createUrlListLogButtons(textareaEl));
-
-        const btnContainer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
-        btnContainer.appendChild(UI.createButton('🔄 Update List', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', () => submitUpdateList(list.id, list.name)));
-        btnContainer.appendChild(UI.createButton('✖️ Cancel', 'white', () => { resetModal(); displayUrlLists(currentUrlLists); }));
-        btnContainer.lastChild.style.border = '1px solid #ccc';
-        btnContainer.lastChild.style.color  = '#333';
-        container.appendChild(btnContainer);
+    async function submitCreateProfile() {
+        const name = document.getElementById('dp-create-name')?.value.trim();
+        const description = document.getElementById('dp-create-desc')?.value.trim() || '';
+        const type = document.getElementById('dp-create-type')?.value || 'insensitive';
+        let values = dpValuesFrom(document.getElementById('dp-create-values')?.value);
+        if (!name) return UI.showStatus('⚠️ Please enter a profile name', 'warning');
+        if (!values.length) values = [DP_EMPTY];
+        UI.showStatus('🔄 Creating the Destination Profile…', 'info');
+        const r = await dpCall('POST', `${DP_PATH}?interactive=true`, { name, type, description, values });
+        if (!r.ok) {
+            if (r.handled) return;
+            return UI.showStatus(r.status === 409 ? `⚠️ A Destination Profile called "${name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
+        }
+        const profile = r.data && r.data.id ? r.data : { id: null, name };
+        if (!profile.id) return UI.showStatus('⚠️ Netskope did not return the new profile. Check it in the console.', 'warning');
+        currentProfiles = [];
+        await dpApply(r.tenant, profile, `Created "${name}"`);
     }
 
-    async function submitCreateList() {
-        const listName  = document.getElementById('create-list-name')?.value.trim();
-        const urlsInput = document.getElementById('create-urls-input')?.value.trim();
-
-        if (!listName)   return UI.showStatus('⚠️ Please enter a list name', 'warning');
-        if (/[<>\/!@#$%^&*(){};\+=,?\.|:'"]/.test(listName)) return UI.showStatus('⚠️ List name contains invalid characters.', 'warning');
-        if (!urlsInput)  return UI.showStatus('⚠️ Please enter at least one URL', 'warning');
-
-        const urls = urlsInput.split('\n').map(u => u.trim()).filter(Boolean);
-        if (!urls.length) return UI.showStatus('⚠️ No valid URLs found', 'warning');
-
-        UI.showStatus('🔄 Creating URL list...', 'info');
-        await makeApiRequest('POST', '/api/v2/policy/urllist', { data: { type: 'exact', urls }, name: listName },
-            () => { const t = getActiveTenant(); UI.showStatus(`✅ URL list "${listName}" created successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
-            (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-        );
-    }
-
-    async function submitUpdateList(listId, listName) {
-        const urlsInput = document.getElementById('update-urls-input')?.value.trim();
-        if (!urlsInput) return UI.showStatus('⚠️ Please enter at least one URL', 'warning');
-
-        const urls = urlsInput.split('\n').map(u => u.trim()).filter(Boolean);
-        if (!urls.length) return UI.showStatus('⚠️ No valid URLs found', 'warning');
-
-        UI.showStatus('🔄 Updating URL list...', 'info');
-        await makeApiRequest('PATCH', `/api/v2/policy/urllist/${listId}/replace`, { data: { type: 'exact', urls } },
-            () => { const t = getActiveTenant(); UI.showStatus(`✅ URL list "${listName}" updated successfully! Opening URL List page...`, 'success'); GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true }); setTimeout(UI.hideStatus, 8000); },
-            (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-        );
-    }
-
-    /* ==========================================================
-     *  DOMAIN LOOKUP
-     * ==========================================================*/
+    /* ── Domain lookup: one domain in every profile ── */
 
     function showDomainLookup() {
         resetModal();
         const container = document.getElementById('domain-lookup-container');
         if (!container) return;
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
-        // Header
-        const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
-        header.textContent = '🔎 Domain Lookup';
-        container.appendChild(header);
-
-        // Description
-        const desc = UI.createElement('div', {
-            fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5'
-        });
-        desc.innerHTML = 'Search for a domain or URL across all URL lists in this tenant.<br>' +
-            '<span style="color: #888; font-size: 11px;">Supports exact match, substring match, and wildcard entries (e.g. <code>*.example.com</code>).</span>';
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🔎 Domain Lookup' }));
+        const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
+        desc.innerHTML = 'Search for a domain or URL in every Destination Profile of this tenant.<br><span style="color: #888; font-size: 11px;">Exact, substring and wildcard entries (e.g. <code>*.example.com</code>) match; comment lines do not.</span>';
         container.appendChild(desc);
-
-        // Search row
-        const searchRow = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
-
-        const searchInput = UI.createElement('input', {
-            flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px',
-            fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace',
-            outline: 'none', transition: 'border-color 0.2s'
-        }, { id: 'domain-lookup-input', type: 'text', placeholder: 'e.g. example.com or sub.example.com' });
-
-        searchInput.onfocus = () => searchInput.style.borderColor = '#667eea';
-        searchInput.onblur  = () => searchInput.style.borderColor = '#ccc';
-
-        const searchBtn = UI.createButton('🔎 Search', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', executeDomainLookup);
-        searchBtn.style.flex = '0 0 120px';
-
-        searchRow.appendChild(searchInput);
-        searchRow.appendChild(searchBtn);
-        container.appendChild(searchRow);
-
-        // Results area
-        const resultsArea = UI.createElement('div', {
-            flex: '1', overflowY: 'auto', minHeight: '150px'
-        }, { id: 'domain-lookup-results' });
-        container.appendChild(resultsArea);
-
-        // Cancel button
+        const row = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
+        const input = UI.createElement('input', { flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
+            { id: 'domain-lookup-input', type: 'text', placeholder: 'e.g. example.com or sub.example.com' });
+        const btn = UI.createButton('🔎 Search', 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', executeDomainLookup);
+        btn.style.flex = '0 0 120px';
+        row.appendChild(input);
+        row.appendChild(btn);
+        container.appendChild(row);
+        container.appendChild(UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'domain-lookup-results' }));
         const cancelRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
-        const cancelBtn = UI.createButton('✖️ Cancel', 'white', resetModal);
-        cancelBtn.style.border = '1px solid #ccc';
-        cancelBtn.style.color  = '#333';
-        cancelRow.appendChild(cancelBtn);
+        const cancel = UI.createButton('✖️ Cancel', 'white', resetModal);
+        Object.assign(cancel.style, { border: '1px solid #ccc', color: '#333' });
+        cancelRow.appendChild(cancel);
         container.appendChild(cancelRow);
-
-        // Enter key support
-        searchInput.onkeydown = (e) => { if (e.key === 'Enter') executeDomainLookup(); };
-        setTimeout(() => searchInput.focus(), 100);
+        input.onkeydown = (e) => { if (e.key === 'Enter') executeDomainLookup(); };
+        setTimeout(() => input.focus(), 100);
     }
 
     async function executeDomainLookup() {
         const input = document.getElementById('domain-lookup-input');
         const resultsArea = document.getElementById('domain-lookup-results');
         if (!input || !resultsArea) return;
-
-        const query = input.value.trim().toLowerCase()
-            .replace(/^https?:\/\//, '')   // strip protocol
-            .replace(/\/.*$/, '')          // strip path
-            .replace(/:\d+$/, '');         // strip port
-
+        const query = dpQuery(input.value);
         if (!query) return UI.showStatus('⚠️ Please enter a domain or URL to search', 'warning');
-
-        // If we don't have cached lists, fetch them first
-        if (!currentUrlLists.length) {
-            UI.showStatus('🔄 Fetching URL lists before searching...', 'info');
-            resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #888; font-size: 13px;">⏳ Fetching URL lists from Netskope...</div>';
-
-            await new Promise((resolve, reject) => {
-                makeApiRequest('GET', '/api/v2/policy/urllist', null,
-                    (data) => {
-                        currentUrlLists = Array.isArray(data) ? data : [];
-                        resolve();
-                    },
-                    (error) => {
-                        UI.showStatus(`❌ Failed to fetch URL lists: ${error}`, 'error');
-                        reject(error);
-                    }
-                );
-            }).catch(() => {
-                resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #dc3545; font-size: 13px;">Failed to fetch URL lists. Please check your API configuration.</div>';
-                return;
-            });
+        if (!currentProfiles.length) {
+            resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #888; font-size: 13px;">⏳ Fetching Destination Profiles from Netskope...</div>';
+            const r = await fetchAllProfiles();
+            if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); resultsArea.innerHTML = ''; return; }
+            currentProfiles = r.profiles;
         }
-
-        if (!currentUrlLists.length) {
-            resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #999; font-size: 13px;">No URL lists found in this tenant.</div>';
-            UI.hideStatus();
-            return;
-        }
-
-        // Perform the search
-        const matches = [];
-
-        for (const list of currentUrlLists) {
-            const urls = list.data?.urls || [];
-            const matchedEntries = [];
-
-            for (const entry of urls) {
-                const entryLower = entry.toLowerCase().trim();
-                if (domainMatches(query, entryLower)) {
-                    matchedEntries.push(entry);
-                }
-            }
-
-            if (matchedEntries.length > 0) {
-                matches.push({
-                    list,
-                    matchedEntries,
-                    totalUrls: urls.length
-                });
-            }
-        }
-
-        // Render results
+        const matches = currentProfiles.map(p => ({ profile: p, matchedEntries: dpMatches(p, query) })).filter(m => m.matchedEntries.length);
         renderLookupResults(resultsArea, query, matches);
     }
 
-    /**
-     * Check whether a search query matches a URL list entry.
-     *
-     * Matching logic:
-     *   1. Exact match  — entry is identical to the query
-     *   2. Substring    — entry appears inside query or query inside entry
-     *   3. Wildcard     — entry starts with *. and the query ends with the
-     *                     wildcard's base domain (or is exactly that domain)
-     *   4. Reverse wild — query itself contains a wildcard pattern that
-     *                     the entry satisfies
-     */
-    function domainMatches(query, entry) {
-        // 1. Exact match
-        if (query === entry) return true;
-
-        // 2. Substring match (either direction)
-        if (entry.includes(query) || query.includes(entry)) return true;
-
-        // 3. Wildcard entry (e.g. *.example.com matches sub.example.com and example.com)
-        if (entry.startsWith('*.')) {
-            const wildBase = entry.slice(2); // "example.com"
-            if (query === wildBase || query.endsWith('.' + wildBase)) return true;
-        }
-
-        // 4. Query is a wildcard (user typed *.example.com)
-        if (query.startsWith('*.')) {
-            const queryBase = query.slice(2);
-            if (entry === queryBase || entry.endsWith('.' + queryBase)) return true;
-            // Also match if the entry itself is a wildcard for the same base
-            if (entry.startsWith('*.') && entry.slice(2) === queryBase) return true;
-        }
-
-        return false;
-    }
+    /* ── Domain search results ── */
 
     function renderLookupResults(resultsArea, query, matches) {
         resultsArea.innerHTML = '';
-
-        // Summary bar
+        const found = matches.length > 0;
         const summary = UI.createElement('div', {
-            padding: '10px 14px', borderRadius: '6px', marginBottom: '12px',
-            fontSize: '13px', fontWeight: 'bold',
-            backgroundColor: matches.length > 0 ? '#d4edda' : '#f8d7da',
-            border: '1px solid ' + (matches.length > 0 ? '#c3e6cb' : '#f5c6cb'),
-            color: matches.length > 0 ? '#155724' : '#721c24'
+            padding: '10px 14px', borderRadius: '6px', marginBottom: '12px', fontSize: '13px', fontWeight: 'bold',
+            backgroundColor: found ? '#d4edda' : '#f8d7da', border: '1px solid ' + (found ? '#c3e6cb' : '#f5c6cb'), color: found ? '#155724' : '#721c24'
         });
-
-        if (matches.length > 0) {
-            const totalMatched = matches.reduce((sum, m) => sum + m.matchedEntries.length, 0);
-            summary.textContent = `✅ Found "${query}" in ${matches.length} URL list${matches.length !== 1 ? 's' : ''} (${totalMatched} matching entr${totalMatched !== 1 ? 'ies' : 'y'})`;
-        } else {
-            summary.textContent = `❌ "${query}" was not found in any of the ${currentUrlLists.length} URL lists`;
-        }
+        const total = matches.reduce((n, m) => n + m.matchedEntries.length, 0);
+        summary.textContent = found
+            ? `✅ Found "${query}" in ${matches.length} Destination Profile${matches.length !== 1 ? 's' : ''} (${total} matching entr${total !== 1 ? 'ies' : 'y'})`
+            : `❌ "${query}" was not found in any of the ${currentProfiles.length} Destination Profiles`;
         resultsArea.appendChild(summary);
         UI.hideStatus();
-
-        if (matches.length === 0) {
-            const hint = UI.createElement('div', {
-                padding: '12px', fontSize: '12px', color: '#666',
-                backgroundColor: '#f8f9fa', borderRadius: '6px',
-                lineHeight: '1.5', marginTop: '8px'
-            });
-            hint.innerHTML = '💡 <strong>Tips:</strong> Try searching with just the root domain (e.g. <code>example.com</code>), ' +
-                'or use a wildcard pattern (e.g. <code>*.example.com</code>). ' +
-                'Make sure the URL lists have been fetched recently — click <strong>🔎 Search</strong> again to re-fetch.';
+        if (!found) {
+            const hint = UI.createElement('div', { padding: '12px', fontSize: '12px', color: '#666', backgroundColor: '#f8f9fa', borderRadius: '6px', lineHeight: '1.5' });
+            hint.innerHTML = '💡 <strong>Tips:</strong> try the root domain (e.g. <code>example.com</code>) or a wildcard (e.g. <code>*.example.com</code>).';
             resultsArea.appendChild(hint);
             return;
         }
-
-        // Sort: most matched entries first
         matches.sort((a, b) => b.matchedEntries.length - a.matchedEntries.length);
-
-        for (const { list, matchedEntries, totalUrls } of matches) {
-            const card = UI.createElement('div', {
-                padding: '12px', marginBottom: '10px',
-                border: '1px solid #ccc', borderRadius: '8px',
-                backgroundColor: '#fff', transition: 'all 0.2s ease'
-            });
-
-            // Card header (clickable → go to update form)
-            const cardHeader = UI.createElement('div', {
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                cursor: 'pointer', marginBottom: '8px'
-            });
-
-            const listInfo = UI.createElement('div');
-            listInfo.innerHTML = `
-                <div style="font-weight: bold; font-size: 14px; color: #333;">${escapeHtml(String(list.name || 'Unnamed List'))}</div>
-                <div style="font-size: 11px; color: #888; margin-top: 2px;">ID: ${escapeHtml(String(list.id))} • ${totalUrls} total URLs • ${matchedEntries.length} match${matchedEntries.length !== 1 ? 'es' : ''}</div>
-            `;
-
-            const editBtn = UI.createElement('button', {
-                padding: '5px 12px', fontSize: '11px', fontWeight: 'bold',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white', border: 'none', borderRadius: '4px',
-                cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: '0'
-            }, { textContent: '✏️ Edit List' });
-
-            editBtn.onclick = (e) => {
-                e.stopPropagation();
-                showUpdateForm(list);
-            };
-
-            cardHeader.appendChild(listInfo);
-            cardHeader.appendChild(editBtn);
-            card.appendChild(cardHeader);
-
-            // Matched entries (collapsible)
-            const matchedSection = UI.createElement('div');
-
-            const toggleBtn = UI.createElement('div', {
-                fontSize: '12px', color: '#667eea', cursor: 'pointer',
-                fontWeight: 'bold', marginBottom: '6px', userSelect: 'none'
-            });
-            toggleBtn.textContent = `▶ Show matched entries (${matchedEntries.length})`;
-
-            const matchedList = UI.createElement('div', {
-                display: 'none', padding: '8px',
-                backgroundColor: '#f8f9fa', borderRadius: '6px',
-                maxHeight: '200px', overflowY: 'auto',
-                fontFamily: 'monospace', fontSize: '12px',
-                lineHeight: '1.6', border: '1px solid #e9ecef'
-            });
-
-            for (const entry of matchedEntries) {
-                const entryDiv = UI.createElement('div', { padding: '2px 6px' });
-                // Highlight the matching portion
-                const entryLower = entry.toLowerCase();
-                const queryLower = query.toLowerCase();
-                const idx = entryLower.indexOf(queryLower);
-
-                if (idx !== -1) {
-                    const before  = entry.substring(0, idx);
-                    const matched = entry.substring(idx, idx + query.length);
-                    const after   = entry.substring(idx + query.length);
-                    entryDiv.innerHTML = `${escapeHtml(before)}<span style="background-color: #fff3cd; font-weight: bold; border-radius: 2px; padding: 0 1px;">${escapeHtml(matched)}</span>${escapeHtml(after)}`;
-                } else {
-                    entryDiv.innerHTML = `<span style="background-color: #e8f4f8;">${escapeHtml(entry)}</span>`;
-                }
-                matchedList.appendChild(entryDiv);
-            }
-
-            let expanded = false;
-            toggleBtn.onclick = () => {
-                expanded = !expanded;
-                matchedList.style.display = expanded ? 'block' : 'none';
-                toggleBtn.textContent = expanded
-                    ? `▼ Hide matched entries (${matchedEntries.length})`
-                    : `▶ Show matched entries (${matchedEntries.length})`;
-            };
-
-            matchedSection.appendChild(toggleBtn);
-            matchedSection.appendChild(matchedList);
-            card.appendChild(matchedSection);
-
-            // Hover effects on the whole card
-            card.onmouseover = () => { card.style.borderColor = '#667eea'; card.style.boxShadow = '0 2px 8px rgba(102, 126, 234, 0.15)'; };
-            card.onmouseout  = () => { card.style.borderColor = '#ccc'; card.style.boxShadow = 'none'; };
-
+        for (const { profile, matchedEntries } of matches) {
+            const card = UI.createElement('div', { padding: '12px', marginBottom: '10px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#fff' });
+            const head = UI.createElement('div', { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px' });
+            const info = UI.createElement('div');
+            info.innerHTML = `<div style="font-weight: bold; font-size: 14px; color: #333;">${escapeHtml(String(profile.name || 'Unnamed profile'))} ${dpBadge(profile.status)}</div>
+                <div style="font-size: 11px; color: #888; margin-top: 2px;">${escapeHtml(dpTypeLabel(profile.type))} • ${matchedEntries.length} match${matchedEntries.length !== 1 ? 'es' : ''}</div>`;
+            const edit = UI.createElement('button', { padding: '5px 12px', fontSize: '11px', fontWeight: 'bold', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', whiteSpace: 'nowrap' }, { textContent: '✏️ Edit' });
+            edit.onclick = () => showProfileByIdLookup(profile.id, () => { resetModal(); displayProfiles(currentProfiles); });
+            head.appendChild(info);
+            head.appendChild(edit);
+            card.appendChild(head);
+            const listEl = UI.createElement('div', { padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '6px', maxHeight: '160px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.6', border: '1px solid #e9ecef' });
+            matchedEntries.forEach(e => listEl.appendChild(UI.createElement('div', { padding: '2px 6px' }, { textContent: e })));
+            card.appendChild(listEl);
             resultsArea.appendChild(card);
         }
+    }
+
+    /**
+     * Whether a search query matches an entry: exact, substring either way, a wildcard
+     * entry (*.example.com) covering the query, or a wildcard query covering the entry.
+     */
+    function domainMatches(query, entry) {
+        if (query === entry) return true;
+        if (entry.includes(query) || query.includes(entry)) return true;
+        if (entry.startsWith('*.')) {
+            const wildBase = entry.slice(2);
+            if (query === wildBase || query.endsWith('.' + wildBase)) return true;
+        }
+        if (query.startsWith('*.')) {
+            const queryBase = query.slice(2);
+            if (entry === queryBase || entry.endsWith('.' + queryBase)) return true;
+            if (entry.startsWith('*.') && entry.slice(2) === queryBase) return true;
+        }
+        return false;
     }
 
     /** Escape HTML characters to prevent XSS in rendered results */
     function escapeHtml(str) {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-        return str.replace(/[&<>"']/g, c => map[c]);
+        return String(str).replace(/[&<>"']/g, c => map[c]);
     }
 
     /* ==========================================================
@@ -14079,390 +13988,239 @@ Version 1.4.1:
         resetModal();
         const container = document.getElementById('custom-category-container');
         if (!container) return;
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
-        const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
-        header.textContent = '🏷️ Custom Category by ID';
-        container.appendChild(header);
-
-        const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
-        desc.textContent = 'Look up a Custom Category by its numeric ID to see its name, status, URL list assignments, and audit info.';
-        container.appendChild(desc);
-
-        const inputRow = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
-
-        const idInput = UI.createElement('input', {
-            flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px',
-            fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace',
-            outline: 'none', transition: 'border-color 0.2s'
-        }, { id: 'custom-category-id-input', type: 'text', placeholder: 'e.g. 10042' });
-
-        idInput.onfocus = () => { idInput.style.borderColor = '#f7971e'; };
-        idInput.onblur  = () => { idInput.style.borderColor = '#ccc'; };
-
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🏷️ Custom Category by ID' }));
+        container.appendChild(UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' },
+            { textContent: 'Look up a Custom Category by its numeric ID to see its name, status, Destination Profiles and audit info.' }));
+        const row = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
+        const idInput = UI.createElement('input', { flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
+            { id: 'custom-category-id-input', type: 'text', placeholder: 'e.g. 10042' });
         const lookupBtn = UI.createButton('🔍 Lookup', 'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)', executeCustomCategoryLookup);
         Object.assign(lookupBtn.style, { flex: '0 0 120px', color: '#333' });
-
-        inputRow.appendChild(idInput);
-        inputRow.appendChild(lookupBtn);
-        container.appendChild(inputRow);
-
-        const resultsArea = UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'custom-category-results' });
-        container.appendChild(resultsArea);
-
+        row.appendChild(idInput);
+        row.appendChild(lookupBtn);
+        container.appendChild(row);
+        container.appendChild(UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'custom-category-results' }));
         const cancelRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
         const cancelBtn = UI.createButton('✖️ Cancel', 'white', resetModal);
-        cancelBtn.style.border = '1px solid #ccc';
-        cancelBtn.style.color  = '#333';
+        Object.assign(cancelBtn.style, { border: '1px solid #ccc', color: '#333' });
         cancelRow.appendChild(cancelBtn);
         container.appendChild(cancelRow);
-
         idInput.onkeydown = (e) => { if (e.key === 'Enter') executeCustomCategoryLookup(); };
         setTimeout(() => idInput.focus(), 100);
     }
 
     async function executeCustomCategoryLookup() {
-        const input      = document.getElementById('custom-category-id-input');
+        const input = document.getElementById('custom-category-id-input');
         const resultsArea = document.getElementById('custom-category-results');
         if (!input || !resultsArea) return;
-
         const id = input.value.trim();
         if (!id) return UI.showStatus('⚠️ Please enter a category ID', 'warning');
         if (!/^\d+$/.test(id)) return UI.showStatus('⚠️ Category ID must be a numeric value', 'warning');
-
         UI.showStatus('🔄 Looking up custom category...', 'info');
         resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching category data...</div>';
-
         await makeApiRequest('GET', `/api/v2/profiles/customcategories/${id}?details=true`, null,
-            (data) => {
-                UI.hideStatus();
-                renderCustomCategoryResult(resultsArea, data);
-            },
+            (data) => { UI.hideStatus(); renderCustomCategoryResult(resultsArea, data); },
             (error) => {
                 UI.showStatus(`❌ Failed: ${error}`, 'error');
                 resultsArea.innerHTML = `<div style="text-align:center;padding:30px;color:#dc3545;font-size:13px;">Could not retrieve category. ${escapeHtml(String(error))}</div>`;
-            }
-        );
+            });
     }
 
     function renderCustomCategoryResult(resultsArea, data) {
         _lastCategoryData = data;
         resultsArea.innerHTML = '';
+        const card = UI.createElement('div', { padding: '16px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#fff', fontSize: '13px', fontFamily: 'Arial, sans-serif' });
+        const title = UI.createElement('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
+        title.appendChild(UI.createElement('div', { fontWeight: 'bold', fontSize: '16px', color: '#333' }, { textContent: data.name || '(unnamed)' }));
+        const badge = UI.createElement('span');
+        badge.innerHTML = dpBadge(String(data.status || '').toLowerCase());
+        title.appendChild(badge);
+        card.appendChild(title);
+        card.appendChild(UI.createElement('div', { fontSize: '12px', color: '#888', marginBottom: '14px' }, { textContent: `ID: ${data.id}` }));
+        if (data.description) card.appendChild(UI.createElement('div', { marginBottom: '12px', color: '#555', fontSize: '13px' }, { textContent: `Description: ${data.description}` }));
 
-        const STATUS_BADGE = {
-            'applied': { bg: '#d4edda', border: '#c3e6cb', color: '#155724' },
-            'pending': { bg: '#fff3cd', border: '#ffeaa7', color: '#856404' },
-            'error':   { bg: '#f8d7da', border: '#f5c6cb', color: '#721c24' }
-        };
-        const badge = STATUS_BADGE[(data.status || '').toLowerCase()] || { bg: '#e9ecef', border: '#dee2e6', color: '#495057' };
-
-        const formatDate = (iso) => {
-            if (!iso) return '—';
-            try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
-        };
-
-        const card = UI.createElement('div', {
-            padding: '16px', border: '1px solid #ccc', borderRadius: '8px',
-            backgroundColor: '#fff', fontSize: '13px', fontFamily: 'Arial, sans-serif'
-        });
-
-        // Name + status
-        const titleRow = UI.createElement('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
-        const nameEl = UI.createElement('div', { fontWeight: 'bold', fontSize: '16px', color: '#333' });
-        nameEl.textContent = data.name || '(unnamed)';
-        const statusBadge = UI.createElement('span', {
-            padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold',
-            backgroundColor: badge.bg, border: `1px solid ${badge.border}`, color: badge.color
-        });
-        statusBadge.textContent = data.status || 'unknown';
-        titleRow.appendChild(nameEl);
-        titleRow.appendChild(statusBadge);
-        card.appendChild(titleRow);
-
-        // ID
-        const idRow = UI.createElement('div', { fontSize: '12px', color: '#888', marginBottom: '14px' });
-        idRow.textContent = `ID: ${data.id}`;
-        card.appendChild(idRow);
-
-        // Description
-        if (data.description) {
-            const descRow = UI.createElement('div', { marginBottom: '12px', color: '#555', fontSize: '13px' });
-            descRow.innerHTML = `<strong>Description:</strong> ${escapeHtml(data.description)}`;
-            card.appendChild(descRow);
-        }
-
-        // Helper: labelled pill list; pass onPillClick to make pills clickable
-        const renderPillField = (label, items, onPillClick) => {
+        const nameOf = id => (currentProfiles.find(p => String(p.id) === String(id)) || {}).name;
+        const field = (label, items, clickable) => {
             const wrap = UI.createElement('div', { marginBottom: '10px' });
-            const lbl = UI.createElement('div', { fontWeight: 'bold', color: '#555', marginBottom: '5px', fontSize: '12px' });
-            lbl.textContent = label;
-            wrap.appendChild(lbl);
-            if (!items || items.length === 0) {
-                const none = UI.createElement('span', { color: '#aaa', fontStyle: 'italic', fontSize: '12px' });
-                none.textContent = '(none)';
-                wrap.appendChild(none);
-            } else {
-                const pillRow = UI.createElement('div', { display: 'flex', flexWrap: 'wrap', gap: '6px' });
-                items.forEach(item => {
-                    const clickable = !!onPillClick;
-                    const pill = UI.createElement('span', {
-                        padding: '3px 10px',
-                        backgroundColor: clickable ? '#d1ecf1' : '#e8f4f8',
-                        border: `1px solid ${clickable ? '#7cc8dc' : '#bee5eb'}`,
-                        borderRadius: '12px', fontSize: '12px', color: '#0c5460', fontFamily: 'monospace',
-                        cursor: clickable ? 'pointer' : 'default',
-                        display: 'inline-flex', alignItems: 'center', gap: '4px',
-                        transition: clickable ? 'all 0.15s ease' : 'none',
-                        userSelect: 'none'
-                    });
-                    pill.textContent = item;
-                    if (clickable) {
-                        const arrow = document.createElement('span');
-                        arrow.textContent = '↗';
-                        Object.assign(arrow.style, { fontSize: '11px', opacity: '0.7', lineHeight: '1' });
-                        pill.appendChild(arrow);
-                        pill.title = `Open URL list ${item} in the editable lookup view`;
-                        pill.onmouseover = () => {
-                            pill.style.backgroundColor = '#9ddff0';
-                            pill.style.borderColor     = '#0083b0';
-                            pill.style.color           = '#005f7a';
-                            pill.style.boxShadow       = '0 2px 6px rgba(0, 131, 176, 0.25)';
-                            pill.style.transform       = 'translateY(-1px)';
-                            arrow.style.opacity        = '1';
-                        };
-                        pill.onmouseout = () => {
-                            pill.style.backgroundColor = '#d1ecf1';
-                            pill.style.borderColor     = '#7cc8dc';
-                            pill.style.color           = '#0c5460';
-                            pill.style.boxShadow       = 'none';
-                            pill.style.transform       = 'translateY(0)';
-                            arrow.style.opacity        = '0.7';
-                        };
-                        pill.onclick = () => onPillClick(item);
-                    }
-                    pillRow.appendChild(pill);
-                });
-                wrap.appendChild(pillRow);
-            }
+            wrap.appendChild(UI.createElement('div', { fontWeight: 'bold', color: '#555', marginBottom: '5px', fontSize: '12px' }, { textContent: label }));
+            if (!items || !items.length) { wrap.appendChild(UI.createElement('span', { color: '#aaa', fontStyle: 'italic', fontSize: '12px' }, { textContent: '(none)' })); return wrap; }
+            const pills = UI.createElement('div', { display: 'flex', flexWrap: 'wrap', gap: '6px' });
+            items.forEach(item => {
+                const pill = UI.createElement('span', {
+                    padding: '3px 10px', backgroundColor: clickable ? '#d1ecf1' : '#e8f4f8', border: `1px solid ${clickable ? '#7cc8dc' : '#bee5eb'}`,
+                    borderRadius: '12px', fontSize: '12px', color: '#0c5460', fontFamily: 'monospace', cursor: clickable ? 'pointer' : 'default', userSelect: 'none'
+                }, { textContent: clickable ? `${nameOf(item) || item} ↗` : String(item) });
+                if (clickable) {
+                    pill.dataset.dpId = String(item);
+                    pill.title = `Open Destination Profile ${item}`;
+                    pill.onclick = () => showProfileByIdLookup(String(item), restoreCategoryLookupView);
+                }
+                pills.appendChild(pill);
+            });
+            wrap.appendChild(pills);
             return wrap;
         };
-
-        const urlListClickHandler = (id) => lookupUrlListFromCategory(String(id));
-        card.appendChild(renderPillField('Included URL Lists:', data.included_url_lists, urlListClickHandler));
-        card.appendChild(renderPillField('Excluded URL Lists:', data.excluded_url_lists, urlListClickHandler));
-        card.appendChild(renderPillField('Included Predefined Categories:', data.included_predefined_categories));
-
+        card.appendChild(field('Included Destination Profiles:', data.included_destination_profiles, true));
+        card.appendChild(field('Excluded Destination Profiles:', data.excluded_destination_profiles, true));
+        card.appendChild(field('Included Predefined Categories:', data.included_predefined_categories, false));
+        const oldLists = [].concat(data.included_url_lists || [], data.excluded_url_lists || []);
+        if (oldLists.length) card.appendChild(field('Old URL List IDs (no longer used):', oldLists, false));
         card.appendChild(UI.createElement('hr', { border: 'none', borderTop: '1px solid #eee', margin: '10px 0' }));
-
-        // Audit grid
-        const grid = UI.createElement('div', {
-            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px',
-            fontSize: '12px', color: '#666'
-        });
-        const mkCell = (label, value) => {
+        const grid = UI.createElement('div', { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '12px', color: '#666' });
+        [['Created by:', data.create_by], ['Created:', dpFormatDate(data.create_time)], ['Modified by:', data.modify_by], ['Modified:', dpFormatDate(data.modify_time)]].forEach(([l, v]) => {
             const cell = UI.createElement('div');
-            cell.innerHTML = `<span style="font-weight:bold;">${escapeHtml(label)}</span><br>${escapeHtml(value || '—')}`;
-            return cell;
-        };
-        grid.appendChild(mkCell('Created by:', data.create_by));
-        grid.appendChild(mkCell('Created:', formatDate(data.create_time)));
-        grid.appendChild(mkCell('Modified by:', data.modify_by));
-        grid.appendChild(mkCell('Modified:', formatDate(data.modify_time)));
+            cell.innerHTML = `<span style="font-weight:bold;">${escapeHtml(l)}</span><br>${escapeHtml(v || '—')}`;
+            grid.appendChild(cell);
+        });
         card.appendChild(grid);
-
         resultsArea.appendChild(card);
-    }
-
-    /* ==========================================================
-     *  URL LIST BY ID LOOKUP
-     * ==========================================================*/
-
-    function lookupUrlListFromCategory(id) {
-        showUrlListByIdLookup(id, restoreCategoryLookupView);
     }
 
     function restoreCategoryLookupView() {
         showCustomCategoryLookup();
         if (!_lastCategoryData) return;
-        const idInput     = document.getElementById('custom-category-id-input');
+        const idInput = document.getElementById('custom-category-id-input');
         const resultsArea = document.getElementById('custom-category-results');
-        if (idInput)      idInput.value = String(_lastCategoryData.id || '');
-        if (resultsArea)  renderCustomCategoryResult(resultsArea, _lastCategoryData);
+        if (idInput) idInput.value = String(_lastCategoryData.id || '');
+        if (resultsArea) renderCustomCategoryResult(resultsArea, _lastCategoryData);
     }
 
-    function showUrlListByIdLookup(prefillId, backFn) {
+    /* ==========================================================
+     *  DESTINATION PROFILE BY ID (the edit view)
+     * ==========================================================*/
+
+    function showProfileByIdLookup(prefillId, backFn) {
         resetModal();
         const container = document.getElementById('urllist-id-lookup-container');
         if (!container) return;
-
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
         container.innerHTML = '';
-        container.style.display       = 'flex';
-        container.style.flexDirection = 'column';
-        container.style.flex          = '1';
-        container.style.minHeight     = '0';
-
-        const header = UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' });
-        header.textContent = '🔗 URL List Lookup by ID';
-        container.appendChild(header);
-
-        const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
-        desc.textContent = 'Fetch and edit a URL list by its numeric ID.';
-        container.appendChild(desc);
-
-        const inputRow = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
-
-        const idInput = UI.createElement('input', {
-            flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px',
-            fontSize: '14px', boxSizing: 'border-box', fontFamily: 'monospace',
-            outline: 'none', transition: 'border-color 0.2s'
-        }, { id: 'urllist-id-lookup-input', type: 'text', placeholder: 'e.g. 43' });
-
-        idInput.onfocus = () => { idInput.style.borderColor = '#00b4db'; };
-        idInput.onblur  = () => { idInput.style.borderColor = '#ccc'; };
-
-        const lookupBtn = UI.createElement('button', {
-            flex: '0 0 120px', padding: '10px 20px', border: 'none', borderRadius: '6px',
-            cursor: 'pointer', background: 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)',
-            color: 'white', fontWeight: 'bold', fontSize: '14px'
-        }, { textContent: '🔍 Lookup' });
-
-        inputRow.appendChild(idInput);
-        inputRow.appendChild(lookupBtn);
-        container.appendChild(inputRow);
-
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🔗 Destination Profile by ID' }));
+        const row = UI.createElement('div', { display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'stretch' });
+        const idInput = UI.createElement('input', { flex: '1', padding: '10px 12px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
+            { id: 'urllist-id-lookup-input', type: 'text', placeholder: 'e.g. 56a5524e-74e3-4579-9471-39700db5f9fc' });
+        const lookupBtn = UI.createButton('🔍 Lookup', 'linear-gradient(135deg, #00b4db 0%, #0083b0 100%)', () => doLookup());
+        lookupBtn.style.flex = '0 0 120px';
+        row.appendChild(idInput);
+        row.appendChild(lookupBtn);
+        container.appendChild(row);
         const resultsArea = UI.createElement('div', { flex: '1', overflowY: 'auto', minHeight: '150px' }, { id: 'urllist-id-lookup-results' });
         container.appendChild(resultsArea);
-
-        const footerRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
-        const cancelBtn = UI.createButton(backFn ? '← Back to Category' : '✖️ Cancel', 'white', backFn || resetModal);
-        cancelBtn.style.border = '1px solid #ccc';
-        cancelBtn.style.color  = '#333';
-        footerRow.appendChild(cancelBtn);
-        container.appendChild(footerRow);
+        const footer = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '10px' });
+        const back = UI.createButton(backFn === restoreCategoryLookupView ? '← Back to Category' : backFn ? '← Back' : '✖️ Cancel', 'white', backFn || resetModal);
+        Object.assign(back.style, { border: '1px solid #ccc', color: '#333' });
+        footer.appendChild(back);
+        container.appendChild(footer);
 
         async function doLookup() {
             const id = idInput.value.trim();
-            if (!id) return UI.showStatus('⚠️ Please enter a URL list ID', 'warning');
-            if (!/^\d+$/.test(id)) return UI.showStatus('⚠️ URL list ID must be numeric', 'warning');
-
-            UI.showStatus('🔄 Looking up URL list...', 'info');
-            resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching URL list data...</div>';
-
-            await makeApiRequest('GET', `/api/v2/policy/urllist/${id}`, null,
-                (data) => {
-                    UI.hideStatus();
-                    renderUrlListByIdResult(resultsArea, data, backFn || (() => showUrlListByIdLookup(id)));
-                },
-                (error) => {
-                    UI.showStatus(`❌ Failed: ${error}`, 'error');
-                    resultsArea.innerHTML = `<div style="text-align:center;padding:30px;color:#dc3545;font-size:13px;">Could not retrieve URL list. ${escapeHtml(String(error))}</div>`;
-                }
-            );
+            if (!id) return UI.showStatus('⚠️ Please enter a Destination Profile ID', 'warning');
+            if (!/^[A-Za-z0-9-]+$/.test(id)) return UI.showStatus('⚠️ That does not look like a Destination Profile ID', 'warning');
+            UI.showStatus('🔄 Looking up the Destination Profile…', 'info');
+            resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching the profile…</div>';
+            const r = await dpCall('GET', `${DP_PATH}/${encodeURIComponent(id)}`);
+            if (!r.ok) {
+                if (!r.handled) UI.showStatus(r.status === 404 ? '⚠️ No Destination Profile has this ID.' : `❌ Failed: ${r.error}`, r.status === 404 ? 'warning' : 'error');
+                resultsArea.innerHTML = '';
+                return;
+            }
+            UI.hideStatus();
+            renderProfileEditor(resultsArea, r.data, doLookup);
         }
-
-        lookupBtn.onclick = doLookup;
         idInput.onkeydown = (e) => { if (e.key === 'Enter') doLookup(); };
-
-        if (prefillId) {
-            idInput.value = prefillId;
-            doLookup();
-        } else {
-            setTimeout(() => idInput.focus(), 100);
-        }
+        if (prefillId) { idInput.value = prefillId; doLookup(); } else setTimeout(() => idInput.focus(), 100);
     }
 
-    function renderUrlListByIdResult(resultsArea, data, backFn) {
+    function renderProfileEditor(resultsArea, data, reload) {
         resultsArea.innerHTML = '';
+        const info = UI.createElement('div', { padding: '12px 14px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#f8f9fa', marginBottom: '12px', fontSize: '12px', color: '#555' });
+        const n = (data.values || []).filter(v => !String(v).trim().startsWith('#')).length;
+        info.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px">
+                <span style="font-weight:bold;font-size:15px;color:#333">${escapeHtml(data.name || '(unnamed)')}</span>${dpBadge(data.status)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:6px">
+                <span><strong>ID:</strong> <span style="font-family:monospace">${escapeHtml(String(data.id))}</span></span>
+                <span><strong>Values:</strong> ${n}</span></div>
+            <div style="font-size:11px;color:#888">Created by <strong>${escapeHtml(data.create_by || '—')}</strong> on ${escapeHtml(dpFormatDate(data.create_time))} ·
+                modified by <strong>${escapeHtml(data.modify_by || '—')}</strong> on ${escapeHtml(dpFormatDate(data.modify_time))}</div>`;
+        resultsArea.appendChild(info);
 
-        const formatDate = (iso) => {
-            if (!iso) return '—';
-            try { return new Date(iso).toLocaleString(); } catch (e) { return iso; }
-        };
+        const nameIn = dpInput('dp-edit-name', 100, '', data.name);
+        const descIn = dpInput('dp-edit-desc', 200, 'Optional', data.description);
+        const typeIn = dpTypeSelect('dp-edit-type', data.type);
+        resultsArea.appendChild(dpField('Name', nameIn, true));
+        resultsArea.appendChild(dpField('Description', descIn, true));
+        resultsArea.appendChild(dpField('Match type', typeIn));
+        const { wrap, ta } = dpValuesArea('dp-edit-values', data.values || []);
+        wrap.style.flex = '0 0 auto';
+        resultsArea.appendChild(wrap);
+        if (ta) resultsArea.appendChild(createUrlListLogButtons(ta));
 
-        // Metadata card
-        const infoCard = UI.createElement('div', {
-            padding: '12px 14px', border: '1px solid #ccc', borderRadius: '8px',
-            backgroundColor: '#f8f9fa', marginBottom: '12px', fontSize: '12px', color: '#555'
-        });
+        const warning = UI.createElement('div', { display: 'none', marginTop: '10px', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', lineHeight: '1.5',
+            color: '#856404', backgroundColor: '#fff3cd', border: '1px solid #ffeaa7' }, { id: 'dp-rename-warning' });
+        resultsArea.appendChild(warning);
+        const btns = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '14px' });
+        const save = UI.createButton('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', () => saveProfile());
+        btns.appendChild(save);
+        resultsArea.appendChild(btns);
+        let renameConfirmed = false;
+        nameIn.addEventListener('input', () => { renameConfirmed = false; warning.style.display = 'none'; save.textContent = '💾 Save Changes'; });
 
-        const nameRow = UI.createElement('div', { fontWeight: 'bold', fontSize: '15px', color: '#333', marginBottom: '6px' });
-        nameRow.textContent = data.name || '(unnamed)';
-        infoCard.appendChild(nameRow);
-
-        const metaRow = UI.createElement('div', { display: 'flex', flexWrap: 'wrap', gap: '14px', marginBottom: '6px', fontSize: '12px', color: '#666' });
-        const mkMeta = (label, value) => {
-            const s = document.createElement('span');
-            s.innerHTML = `<strong>${escapeHtml(label)}</strong> ${escapeHtml(String(value ?? '—'))}`;
-            return s;
-        };
-        metaRow.appendChild(mkMeta('ID:', data.id));
-        metaRow.appendChild(mkMeta('Type:', data.data?.type || '—'));
-        metaRow.appendChild(mkMeta('URLs:', (data.data?.urls || []).length));
-        if (data.pending !== undefined) {
-            const hasPending = Number(data.pending) > 0;
-            const pSpan = document.createElement('span');
-            pSpan.innerHTML = '<strong>Pending:</strong> ';
-            const pBadge = UI.createElement('span', {
-                padding: '1px 7px', borderRadius: '10px', fontSize: '11px', fontWeight: 'bold',
-                backgroundColor: hasPending ? '#fff3cd' : '#d4edda',
-                color:           hasPending ? '#856404' : '#155724',
-                border:          `1px solid ${hasPending ? '#ffeaa7' : '#c3e6cb'}`
-            });
-            pBadge.textContent = hasPending ? `${data.pending} pending` : 'none';
-            pSpan.appendChild(pBadge);
-            metaRow.appendChild(pSpan);
+        async function saveProfile() {
+            const name = nameIn.value.trim();
+            const values0 = dpValuesFrom(ta.value);
+            const values = values0.length ? values0 : [DP_EMPTY];
+            const changes = {};
+            if (name !== data.name) changes.name = name;
+            if (descIn.value.trim() !== (data.description || '')) changes.description = descIn.value.trim();
+            const valuesChanged = JSON.stringify(values) !== JSON.stringify(data.values || []);
+            if (typeIn.value !== data.type) { changes.type = typeIn.value; changes.values = values; }
+            else if (valuesChanged) changes.values = values;
+            if (!name) return UI.showStatus('⚠️ The name cannot be empty', 'warning');
+            if (!Object.keys(changes).length) return UI.showStatus('ℹ️ Nothing changed', 'info');
+            if (changes.name && !renameConfirmed) {
+                warning.innerHTML = `⚠️ <strong>Renaming can break other parts of the scripts.</strong> Several features find Destination Profiles by their exact name:
+                    the Change Tracker <strong>Newly Registered Domains</strong> check and its shared list of NRD profiles, and the Destination Profile entries
+                    logged in tickets under the old name "${escapeHtml(data.name)}". Other parts of the scripts that use the profile name may stop working too.
+                    Click again to save with the new name "${escapeHtml(name)}".`;
+                warning.style.display = 'block';
+                save.textContent = '💾 Save with the new name';
+                renameConfirmed = true;
+                return;
+            }
+            save.disabled = true;
+            try {
+                UI.showStatus('🔄 Checking the profile in Netskope…', 'info');
+                // Saved from the profile as it is now, never from an older copy
+                const fresh = await dpCall('GET', `${DP_PATH}/${encodeURIComponent(data.id)}`);
+                if (!fresh.ok) { if (!fresh.handled) UI.showStatus(`❌ Failed: ${fresh.error}`, 'error'); return; }
+                const now = fresh.data || {};
+                if (now.modify_time !== data.modify_time || JSON.stringify(now.values || []) !== JSON.stringify(data.values || [])) {
+                    UI.showStatus('⚠️ This profile changed in Netskope since you opened it. Nothing was saved: reload it and make your change again.', 'warning');
+                    if (![...btns.children].some(b => /Reload/.test(b.textContent))) {
+                        const r = UI.createButton('↺ Reload the profile', 'white', () => reload());
+                        Object.assign(r.style, { border: '1px solid #ccc', color: '#333' });
+                        btns.appendChild(r);
+                    }
+                    return;
+                }
+                if (now.status === 'pending-delete') return UI.showStatus('⚠️ This profile is waiting to be deleted in Netskope, so it cannot be changed.', 'warning');
+                UI.showStatus('🔄 Saving…', 'info');
+                const r = await dpCall('PATCH', `${DP_PATH}/${encodeURIComponent(data.id)}?interactive=true`, changes);
+                if (!r.ok) {
+                    if (r.handled) return;
+                    return UI.showStatus(r.status === 409 && changes.name ? `⚠️ A Destination Profile called "${name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
+                }
+                const what = [changes.name && 'name', changes.description !== undefined && 'description', changes.type && 'match type', changes.values && 'values'].filter(Boolean).join(', ');
+                currentProfiles = [];
+                const applied = await dpApply(r.tenant, Object.assign({}, data, r.data || {}, { id: data.id, name }), `Changed the ${what} of "${name}"`);
+                if (applied) reload();
+            } finally {
+                save.disabled = false;
+            }
         }
-        infoCard.appendChild(metaRow);
-
-        const auditRow = UI.createElement('div', { fontSize: '11px', color: '#888' });
-        auditRow.innerHTML = `Modified by <strong>${escapeHtml(data.modify_by || '—')}</strong> on ${escapeHtml(formatDate(data.modify_time))}` +
-            (data.modify_type ? `  ·  <em>${escapeHtml(data.modify_type)}</em>` : '');
-        infoCard.appendChild(auditRow);
-        resultsArea.appendChild(infoCard);
-
-        // Editable URLs textarea
-        const textareaWrapper = UI.createTextArea('urllist-id-lookup-urls', 'URLs (one per line)', 'example.com\n*.domain.com', 10);
-        textareaWrapper.style.flex = '0 0 auto';
-        textareaWrapper.style.marginBottom = '6px';
-        const textareaEl = textareaWrapper.querySelector('textarea');
-        if (textareaEl) textareaEl.value = (data.data?.urls || []).join('\n');
-        resultsArea.appendChild(textareaWrapper);
-
-        if (textareaEl) resultsArea.appendChild(createUrlListLogButtons(textareaEl));
-
-        // Action buttons
-        const btnRow = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '14px' });
-
-        const saveBtn = UI.createButton('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', async () => {
-            if (!textareaEl) return;
-            const urlsInput = textareaEl.value.trim();
-            if (!urlsInput) return UI.showStatus('⚠️ Please enter at least one URL', 'warning');
-            const urls = urlsInput.split('\n').map(u => u.trim()).filter(Boolean);
-            if (!urls.length) return UI.showStatus('⚠️ No valid URLs found', 'warning');
-            UI.showStatus('🔄 Updating URL list...', 'info');
-            await makeApiRequest('PATCH', `/api/v2/policy/urllist/${data.id}/replace`, { data: { type: 'exact', urls } },
-                () => {
-                    const t = getActiveTenant();
-                    UI.showStatus(`✅ URL list "${escapeHtml(data.name)}" updated successfully! Opening URL List page...`, 'success');
-                    GM_openInTab(`https://${t}/ns#/url-list`, { active: false, insert: true });
-                    setTimeout(UI.hideStatus, 8000);
-                },
-                (error) => UI.showStatus(`❌ Failed: ${error}`, 'error')
-            );
-        });
-
-        const backBtn = UI.createButton(backFn ? '← Back' : '✖️ Close', 'white', backFn || resetModal);
-        backBtn.style.border = '1px solid #ccc';
-        backBtn.style.color  = '#333';
-
-        btnRow.appendChild(saveBtn);
-        btnRow.appendChild(backBtn);
-        resultsArea.appendChild(btnRow);
     }
 
     /* ==========================================================
@@ -14580,7 +14338,7 @@ Version 1.4.1:
         };
 
         const titleEl = document.createElement('div');
-        titleEl.textContent = '📜 Add URL List Log Entry';
+        titleEl.textContent = '📜 Add Log Entry';
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '16px' });
 
         const ritmLbl = mkLbl('RITM Number');
@@ -14931,7 +14689,7 @@ Version 1.4.1:
         });
 
         const titleEl = document.createElement('div');
-        titleEl.textContent = `📜 URL List Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
+        titleEl.textContent = `📜 Change History  (${allGroups.length} group${allGroups.length !== 1 ? 's' : ''})`;
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
         modal.appendChild(titleEl);
 
@@ -15046,7 +14804,7 @@ Version 1.4.1:
             scrollArea.innerHTML = '';
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
-                empty.textContent = allGroups.length === 0 ? 'No log entries found in this URL list.' : 'No entries match the current filters.';
+                empty.textContent = allGroups.length === 0 ? 'No log entries found in these values.' : 'No entries match the current filters.';
                 Object.assign(empty.style, { fontSize: '13px', color: '#999', textAlign: 'center', padding: '24px 0', fontStyle: 'italic' });
                 scrollArea.appendChild(empty);
             } else {
@@ -15223,13 +14981,13 @@ Version 1.4.1:
         });
 
         initializeModal();
-        console.log('✅ Netskope URL List Manager initialized!');
+        console.log('✅ Destination Profile Editor initialized!');
     }
 
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Netskope URL List Manager', position: 2 }
+                detail: { id: TOOL_ID, icon: TOOL_ICON, tooltip: 'Destination Profile Editor', position: 2 }
             }));
             addToolbarNotificationDot();
         };
@@ -17719,8 +17477,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.7.0';
-    const CHANGELOG = `Version 2.7.0:
+    const SCRIPT_VERSION = '2.7.1';
+    const CHANGELOG = `Version 2.7.1:
+- Newly Registered Domains: removals through the Netskope API are applied in Netskope with the note "Domain is no longer categorized as Newly Registered Domain", and logged only once Netskope applied them.
+
+Version 2.7.0:
 - Newly Registered Domains: the Netskope API uses the keys in the toolbar's 🔑 Netskope API keys. "🔑 Manage key" opens them, and the API keeps working when the URL List Editor is turned off.
 
 Version 2.6.1:
@@ -23925,7 +23686,7 @@ Version 1.4.3:
                         'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
                         '"↺ Check now" next to it in Configure looks right away, without waiting for the next automatic check.',
                         'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the Netskope API keys of the toolbar, then test it and turn it on per tenant.',
-                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
+                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm, applying it in Netskope with the change note "Domain is no longer categorized as Newly Registered Domain". A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
                     ]);
                 }
@@ -24425,6 +24186,7 @@ Version 1.4.3:
     const NRD_LOOKUP_PATH = '/api/v2/nsiq/urllookup';
     const NRD_DEST_PATH   = '/api/v2/profiles/destinations';
     const NRD_PLACEHOLDER = '#No values';
+    const NRD_CHANGE_NOTE = 'Domain is no longer categorized as Newly Registered Domain';   // audit note of every NRD removal
     const nrdApiOn = () => GM_getValue(NRD_API_KEY, null) || {};
     const nrdApiCall = (host, method, path, body) => netskopeApi.request(host, method, path, body, { caller: 'Change Tracker' });
     const nrdHasKey = (host) => { const st = netskopeApi.status(host); return st.hasKey && !st.expired; };
@@ -24473,7 +24235,7 @@ Version 1.4.3:
     }
 
     const nrdApiError = (r, what) => r.status === 403
-        ? `the token has no permission for ${what}. Ask for a token that includes it.`
+        ? `Netskope refused it (403${r.error && !/^HTTP 403$/.test(r.error) ? `: ${r.error}` : ''}). The token may have no permission for ${what}: ask for a token that includes it.`
         : r.code === 'noKey' ? 'no API key saved for this tenant: set one in 🔑 Netskope API keys.'
         : r.code === 'expired' ? 'the API key expired: set a new one in 🔑 Netskope API keys.'
         : r.code === 'locked' ? 'the API key stays locked.'
@@ -24536,7 +24298,7 @@ Version 1.4.3:
             const k = `${r.host}\n${r.item.profile}`;
             (groups.get(k) || groups.set(k, []).get(k)).push(r);
         });
-        const removed = [];
+        const changed = [];   // { host, id, name, rows } written pending, applied below
         for (const rows of groups.values()) {
             const { host } = rows[0];
             const name = rows[0].item.profile;
@@ -24551,11 +24313,20 @@ Version 1.4.3:
                 continue;
             }
             const d = again.data;
-            const res = await nrdApiCall(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}`,
-                { name: d.name, description: d.description || '', type: d.type, label_ids: d.label_ids || [], values });
+            // Written pending, then applied with the audit note: only the values change
+            const res = await nrdApiCall(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}?interactive=true`, { values });
             if (!res.ok) { notes.push(`${name}: not changed, ${nrdApiError(res, 'PATCH /api/v2/profiles/destinations')}`); continue; }
-            if (!res.data || res.data.status !== 'applied') pending = true;
-            removed.push(...rows);
+            changed.push({ host, id: String(d.id), name, rows });
+        }
+        const removed = [];
+        for (const host of [...new Set(changed.map(c => c.host))]) {
+            const mine = changed.filter(c => c.host === host);
+            const dep = await netskopeApi.deploy(host, mine.map(c => c.id), NRD_CHANGE_NOTE, { caller: 'Change Tracker' });
+            const applied = new Set(dep.ok ? dep.applied : []);
+            mine.forEach(c => {
+                if (applied.has(c.id)) removed.push(...c.rows);
+                else { pending = true; notes.push(`${c.name}: saved but not applied${dep.ok ? '' : ` (${nrdApiError(dep, '/api/v2/profiles/destinations/deploy')})`}, so it was not logged. Apply it in Netskope, then mark the domains as removed.`); }
+            });
         }
         // Logged only after Netskope confirmed the change
         const logGroups = (list) => list.reduce((m, r) => { const k = `${r.item.ticket}\n${r.item.tenantType}\n${r.item.profile}`; (m.get(k) || m.set(k, []).get(k)).push(r); return m; }, new Map());
@@ -24574,7 +24345,7 @@ Version 1.4.3:
         await nrdCheck({ force: true });
         const kept = plan.rows.filter(r => r.action === 'keep').length;
         const parts = [`✔ ${removed.length} removed from the profiles, ${kept} kept ${NRD_KEEP_DAYS} more days.`];
-        if (removed.length && pending) parts.push('Click Apply Changes in Netskope for the change to take effect.');
+        if (removed.length) parts.push(`Applied in Netskope with the note "${NRD_CHANGE_NOTE}".`);
         return parts.concat(notes).join(' ');
     }
 

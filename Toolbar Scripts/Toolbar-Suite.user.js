@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.18.0
+// @version      2.19.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.18.0';
-    const CHANGELOG = `Version 2.18.0:
+   const SCRIPT_VERSION = '2.19.0';
+    const CHANGELOG = `Version 2.19.0:
+- The URL List Editor is now the Destination Profile Editor: fetch every Destination Profile, search a domain in all of them, create profiles and edit their name, description, match type and values, with the same log toolbar. URL Lists are no longer used.
+- Every Destination Profile change is applied in Netskope with a change note that shows in its audit log. A window asks for it after each save, reminds that it is usually the RITM and fills it in with 🎫 Insert RITM. "Leave pending" applies nothing and opens the console instead.
+- Change Tracker: Newly Registered Domains removed through the API are applied in Netskope with the note "Domain is no longer categorized as Newly Registered Domain".
+- 🔑 Netskope API keys: Test now checks access to Destination Profiles.
+
+Version 2.18.0:
 - New 🔑 Netskope API keys in the toolbar settings: one place to set, replace, test, lock or remove the Netskope API key of each tenant. It is part of the toolbar, so it works whatever tools you chose. Your saved keys are kept.
 - The passphrase of a key is now asked in one window that always shows above everything else, even other open panels, and several requests share one prompt.
 - URL List Editor: the API key form is replaced by a status line with "🔑 Manage keys".
@@ -12144,8 +12150,15 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.0';
-    const CHANGELOG = `Version 1.7.0:
+    const SCRIPT_VERSION = '2.0.0';
+    const CHANGELOG = `Version 2.0.0:
+- Now the Destination Profile Editor: everything works on Destination Profiles instead of URL Lists. Fetch every profile with its match type and status, filter by name and search a domain in all of them (wildcards included, comment lines left out).
+- Create a profile with a name, a description, a match type (Exact not case sensitive, Exact case sensitive, or Regex) and its values.
+- Open a profile from a result, by its ID or from a custom category, and change its name, description, match type or values. The profile is read again before saving, so a change made meanwhile in Netskope is never overwritten, and its labels are never touched. Renaming warns first, since other parts of the scripts find profiles by name.
+- After each save, the Apply changes window asks for a change note (usually the RITM, filled in with 🎫 Insert RITM) and applies the change in Netskope, so it shows in the audit log. Leave pending opens the console to apply it there instead.
+- Category by ID shows the Destination Profiles of the category as links.
+
+Version 1.7.0:
 - The API key of each tenant is now managed in the toolbar's 🔑 Netskope API keys. The API Configuration panel shows the state of the key and a "🔑 Manage keys" button. Your saved keys and passphrases still work.
 - The passphrase prompt is the toolbar's own, always above every window.
 
@@ -12958,12 +12971,12 @@ Version 1.4.1:
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent(body) {
-                    lead(body, 'Click the URL List Manager icon in the floating toolbar to open the tool.');
+                    lead(body, 'Click the Destination Profile Editor icon in the floating toolbar to open the tool.');
                     const pin = { bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: '2px solid #667eea' };
                     body.appendChild(hrow([
                         menuMock([ toolSquare('📊'), menuSep(), toolSquare('≡', pin), menuSep(), toolSquare('🔎'), toolSquare('🔗') ])
                     ], { margin: '0 0 10px 0' }));
-                    caption(body, 'The ≡ URL List Manager button in the toolbar opens the main panel.');
+                    caption(body, 'The ≡ Destination Profile Editor button in the toolbar opens the main panel.');
                     bullets(body, [
                         'First run: a setup prompt asks you to enter the Netskope tenant hostnames for each region (EMA, EU, CE, APAC, AME). These are saved in script storage and only need to be entered once.',
                         'In the setup prompt, "Import from a backup file" restores your hosts and tokens from a toolbar backup.',
@@ -12996,14 +13009,14 @@ Version 1.4.1:
             },
             {
                 icon: '📋',
-                title: 'URL Lists',
+                title: 'Destination Profiles',
                 buildContent(body) {
-                    lead(body, 'Fetch all URL lists in the tenant, then filter by name or search by domain to find what you need.');
+                    lead(body, 'Fetch every Destination Profile of the tenant, then filter by name or search a domain to find what you need.');
                     const btnRow = document.createElement('div');
                     Object.assign(btnRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' });
                     for (const b of [
-                        { label: '🔍 Fetch URL Lists',  bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
-                        { label: '✨ Create New List', bg: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' },
+                        { label: '🔍 Fetch Destination Profiles',  bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+                        { label: '✨ Create Destination Profile', bg: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' },
                     ]) {
                         const btn = document.createElement('span');
                         btn.textContent = b.label;
@@ -13026,21 +13039,21 @@ Version 1.4.1:
                         row.textContent = placeholder;
                         return row;
                     };
-                    filterWrap.appendChild(mkFInput('🔍 Filter lists by name...'));
-                    filterWrap.appendChild(mkFInput('🔎 Search URL or domain across all lists…', '#f5576c'));
+                    filterWrap.appendChild(mkFInput('🔍 Filter profiles by name...'));
+                    filterWrap.appendChild(mkFInput('🔎 Search a URL or domain in every profile…', '#f5576c'));
                     body.appendChild(filterWrap);
                     const listCard = document.createElement('div');
                     Object.assign(listCard.style, {
                         padding: '10px 12px', border: '1px solid #667eea', borderRadius: '6px',
                         background: '#f0f0ff', maxWidth: '300px', marginBottom: '10px'
                     });
-                    listCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">Marketing_Domains</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">ID: 42 • 157 URLs</div>';
+                    listCard.innerHTML = '<div style="display:flex;justify-content:space-between;font-family:Arial,sans-serif;"><span style="font-weight:bold;font-size:13px;color:#333;">ES - Newly Registered Domains - Allow</span><span style="font-size:11px;font-weight:bold;color:#155724;background:#d4edda;border-radius:10px;padding:0 8px;">Applied</span></div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">Exact, not case sensitive • 24 values • modified by ana@…</div>';
                     body.appendChild(listCard);
-                    caption(body, 'Click any list card to open the edit view for that list.');
+                    caption(body, 'Click any profile to open its edit view. Every page of profiles is read, however many there are.');
                     bullets(body, [
-                        'Name filter: type part of a list name to narrow the visible results in real time.',
-                        'Domain search: type a URL or domain and click 🔎 Search to find every list that contains a match. Clearing the field restores the normal list view.',
-                        'Create New List: opens a form to enter a list name and URLs. After saving, the Netskope URL Lists page opens in a new tab.',
+                        'Name filter: type part of a profile name to narrow the results in real time.',
+                        'Domain search: type a URL or domain and click 🔎 Search to find every profile that holds it, wildcards included. Comment lines (# …) are not searched.',
+                        'Create Destination Profile: name (up to 100 characters), description (up to 200), match type (Exact not case sensitive, Exact case sensitive, or Regex) and values, with the log toolbar. Then Apply changes asks for the change note.',
                     ]);
                 }
             },
@@ -13048,7 +13061,7 @@ Version 1.4.1:
                 icon: '🔎',
                 title: 'Domain Lookup',
                 buildContent(body) {
-                    lead(body, 'Search for any domain or URL across every URL list in the tenant at once.');
+                    lead(body, 'Search for any domain or URL in every Destination Profile of the tenant at once.');
                     const searchRow = document.createElement('div');
                     Object.assign(searchRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '360px' });
                     const searchInput = document.createElement('div');
@@ -13072,13 +13085,13 @@ Version 1.4.1:
                         padding: '10px 12px', border: '1px solid #ccc', borderRadius: '8px',
                         background: '#fff', maxWidth: '360px', marginBottom: '10px'
                     });
-                    resultCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">Marketing_Domains</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;margin-bottom:6px;">ID: 42 • 157 total URLs • 3 matches</div><div style="font-size:12px;color:#667eea;font-weight:bold;cursor:pointer;font-family:Arial,sans-serif;">▶ Show matched entries (3)</div>';
+                    resultCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;">API Evernote</div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;margin-bottom:6px;">Exact, case sensitive • 1 match</div><div style="font-family:monospace;font-size:12px;color:#333;background:#f8f9fa;border-radius:4px;padding:2px 6px;">api.evernote.com</div>';
                     body.appendChild(resultCard);
                     bullets(body, [
                         'Protocol and port are stripped automatically — paste a full URL and only the domain is matched.',
-                        'Wildcard support: searching example.com also matches *.example.com entries in the lists, and searching *.example.com matches sub.example.com and similar entries.',
-                        'If URL lists have not been fetched yet, the tool fetches them automatically before searching.',
-                        'Click "✏️ Edit List" on any result card to open that list directly in the edit view.',
+                        'Wildcard support: searching example.com also matches *.example.com entries, and searching *.example.com matches sub.example.com and similar entries. Comment lines are not searched.',
+                        'If the profiles have not been fetched yet, the tool fetches them automatically before searching.',
+                        'Click "✏️ Edit" on any result card to open that profile in the edit view.',
                     ]);
                 }
             },
@@ -13086,7 +13099,7 @@ Version 1.4.1:
                 icon: '📝',
                 title: 'URL Log Toolbar',
                 buildContent(body) {
-                    lead(body, 'Four buttons below the URL textarea help you track which ticket added or removed each domain.');
+                    lead(body, 'Four buttons below the values of a profile help you track which ticket added or removed each domain.');
                     const logBtns = [
                         { label: '+ Log Entry',       bg: '#0073e6', color: '#fff', desc: 'Inserts a #RITM | Date | Name header line at the current cursor position. Pre-fills the ticket number from the open ServiceNow ticket and today\'s date.' },
                         { label: '🗑 Delete Selected', bg: '#e53935', color: '#fff', desc: 'Select domain lines in the textarea first, then click to comment them out (prefix #) and prepend a deletion log header with RITM, date, and name.' },
@@ -13132,7 +13145,7 @@ Version 1.4.1:
                 icon: '🏷️',
                 title: 'Category by ID',
                 buildContent(body) {
-                    lead(body, 'Look up a Netskope custom category by its numeric ID to see its name, status, and URL list assignments.');
+                    lead(body, 'Look up a Netskope custom category by its numeric ID to see its name, status and Destination Profiles.');
                     const inputRow = document.createElement('div');
                     Object.assign(inputRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '320px' });
                     const idInput = document.createElement('div');
@@ -13172,7 +13185,7 @@ Version 1.4.1:
                     Object.assign(idEl.style, { fontSize: '11px', color: '#888', marginBottom: '10px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(idEl);
                     const pillLabel = document.createElement('div');
-                    pillLabel.textContent = 'Included URL Lists:';
+                    pillLabel.textContent = 'Included Destination Profiles:';
                     Object.assign(pillLabel.style, { fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '5px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(pillLabel);
                     const pillRow = document.createElement('div');
@@ -13189,7 +13202,7 @@ Version 1.4.1:
                     card.appendChild(pillRow);
                     body.appendChild(card);
                     bullets(body, [
-                        'Included and Excluded URL List IDs appear as clickable pills (↗). Clicking one opens that list in the URL List by ID view.',
+                        'Included and Excluded Destination Profiles appear as clickable pills (↗). Clicking one opens that profile in the edit view. Old URL List ids, if any, are shown as plain text.',
                         'A "← Back to Category" button returns you to the category result without re-fetching.',
                         'Status badge: green = applied, yellow = pending, red = error.',
                         'Audit info (created by, modified by, timestamps) is shown at the bottom of the result card.',
@@ -13198,9 +13211,9 @@ Version 1.4.1:
             },
             {
                 icon: '🔗',
-                title: 'URL List by ID',
+                title: 'Profile by ID and editing',
                 buildContent(body) {
-                    lead(body, 'Fetch any URL list by its numeric ID to view its metadata and edit its URL entries in place.');
+                    lead(body, 'Open a Destination Profile by its ID (or from a result) to edit its name, description, match type and values.');
                     const inputRow = document.createElement('div');
                     Object.assign(inputRow.style, { display: 'flex', gap: '8px', alignItems: 'stretch', marginBottom: '10px', maxWidth: '300px' });
                     const idInput = document.createElement('div');
@@ -13208,7 +13221,7 @@ Version 1.4.1:
                         flex: '1', padding: '8px 10px', border: '2px solid #00b4db', borderRadius: '6px',
                         background: '#fff', fontSize: '12px', color: '#aaa', fontFamily: 'monospace', fontStyle: 'italic'
                     });
-                    idInput.textContent = 'e.g. 43';
+                    idInput.textContent = 'e.g. 56a5524e-74e3-4579-9471-39700db5f9fc';
                     const lookupBtn = document.createElement('span');
                     lookupBtn.textContent = '🔍 Lookup';
                     Object.assign(lookupBtn.style, {
@@ -13224,15 +13237,25 @@ Version 1.4.1:
                         padding: '10px 12px', border: '1px solid #ccc', borderRadius: '8px',
                         background: '#f8f9fa', maxWidth: '360px', marginBottom: '10px'
                     });
-                    metaCard.innerHTML = '<div style="font-weight:bold;font-size:13px;color:#333;font-family:Arial,sans-serif;margin-bottom:5px;">Marketing_Domains</div><div style="display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#666;font-family:Arial,sans-serif;margin-bottom:4px;"><span><strong>ID:</strong> 43</span><span><strong>Type:</strong> exact</span><span><strong>URLs:</strong> 157</span><span style="padding:1px 7px;border-radius:10px;background:#d4edda;color:#155724;border:1px solid #c3e6cb;font-size:11px;font-weight:bold;">none</span></div><div style="font-size:11px;color:#888;font-family:Arial,sans-serif;">Modified by <strong>j.smith@example.com</strong> on 01/06/2026</div>';
+                    metaCard.innerHTML = '<div style="display:flex;justify-content:space-between;font-family:Arial,sans-serif;margin-bottom:5px;"><span style="font-weight:bold;font-size:13px;color:#333;">API Evernote</span><span style="padding:1px 7px;border-radius:10px;background:#d4edda;color:#155724;border:1px solid #c3e6cb;font-size:11px;font-weight:bold;">Applied</span></div><div style="font-size:11px;color:#666;font-family:Arial,sans-serif;">ID 56a5524e-… · 1 value · modified by ana@… on 15/09/2026</div>';
                     body.appendChild(metaCard);
                     body.appendChild(hrow([
                         chip('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'),
                         chip('← Back', '#fff', { color: '#555', border: '1px solid #ccc' }),
                     ], { margin: '0 0 10px 0' }));
+                    const note = document.createElement('div');
+                    Object.assign(note.style, { border: '2px solid #667eea', borderRadius: '10px', padding: '10px 12px', maxWidth: '380px', margin: '4px 0 10px 0', fontFamily: 'Arial, sans-serif' });
+                    note.appendChild(span('✅ Apply changes', { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '6px' }));
+                    note.appendChild(span('RITM0123456', { display: 'block', fontFamily: 'monospace', fontSize: '12px', border: '1px solid #bbb', borderRadius: '5px', padding: '5px 8px', marginBottom: '4px' }));
+                    note.appendChild(span('Usually the RITM number, as in Apply Changes in the console.   11/100', { display: 'block', fontSize: '11px', color: '#777', marginBottom: '6px' }));
+                    note.appendChild(hrow([chip('🎫 Insert RITM', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Leave pending', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Apply now', '#667eea')], { gap: '6px', margin: '0' }));
+                    body.appendChild(note);
+                    caption(body, 'After every create or save: the change note goes into Netskope\'s audit log.');
                     bullets(body, [
-                        'The URL textarea and log button toolbar appear below the metadata card. Edit entries and click "💾 Save Changes" to push the update to Netskope.',
-                        'Pending badge: shows how many changes are queued for deployment in the tenant (yellow = pending, green = none).',
+                        'Save Changes reads the profile again first. If someone changed it in Netskope meanwhile, nothing is saved and ↺ Reload the profile appears.',
+                        'Only what you changed is sent, and the labels of the profile are never touched. A profile left without values is saved with "#No values".',
+                        'Apply now (it needs a change note, usually the RITM, and 🎫 Insert RITM fills it in) applies the change in Netskope. Leave pending keeps it pending and opens the console to apply it there.',
+                        'Renaming warns first: other parts of the scripts find profiles by their exact name, such as the Change Tracker Newly Registered Domains check.',
                         'When opened from a Category by ID result, "← Back to Category" restores the category view without re-fetching.',
                     ]);
                 }
@@ -13281,7 +13304,7 @@ Version 1.4.1:
                     Object.assign(overrideText.style, { fontSize: '12px', color: '#856404', fontFamily: 'Arial, sans-serif', fontWeight: 'bold' });
                     overrideRow.appendChild(overrideText);
                     body.appendChild(overrideRow);
-                    caption(body, 'Switching tenants resets the URL list view. The override clears when the modal is closed.');
+                    caption(body, 'Switching tenants resets the profile view. The override clears when the modal is closed.');
                     bullets(body, [
                         'Tenant hosts: one hostname per region, entered without https:// or a trailing slash. Input borders turn green when a value is saved.',
                         'Tenant override: the ⚡ Override dropdown in the API Configuration header lets you switch to any configured tenant for the current session without changing the auto-detection logic.',
@@ -13312,7 +13335,7 @@ Version 1.4.1:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Netskope URL List Manager • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Destination Profile Editor • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -14958,7 +14981,7 @@ Version 1.4.1:
         });
 
         initializeModal();
-        console.log('✅ Netskope URL List Manager initialized!');
+        console.log('✅ Destination Profile Editor initialized!');
     }
 
         return function register() {
@@ -17454,8 +17477,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.7.0';
-    const CHANGELOG = `Version 2.7.0:
+    const SCRIPT_VERSION = '2.7.1';
+    const CHANGELOG = `Version 2.7.1:
+- Newly Registered Domains: removals through the Netskope API are applied in Netskope with the note "Domain is no longer categorized as Newly Registered Domain", and logged only once Netskope applied them.
+
+Version 2.7.0:
 - Newly Registered Domains: the Netskope API uses the keys in the toolbar's 🔑 Netskope API keys. "🔑 Manage key" opens them, and the API keeps working when the URL List Editor is turned off.
 
 Version 2.6.1:
@@ -23660,7 +23686,7 @@ Version 1.4.3:
                         'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
                         '"↺ Check now" next to it in Configure looks right away, without waiting for the next automatic check.',
                         'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the Netskope API keys of the toolbar, then test it and turn it on per tenant.',
-                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm. A profile with pending changes, or changed while you reviewed, is never touched.',
+                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm, applying it in Netskope with the change note "Domain is no longer categorized as Newly Registered Domain". A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
                     ]);
                 }
