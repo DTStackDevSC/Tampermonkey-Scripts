@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.16.3
+// @version      2.17.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.16.3';
-    const CHANGELOG = `Version 2.16.3:
+   const SCRIPT_VERSION = '2.17.0';
+    const CHANGELOG = `Version 2.17.0:
+- NS Policies Toolkit: new "📥 Export to Excel" button on the SSL Decryption policy list. It downloads every policy with all its data: a Policies sheet with one row per policy and a Criteria sheet with one row per value, ready to filter. Nothing is changed in Netskope.
+
+Version 2.16.3:
 - Small internal wording cleanup. Nothing changes in how the toolbar works.
 
 Version 2.16.2:
@@ -27880,6 +27883,7 @@ Version 0.9.1:
         sourceManager:   'toolkit_sourceManager',
         policyCopy:      'toolkit_policyCopy',
         bulkGroupAdd:    'toolkit_bulkGroupAdd',
+        sslExport:       'toolkit_sslExport',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -27889,8 +27893,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.37.2';
-    const CHANGELOG = `Version 1.37.2:
+    const SCRIPT_VERSION = '1.38.0';
+    const CHANGELOG = `Version 1.38:
+- New "📥 Export to Excel" button on the SSL Decryption policy list, next to New Policy. It downloads an Excel file with every policy: a Policies sheet with one row per policy (order, name, action, notes, who changed it, every criterion) and a Criteria sheet with one row per value, with names and ids, ready to filter. It only reads, nothing is changed in Netskope. Turn it off in Settings with "📥 SSL Decryption export".
+
+Version 1.37.2:
 - Steering Exception Tools: when Netskope answers a change with "backend error, please try again", the run no longer stops. It checks whether the change went through, carries on when it did, and tries again up to twice when it did not, so nothing is added twice.
 
 Version 1.37.1:
@@ -28439,6 +28446,11 @@ Version 1.16:
             label:       '👥 Bulk Add Groups',
             description: 'On the Real-time Protection policy list, adds a "Bulk add groups" button: paste pairs of groups, and every policy that holds the first group gets the second one added and saved.',
         },
+        {
+            key:         'sslExport',
+            label:       '📥 SSL Decryption export',
+            description: 'On the SSL Decryption policy list, adds an "Export to Excel" button next to New Policy: it downloads every policy with all its data, in a Policies sheet and a Criteria sheet ready to filter. Nothing is changed in Netskope.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -28686,6 +28698,7 @@ Version 1.16:
                     if (key === 'sourceManager') cleanupSourceManager();
                     if (key === 'policyCopy') cleanupPolicyCopy();
                     if (key === 'bulkGroupAdd') cleanupBulkGroups();
+                    if (key === 'sslExport') cleanupSslExport();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -28737,7 +28750,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd', 'sslExport'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -29778,6 +29791,33 @@ Version 1.16:
                 },
             },
             {
+                icon: '📥',
+                title: 'SSL Decryption export',
+                buildContent(body) {
+                    lead(body, 'On the SSL Decryption policy list, download every policy with all its data as an Excel file.');
+                    body.appendChild(hrow([
+                        chip('Apply Changes', '#fff', { color: '#555', border: '1px solid #ccc' }),
+                        chip('New Policy', '#0073e6'),
+                        chip('📥 Export to Excel', '#0073e6'),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits next to New Policy. While it works it shows ⏳ Exporting…, then ✓ Exported. Point at it to see what happened.');
+                    const sheets = [
+                        { bg: '#217346', label: 'Policies', desc: 'One row per policy in the console order: name, enabled, Decrypt or Do Not Decrypt, notes, pending, who changed it and when, certificate, and one column per criterion (categories, users, apps, domains...). "NOT: " marks a negated criterion.' },
+                        { bg: '#217346', label: 'Criteria', desc: 'One row per policy, criterion and value, with the name and its id. Filter it to find, for example, every policy that holds a category or a user.' },
+                        { bg: '#75787b', label: 'About', desc: 'Tenant, export time, number of policies, and any name list that could not be read.' },
+                    ];
+                    for (const sh of sheets) {
+                        body.appendChild(hrow([chip(sh.label, sh.bg), span(sh.desc, { fontSize: '12px', color: '#555' })], { flexWrap: 'nowrap', margin: '8px 0 0 0', alignItems: 'flex-start' }));
+                    }
+                    bullets(body, [
+                        'It only reads: nothing changes in Netskope.',
+                        'Category and user group ids are turned into names. An id with no name stays as the id, so nothing is left out.',
+                        'Headers stay in view and filters are already on. Everything is written as text, so a note starting with = is never run as a formula.',
+                        'The file is named ssl-decryption-<tenant>-<date>.xlsx.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -29840,6 +29880,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('🧹 Steering Exception Tools', true, 'Bulk remove and bulk add domains or categories across steering exceptions, with backups to undo.'));
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
                     togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
+                    togglesWrap.appendChild(toggle('📥 SSL Decryption export', true, 'Download every SSL Decryption policy as an Excel file.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
@@ -35361,6 +35402,321 @@ Version 1.16:
     }
 
     // ─────────────────────────────────────────────────────────────
+    // SSL DECRYPTION EXPORT
+    // Downloads every SSL Decryption policy as an Excel file. Reads only,
+    // with the console's own session (no token needed for these calls).
+    // ─────────────────────────────────────────────────────────────
+
+    const SX_BUTTON_ID = 'nstk-ssl-export-btn';
+    const SX_LABEL     = '📥 Export to Excel';
+    const sx = { timer: null, busy: false };
+
+    // Known criterion keys and their column names; any other key keeps its raw name
+    const SX_CRITERIA = {
+        categ_col: 'Categories', user_col: 'Users', os_family: 'OS', appsuite: 'App suites', domains: 'Domains',
+    };
+    const sxCriterionLabel = key => SX_CRITERIA[key] || (/group/i.test(key) && !/saml/i.test(key) ? 'User groups' : key);
+
+    /* ── A small .xlsx writer: stored zip, inline strings, no library ── */
+
+    const SX_CRC = (() => {
+        const t = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+        return t;
+    })();
+
+    function sxCrc32(bytes) {
+        let c = 0xFFFFFFFF;
+        for (let i = 0; i < bytes.length; i++) c = SX_CRC[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+        return (c ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function sxZip(files) {
+        const enc = new TextEncoder();
+        const parts = [], central = [];
+        let offset = 0;
+        const u16 = n => [n & 0xFF, (n >>> 8) & 0xFF];
+        const u32 = n => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
+        files.forEach(f => {
+            const name = enc.encode(f.name), data = enc.encode(f.text), crc = sxCrc32(data);
+            const common = [...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)];
+            const local = new Uint8Array([0x50, 0x4B, 0x03, 0x04, ...common]);
+            parts.push(local, name, data);
+            central.push(new Uint8Array([0x50, 0x4B, 0x01, 0x02, ...u16(20), ...common, ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), name);
+            offset += local.length + name.length + data.length;
+        });
+        const size = central.reduce((n, p) => n + p.length, 0);
+        const end = new Uint8Array([0x50, 0x4B, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(size), ...u32(offset), ...u16(0)]);
+        const all = parts.concat(central, [end]);
+        const out = new Uint8Array(all.reduce((n, p) => n + p.length, 0));
+        let at = 0;
+        all.forEach(p => { out.set(p, at); at += p.length; });
+        return out;
+    }
+
+    // Text safe for XML: control characters Excel cannot hold are dropped
+    function sxXml(text) {
+        return String(text).replace(/[^\x09\x0A\x0D\x20-퟿-�\u{10000}-\u{10FFFF}]/gu, '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function sxColName(i) {
+        let s = '';
+        for (i++; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s;
+        return s;
+    }
+
+    // Every cell is written as text (inline string), so nothing is ever read as a formula.
+    // Numbers stay numbers. Style 1 = bold header, style 2 = wrapped text.
+    function sxSheetXml(sheet) {
+        const rows = sheet.rows;
+        const width = Math.max(1, ...rows.map(r => r.length));
+        const cols = Array.from({ length: width }, (_, c) => {
+            const longest = Math.max(...rows.map(r => String(r[c] == null ? '' : r[c]).split('\n').reduce((m, l) => Math.max(m, l.length), 0)));
+            return `<col min="${c + 1}" max="${c + 1}" width="${Math.min(60, Math.max(8, longest + 2))}" customWidth="1"/>`;
+        }).join('');
+        const body = rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((v, ci) => {
+            const ref = sxColName(ci) + (ri + 1);
+            const style = ri === 0 ? 1 : 2;
+            if (v == null || v === '') return `<c r="${ref}" s="${style}"/>`;
+            if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}" s="${style}"><v>${v}</v></c>`;
+            let text = String(v);
+            if (text.length > 32000) text = text.slice(0, 32000) + ' … (cut: too long for one cell)';
+            return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${sxXml(text)}</t></is></c>`;
+        }).join('') + '</row>').join('');
+        const last = sxColName(width - 1) + Math.max(1, rows.length);
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+            (sheet.header ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' : '') +
+            `<cols>${cols}</cols><sheetData>${body}</sheetData>` +
+            (sheet.header ? `<autoFilter ref="A1:${last}"/>` : '') + '</worksheet>';
+    }
+
+    // sheets: [{ name, rows: [[...]], header: true }] → bytes of an .xlsx file
+    function sxXlsx(sheets) {
+        const ns = 'http://schemas.openxmlformats.org';
+        const files = [
+            { name: '[Content_Types].xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                `<Types xmlns="${ns}/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+                '<Default Extension="xml" ContentType="application/xml"/>' +
+                '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+                '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+                sheets.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '</Types>' },
+            { name: '_rels/.rels', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                `<Relationships xmlns="${ns}/package/2006/relationships"><Relationship Id="rId1" Type="${ns}/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+            { name: 'xl/workbook.xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                `<workbook xmlns="${ns}/spreadsheetml/2006/main" xmlns:r="${ns}/officeDocument/2006/relationships"><sheets>` +
+                sheets.map((s, i) => `<sheet name="${sxXml(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets>' +
+                '<definedNames>' + sheets.map((s, i) => s.header ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${sxXml(s.name)}'!$A$1:$${sxColName(Math.max(1, ...s.rows.map(r => r.length)) - 1)}$${Math.max(1, s.rows.length)}</definedName>` : '').join('') + '</definedNames></workbook>' },
+            { name: 'xl/_rels/workbook.xml.rels', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                `<Relationships xmlns="${ns}/package/2006/relationships">` +
+                sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="${ns}/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('') +
+                `<Relationship Id="rId${sheets.length + 1}" Type="${ns}/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+            { name: 'xl/styles.xml', text: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+                `<styleSheet xmlns="${ns}/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
+                '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+                '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+                '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+                '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+                '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+                '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>' +
+                '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>' },
+        ];
+        sheets.forEach((s, i) => files.push({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sxSheetXml(s) }));
+        return sxZip(files);
+    }
+
+    /* ── Reading the policies and the names behind their ids ── */
+
+    async function sxGet(url) {
+        const res = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json, text/plain, */*' } });
+        if (!res.ok) throw new Error(`Netskope answered ${res.status}`);
+        try { return await res.json(); } catch (e) { throw new Error('Netskope sent an unexpected answer'); }
+    }
+
+    // { categories: Map id → { name, kind }, groups: Map id → name, failed: [list names] }
+    async function sxLoadNames(progress) {
+        const names = { categories: new Map(), groups: new Map(), failed: [] };
+        progress('Reading category names…');
+        try {
+            const pre = await sxGet('/api/v2/balkan/webcategories?type=predefined&app_or_web=both');
+            (Array.isArray(pre && pre.data) ? pre.data : []).forEach(c => { if (c && c.id != null) names.categories.set(String(c.id), { name: String(c.name), kind: 'Predefined' }); });
+        } catch (e) { names.failed.push(`Predefined categories (${e.message})`); }
+        try {
+            const filter = encodeURIComponent('status in ("pending-create", "pending-update", "applied")');
+            for (let offset = 0, total = Infinity; offset < total && offset < 5000; offset += 100) {
+                const page = await sxGet(`/api/v2/profiles/customcategories?limit=100&offset=${offset}&sortby=name&sortorder=asc&filter=${filter}`);
+                const els = Array.isArray(page && page.elements) ? page.elements : [];
+                els.forEach(c => { if (c && c.id != null) names.categories.set(String(c.id), { name: String(c.name), kind: 'Custom' }); });
+                total = Number(page && page.total_count) || 0;
+                if (!els.length) break;
+            }
+        } catch (e) { names.failed.push(`Custom categories (${e.message})`); }
+        progress('Reading user group names…');
+        try {
+            const g = await sxGet('/api/v2/balkan/usergroups');
+            (Array.isArray(g && g.data) ? g.data : []).forEach(x => { if (x && x.id != null) names.groups.set(String(x.id), String(x.name)); });
+        } catch (e) { names.failed.push(`User groups (${e.message})`); }
+        return names;
+    }
+
+    const SX_KNOWN_FIELDS = ['id', 'name', 'order', 'enabled', 'action', 'criteria', 'description', 'certificate',
+        'forceSslCertOnNsClient', 'samlGroupObjects', 'modifiedBy', 'modifiedAt', 'pending', 'modifyType', 'isInRoleScope'];
+
+    function sxNegated(c) {
+        return String(c['negate_' + c.key] || '').toLowerCase() === 'true';
+    }
+
+    // One criterion value as { name, id, type }
+    function sxValue(key, value, names) {
+        const id = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+        if (key === 'categ_col') {
+            const c = names.categories.get(id);
+            return { name: c ? c.name : id, id, type: c ? c.kind : '' };
+        }
+        if (sxCriterionLabel(key) === 'User groups' && names.groups.has(id)) return { name: names.groups.get(id), id, type: '' };
+        return { name: id, id: '', type: '' };
+    }
+
+    function sxDate(seconds) {
+        const n = Number(seconds);
+        if (!n) return '';
+        const d = new Date(n * 1000);
+        const p = v => String(v).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    // Pure: the three sheets for a list of policies
+    function sxBuildSheets(policies, names, meta) {
+        const yesNo = v => (v === true || v === 'true' ? 'Yes' : v === false || v === 'false' ? 'No' : (v == null ? '' : String(v)));
+        const list = policies.slice().sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+        const keys = [];
+        list.forEach(p => (Array.isArray(p.criteria) ? p.criteria : []).forEach(c => { if (c && c.key && !keys.includes(c.key)) keys.push(c.key); }));
+        const extra = [];
+        list.forEach(p => Object.keys(p).forEach(k => { if (!SX_KNOWN_FIELDS.includes(k) && !extra.includes(k)) extra.push(k); }));
+        const saml = list.some(p => Array.isArray(p.samlGroupObjects) && p.samlGroupObjects.length);
+
+        const head = ['Order', 'Name', 'Enabled', 'Action', 'Notes', 'Pending', 'Modify type', 'Modified by', 'Modified at',
+            'Certificate', 'Force SSL cert on Netskope Client', 'In my role scope', 'ID']
+            .concat(keys.map(sxCriterionLabel), saml ? ['SAML groups'] : [], extra);
+        const policyRows = [head];
+        const criteriaRows = [['Order', 'Policy', 'Policy ID', 'Criterion', 'Negated', 'Value', 'Value ID', 'Type']];
+        list.forEach(p => {
+            const criteria = Array.isArray(p.criteria) ? p.criteria : [];
+            const name = p.name == null ? '' : String(p.name);
+            const order = Number(p.order);
+            const row = [isFinite(order) ? order : String(p.order || ''), name, yesNo(p.enabled),
+                p.action === 'allow' ? 'Decrypt' : p.action === 'bypass' ? 'Do Not Decrypt' : String(p.action || ''),
+                p.description == null ? '' : String(p.description), yesNo(p.pending), String(p.modifyType || ''),
+                String(p.modifiedBy || ''), sxDate(p.modifiedAt),
+                Number(p.certificate) === 0 ? 'Default' : String(p.certificate == null ? '' : p.certificate),
+                yesNo(p.forceSslCertOnNsClient), yesNo(p.isInRoleScope), String(p.id == null ? '' : p.id)];
+            keys.forEach(k => {
+                const c = criteria.find(x => x && x.key === k);
+                if (!c) return row.push('');
+                const values = (Array.isArray(c.values) ? c.values : []).map(v => sxValue(k, v, names));
+                const neg = sxNegated(c);
+                row.push((neg ? 'NOT: ' : '') + values.map(v => v.name).join('\n'));
+                values.forEach(v => criteriaRows.push([isFinite(order) ? order : '', name, String(p.id), sxCriterionLabel(k), neg ? 'Yes' : 'No', v.name, v.id, v.type]));
+            });
+            if (saml) row.push((p.samlGroupObjects || []).map(g => (g && g.name) || JSON.stringify(g)).join('\n'));
+            extra.forEach(k => row.push(p[k] == null ? '' : typeof p[k] === 'object' ? JSON.stringify(p[k]) : String(p[k])));
+            policyRows.push(row);
+        });
+        const about = [['Tenant', meta.host], ['Exported', meta.at], ['Policies', list.length],
+            ['Exported by', 'NS Policies Toolkit ' + SCRIPT_VERSION]];
+        names.failed.forEach(f => about.push(['Names that could not be read', `${f}: their ids are shown instead`]));
+        return [
+            { name: 'Policies', rows: policyRows, header: true },
+            { name: 'Criteria', rows: criteriaRows, header: true },
+            { name: 'About', rows: about, header: false },
+        ];
+    }
+
+    /* ── The button ── */
+
+    function sxSetButton(text, title) {
+        const b = document.getElementById(SX_BUTTON_ID);
+        if (!b) return;
+        b.textContent = text;
+        if (title != null) b.title = title;
+    }
+
+    async function sxExport() {
+        if (sx.busy) return;
+        sx.busy = true;
+        const progress = msg => sxSetButton('⏳ Exporting…', msg);
+        try {
+            progress('Reading the SSL Decryption policies…');
+            let list;
+            try {
+                const json = await sxGet('/api/v2/balkan/policies/ssldecryption');
+                list = Array.isArray(json && json.data) ? json.data : null;
+                if (!list) throw new Error('Netskope sent an unexpected answer');
+            } catch (e) {
+                throw new Error(`Could not read the SSL Decryption policies: ${e.message}. This tenant may use the older policy editor, which the export does not know yet.`);
+            }
+            const names = await sxLoadNames(progress);
+            const now = new Date();
+            const sheets = sxBuildSheets(list, names, { host: location.host, at: now.toLocaleString() });
+            const bytes = sxXlsx(sheets);
+            const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            const p = v => String(v).padStart(2, '0');
+            a.download = `ssl-decryption-${location.host}-${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+            const note = names.failed.length ? ` Some names could not be read, see the About sheet.` : '';
+            sxSetButton('✓ Exported', `Exported ${list.length} ${list.length === 1 ? 'policy' : 'policies'} to ${a.download}.${note}`);
+            setTimeout(() => { if (!sx.busy) sxSetButton(SX_LABEL); }, 4000);
+        } catch (err) {
+            console.error('[NS Toolkit] SSL Decryption export:', err);
+            sxSetButton('✗ Export failed', err.message);
+        } finally {
+            sx.busy = false;
+        }
+    }
+
+    // The policy list only, not the editor
+    function sxOnListPage() {
+        const hash = window.location.hash || '';
+        return /^#\/ssl-decryption-page\/?(\?|$)/.test(hash);
+    }
+
+    function sxSyncButton() {
+        const existing = document.getElementById(SX_BUTTON_ID);
+        if (!sxOnListPage()) { existing?.remove(); return; }
+        const anchor = [...document.querySelectorAll('button')].find(b => b.id !== SX_BUTTON_ID && b.offsetParent !== null && /^\s*\+?\s*new policy\s*$/i.test(b.textContent));
+        if (!anchor) { existing?.remove(); return; }
+        if (existing && existing.previousElementSibling === anchor) return;
+        existing?.remove();
+        const btn = document.createElement('button');
+        btn.id = SX_BUTTON_ID;
+        btn.type = 'button';
+        btn.className = anchor.className;
+        btn.textContent = SX_LABEL;
+        btn.title = 'Download every SSL Decryption policy as an Excel file (NS Policies Toolkit). Nothing is changed in Netskope.';
+        Object.assign(btn.style, { marginLeft: '8px', whiteSpace: 'nowrap' });
+        btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); sxExport(); });
+        anchor.insertAdjacentElement('afterend', btn);
+    }
+
+    function initSslExport() {
+        if (!getSetting('sslExport') || sx.timer) return;
+        sx.timer = setInterval(sxSyncButton, 1000);
+        sxSyncButton();
+    }
+
+    function cleanupSslExport() {
+        clearInterval(sx.timer);
+        sx.timer = null;
+        removeAll('#' + SX_BUTTON_ID);
+    }
+
+    // ─────────────────────────────────────────────────────────────
     // SOURCE MANAGER
     // Checks, adds, removes and exports users or AD groups in the Source field
     // of the Real-time Protection policy open in the edit page.
@@ -37722,6 +38078,7 @@ Version 1.16:
         initSourceManager();
         initPolicyCopy();
         initBulkGroups();
+        initSslExport();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
