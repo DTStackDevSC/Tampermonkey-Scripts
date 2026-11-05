@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.17.0
+// @version      2.17.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.17.0';
-    const CHANGELOG = `Version 2.17.0:
+   const SCRIPT_VERSION = '2.17.1';
+    const CHANGELOG = `Version 2.17.1:
+- NS Policies Toolkit: the "📥 Export to Excel" button now shows on tenants where the SSL Decryption list has "Add Policy" instead of "New Policy".
+
+Version 2.17.0:
 - NS Policies Toolkit: new "📥 Export to Excel" button on the SSL Decryption policy list. It downloads every policy with all its data: a Policies sheet with one row per policy and a Criteria sheet with one row per value, ready to filter. Nothing is changed in Netskope.
 
 Version 2.16.3:
@@ -27893,8 +27896,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.38.0';
-    const CHANGELOG = `Version 1.38:
+    const SCRIPT_VERSION = '1.38.1';
+    const CHANGELOG = `Version 1.38.1:
+- The "📥 Export to Excel" button now shows on tenants where the SSL Decryption list has "Add Policy" instead of "New Policy". When neither is there, it sits next to Apply Changes.
+
+Version 1.38:
 - New "📥 Export to Excel" button on the SSL Decryption policy list, next to New Policy. It downloads an Excel file with every policy: a Policies sheet with one row per policy (order, name, action, notes, who changed it, every criterion) and a Criteria sheet with one row per value, with names and ids, ready to filter. It only reads, nothing is changed in Netskope. Turn it off in Settings with "📥 SSL Decryption export".
 
 Version 1.37.2:
@@ -28449,7 +28455,7 @@ Version 1.16:
         {
             key:         'sslExport',
             label:       '📥 SSL Decryption export',
-            description: 'On the SSL Decryption policy list, adds an "Export to Excel" button next to New Policy: it downloads every policy with all its data, in a Policies sheet and a Criteria sheet ready to filter. Nothing is changed in Netskope.',
+            description: 'On the SSL Decryption policy list, adds an "Export to Excel" button next to Add Policy: it downloads every policy with all its data, in a Policies sheet and a Criteria sheet ready to filter. Nothing is changed in Netskope.',
         },
     ];
 
@@ -29797,10 +29803,10 @@ Version 1.16:
                     lead(body, 'On the SSL Decryption policy list, download every policy with all its data as an Excel file.');
                     body.appendChild(hrow([
                         chip('Apply Changes', '#fff', { color: '#555', border: '1px solid #ccc' }),
-                        chip('New Policy', '#0073e6'),
+                        chip('Add Policy', '#0073e6'),
                         chip('📥 Export to Excel', '#0073e6'),
                     ], { marginBottom: '6px' }));
-                    caption(body, 'The button sits next to New Policy. While it works it shows ⏳ Exporting…, then ✓ Exported. Point at it to see what happened.');
+                    caption(body, 'The button sits next to Add Policy (New Policy on some tenants). While it works it shows ⏳ Exporting…, then ✓ Exported. Point at it to see what happened.');
                     const sheets = [
                         { bg: '#217346', label: 'Policies', desc: 'One row per policy in the console order: name, enabled, Decrypt or Do Not Decrypt, notes, pending, who changed it and when, certificate, and one column per criterion (categories, users, apps, domains...). "NOT: " marks a negated criterion.' },
                         { bg: '#217346', label: 'Criteria', desc: 'One row per policy, criterion and value, with the name and its id. Filter it to find, for example, every policy that holds a category or a user.' },
@@ -35689,7 +35695,10 @@ Version 1.16:
     function sxSyncButton() {
         const existing = document.getElementById(SX_BUTTON_ID);
         if (!sxOnListPage()) { existing?.remove(); return; }
-        const anchor = [...document.querySelectorAll('button')].find(b => b.id !== SX_BUTTON_ID && b.offsetParent !== null && /^\s*\+?\s*new policy\s*$/i.test(b.textContent));
+        // The page's own add button is "Add Policy" or "New Policy" depending on the tenant; Apply Changes is the fallback
+        const visible = [...document.querySelectorAll('button')].filter(b => b.id !== SX_BUTTON_ID && b.offsetParent !== null);
+        const anchor = visible.find(b => /^\s*\+?\s*(add|new) policy\s*$/i.test(b.textContent)) ||
+            visible.find(b => /^\s*apply changes\s*$/i.test(b.textContent));
         if (!anchor) { existing?.remove(); return; }
         if (existing && existing.previousElementSibling === anchor) return;
         existing?.remove();
