@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.16.2
+// @version      2.16.3
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.16.2';
-    const CHANGELOG = `Version 2.16.2:
+   const SCRIPT_VERSION = '2.16.3';
+    const CHANGELOG = `Version 2.16.3:
+- Small internal wording cleanup. Nothing changes in how the toolbar works.
+
+Version 2.16.2:
 - NS Policies Toolkit: on tenants where Netskope sometimes answers a steering change with "backend error, please try again" although the change went through, bulk add, bulk remove and restore no longer stop. They check whether the change is there, carry on when it is, and try again up to twice when it is not, so nothing is added twice.
 
 Version 2.16.1:
@@ -839,7 +842,7 @@ Version 1.0.0:
         };
         for (const [prop, value] of Object.entries(hostStyle)) host.style.setProperty(prop, value, 'important');
         const root = dtAttachShadow.call(host, { mode: 'closed' });
-        // Buttons only work after a short moment, so a click aimed at something else cannot land on them.
+        // Buttons only react after a short delay, so a click meant for something else cannot hit them.
         const readyAt = Date.now() + 600;
 
         const overlay = document.createElement('div');
