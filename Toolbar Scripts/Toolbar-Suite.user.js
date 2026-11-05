@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.16.0
+// @version      2.16.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -28,8 +28,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.16.0';
-    const CHANGELOG = `Version 2.16.0:
+   const SCRIPT_VERSION = '2.16.1';
+    const CHANGELOG = `Version 2.16.1:
+- NS Policies Toolkit: when Netskope refuses a steering change without saying why, the message now shows Netskope's full answer, so the cause can be found.
+
+Version 2.16.0:
 - NS Policies Toolkit: the steering buttons are now "🧹 Bulk remove" and "➕ Bulk add", and their window has two tabs, Domains and Categories.
 - NS Policies Toolkit: categories can be added to or removed from steering exceptions in bulk, picked from a searchable list of every predefined and custom category of the tenant. Check, notes, adding to the entry with the same ticket, backups and undo work as they do for domains.
 - NS Policies Toolkit: in the steering window the steps are numbered, and a line next to the grey button says what is still missing.
@@ -27880,8 +27883,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.37.0';
-    const CHANGELOG = `Version 1.37:
+    const SCRIPT_VERSION = '1.37.1';
+    const CHANGELOG = `Version 1.37.1:
+- Steering Exception Tools: when Netskope refuses a change without saying why, the message now shows Netskope's full answer, so the cause can be found.
+
+Version 1.37:
 - Steering Exception Tools: the buttons are now "🧹 Bulk remove" and "➕ Bulk add", and their window has two tabs, Domains and Categories.
 - Categories can be added to or removed from steering exceptions in bulk. Pick them from a searchable list of every predefined and custom category of the tenant, tagged Predefined or Custom. A category a configuration already has is skipped, removing one keeps the other categories of the entry, and every change is backed up so it can be undone from ↩ Backups.
 - The steps of the window are numbered, Check is highlighted when it is the next step, and a line next to the grey button says what is still missing.
@@ -33329,6 +33335,14 @@ Version 1.16:
         return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
     }
 
+    // Netskope's answer as short text for an error message, without any token it might echo
+    function seAnswerText(answer) {
+        let text = typeof answer === 'string' ? answer : JSON.stringify(answer);
+        if (se.token) text = text.split(se.token).join('<token>');
+        text = text.replace(/("token"\s*:\s*")[^"]*"/g, '$1<token>"');
+        return text.length > 500 ? text.slice(0, 500) + '…' : text;
+    }
+
     async function sePost(endpoint, payload) {
         if (!se.token) {
             throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
@@ -33348,11 +33362,19 @@ Version 1.16:
             },
             body: JSON.stringify(Object.assign({}, payload, { token: se.token })),
         });
-        if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${endpoint}. Your session may have expired: reload the page.`);
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error(`Netskope answered ${res.status} to ${endpoint}. Your session may have expired: reload the page.` +
+                (text ? `\nNetskope's answer: ${seAnswerText(text)}` : ''));
+        }
 
         let json;
         try { json = await res.json(); } catch (e) { throw new Error(`Netskope sent an unexpected answer to ${endpoint}.`); }
-        if (!json || json.status !== 'success') throw new Error(`Netskope refused ${endpoint}: ${(json && json.msg) || 'no reason given'}`);
+        // When Netskope gives no message, show its whole answer so the cause can be found
+        if (!json || json.status !== 'success') {
+            throw new Error(json && json.msg ? `Netskope refused ${endpoint}: ${json.msg}`
+                : `Netskope refused ${endpoint} without saying why. Its full answer: ${seAnswerText(json)}`);
+        }
 
         // Write calls wrap the backend's own result in a JSON string
         if (typeof json.data === 'string' && json.data.trim().startsWith('{')) {
