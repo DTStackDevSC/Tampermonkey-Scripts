@@ -3254,6 +3254,15 @@ Version 1.0.0:
                             </div>
                         </div>
 
+                        <!-- Netskope API -->
+                        <div class="settings-section">
+                            <h3>Netskope API</h3>
+                            <div class="setting-item">
+                                <button id="netskope-api-keys" class="btn-secondary">🔑 Netskope API keys</button>
+                                <span class="setting-description">One API key per tenant, used by URL Lists and the Change Tracker. Set, test, lock or remove them here.</span>
+                            </div>
+                        </div>
+
                         <!-- Data -->
                         <div class="settings-section">
                             <h3>Data</h3>
@@ -3301,6 +3310,7 @@ Version 1.0.0:
         const modal = document.getElementById('toolbar-settings-modal');
         const closeBtn = modal.querySelector('.settings-close');
         const cancelBtn = document.getElementById('cancel-settings');
+        document.getElementById('netskope-api-keys')?.addEventListener('click', () => netskopeApi.openManager({ caller: 'Toolbar settings' }));
         const saveBtn = document.getElementById('save-settings');
         const overlay = modal.querySelector('.settings-overlay');
 
@@ -3695,8 +3705,445 @@ Version 1.0.0:
         return null;
     }
 
-    // Shared services between tools of this script (filled by the tools that provide them)
-    const suiteBridge = {};
+    /* ==========================================================
+     *  NETSKOPE API
+     *  Always on, whatever tools are chosen. Owns the API keys of
+     *  every tenant (one key and one passphrase per tenant): storage,
+     *  encryption, expiry, the session passphrase, the passphrase
+     *  prompt, the keys window and the calls. Tools only call it;
+     *  nothing here ever hands a key out.
+     * ==========================================================*/
+
+    const netskopeApi = (() => {
+        const K = {
+            token:  host => `netskope_token_${host}`,
+            hash:   host => `netskope_passphrase_hash_${host}`,
+            expiry: host => `netskope_token_expiry_${host}`,
+            session: host => `netskope_session_key_${host}`,
+        };
+        const EXPIRY_SCALES = [
+            { label: 'Hours', value: 1 }, { label: 'Days', value: 24 },
+            { label: 'Weeks', value: 168 }, { label: 'Months', value: 720 },
+        ];
+        const TEST_PATH = '/api/v2/policy/urllist';
+        const memory = {};             // host → passphrase, for this tab
+        const unlocking = {};          // host → the prompt already waiting, shared by every call
+        const listeners = new Set();
+
+        /* ── Tenants ── */
+
+        function tenants() {
+            return Object.entries(TENANT_TYPE_TO_KEY)
+                .map(([type, key]) => ({ type, host: String(GM_getValue(key, '') || '').trim() }))
+                .filter(t => t.host);
+        }
+
+        // The configured spelling of a host, or null when it is not one of the tenants
+        function tenantOf(host) {
+            const h = String(host || '').trim().toLowerCase();
+            return h ? tenants().find(t => t.host.toLowerCase() === h) || null : null;
+        }
+
+        /* ── Encryption (AES-256-GCM, key from the passphrase with PBKDF2) ── */
+
+        const crypt = {
+            async hash(passphrase) {
+                const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(passphrase));
+                return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+            },
+            async key(passphrase, salt) {
+                const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveBits', 'deriveKey']);
+                return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+                    base, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+            },
+            async encrypt(text, passphrase) {
+                const salt = crypto.getRandomValues(new Uint8Array(16));
+                const iv   = crypto.getRandomValues(new Uint8Array(12));
+                const enc  = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await this.key(passphrase, salt), new TextEncoder().encode(text));
+                const all  = new Uint8Array(28 + enc.byteLength);
+                all.set(salt, 0); all.set(iv, 16); all.set(new Uint8Array(enc), 28);
+                return btoa(String.fromCharCode(...all));
+            },
+            async decrypt(data, passphrase) {
+                const all = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+                const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(16, 28) }, await this.key(passphrase, all.slice(0, 16)), all.slice(28));
+                return new TextDecoder().decode(dec);
+            },
+            // Tokens saved by very old versions were only obfuscated
+            legacy(text) {
+                try {
+                    const d = atob(text);
+                    let out = '';
+                    for (let i = 0; i < d.length; i++) out += String.fromCharCode(d.charCodeAt(i) - 7 - (i % 5));
+                    return out;
+                } catch (e) { return text; }
+            },
+        };
+
+        /* ── Session passphrase: this tab, and the site's session storage ── */
+
+        function sessionGet(host) {
+            if (memory[host]) return memory[host];
+            try { const v = sessionStorage.getItem(K.session(host)); if (v) memory[host] = v; return v || null; } catch (e) { return null; }
+        }
+        function sessionSet(host, passphrase) {
+            memory[host] = passphrase;
+            try { sessionStorage.setItem(K.session(host), passphrase); } catch (e) { /* memory only */ }
+        }
+        function sessionClear(host) {
+            delete memory[host];
+            try { sessionStorage.removeItem(K.session(host)); } catch (e) { /* nothing stored */ }
+        }
+
+        /* ── Keys ── */
+
+        const hasKey = host => !!GM_getValue(K.token(host), '');
+        const expiryOf = host => { const e = GM_getValue(K.expiry(host), null); return e && e.expiryDate ? e : null; };
+
+        function status(host) {
+            const t = tenantOf(host);
+            const h = t ? t.host : String(host || '');
+            const e = expiryOf(h);
+            const key = !!t && hasKey(h);
+            return { configured: !!t, type: t ? t.type : null, host: h, hasKey: key,
+                expiresAt: e ? e.expiryDate : null, expired: !!e && Date.now() > e.expiryDate, unlocked: key && !!sessionGet(h) };
+        }
+
+        async function verify(host, passphrase) {
+            const stored = GM_getValue(K.hash(host), '');
+            return !!stored && (await crypt.hash(passphrase)) === stored;
+        }
+
+        async function saveKey(host, key, hours, passphrase) {
+            const t = tenantOf(host);
+            if (!t) throw new Error('This host is not one of your Netskope tenants.');
+            if (!key || !passphrase || !(hours > 0)) throw new Error('A key, a passphrase and a duration are needed.');
+            GM_setValue(K.token(t.host), await crypt.encrypt(String(key).trim(), passphrase));
+            GM_setValue(K.hash(t.host), await crypt.hash(passphrase));
+            GM_setValue(K.expiry(t.host), { expiryDate: Date.now() + hours * 3600000, duration: hours });
+            sessionSet(t.host, passphrase);
+            emit();
+        }
+
+        function removeKey(host) {
+            const t = tenantOf(host);
+            const h = t ? t.host : host;
+            GM_deleteValue(K.token(h));
+            GM_deleteValue(K.hash(h));
+            GM_deleteValue(K.expiry(h));
+            sessionClear(h);
+            emit();
+        }
+
+        function lock(host) {
+            if (host) { const t = tenantOf(host); sessionClear(t ? t.host : host); }
+            else tenants().forEach(t => sessionClear(t.host));
+            emit();
+        }
+
+        async function readKey(host) {
+            const data = GM_getValue(K.token(host), '');
+            const passphrase = sessionGet(host);
+            if (!data || !passphrase) return null;
+            try { return await crypt.decrypt(data, passphrase); } catch (e) { return crypt.legacy(data); }
+        }
+
+        function emit() { listeners.forEach(fn => { try { fn(); } catch (e) { console.error('[Netskope API] listener:', e); } }); }
+
+        /* ── Dialogs on the browser's top layer, above every panel ── */
+
+        let ui = null;
+        function uiRoot() {
+            if (ui && ui.host.isConnected) return ui.root;
+            const host = document.createElement('div');
+            host.id = 'nsapi-host';
+            const root = host.attachShadow({ mode: 'closed' });
+            root.innerHTML = `<style>
+                :host { all: initial; }
+                dialog { border: 0; border-radius: 12px; padding: 0; max-width: min(560px, calc(100vw - 32px)); width: 100%;
+                    color: #333333 !important; background: #ffffff !important; font: 13px Arial, sans-serif; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+                dialog::backdrop { background: rgba(0,0,0,.55); }
+                .head { padding: 14px 18px; border-bottom: 2px solid #667eea; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+                .head h2 { margin: 0; font-size: 16px; color: #333; }
+                .body { padding: 14px 18px; max-height: calc(100vh - 200px); overflow: auto; }
+                .foot { padding: 10px 18px 16px; display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+                p { margin: 0 0 10px; line-height: 1.5; color: #555; }
+                input, select { box-sizing: border-box; padding: 8px; border: 1px solid #bbb; border-radius: 6px; font: 13px Arial, sans-serif;
+                    background-color: #ffffff !important; color: #333333 !important; }
+                input[type=password] { font-family: monospace; }
+                button { padding: 8px 14px; border-radius: 6px; border: 1px solid #bbb; background: #fff; color: #333; cursor: pointer; font: 600 13px Arial, sans-serif; }
+                button.primary { background: #667eea; border-color: #667eea; color: #fff; }
+                button.danger { color: #dc3545; border-color: #dc3545; }
+                button.small { padding: 4px 9px; font-size: 12px; }
+                button:disabled { opacity: .5; cursor: not-allowed; }
+                [hidden] { display: none !important; }
+                .x { border: 0; background: none; font-size: 20px; color: #999; padding: 0 6px; }
+                .err { color: #b02a37; background: #fdecea; border: 1px solid #f3a59d; border-radius: 6px; padding: 7px 10px; margin: 8px 0 0; }
+                .err:empty { display: none; }
+                .row { border: 1px solid #e3e3ef; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+                .row .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+                .row .name { font-weight: bold; }
+                .host { color: #777; font-family: monospace; }
+                .state { margin-left: auto; font-size: 12px; font-weight: bold; padding: 2px 8px; border-radius: 10px; background: #f0f0f0; color: #555; }
+                .state.ok { background: #d4edda; color: #155724; } .state.warn { background: #fff3cd; color: #856404; } .state.bad { background: #f8d7da; color: #721c24; }
+                .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+                form { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+                form .wide { grid-column: 1 / -1; }
+                form .dur { display: flex; gap: 6px; } form .dur input { width: 80px; } form .dur select { flex: 1; }
+                .msg { font-size: 12px; margin-top: 6px; color: #555; white-space: pre-wrap; } .msg:empty { display: none; }
+                .help { font-size: 12px; color: #777; }
+            </style>`;
+            // In the body like every other panel; the dialogs themselves go on the top layer
+            (document.body || document.documentElement).appendChild(host);
+            ui = { host, root };
+            return root;
+        }
+
+        function openDialog(id, html) {
+            const root = uiRoot();
+            root.getElementById(id)?.remove();
+            const d = document.createElement('dialog');
+            d.id = id;
+            d.innerHTML = html;
+            // Keys typed here must not reach the page or the panel below
+            ['keydown', 'keyup', 'keypress', 'mousedown', 'click', 'input'].forEach(ev => d.addEventListener(ev, e => e.stopPropagation()));
+            root.appendChild(d);
+            d.showModal();
+            return d;
+        }
+
+        const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+        /* ── Unlock: one prompt per tenant, however many calls wait for it ── */
+
+        function unlock(host, { caller } = {}) {
+            const t = tenantOf(host);
+            if (!t || !hasKey(t.host)) return Promise.resolve(false);
+            if (sessionGet(t.host)) return Promise.resolve(true);
+            if (unlocking[t.host]) return unlocking[t.host];
+            unlocking[t.host] = new Promise(resolve => {
+                const d = openDialog('nsapi-unlock', `
+                    <div class="head"><h2>🔐 Unlock the ${esc(t.type)} API key</h2></div>
+                    <div class="body">
+                        <p>${caller ? `<b>${esc(caller)}</b> needs` : 'A tool needs'} the Netskope API key of <b>${esc(t.type)}</b> (<span class="host">${esc(t.host)}</span>). Enter its passphrase to unlock it for this browser session.</p>
+                        <input type="password" id="nsapi-pass" placeholder="Passphrase" autocomplete="off" style="width:100%">
+                        <div class="err" id="nsapi-unlock-err"></div>
+                    </div>
+                    <div class="foot">
+                        <button type="button" class="danger small" id="nsapi-forgot-btn" style="margin-right:auto">Forgot it?</button>
+                        <button type="button" id="nsapi-cancel-btn">Cancel</button>
+                        <button type="button" class="primary" id="nsapi-unlock-btn">Unlock</button>
+                    </div>`);
+                const pass = d.querySelector('#nsapi-pass'), err = d.querySelector('#nsapi-unlock-err');
+                const forgot = d.querySelector('#nsapi-forgot-btn'), go = d.querySelector('#nsapi-unlock-btn');
+                let forgetting = false;
+                const finish = (ok) => { d.close(); d.remove(); delete unlocking[t.host]; resolve(ok); };
+                const tryIt = async () => {
+                    if (!pass.value) { err.textContent = 'Enter the passphrase.'; return; }
+                    go.disabled = true;
+                    const ok = await verify(t.host, pass.value);
+                    go.disabled = false;
+                    if (!ok) { err.textContent = 'Wrong passphrase. Try again, or use "Forgot it?" to set a new key.'; pass.select(); return; }
+                    sessionSet(t.host, pass.value);
+                    emit();
+                    finish(true);
+                };
+                go.onclick = tryIt;
+                pass.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); tryIt(); } };
+                d.querySelector('#nsapi-cancel-btn').onclick = () => finish(false);
+                d.addEventListener('cancel', e => { e.preventDefault(); finish(false); });
+                forgot.onclick = () => {
+                    if (!forgetting) {
+                        forgetting = true;
+                        forgot.textContent = 'Click again to delete this key';
+                        err.textContent = 'Without the passphrase the key cannot be read. Deleting it lets you save the key again with a new passphrase.';
+                        return;
+                    }
+                    removeKey(t.host);
+                    finish(false);
+                    openManager({ host: t.host, caller });
+                };
+                setTimeout(() => pass.focus(), 30);
+            });
+            return unlocking[t.host];
+        }
+
+        // When a call finds no key (or an expired one): offers the keys window
+        function offerSetup(t, caller, expired) {
+            const d = openDialog('nsapi-offer', `
+                <div class="head"><h2>🔑 ${expired ? `The ${esc(t.type)} API key expired` : `No API key for ${esc(t.type)}`}</h2></div>
+                <div class="body"><p>${caller ? `<b>${esc(caller)}</b> needs` : 'A tool needs'} a Netskope API key for <b>${esc(t.type)}</b> (<span class="host">${esc(t.host)}</span>). Set it up now?</p></div>
+                <div class="foot"><button type="button" id="nsapi-offer-later">Not now</button>
+                    <button type="button" class="primary" id="nsapi-offer-setup">Set it up</button></div>`);
+            const finish = (setup) => { d.close(); d.remove(); if (setup) openManager({ host: t.host, caller }); };
+            d.querySelector('#nsapi-offer-later').onclick = () => finish(false);
+            d.querySelector('#nsapi-offer-setup').onclick = () => finish(true);
+            d.addEventListener('cancel', e => { e.preventDefault(); finish(false); });
+        }
+
+        /* ── Calls ── */
+
+        // The message for a call that never reached Netskope. Tampermonkey refuses hosts the script does not
+        // list in @connect (or that were set to "Never" in its settings) the same way.
+        function networkError(host, r) {
+            const detail = String((r && (r.error || r.statusText)) || '').trim();
+            if (/not permitted|refused|@connect|blacklist|not allowed/i.test(detail)) {
+                return `Tampermonkey did not allow the request to ${host} (${detail}). In Tampermonkey, open the Tools Toolbar script, Settings tab, and remove ${host} from any "blocked" or "never" list, or allow it when Tampermonkey asks.`;
+            }
+            return `Network error: the request did not reach ${host}${detail ? ` (${detail})` : ''}. Check that the tenant host is right and that this browser can open https://${host}.`;
+        }
+
+        async function request(host, method, path, body, { caller } = {}) {
+            const t = tenantOf(host);
+            if (!t) return { ok: false, status: 0, error: 'This host is not one of your Netskope tenants.' };
+            const st = status(t.host);
+            if (!st.hasKey || st.expired) {
+                offerSetup(t, caller, st.hasKey && st.expired);
+                return { ok: false, status: 0, code: st.hasKey ? 'expired' : 'noKey',
+                    error: st.hasKey ? `The ${t.type} API key expired. Set a new one in 🔑 Netskope API keys.` : `No API key for ${t.type}. Set one in 🔑 Netskope API keys.` };
+            }
+            if (!(await unlock(t.host, { caller }))) {
+                return { ok: false, status: 0, code: 'locked', error: `The ${t.type} API key stays locked.` };
+            }
+            const key = await readKey(t.host);
+            if (!key) return { ok: false, status: 0, code: 'locked', error: `The ${t.type} API key could not be unlocked.` };
+            return new Promise(resolve => GM_xmlhttpRequest({
+                method, url: `https://${t.host}${path}`, timeout: 60000,
+                headers: { 'Netskope-Api-Token': key, 'Content-Type': 'application/json', Accept: 'application/json' },
+                data: body == null ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
+                onload: (r) => {
+                    let data = null;
+                    try { data = r.responseText ? JSON.parse(r.responseText) : null; } catch (e) { data = null; }
+                    const ok = r.status >= 200 && r.status < 300;
+                    resolve({ ok, status: r.status, data, text: r.responseText,
+                        error: ok ? null : (data && (data.message || data.error)) || r.responseText || `HTTP ${r.status}` });
+                },
+                onerror: (r) => resolve({ ok: false, status: 0, error: networkError(t.host, r) }),
+                ontimeout: () => resolve({ ok: false, status: 0, error: 'Netskope did not answer in time' }),
+            }));
+        }
+
+        /* ── The "🔑 Netskope API keys" window ── */
+
+        function stateOf(host) {
+            const s = status(host);
+            if (!s.hasKey) return { text: 'No key', cls: '' };
+            if (s.expired) return { text: 'Expired', cls: 'bad' };
+            const days = s.expiresAt ? Math.floor((s.expiresAt - Date.now()) / 86400000) : 99;
+            const exp = s.expiresAt ? ` · Expires ${new Date(s.expiresAt).toLocaleDateString()}` : '';
+            return { text: (s.unlocked ? 'Unlocked' : 'Locked') + exp, cls: days < 7 ? 'warn' : 'ok' };
+        }
+
+        function openManager({ host, caller } = {}) {
+            const list = tenants();
+            const d = openDialog('nsapi-manager', `
+                <div class="head"><h2>🔑 Netskope API keys</h2><button type="button" class="x" data-act="close" aria-label="Close">×</button></div>
+                <div class="body">
+                    <p>One API key per tenant, each encrypted in this browser with its own passphrase. Tools ask for the passphrase once per browser session.${caller ? ` Opened for <b>${esc(caller)}</b>.` : ''}</p>
+                    <div id="nsapi-rows">${list.length ? '' : '<p class="help">No Netskope tenant hosts are set up yet. Set them in the URL List Editor (⚙ Tenant Hosts).</p>'}</div>
+                </div>
+                <div class="foot"><button type="button" data-act="close">Close</button></div>`);
+            const rows = d.querySelector('#nsapi-rows');
+            list.forEach(t => {
+                const row = document.createElement('div');
+                row.className = 'row';
+                row.dataset.host = t.host;
+                row.innerHTML = `
+                    <div class="top"><span class="name">${esc(t.type)}</span><span class="host">${esc(t.host)}</span><span class="state"></span></div>
+                    <div class="acts">
+                        <button type="button" class="small" data-act="set"></button>
+                        <button type="button" class="small" data-act="test">Test</button>
+                        <button type="button" class="small" data-act="lock">Lock</button>
+                        <button type="button" class="small danger" data-act="remove">Remove</button>
+                    </div>
+                    <form hidden autocomplete="off">
+                        <input class="wide" type="password" name="key" placeholder="API key (REST API v2)">
+                        <input type="password" name="pass" placeholder="Passphrase">
+                        <input type="password" name="pass2" placeholder="Passphrase again">
+                        <div class="dur wide"><span class="help" style="align-self:center">Keep it for</span><input type="number" name="n" min="1" value="1">
+                            <select name="scale">${EXPIRY_SCALES.map(s => `<option value="${s.value}"${s.value === 720 ? ' selected' : ''}>${s.label}</option>`).join('')}</select></div>
+                        <div class="wide" style="display:flex;gap:6px;justify-content:flex-end"><button type="button" class="small" data-act="cancel">Cancel</button>
+                            <button type="button" class="small primary" data-act="save">Save key</button></div>
+                    </form>
+                    <div class="msg"></div>`;
+                rows.appendChild(row);
+            });
+            const paint = () => rows.querySelectorAll('.row').forEach(row => {
+                const h = row.dataset.host, s = status(h), st = stateOf(h);
+                const el = row.querySelector('.state');
+                el.textContent = st.text;
+                el.className = 'state ' + st.cls;
+                row.querySelector('[data-act=set]').textContent = s.hasKey ? 'Replace key' : 'Set key';
+                row.querySelector('[data-act=test]').disabled = !s.hasKey || s.expired;
+                row.querySelector('[data-act=lock]').hidden = !s.unlocked;
+                row.querySelector('[data-act=remove]').hidden = !s.hasKey;
+            });
+            paint();
+            listeners.add(paint);
+            const close = () => { listeners.delete(paint); d.close(); d.remove(); };
+            d.addEventListener('cancel', e => { e.preventDefault(); close(); });
+            d.addEventListener('click', async (e) => {
+                const b = e.target.closest('[data-act]');
+                if (!b) return;
+                const act = b.dataset.act;
+                if (act === 'close') return close();
+                const row = b.closest('.row');
+                if (!row) return;
+                const h = row.dataset.host, form = row.querySelector('form'), msg = row.querySelector('.msg');
+                const removeBtn = row.querySelector('[data-act=remove]');
+                if (act !== 'remove' && removeBtn.dataset.armed) { delete removeBtn.dataset.armed; removeBtn.textContent = 'Remove'; }
+                if (act === 'set') { form.hidden = false; msg.textContent = ''; form.querySelector('[name=key]').focus(); }
+                if (act === 'cancel') { form.hidden = true; form.reset(); msg.textContent = ''; }
+                if (act === 'lock') { lock(h); msg.textContent = '🔒 Locked. Tools ask for the passphrase again next time.'; }
+                if (act === 'remove') {
+                    if (!removeBtn.dataset.armed) { removeBtn.dataset.armed = '1'; removeBtn.textContent = 'Click again to remove'; return; }
+                    delete removeBtn.dataset.armed;
+                    removeBtn.textContent = 'Remove';
+                    removeKey(h);
+                    msg.textContent = 'Key removed.';
+                }
+                if (act === 'save') {
+                    const f = name => form.querySelector(`[name=${name}]`).value;
+                    const hours = Math.round(Number(f('n'))) * Number(f('scale'));
+                    if (!f('key').trim()) { msg.textContent = '⚠ Paste the API key.'; return; }
+                    if (!f('pass')) { msg.textContent = '⚠ Choose a passphrase.'; return; }
+                    if (f('pass') !== f('pass2')) { msg.textContent = '⚠ The passphrases do not match.'; return; }
+                    if (!(hours > 0)) { msg.textContent = '⚠ Enter how long to keep the key, at least 1.'; return; }
+                    b.disabled = true;
+                    try {
+                        await saveKey(h, f('key'), hours, f('pass'));
+                        form.reset();
+                        form.hidden = true;
+                        msg.textContent = '✔ Key saved and encrypted. Use Test to check it.';
+                    } catch (err) { msg.textContent = '⛔ ' + err.message; }
+                    b.disabled = false;
+                }
+                if (act === 'test') {
+                    b.disabled = true;
+                    msg.textContent = 'Testing…';
+                    const r = await request(h, 'GET', TEST_PATH, null, { caller: 'Test' });
+                    msg.textContent = r.ok ? '✔ The key works: Netskope answered with your URL lists.'
+                        : r.status === 401 ? '⛔ Netskope refused the key (401): it may be expired or revoked. Replace it.'
+                        : r.status === 403 ? '⚠ The key works but has no permission for URL lists (403). Tools that need other permissions may still work.'
+                        : '⛔ ' + r.error;
+                    b.disabled = false;
+                }
+            });
+            const t = host ? tenantOf(host) : null;
+            const target = t && [...rows.querySelectorAll('.row')].find(r => r.dataset.host === t.host);
+            if (target && !status(t.host).hasKey) target.querySelector('form').hidden = false;
+            if (target) setTimeout(() => target.scrollIntoView({ block: 'nearest' }), 0);
+            return Promise.resolve();
+        }
+
+        const api = {
+            tenants, status, request, unlock, lock, openManager, saveKey,
+            onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); },
+        };
+        // Test only: the automated tests switch this on in their own storage
+        if (GM_getValue('toolbarSuiteTestHooks', false) === true) unsafeWindow.__nsapi = api;
+        return Object.freeze(api);
+    })();
 
     /* === TOOL: GENERAL TOOLKIT === */
 
