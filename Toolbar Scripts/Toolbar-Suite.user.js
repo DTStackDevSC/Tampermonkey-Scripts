@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.0
+// @version      2.20.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.0';
-    const CHANGELOG = `Version 2.20.0:
+   const SCRIPT_VERSION = '2.20.1';
+    const CHANGELOG = `Version 2.20.1:
+- Destination Profile Editor: while it fetches, looks up, creates, saves or applies, a loading wheel covers the window and says what it is doing, so nothing can be clicked twice. Its buttons now change when you point at them.
+
+Version 2.20.0:
 - Change Tracker: new "⏰ Manage Reminders" tab next to the change log. The Newly Registered Domains review, "↺ Check now" and profiles buttons moved there from Configure. The tracker still opens on the change log, and everything works as before.
 - Change Tracker: the Manage Reminders tab shows how many domains are due for review.
 
@@ -4264,6 +4267,78 @@ Version 1.0.0:
         if (GM_getValue('toolbarSuiteTestHooks', false) === true) unsafeWindow.__nsapi = api;
         return Object.freeze(api);
     })();
+
+    /* ==========================================================
+     *  BUSY FEEDBACK (core, shared by every tool)
+     *  suiteBusy covers the block being worked on with a loading wheel:
+     *  clicks are blocked at once, the wheel and label fade in after
+     *  150 ms so fast calls do not flicker, and the cover always goes
+     *  away, also on errors. Styles are inline and !important, with Web
+     *  Animations instead of keyframes, so it works under ServiceNow's
+     *  dark theme, inside shadow roots and under Netskope's CSP.
+     *  suiteBusyButton shows the busy state on the clicked button.
+     * ==========================================================*/
+
+    function suiteBusyStyle(el, props) {
+        for (const [k, v] of Object.entries(props)) el.style.setProperty(k, v, 'important');
+        return el;
+    }
+
+    async function suiteBusy(target, work, label) {
+        if (!target || !target.isConnected) return work();
+        const madeRelative = getComputedStyle(target).position === 'static';
+        if (madeRelative) target.style.position = 'relative';
+        // A scrolled block is covered where the user is looking, not at its top
+        const scrolled = target.scrollHeight > target.clientHeight + 1;
+        const cover = suiteBusyStyle(document.createElement('div'), Object.assign({
+            position: 'absolute', 'z-index': '50', display: 'flex', 'flex-direction': 'column',
+            'align-items': 'center', 'justify-content': 'center', gap: '6px', 'border-radius': 'inherit',
+            background: 'rgba(255,255,255,0.78)', cursor: 'progress', opacity: '0', margin: '0', padding: '0', 'box-sizing': 'border-box'
+        }, scrolled
+            ? { top: target.scrollTop + 'px', left: target.scrollLeft + 'px', width: target.clientWidth + 'px', height: target.clientHeight + 'px' }
+            : { top: '0', left: '0', right: '0', bottom: '0' }));
+        cover.className = 'suite-busy';
+        cover.setAttribute('aria-busy', 'true');
+        const wheel = suiteBusyStyle(document.createElement('div'), {
+            width: '26px', height: '26px', 'border-radius': '50%', border: '3px solid #d0d0f0',
+            'border-top-color': '#667eea', 'box-sizing': 'border-box', background: 'transparent'
+        });
+        cover.appendChild(wheel);
+        if (label) {
+            const text = suiteBusyStyle(document.createElement('div'), {
+                'font-size': '11px', color: '#555555', 'font-family': 'Arial, sans-serif', background: 'transparent', 'text-align': 'center'
+            });
+            text.textContent = label;
+            cover.appendChild(text);
+        }
+        ['click', 'mousedown', 'keydown', 'wheel'].forEach(t => cover.addEventListener(t, e => { e.stopPropagation(); if (t !== 'wheel') e.preventDefault(); }));
+        target.appendChild(cover);
+        try { wheel.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 800, iterations: Infinity }); } catch (e) { /* no animation, still blocks */ }
+        const show = setTimeout(() => { cover.style.setProperty('opacity', '1', 'important'); }, 150);
+        try {
+            return await work();
+        } finally {
+            clearTimeout(show);
+            cover.remove();
+            if (madeRelative && !target.querySelector(':scope > .suite-busy')) target.style.position = '';
+        }
+    }
+
+    // Disables the button and shows "⏳ busyText" while work runs, then puts it back
+    async function suiteBusyButton(btn, busyText, work) {
+        if (!btn) return work();
+        if (btn.dataset.suiteBusy === '1') return undefined;
+        const label = btn.textContent, wasDisabled = btn.disabled;
+        btn.dataset.suiteBusy = '1';
+        btn.disabled = true;
+        if (busyText) btn.textContent = '⏳ ' + busyText;
+        try {
+            return await work();
+        } finally {
+            delete btn.dataset.suiteBusy;
+            if (btn.isConnected) { btn.disabled = wasDisabled; if (busyText && btn.textContent === '⏳ ' + busyText) btn.textContent = label; }
+        }
+    }
 
     /* === TOOL: GENERAL TOOLKIT === */
 
@@ -12157,8 +12232,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.1';
-    const CHANGELOG = `Version 2.0.1:
+    const SCRIPT_VERSION = '2.0.2';
+    const CHANGELOG = `Version 2.0.2:
+- While the editor fetches, looks up, creates, saves or applies, a loading wheel covers the window and says what it is doing, so nothing can be clicked twice. Buttons now change when you point at them.
+
+Version 2.0.1:
 - Smaller buttons, fields and spacing, so the window takes less of the screen. When editing a profile the whole window now scrolls as one, instead of squeezing the profile into a small box.
 
 Version 2.0.0:
@@ -12605,6 +12683,8 @@ Version 1.4.1:
                 padding: '6px 12px', border: 'none', borderRadius: '5px', cursor: 'pointer', lineHeight: '1.3',
                 background: gradient, color: 'white', fontWeight: 'bold', fontSize: '12px', flex: '1'
             }, { textContent: text, onclick: onClick });
+            btn.addEventListener('mouseenter', () => { if (!btn.disabled) btn.style.filter = 'brightness(0.92)'; });
+            btn.addEventListener('mouseleave', () => { btn.style.filter = ''; });
             return btn;
         },
 
@@ -13450,7 +13530,7 @@ Version 1.4.1:
 
         // Close button
         const closeBtn = UI.createButton('X', 'red', closeModal);
-        Object.assign(closeBtn.style, { position: 'absolute', top: '5px', right: '5px', padding: '4px 8px', flex: 'none' });
+        Object.assign(closeBtn.style, { position: 'absolute', top: '5px', right: '5px', padding: '4px 8px', flex: 'none', zIndex: '60' });
         modal.appendChild(closeBtn);
 
         // Title
@@ -13685,6 +13765,15 @@ Version 1.4.1:
     const dpConsoleUrl = host => `https://${host}/ns#/destination-profile`;
 
     // One call through the toolbar's Netskope API module; key problems become a status line
+    // The whole window waits: every action replaces the view, so nothing else may be clicked meanwhile
+    let dpBusyNow = false;
+    async function dpBusy(label, work) {
+        if (dpBusyNow) return undefined;
+        dpBusyNow = true;
+        try { return await suiteBusy(document.getElementById('netskope-urllist-modal'), work, label); }
+        finally { dpBusyNow = false; }
+    }
+
     async function dpCall(method, path, body) {
         const tenant = getActiveTenant();
         if (!tenant) { UI.showStatus('⚠️ No tenant detected. Please select a Member Firm in ServiceNow.', 'warning'); return { ok: false, handled: true }; }
@@ -13717,8 +13806,10 @@ Version 1.4.1:
     }
 
     async function fetchProfiles() {
+        if (dpBusyNow) return;
         resetModal();
-        const r = await fetchAllProfiles();
+        const r = await dpBusy('Fetching Destination Profiles…', fetchAllProfiles);
+        if (!r) return;
         if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); return; }
         currentProfiles = r.profiles;
         if (!currentProfiles.length) return UI.showStatus('ℹ️ No Destination Profiles found in this tenant', 'info');
@@ -13797,7 +13888,8 @@ Version 1.4.1:
             return false;
         }
         UI.showStatus('🔄 Applying the change…', 'info');
-        const r = await netskopeApi.deploy(host, [profile.id], note, { caller: 'Destination Profiles' });
+        const r = await dpBusy('Applying the change…', () => netskopeApi.deploy(host, [profile.id], note, { caller: 'Destination Profiles' }));
+        if (!r) return false;
         if (!r.ok) {
             UI.showStatus(`⚠️ "${profile.name}" is saved but stays pending: Netskope did not apply it (${r.error}). Apply it in the console.`, 'error');
             return false;
@@ -13869,7 +13961,8 @@ Version 1.4.1:
         if (!name) return UI.showStatus('⚠️ Please enter a profile name', 'warning');
         if (!values.length) values = [DP_EMPTY];
         UI.showStatus('🔄 Creating the Destination Profile…', 'info');
-        const r = await dpCall('POST', `${DP_PATH}?interactive=true`, { name, type, description, values });
+        const r = await dpBusy('Creating the profile…', () => dpCall('POST', `${DP_PATH}?interactive=true`, { name, type, description, values }));
+        if (!r) return;
         if (!r.ok) {
             if (r.handled) return;
             return UI.showStatus(r.status === 409 ? `⚠️ A Destination Profile called "${name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
@@ -13918,7 +14011,8 @@ Version 1.4.1:
         if (!query) return UI.showStatus('⚠️ Please enter a domain or URL to search', 'warning');
         if (!currentProfiles.length) {
             resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #888; font-size: 13px;">⏳ Fetching Destination Profiles from Netskope...</div>';
-            const r = await fetchAllProfiles();
+            const r = await dpBusy('Fetching Destination Profiles…', fetchAllProfiles);
+            if (!r) return;
             if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); resultsArea.innerHTML = ''; return; }
             currentProfiles = r.profiles;
         }
@@ -14031,12 +14125,12 @@ Version 1.4.1:
         if (!/^\d+$/.test(id)) return UI.showStatus('⚠️ Category ID must be a numeric value', 'warning');
         UI.showStatus('🔄 Looking up custom category...', 'info');
         resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching category data...</div>';
-        await makeApiRequest('GET', `/api/v2/profiles/customcategories/${id}?details=true`, null,
+        await dpBusy('Looking up the category…', () => makeApiRequest('GET', `/api/v2/profiles/customcategories/${id}?details=true`, null,
             (data) => { UI.hideStatus(); renderCustomCategoryResult(resultsArea, data); },
             (error) => {
                 UI.showStatus(`❌ Failed: ${error}`, 'error');
                 resultsArea.innerHTML = `<div style="text-align:center;padding:30px;color:#dc3545;font-size:13px;">Could not retrieve category. ${escapeHtml(String(error))}</div>`;
-            });
+            }));
     }
 
     function renderCustomCategoryResult(resultsArea, data) {
@@ -14131,7 +14225,8 @@ Version 1.4.1:
             if (!/^[A-Za-z0-9-]+$/.test(id)) return UI.showStatus('⚠️ That does not look like a Destination Profile ID', 'warning');
             UI.showStatus('🔄 Looking up the Destination Profile…', 'info');
             resultsArea.innerHTML = '<div style="text-align:center;padding:30px;color:#888;font-size:13px;">⏳ Fetching the profile…</div>';
-            const r = await dpCall('GET', `${DP_PATH}/${encodeURIComponent(id)}`);
+            const r = await dpBusy('Looking up the profile…', () => dpCall('GET', `${DP_PATH}/${encodeURIComponent(id)}`));
+            if (!r) return;
             if (!r.ok) {
                 if (!r.handled) UI.showStatus(r.status === 404 ? '⚠️ No Destination Profile has this ID.' : `❌ Failed: ${r.error}`, r.status === 404 ? 'warning' : 'error');
                 resultsArea.innerHTML = '';
@@ -14205,7 +14300,8 @@ Version 1.4.1:
             try {
                 UI.showStatus('🔄 Checking the profile in Netskope…', 'info');
                 // Saved from the profile as it is now, never from an older copy
-                const fresh = await dpCall('GET', `${DP_PATH}/${encodeURIComponent(data.id)}`);
+                const fresh = await dpBusy('Checking the profile…', () => dpCall('GET', `${DP_PATH}/${encodeURIComponent(data.id)}`));
+                if (!fresh) return;
                 if (!fresh.ok) { if (!fresh.handled) UI.showStatus(`❌ Failed: ${fresh.error}`, 'error'); return; }
                 const now = fresh.data || {};
                 if (now.modify_time !== data.modify_time || JSON.stringify(now.values || []) !== JSON.stringify(data.values || [])) {
@@ -14219,7 +14315,8 @@ Version 1.4.1:
                 }
                 if (now.status === 'pending-delete') return UI.showStatus('⚠️ This profile is waiting to be deleted in Netskope, so it cannot be changed.', 'warning');
                 UI.showStatus('🔄 Saving…', 'info');
-                const r = await dpCall('PATCH', `${DP_PATH}/${encodeURIComponent(data.id)}?interactive=true`, changes);
+                const r = await dpBusy('Saving…', () => dpCall('PATCH', `${DP_PATH}/${encodeURIComponent(data.id)}?interactive=true`, changes));
+                if (!r) return;
                 if (!r.ok) {
                     if (r.handled) return;
                     return UI.showStatus(r.status === 409 && changes.name ? `⚠️ A Destination Profile called "${name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
