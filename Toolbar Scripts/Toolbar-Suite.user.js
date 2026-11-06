@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.1
+// @version      2.20.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.1';
-    const CHANGELOG = `Version 2.20.1:
+   const SCRIPT_VERSION = '2.20.2';
+    const CHANGELOG = `Version 2.20.2:
+- Change Tracker: a loading wheel now also covers the change log while the ticket is read again (when you open the tracker or come back to the tab), the reminder card during "↺ Check now", the review window while it reads the domains or checks with the Netskope API, the shared profiles list while it loads or saves, "Write all to ticket" and the session renewal test. A button that fails no longer stays stuck.
+
+Version 2.20.1:
 - Destination Profile Editor: while it fetches, looks up, creates, saves or applies, a loading wheel covers the window and says what it is doing, so nothing can be clicked twice. Its buttons now change when you point at them.
 
 Version 2.20.0:
@@ -17585,8 +17588,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.8.0';
-    const CHANGELOG = `Version 2.8.0:
+    const SCRIPT_VERSION = '2.8.1';
+    const CHANGELOG = `Version 2.8.1:
+- A a loading wheel now also covers the change log while the ticket is read again (when you open the tracker or come back to the tab), the reminder card during "↺ Check now", the review window while it reads the domains or checks with the Netskope API, the shared profiles list while it loads or saves, "Write all to ticket" and the session renewal test. A button that fails no longer stays stuck.
+
+Version 2.8.0:
 - Newly Registered Domains moved from Configure to the new "⏰ Manage Reminders" tab, with Review, "↺ Check now" and "🛠 Profiles" buttons and the last check result. The tracker still opens on the change log.
 
 Version 2.7.1:
@@ -23157,9 +23163,15 @@ Version 1.4.3:
         const entries = getBatchEntries(ticket);
         if (!entries.length) { flashStatus('⚠️ No changes in this batch yet.', '#e67e22'); return; }
 
+        let res;
         btn.disabled = true;
-        btn.textContent = '…';
-        const res = await ticketWriter.writeBatch(entries);
+        btn.textContent = '⏳ Writing…';
+        try {
+            res = await withBusy(document.getElementById('ct-batch-bar') || btn.parentElement, () => ticketWriter.writeBatch(entries), 'Writing to the ticket…');
+        } catch (e) {
+            console.error('[Change Tracker] Write all:', e);
+            res = { ok: false };
+        }
         if (res.ok) {
             endBatchSession(ticket);
             renderBatchBar();
@@ -24195,13 +24207,10 @@ Version 1.4.3:
         const check = btn('ct-nrd-check-now', '↺ Check now', 'Looks for Newly Registered Domains due for review now', false);
         check.onclick = async () => {
             if (!api.isConfigured()) { result.textContent = 'Connect to SharePoint first.'; return; }
-            check.disabled = true;
-            check.textContent = '⏳ Checking…';
             result.textContent = '';
             const before = nrdCache();
-            const res = await nrdCheck({ force: true });
-            check.disabled = false;
-            check.textContent = '↺ Check now';
+            const res = await nrdRun(check, 'Checking…', () =>
+                withBusy(document.getElementById('ct-reminder-nrd'), () => nrdCheck({ force: true }), 'Checking SharePoint…'));
             if (!res || res === before) { result.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
             const due = res.items.filter(i => Date.now() >= i.dueAt).length;
             result.textContent = nrdSummary(res) + ' ';
@@ -24249,7 +24258,11 @@ Version 1.4.3:
         const close = () => { overlay.remove(); modal.remove(); };
         overlay.onclick = close;
         document.body.append(overlay, modal);
-        if (!nrdCache()) await nrdCheck({ force: true });
+        if (!nrdCache()) {
+            modal.style.minHeight = '140px';
+            await withBusy(modal, () => nrdCheck({ force: true }), 'Reading the domains due for review…');
+            modal.style.minHeight = '';
+        }
         renderNrdReview(modal, close);
     }
 
@@ -24350,10 +24363,9 @@ Version 1.4.3:
             const apiBtn = css(mk('button', { id:'ct-nrd-api-check', type:'button', title:'Looks up the categories with the Netskope API and proposes what to remove' }), btnStyle(false));
             apiBtn.textContent = '🔌 Check with the API';
             apiBtn.onclick = async () => {
-                apiBtn.disabled = true;
                 msg.textContent = 'Checking with the Netskope API…';
-                const plan = await nrdApiPlan(due);
-                apiBtn.disabled = false;
+                const plan = await nrdRun(apiBtn, 'Checking…', () => withBusy(modal, () => nrdApiPlan(due), 'Checking with the Netskope API…'));
+                if (!plan) return;
                 if (!plan.ok) { msg.textContent = plan.message; return; }
                 msg.textContent = plan.notes.join(' ') || (plan.rows.length ? 'Review the proposal, then apply it.' : 'Nothing to propose.');
                 if (plan.rows.length || plan.notTracked.length) renderNrdApiPlan(modal, close, plan);
@@ -24763,7 +24775,9 @@ Version 1.4.3:
         };
         const render = () => { rows.textContent = ''; (current.nrdProfiles || []).forEach(addRow); };
         const load = async () => {
-            const res = await api.loadSettings();
+            rows.style.minHeight = '60px';
+            const res = await withBusy(rows, () => api.loadSettings(), 'Loading the shared list…');
+            rows.style.minHeight = '';
             if (!res.ok) { msg.textContent = '⚠ Could not read the shared list from SharePoint.'; return false; }
             current = res.data;
             render();
@@ -24776,10 +24790,8 @@ Version 1.4.3:
             const list = [...rows.querySelectorAll('[data-nrd-row]')].map(r => ({
                 tenant: r.querySelector('[data-nrd-tenant]').value, name: r.querySelector('[data-nrd-name]').value.trim() }))
                 .filter(p => p.name && !seen.has(p.tenant + '\n' + p.name) && seen.add(p.tenant + '\n' + p.name));
-            saveBtn.disabled = true;
             msg.textContent = 'Saving…';
-            const res = await api.saveSettings(list, current);
-            saveBtn.disabled = false;
+            const res = await nrdRun(saveBtn, 'Saving…', () => withBusy(rows, () => api.saveSettings(list, current), 'Saving…'));
             if (res.ok) { current = res.data; msg.textContent = '✔ Saved. Everyone gets it at their next check.'; return; }
             if (res.kind === 'conflict') {
                 await load();
@@ -24926,15 +24938,13 @@ Version 1.4.3:
 
         renewBtn.onclick = async () => {
             if (!spClient.siteUrl()) { renewResult.textContent = 'Save the site first: the test uses the saved SharePoint site.'; return; }
-            renewBtn.disabled = true;
             renewResult.textContent = '⏳ Testing… the SharePoint site opens in a background tab, for 30 seconds at most.';
-            const r = await spClient.renewSession({ manual: true });
+            const r = await nrdRun(renewBtn, 'Testing…', () => withBusy(renewBox, () => spClient.renewSession({ manual: true }), 'Testing the session renewal…'));
             const secs = Math.max(1, Math.round(r.ms / 1000));
             renewResult.textContent = r.ok ? `✔ Renewed in ${secs} s, the tab closed by itself.`
                 : r.kind === 'login' ? '🔒 Microsoft asks you to sign in: do it in the SharePoint tab that opened, then test again.'
                 : r.kind === 'forbidden' ? '⛔ You are signed in, but SharePoint refused access to this site. The tab was closed.'
                 : '⚠ SharePoint did not answer within 30 seconds. The tab was closed.';
-            renewBtn.disabled = false;
             renderRenewLog();
             if (r.ok && ['SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) attemptReconnect(getTicketNumber(), false);
         };
@@ -25335,11 +25345,18 @@ Version 1.4.3:
         if (['OFFLINE', 'SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) {
             attemptReconnect(ticket, /* silent */ true);
         } else if (connState === 'ONLINE') {
-            syncTicket(ticket).then(() => { refreshLog(ticket); resolveFirstProblem(ticket); });
+            syncShownTicket(ticket);
         } else {
             // First open after config saved (connState still 'INIT' or 'SETUP') → go online
             attemptReconnect(ticket, /* silent */ true);
         }
+    }
+
+    // Rereads the open ticket with the wheel over the log, so stale entries are not edited meanwhile
+    async function syncShownTicket(ticket) {
+        await withBusy(document.getElementById('ct-log-container'), () => syncTicket(ticket), 'Loading the latest entries…');
+        refreshLog(ticket);
+        resolveFirstProblem(ticket);
     }
 
     function hideSidebar() {
@@ -25413,7 +25430,7 @@ Version 1.4.3:
         if (!api.isConfigured()) return;
         const ticket = getTicketNumber();
         if (connState === 'SESSION_EXPIRED' || connState === 'OFFLINE') { attemptReconnect(ticket, /* silent */ true); return; }
-        if (sidebarVisible && connState === 'ONLINE' && away > 2 * 60 * 1000) syncTicket(ticket).then(() => { refreshLog(ticket); resolveFirstProblem(ticket); });
+        if (sidebarVisible && connState === 'ONLINE' && away > 2 * 60 * 1000) syncShownTicket(ticket);
     });
 
     function initialize() {
