@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.3
+// @version      2.20.4
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.3';
-    const CHANGELOG = `Version 2.20.3:
+   const SCRIPT_VERSION = '2.20.4';
+    const CHANGELOG = `Version 2.20.4:
+- Domain Tools: Check Domain Security tells you in the window which tabs it opened, and asks for a domain there instead of a pop up. Check All Domains shows a loading wheel while the tabs open. Copy now says Copied only when the copy really worked.
+- NS Policies Toolkit: The ↗ buttons that open a DLP Rule, Fingerprint Rule or File Profile in a new tab show a loading wheel there while the item is searched and opened.
+- 🔑 Netskope API keys: a loading wheel covers the tenant while a key is saved or tested, and the passphrase window while it checks the passphrase.
+
+Version 2.20.3:
 - NS Policies Toolkit: Steering Exception Tools: while it checks, adds, removes or loads the categories, a loading wheel covers the panel and shows what it is doing step by step, and Check stays disabled until it ends.
 - NS Policies Toolkit: Manage Source: while it checks, adds or removes, a loading wheel covers the list and its options. The progress bar, the log and Stop stay visible and usable.
 
@@ -4018,8 +4023,7 @@ Version 1.0.0:
                 const tryIt = async () => {
                     if (!pass.value) { err.textContent = 'Enter the passphrase.'; return; }
                     go.disabled = true;
-                    const ok = await verify(t.host, pass.value);
-                    go.disabled = false;
+                    const ok = await suiteBusy(d, () => verify(t.host, pass.value), 'Checking the passphrase…').finally(() => { go.disabled = false; });
                     if (!ok) { err.textContent = 'Wrong passphrase. Try again, or use "Forgot it?" to set a new key.'; pass.select(); return; }
                     sessionSet(t.host, pass.value);
                     emit();
@@ -4241,7 +4245,7 @@ Version 1.0.0:
                     if (!(hours > 0)) { msg.textContent = '⚠ Enter how long to keep the key, at least 1.'; return; }
                     b.disabled = true;
                     try {
-                        await saveKey(h, f('key'), hours, f('pass'));
+                        await suiteBusy(row, () => saveKey(h, f('key'), hours, f('pass')), 'Encrypting and saving the key…');
                         form.reset();
                         form.hidden = true;
                         msg.textContent = '✔ Key saved and encrypted. Use Test to check it.';
@@ -4251,7 +4255,7 @@ Version 1.0.0:
                 if (act === 'test') {
                     b.disabled = true;
                     msg.textContent = 'Testing…';
-                    const r = await request(h, 'GET', TEST_PATH, null, { caller: 'Test' });
+                    const r = await suiteBusy(row, () => request(h, 'GET', TEST_PATH, null, { caller: 'Test' }), 'Testing the key with Netskope…');
                     msg.textContent = r.ok ? '✔ The key works: Netskope answered with your Destination Profiles.'
                         : r.status === 401 ? '⛔ Netskope refused the key (401): it may be expired or revoked. Replace it.'
                         : r.status === 403 ? '⚠ The key works but has no permission for Destination Profiles (403). Tools that need other permissions may still work.'
@@ -25508,8 +25512,11 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.0';
-    const CHANGELOG = `Version 1.5.0:
+    const SCRIPT_VERSION = '1.5.1';
+    const CHANGELOG = `Version 1.5.1:
+- Check Domain Security tells you in the window which tabs it opened, and asks for a domain there instead of a pop up. Check All Domains shows a loading wheel while the tabs open. Copy now says Copied only when the copy really worked.
+
+Version 1.5.0:
 - New "IBM X-Force login" button in the header. IBM X-Force now requires a login, so click
   it to open the IBM X-Force home page and sign in before running your checks.
 
@@ -26144,14 +26151,22 @@ Version 1.0:
         multiCheckBtn.addEventListener('click', () => {
             const domains = multiTextarea.value.split('\n')
                 .map(l => stripToDomain(l.trim())).filter(Boolean);
-            if (!domains.length) { alert('Please enter at least one domain.'); multiTextarea.focus(); return; }
+            if (!domains.length) {
+                bulkProgress.style.display = 'block';
+                bulkProgress.textContent = '⚠ Enter at least one domain first.';
+                multiTextarea.focus();
+                return;
+            }
             multiCheckBtn.disabled = true;
+            const wheel = suiteBusyStart(multiContent, `Opening tabs for ${domains.length} domain${domains.length !== 1 ? 's' : ''}…`);
             runBulkCheck(domains, multiSpmCheckbox.checked,
                 (current, total) => {
                     bulkProgress.style.display = 'block';
                     bulkProgress.textContent = `Checking domain ${current} of ${total}...`;
+                    wheel.setLabel(`Opening the tabs of domain ${current} of ${total}…`);
                 },
                 () => {
+                    wheel.stop();
                     multiCheckBtn.disabled = false;
                     bulkProgress.textContent = `Done. Opened tabs for ${domains.length} domain${domains.length !== 1 ? 's' : ''}.`;
                     setTimeout(() => { bulkProgress.style.display = 'none'; }, 4000);
@@ -26315,11 +26330,14 @@ Version 1.0:
         extractBtn.addEventListener('click', runExtract);
         textarea.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') runExtract(); });
 
-        function copyText(text, btn) {
+        // Says Copied only once the copy really worked
+        async function copyText(text, btn) {
             const orig = btn.textContent;
-            navigator.clipboard.writeText(text).catch(() => GM_setClipboard(text));
-            btn.textContent = '✓ Copied!';
-            btn.style.background = '#0066cc';
+            let ok = true;
+            try { await navigator.clipboard.writeText(text); }
+            catch (e) { try { GM_setClipboard(text); } catch (e2) { ok = false; } }
+            btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed';
+            btn.style.background = ok ? '#0066cc' : '#dc3545';
             setTimeout(() => { btn.textContent = orig; btn.style.background = '#28a745'; }, 2000);
         }
 
@@ -26336,11 +26354,16 @@ Version 1.0:
         checkInput.addEventListener('keydown', e => { if (e.key === 'Enter') runCheck(); });
         checkBtn.addEventListener('click', runCheck);
 
+        function checkNote(text, isError) {
+            checkPreview.textContent = text;
+            Object.assign(checkPreview.style, { display: 'block', color: isError ? '#c0392b' : '#0066cc', background: isError ? '#fdecea' : '#e8f4f8' });
+        }
+
         function runCheck() {
             const raw = checkInput.value.trim();
-            if (!raw) { alert('Please enter a domain or URL.'); checkInput.focus(); return; }
+            if (!raw) { checkNote('⚠ Enter a domain or URL first.', true); checkInput.focus(); return; }
             const domain = stripToDomain(raw);
-            if (!domain) { alert('Could not extract a valid domain from the input.'); checkInput.focus(); return; }
+            if (!domain) { checkNote('⚠ Could not find a valid domain in what you entered.', true); checkInput.focus(); return; }
 
             GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${domain}`, { active: false, insert: true });
             GM_openInTab(`https://exchange.xforce.ibmcloud.com/url/${domain}`,          { active: false, insert: true });
@@ -26349,6 +26372,7 @@ Version 1.0:
             if (spmCheckbox.checked) {
                 GM_openInTab(buildSPMRequestURL(), { active: false, insert: true });
             }
+            checkNote(`✓ Opened ${spmCheckbox.checked ? 4 : 3} tabs in the background for ${domain}: Netskope URL Lookup, IBM X-Force, VirusTotal${spmCheckbox.checked ? ' and the SPM request form' : ''}.`);
         }
 
         // Opens the reputation tabs for every domain, plus one SPM request tab for the batch.
@@ -27869,8 +27893,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.38.2';
-    const CHANGELOG = `Version 1.38.2:
+    const SCRIPT_VERSION = '1.38.3';
+    const CHANGELOG = `Version 1.38.3:
+- The ↗ buttons that open a DLP Rule, Fingerprint Rule or File Profile in a new tab show a loading wheel there while the item is searched and opened.
+
+Version 1.38.2:
 - Steering Exception Tools: while it checks, adds, removes or loads the categories, a loading wheel covers the panel and shows what it is doing step by step, and Check stays disabled until it ends.
 - Manage Source: while it checks, adds or removes, a loading wheel covers the list and its options. The progress bar, the log and Stop stay visible and usable.
 
@@ -30420,7 +30447,10 @@ Version 1.16:
         const kind = REF_KINDS[pending.kind];
         if (!kind || !kind.isListRoute(window.location.hash)) return;
         GM_deleteValue(PENDING_OPEN_KEY);
-        runPendingRefOpen(kind, pending.name);
+        // The page waits under the wheel while the item is searched and opened, so a click cannot interrupt it
+        const shade = suiteBusyStyle(document.createElement('div'), { position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh', 'z-index': '2147483000', background: 'transparent' });
+        document.body.appendChild(shade);
+        suiteBusy(shade, () => runPendingRefOpen(kind, pending.name), `Opening ${kind.label} "${pending.name}"…`).finally(() => shade.remove());
     }
 
     async function runPendingRefOpen(kind, name) {
