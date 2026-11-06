@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.4
+// @version      2.20.5
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.4';
-    const CHANGELOG = `Version 2.20.4:
+   const SCRIPT_VERSION = '2.20.5';
+    const CHANGELOG = `Version 2.20.5:
+- Domain Tools: Check Selected in the Domain Extractor now works like Check All Domains: a loading wheel while the tabs open, the button disabled meanwhile, and a line saying how many domains were checked.
+
+Version 2.20.4:
 - Domain Tools: Check Domain Security tells you in the window which tabs it opened, and asks for a domain there instead of a pop up. Check All Domains shows a loading wheel while the tabs open. Copy now says Copied only when the copy really worked.
 - NS Policies Toolkit: The ↗ buttons that open a DLP Rule, Fingerprint Rule or File Profile in a new tab show a loading wheel there while the item is searched and opened.
 - 🔑 Netskope API keys: a loading wheel covers the tenant while a key is saved or tested, and the passphrase window while it checks the passphrase.
@@ -25512,8 +25515,11 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.1';
-    const CHANGELOG = `Version 1.5.1:
+    const SCRIPT_VERSION = '1.5.2';
+    const CHANGELOG = `Version 1.5.2:
+- Check Selected in the Domain Extractor now works like Check All Domains: a loading wheel while the tabs open, the button disabled meanwhile, and a line saying how many domains were checked.
+
+Version 1.5.1:
 - Check Domain Security tells you in the window which tabs it opened, and asks for a domain there instead of a pop up. Check All Domains shows a loading wheel while the tabs open. Copy now says Copied only when the copy really worked.
 
 Version 1.5.0:
@@ -26157,22 +26163,29 @@ Version 1.0:
                 multiTextarea.focus();
                 return;
             }
-            multiCheckBtn.disabled = true;
-            const wheel = suiteBusyStart(multiContent, `Opening tabs for ${domains.length} domain${domains.length !== 1 ? 's' : ''}…`);
-            runBulkCheck(domains, multiSpmCheckbox.checked,
+            checkWithFeedback(domains, multiSpmCheckbox.checked, multiCheckBtn, multiContent, bulkProgress);
+        });
+
+        // Check All Domains and the extractor's Check Selected: same wheel, progress and final line
+        function checkWithFeedback(domains, openSPM, btn, area, progressEl) {
+            const n = domains.length, s = n !== 1 ? 's' : '';
+            btn.disabled = true;
+            const wheel = suiteBusyStart(area, `Opening tabs for ${n} domain${s}…`);
+            runBulkCheck(domains, openSPM,
                 (current, total) => {
-                    bulkProgress.style.display = 'block';
-                    bulkProgress.textContent = `Checking domain ${current} of ${total}...`;
+                    progressEl.style.display = 'block';
+                    progressEl.textContent = `Checking domain ${current} of ${total}...`;
                     wheel.setLabel(`Opening the tabs of domain ${current} of ${total}…`);
                 },
                 () => {
                     wheel.stop();
-                    multiCheckBtn.disabled = false;
-                    bulkProgress.textContent = `Done. Opened tabs for ${domains.length} domain${domains.length !== 1 ? 's' : ''}.`;
-                    setTimeout(() => { bulkProgress.style.display = 'none'; }, 4000);
+                    btn.disabled = false;
+                    progressEl.style.display = 'block';
+                    progressEl.textContent = `Done. Opened tabs for ${n} domain${s}${openSPM ? ' and the SPM request form' : ''}.`;
+                    setTimeout(() => { progressEl.style.display = 'none'; }, 4000);
                 }
             );
-        });
+        }
 
         const { row: multiSpmRow, checkbox: multiSpmCheckbox } = makeSPMRow('dt-multi-spm-checkbox', 'Open SPM Request Form (one for the whole batch)');
         multiContent.append(multiLabel, multiTextarea, multiCountLabel, multiSpmRow, multiCheckBtn, bulkProgress);
@@ -26180,6 +26193,13 @@ Version 1.0:
         const { row: extractSpmRow, checkbox: extractSpmCheckbox } = makeSPMRow('dt-extract-spm-checkbox', 'Open SPM Request Form (one for the whole batch)');
         extractSpmRow.style.display = 'none';
         extractPanel.appendChild(extractSpmRow);
+        const extractProgress = document.createElement('div');
+        extractProgress.id = 'dt-extract-progress';
+        Object.assign(extractProgress.style, {
+            marginTop: '10px', padding: '8px 12px', background: '#e8f4f8',
+            borderRadius: '6px', fontSize: '12px', color: '#0066cc', display: 'none',
+        });
+        extractPanel.appendChild(extractProgress);
 
         function setCheckMode(isMulti) {
             singleContent.style.display = isMulti ? 'none' : 'block';
@@ -26324,7 +26344,7 @@ Version 1.0:
         checkSelectedBtn.addEventListener('click', () => {
             const domains = Array.from(selectedDomains).map(d => stripToDomain(d)).filter(Boolean);
             if (!domains.length) return;
-            runBulkCheck(domains, extractSpmCheckbox.checked);
+            checkWithFeedback(domains, extractSpmCheckbox.checked, checkSelectedBtn, extractPanel, extractProgress);
         });
 
         extractBtn.addEventListener('click', runExtract);
