@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.3.1
+// @version      4.3.2
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.1';
-    const CHANGELOG = `Version 4.3.1:
+    const SCRIPT_VERSION = '4.3.2';
+    const CHANGELOG = `Version 4.3.2:
+- SLA Alert Banner: the banner also stays hidden on tickets that are Closed Skipped or Canceled.
+
+Version 4.3.1:
 - Formatted Text Helper: the button that removes a clicked image is now a red trash icon.
 
 Version 4.3.0:
@@ -1067,8 +1070,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.1';
-    const CHANGELOG = `Version 4.3.1:
+    const SCRIPT_VERSION = '4.3.2';
+    const CHANGELOG = `Version 4.3.2:
+- SLA Alert Banner: the banner also stays hidden on tickets that are Closed Skipped or Canceled.
+
+Version 4.3.1:
 - Formatted Text Helper: the button that removes a clicked image is now a red trash icon.
 
 Version 4.3.0:
@@ -12523,8 +12529,11 @@ Version 1.0.3:
         if (!isToolEnabled('slaBanner') || !dtToolRunsHere('slaBanner')) return;
 
 
-    const SCRIPT_VERSION = '1.4.0';
-    const CHANGELOG = `Version 1.4.0:
+    const SCRIPT_VERSION = '1.4.1';
+    const CHANGELOG = `Version 1.4.1:
+- The banner also stays hidden on tickets that are Closed Skipped or Canceled, like on every other closed ticket.
+
+Version 1.4.0:
 - Added a "? Help" button at the bottom of the date format picker. It opens a visual Feature Guide that shows every banner color, explains the date formats and lists the controls.
 - The date format picker and the What's New window now stay readable when ServiceNow uses a dark theme.
 
@@ -12884,7 +12893,7 @@ Version 1.3:
                     bullets(body, [
                         'On the last day the banner shows a live countdown in hours, minutes and seconds.',
                         'Nothing is shown while more than 3 days remain.',
-                        'The banner is hidden on closed tickets: Closed Complete, Closed Incomplete, Cancelled, Resolved and Closed.'
+                        'The banner is hidden on closed tickets: Closed Complete, Closed Incomplete, Closed Skipped, Closed, Cancelled or Canceled, and Resolved.'
                     ]);
                 }
             },
@@ -13322,29 +13331,23 @@ Version 1.3:
 
     // ─── State Check ─────────────────────────────────────────────────────────
 
-    const TERMINAL_STATES = new Set([
-        'closed complete',
-        'closed incomplete',
-        'cancelled',
-        'resolved',
-        'closed',
-    ]);
+    // Any "Closed ..." state (Complete, Incomplete, Skipped, ...), Cancelled or Canceled, and Resolved.
+    function isTerminalState(label) {
+        const t = (label || '').trim().toLowerCase();
+        return t.startsWith('closed') || t.startsWith('cancel') || t === 'resolved';
+    }
 
     function isTicketClosed() {
-        // ServiceNow renders the state as a select (edit mode) or a display span (read-only mode).
-        // Try the select first, then fall back to common read-only label selectors.
+        // ServiceNow renders the state as a select (edit mode, or sys_readonly.<table>.state when read only)
+        // or a display span. Try the select first, then fall back to common read only label selectors.
         const stateSelect = document.querySelector('select[id$=".state"]');
         if (stateSelect) {
-            const text = stateSelect.options[stateSelect.selectedIndex]?.text?.trim().toLowerCase() || '';
-            return TERMINAL_STATES.has(text);
+            return isTerminalState(stateSelect.options[stateSelect.selectedIndex]?.text);
         }
-        // Read-only display variants used by different SNow themes
         const stateLabel =
             document.querySelector('[id$=".state_label"]') ||
             document.querySelector('[id$=".state"] .select2-chosen');
-        if (stateLabel) {
-            return TERMINAL_STATES.has(stateLabel.textContent.trim().toLowerCase());
-        }
+        if (stateLabel) return isTerminalState(stateLabel.textContent);
         return false;
     }
 
