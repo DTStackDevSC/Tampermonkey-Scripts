@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.7
+// @version      2.20.8
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.7';
-    const CHANGELOG = `Version 2.20.7:
+   const SCRIPT_VERSION = '2.20.8';
+    const CHANGELOG = `Version 2.20.8:
+- The hints that show when you point at a button inside a suite window (for example the copy buttons in Domain Tools) appeared behind the window in ServiceNow. They now show on top.
+
+Version 2.20.7:
 - On Netskope tenants, the checkboxes in the Toolbar settings (Compact mode, Auto close, tooltips, pinned and dragging, labels and the pinned tools list) were invisible and could not be changed. They show and work again, also in the NS Policies Toolkit windows.
 
 Version 2.20.6:
@@ -4365,6 +4368,53 @@ Version 1.0.0:
         const busy = suiteBusyStart(target, label);
         try { return await work(); } finally { busy.stop(); }
     }
+
+    /* ==========================================================
+     *  TOOLTIPS ABOVE THE SUITE'S WINDOWS (core)
+     *  ServiceNow turns title attributes into its own tooltips, drawn
+     *  under the suite's windows. Inside a suite window (fixed, z-index
+     *  of 100000 or more) the suite shows the title itself, on top of
+     *  everything; the title comes back when the pointer leaves.
+     * ==========================================================*/
+
+    (function suiteTooltips() {
+        let tip = null, owner = null;
+        const inSuiteWindow = (el) => {
+            for (let n = el; n && n !== document.body; n = n.parentElement) {
+                const c = getComputedStyle(n);
+                if (c.position === 'fixed' && Number(c.zIndex) >= 100000) return true;
+            }
+            return false;
+        };
+        const hide = () => {
+            if (owner) { if (!owner.hasAttribute('title')) owner.setAttribute('title', owner.dataset.suiteTitle); delete owner.dataset.suiteTitle; owner = null; }
+            if (tip) { tip.remove(); tip = null; }
+        };
+        document.addEventListener('mouseover', (e) => {
+            const el = e.target && e.target.closest && e.target.closest('[title]');
+            if (!el || el === owner || !el.getAttribute('title') || !inSuiteWindow(el)) return;
+            hide();
+            owner = el;
+            el.dataset.suiteTitle = el.getAttribute('title');
+            el.removeAttribute('title');   // before ServiceNow's own handler reads it
+            tip = suiteBusyStyle(document.createElement('div'), {
+                position: 'fixed', 'z-index': '2147483647', 'max-width': '320px', padding: '5px 8px', 'border-radius': '4px',
+                background: '#333333', color: '#ffffff', 'font-size': '11px', 'line-height': '1.4', 'font-family': 'Arial, sans-serif',
+                'pointer-events': 'none', 'white-space': 'pre-line', 'box-shadow': '0 2px 8px rgba(0,0,0,0.25)', margin: '0'
+            });
+            tip.className = 'suite-tooltip';
+            tip.textContent = el.dataset.suiteTitle;
+            document.body.appendChild(tip);
+            const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
+            const below = r.bottom + 6 + t.height <= window.innerHeight;
+            tip.style.setProperty('top', (below ? r.bottom + 6 : Math.max(4, r.top - 6 - t.height)) + 'px', 'important');
+            tip.style.setProperty('left', Math.max(4, Math.min(window.innerWidth - t.width - 4, r.left + r.width / 2 - t.width / 2)) + 'px', 'important');
+        }, true);
+        document.addEventListener('mouseout', (e) => {
+            if (owner && (!e.relatedTarget || !owner.contains(e.relatedTarget))) hide();
+        }, true);
+        ['mousedown', 'scroll', 'keydown'].forEach(t => document.addEventListener(t, () => { if (owner) hide(); }, true));
+    })();
 
     // Disables the button and shows "⏳ busyText" while work runs, then puts it back
     async function suiteBusyButton(btn, busyText, work) {
