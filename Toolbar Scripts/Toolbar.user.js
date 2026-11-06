@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.5
+// @version      2.20.6
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.5';
-    const CHANGELOG = `Version 2.20.5:
+   const SCRIPT_VERSION = '2.20.6';
+    const CHANGELOG = `Version 2.20.6:
+- Domain Tools: Domain Extractor: Copy Line by Line and Copy Comma Separated now copy only the ticked domains, not the whole list. They show how many are ticked and stay off until you tick one; Select all ticks every domain.
+
+Version 2.20.5:
 - Domain Tools: Check Selected in the Domain Extractor now works like Check All Domains: a loading wheel while the tabs open, the button disabled meanwhile, and a line saying how many domains were checked.
 
 Version 2.20.4:
@@ -25515,8 +25518,11 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.2';
-    const CHANGELOG = `Version 1.5.2:
+    const SCRIPT_VERSION = '1.5.3';
+    const CHANGELOG = `Version 1.5.3:
+- Domain Extractor: Copy Line by Line and Copy Comma Separated now copy only the ticked domains, not the whole list. They show how many are ticked and stay off until you tick one; Select all ticks every domain.
+
+Version 1.5.2:
 - Check Selected in the Domain Extractor now works like Check All Domains: a loading wheel while the tabs open, the button disabled meanwhile, and a line saying how many domains were checked.
 
 Version 1.5.1:
@@ -26254,6 +26260,14 @@ Version 1.0:
         function updateCheckSelectedBtn() {
             const n = selectedDomains.size;
             checkSelectedBtn.textContent = `Check Selected (${n})`;
+            [[copyLineBtn, 'Copy Line by Line'], [copyCommaBtn, 'Copy Comma Separated']].forEach(([b, label]) => {
+                if (/Copied|failed/.test(b.textContent)) return;   // the copy result stays visible for its 2 seconds
+                b.textContent = `${label} (${n})`;
+                b.disabled = n === 0;
+                b.style.opacity = n === 0 ? '0.5' : '1';
+                b.style.cursor = n === 0 ? 'not-allowed' : 'pointer';
+                b.title = n === 0 ? 'Tick the domains you want to copy first' : `Copies the ${n} ticked domain${n !== 1 ? 's' : ''}`;
+            });
             checkSelectedBtn.style.display = n > 0 ? 'inline-block' : 'none';
             extractSpmRow.style.display = n > 0 ? 'flex' : 'none';
         }
@@ -26351,18 +26365,20 @@ Version 1.0:
         textarea.addEventListener('keydown', e => { if (e.ctrlKey && e.key === 'Enter') runExtract(); });
 
         // Says Copied only once the copy really worked
-        async function copyText(text, btn) {
+        async function copyText(text, btn, restore) {
             const orig = btn.textContent;
             let ok = true;
             try { await navigator.clipboard.writeText(text); }
             catch (e) { try { GM_setClipboard(text); } catch (e2) { ok = false; } }
             btn.textContent = ok ? '✓ Copied!' : '✗ Copy failed';
             btn.style.background = ok ? '#0066cc' : '#dc3545';
-            setTimeout(() => { btn.textContent = orig; btn.style.background = '#28a745'; }, 2000);
+            setTimeout(() => { btn.textContent = orig; btn.style.background = '#28a745'; if (restore) restore(); }, 2000);
         }
 
-        copyLineBtn.addEventListener('click',  () => copyText(lastDomains.join('\n'), copyLineBtn));
-        copyCommaBtn.addEventListener('click', () => copyText(lastDomains.join(', '), copyCommaBtn));
+        // Only the ticked domains are copied, in the order they were found
+        const pickedDomains = () => lastDomains.filter(d => selectedDomains.has(d));
+        copyLineBtn.addEventListener('click',  () => { if (pickedDomains().length) copyText(pickedDomains().join('\n'), copyLineBtn, updateCheckSelectedBtn); });
+        copyCommaBtn.addEventListener('click', () => { if (pickedDomains().length) copyText(pickedDomains().join(', '), copyCommaBtn, updateCheckSelectedBtn); });
 
         /* ── Security check logic ── */
         checkInput.addEventListener('input', () => {
@@ -26588,15 +26604,15 @@ Version 1.0:
                     body.appendChild(rowMock);
                     caption(body, 'Each extracted domain appears as a row. Click anywhere on the row to tick its checkbox.');
                     body.appendChild(hrow([
-                        chip('Copy Line by Line', '#28a745'),
-                        chip('Copy Comma Separated', '#28a745'),
+                        chip('Copy Line by Line (2)', '#28a745'),
+                        chip('Copy Comma Separated (2)', '#28a745'),
                         chip('Check Selected (2)', 'linear-gradient(135deg,#667eea 0%,#764ba2 100%)')
                     ], { margin: '10px 0 4px 0' }));
                     bullets(body, [
                         'Check arrow on a single row sends that one domain to the Security Check tab.',
                         'Select all toggles every row, then Check Selected opens reputation tabs for all ticked domains.',
                         'When at least one domain is ticked, an Open SPM Request Form box appears. Tick it to open one SPM request form for the whole batch.',
-                        'Copy buttons put the full domain list on your clipboard, one per line or comma separated.'
+                        'Copy buttons put only the ticked domains on your clipboard, one per line or comma separated. They show how many are ticked and stay off until you tick one (Select all ticks every domain).'
                     ]);
                 }
             },
