@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.3.2
+// @version      4.3.3
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.2';
-    const CHANGELOG = `Version 4.3.2:
+    const SCRIPT_VERSION = '4.3.3';
+    const CHANGELOG = `Version 4.3.3:
+- Ticket Response Helper: While Solved Closure waits for the Change Tracker summary (up to 6 seconds), a loading wheel covers the comments box and says so.
+- Formatted Text Helper: While a pasted image is prepared, a loading wheel covers the editor.
+
+Version 4.3.2:
 - SLA Alert Banner: the banner also stays hidden on tickets that are Closed Skipped or Canceled.
 
 Version 4.3.1:
@@ -1059,6 +1063,68 @@ Version 4.0.0:
 
     appendStyleWhenReady(darkModeStyle);
 
+    /* ==========================================================
+     *  BUSY FEEDBACK (core, shared by every tool)
+     *  helpersBusy covers the block being worked on with a loading wheel:
+     *  clicks are blocked at once, the wheel and label fade in after
+     *  150 ms so fast calls do not flicker, and the cover always goes
+     *  away, also on errors. Styles are inline and !important, with Web
+     *  Animations instead of keyframes, so it works under ServiceNow's
+     *  dark theme, inside shadow roots and under Netskope's CSP.
+     * ==========================================================*/
+
+    function helpersBusyStyle(el, props) {
+        for (const [k, v] of Object.entries(props)) el.style.setProperty(k, v, 'important');
+        return el;
+    }
+
+    // Start form, for a block that stays busy across several steps: returns { setLabel(text), stop() }
+    function helpersBusyStart(target, label) {
+        if (!target || !target.isConnected) return { setLabel() {}, stop() {} };
+        const madeRelative = getComputedStyle(target).position === 'static';
+        if (madeRelative) target.style.position = 'relative';
+        // A scrolled block is covered where the user is looking, not at its top
+        const scrolled = target.scrollHeight > target.clientHeight + 1;
+        const cover = helpersBusyStyle(document.createElement('div'), Object.assign({
+            position: 'absolute', 'z-index': '50', display: 'flex', 'flex-direction': 'column',
+            'align-items': 'center', 'justify-content': 'center', gap: '6px', 'border-radius': 'inherit',
+            background: 'rgba(255,255,255,0.78)', cursor: 'progress', opacity: '0', margin: '0', padding: '0', 'box-sizing': 'border-box'
+        }, scrolled
+            ? { top: target.scrollTop + 'px', left: target.scrollLeft + 'px', width: target.clientWidth + 'px', height: target.clientHeight + 'px' }
+            : { top: '0', left: '0', right: '0', bottom: '0' }));
+        cover.className = 'helpers-busy';
+        cover.setAttribute('aria-busy', 'true');
+        const wheel = helpersBusyStyle(document.createElement('div'), {
+            width: '26px', height: '26px', 'border-radius': '50%', border: '3px solid #d0d0f0',
+            'border-top-color': '#667eea', 'box-sizing': 'border-box', background: 'transparent'
+        });
+        cover.appendChild(wheel);
+        const text = helpersBusyStyle(document.createElement('div'), {
+            'font-size': '11px', color: '#555555', 'font-family': 'Arial, sans-serif', background: 'transparent',
+            'text-align': 'center', 'white-space': 'pre-line', 'max-width': '90%'
+        });
+        text.textContent = label || '';
+        cover.appendChild(text);
+        ['click', 'mousedown', 'keydown', 'wheel'].forEach(t => cover.addEventListener(t, e => { e.stopPropagation(); if (t !== 'wheel') e.preventDefault(); }));
+        target.appendChild(cover);
+        try { wheel.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 800, iterations: Infinity }); } catch (e) { /* no animation, still blocks */ }
+        const show = setTimeout(() => { cover.style.setProperty('opacity', '1', 'important'); }, 150);
+        return {
+            setLabel(t) { text.textContent = t || ''; },
+            stop() {
+                clearTimeout(show);
+                cover.remove();
+                if (madeRelative && !target.querySelector(':scope > .helpers-busy')) target.style.position = '';
+            },
+        };
+    }
+
+    async function helpersBusy(target, work, label) {
+        if (!target || !target.isConnected) return work();
+        const busy = helpersBusyStart(target, label);
+        try { return await work(); } finally { busy.stop(); }
+    }
+
     /* === TOOL: SHORT DESCRIPTION HELPER === */
     (() => {
         'use strict';
@@ -1070,8 +1136,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.2';
-    const CHANGELOG = `Version 4.3.2:
+    const SCRIPT_VERSION = '4.3.3';
+    const CHANGELOG = `Version 4.3.3:
+- Ticket Response Helper: While Solved Closure waits for the Change Tracker summary (up to 6 seconds), a loading wheel covers the comments box and says so.
+- Formatted Text Helper: While a pasted image is prepared, a loading wheel covers the editor.
+
+Version 4.3.2:
 - SLA Alert Banner: the banner also stays hidden on tickets that are Closed Skipped or Canceled.
 
 Version 4.3.1:
@@ -4272,8 +4342,11 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.2';
-    const CHANGELOG = `Version 2.21.2:
+    const SCRIPT_VERSION = '2.21.3';
+    const CHANGELOG = `Version 2.21.3:
+- While Solved Closure waits for the Change Tracker summary (up to 6 seconds), a loading wheel covers the comments box and says so.
+
+Version 2.21.2:
 - The Feature Guide is now visual: it shows the button, the response list with its sections and colored dots, the pinned and recently used sections, the custom response editor, the footer and every setting as they look on screen. It also explains which field each response goes to, the clipboard paste and the variables you can use in custom responses.
 
 Version 2.21.1:
@@ -6033,7 +6106,9 @@ Regards.`,
     // also writes the full summary to work notes.
     async function applySolvedChangeSummary(key, text) {
         if (key !== 'solved' || !getSolvedChangeSummaryEnabled()) return text;
-        const res = await requestChangeTrackerSummary(getTicketNumberForSummary());
+        // Up to 6 s: the comments box waits under the wheel, so nothing is typed into it meanwhile
+        const box = document.getElementById('activity-stream-comments-textarea') || document.getElementById('activity-stream-textarea');
+        const res = await helpersBusy(box && box.parentElement, () => requestChangeTrackerSummary(getTicketNumberForSummary()), 'Getting the change summary from the Change Tracker…');
         if (!res) {
             showSummaryNotice('Change Tracker did not answer, so Solved Closure was inserted without the change summary.');
             return text;
@@ -8786,8 +8861,11 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.1';
-    const CHANGELOG = `Version 1.4.1:
+    const SCRIPT_VERSION = '1.4.2';
+    const CHANGELOG = `Version 1.4.2:
+- While a pasted image is prepared, a loading wheel covers the editor.
+
+Version 1.4.1:
 - The button that removes a clicked image is now a red trash icon.
 
 Version 1.4.0:
@@ -9329,7 +9407,7 @@ Version 1.0.3:
         const range = sel.rangeCount && editor.contains(sel.getRangeAt(0).startContainer) ? sel.getRangeAt(0).cloneRange() : null;
         try {
             pasteStatus('Preparing the image…');
-            const { dataUrl, w, h } = await processPastedImage(file);
+            const { dataUrl, w, h } = await helpersBusy(editor.parentElement, () => processPastedImage(file), 'Preparing the image…');
             const img = document.createElement('img');
             img.src = dataUrl;
             img.style.width = '25%';
