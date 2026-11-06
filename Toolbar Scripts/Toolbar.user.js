@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.2
+// @version      2.20.3
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.2';
-    const CHANGELOG = `Version 2.20.2:
+   const SCRIPT_VERSION = '2.20.3';
+    const CHANGELOG = `Version 2.20.3:
+- NS Policies Toolkit: Steering Exception Tools: while it checks, adds, removes or loads the categories, a loading wheel covers the panel and shows what it is doing step by step, and Check stays disabled until it ends.
+- NS Policies Toolkit: Manage Source: while it checks, adds or removes, a loading wheel covers the list and its options. The progress bar, the log and Stop stay visible and usable.
+
+Version 2.20.2:
 - Change Tracker: a loading wheel now also covers the change log while the ticket is read again (when you open the tracker or come back to the tab), the reminder card during "↺ Check now", the review window while it reads the domains or checks with the Netskope API, the shared profiles list while it loads or saves, "Write all to ticket" and the session renewal test. A button that fails no longer stays stuck.
 
 Version 2.20.1:
@@ -4287,8 +4291,9 @@ Version 1.0.0:
         return el;
     }
 
-    async function suiteBusy(target, work, label) {
-        if (!target || !target.isConnected) return work();
+    // Start form, for a block that stays busy across several steps: returns { setLabel(text), stop() }
+    function suiteBusyStart(target, label) {
+        if (!target || !target.isConnected) return { setLabel() {}, stop() {} };
         const madeRelative = getComputedStyle(target).position === 'static';
         if (madeRelative) target.style.position = 'relative';
         // A scrolled block is covered where the user is looking, not at its top
@@ -4307,24 +4312,30 @@ Version 1.0.0:
             'border-top-color': '#667eea', 'box-sizing': 'border-box', background: 'transparent'
         });
         cover.appendChild(wheel);
-        if (label) {
-            const text = suiteBusyStyle(document.createElement('div'), {
-                'font-size': '11px', color: '#555555', 'font-family': 'Arial, sans-serif', background: 'transparent', 'text-align': 'center'
-            });
-            text.textContent = label;
-            cover.appendChild(text);
-        }
+        const text = suiteBusyStyle(document.createElement('div'), {
+            'font-size': '11px', color: '#555555', 'font-family': 'Arial, sans-serif', background: 'transparent',
+            'text-align': 'center', 'white-space': 'pre-line', 'max-width': '90%'
+        });
+        text.textContent = label || '';
+        cover.appendChild(text);
         ['click', 'mousedown', 'keydown', 'wheel'].forEach(t => cover.addEventListener(t, e => { e.stopPropagation(); if (t !== 'wheel') e.preventDefault(); }));
         target.appendChild(cover);
         try { wheel.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 800, iterations: Infinity }); } catch (e) { /* no animation, still blocks */ }
         const show = setTimeout(() => { cover.style.setProperty('opacity', '1', 'important'); }, 150);
-        try {
-            return await work();
-        } finally {
-            clearTimeout(show);
-            cover.remove();
-            if (madeRelative && !target.querySelector(':scope > .suite-busy')) target.style.position = '';
-        }
+        return {
+            setLabel(t) { text.textContent = t || ''; },
+            stop() {
+                clearTimeout(show);
+                cover.remove();
+                if (madeRelative && !target.querySelector(':scope > .suite-busy')) target.style.position = '';
+            },
+        };
+    }
+
+    async function suiteBusy(target, work, label) {
+        if (!target || !target.isConnected) return work();
+        const busy = suiteBusyStart(target, label);
+        try { return await work(); } finally { busy.stop(); }
     }
 
     // Disables the button and shows "⏳ busyText" while work runs, then puts it back
@@ -27858,8 +27869,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.38.1';
-    const CHANGELOG = `Version 1.38.1:
+    const SCRIPT_VERSION = '1.38.2';
+    const CHANGELOG = `Version 1.38.2:
+- Steering Exception Tools: while it checks, adds, removes or loads the categories, a loading wheel covers the panel and shows what it is doing step by step, and Check stays disabled until it ends.
+- Manage Source: while it checks, adds or removes, a loading wheel covers the list and its options. The progress bar, the log and Stop stay visible and usable.
+
+Version 1.38.1:
 - The "📥 Export to Excel" button now shows on tenants where the SSL Decryption list has "Add Policy" instead of "New Policy". When neither is there, it sits next to Apply Changes.
 
 Version 1.38:
@@ -34518,6 +34533,7 @@ Version 1.16:
         const el = seEl('se-status');
         el.textContent = message || '';
         el.classList.toggle('error', !!isError);
+        if (se.wheel && message) se.wheel.setLabel(message);
     }
 
     function seRenderConfigList() {
@@ -34620,6 +34636,10 @@ Version 1.16:
 
     function seSetBusy(busy) {
         se.busy = busy;
+        if (busy && !se.wheel) se.wheel = suiteBusyStart(se.shadow.querySelector('#se-main-panel main.body'), seEl('se-status').textContent || 'Working…');
+        if (!busy && se.wheel) { se.wheel.stop(); se.wheel = null; }
+        const check = seEl('se-check-btn');
+        if (check) check.disabled = busy;
         seEl('se-domains').disabled = busy;
         seEl('se-cat-search').disabled = busy;
         se.shadow.querySelectorAll('#se-cat-list input, #se-cat-chips button').forEach(i => { i.disabled = busy; });
@@ -35202,6 +35222,9 @@ Version 1.16:
         if (se.catalog && !force) return seRenderCategoryList();
         seEl('se-cat-list').innerHTML = '';
         status.textContent = 'Loading categories…';
+        const list = seEl('se-cat-list');
+        const wheel = suiteBusyStart(list, 'Loading categories…');
+        if (list) list.style.minHeight = '80px';
         try {
             await seLoadCatalog(force);
             status.textContent = `${se.catalog.list.length} categories in this tenant. `;
@@ -35212,6 +35235,9 @@ Version 1.16:
             console.error('[NS Toolkit] Category list:', err);
             status.textContent = `The categories could not be loaded: ${err.message} `;
             status.insertAdjacentHTML('beforeend', '<button type="button" class="link-btn" data-action="cat-reload" id="se-cat-reload" style="padding:1px 6px;font-size:11px">↺ Reload</button>');
+        } finally {
+            wheel.stop();
+            if (list) list.style.minHeight = '';
         }
     }
 
@@ -36384,6 +36410,7 @@ Version 1.16:
                         <button type="button" class="close" id="sm-close" aria-label="Close">×</button>
                     </header>
                     <main class="body">
+                        <div id="sm-inputs">
                         <div class="modes"><button type="button" data-sm-mode="user" class="on">Users</button><button type="button" data-sm-mode="group">Groups</button></div>
                         <label class="label" for="sm-list" id="sm-list-label"></label>
                         <textarea id="sm-list"></textarea>
@@ -36397,6 +36424,7 @@ Version 1.16:
                             <label>Timeout (s) <input type="number" id="sm-timeout" value="30" min="5"></label>
                             <label>Retries <input type="number" id="sm-retries" value="1" min="0" max="5"></label>
                             <label>Pause (s) <input type="number" id="sm-pause" value="1" min="0" step="0.5"></label>
+                        </div>
                         </div>
                         <div class="results" id="sm-results"></div>
                         <div class="bar"><div id="sm-bar"></div></div>
@@ -36452,6 +36480,7 @@ Version 1.16:
         line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
         smEl('sm-log').appendChild(line);
         smEl('sm-log').scrollTop = smEl('sm-log').scrollHeight;
+        if (sm.wheel) sm.wheel.setLabel(msg + '\nStop is still available below.');
     }
 
     const smCountText = () => `${sm.entries.length} ${SM_NOUN[sm.mode][sm.entries.length === 1 ? 0 : 1]}`;
@@ -36480,6 +36509,8 @@ Version 1.16:
     }
 
     function smUpdateButtons() {
+        if (sm.busy && !sm.wheel) sm.wheel = suiteBusyStart(smEl('sm-inputs'), 'Working… Stop is still available below.');
+        if (!sm.busy && sm.wheel) { sm.wheel.stop(); sm.wheel = null; }
         smEl('sm-check').disabled  = sm.busy;
         smEl('sm-export').disabled = sm.busy;
         smEl('sm-add').disabled    = sm.busy || !sm.rows;
