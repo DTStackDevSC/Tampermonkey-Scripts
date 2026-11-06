@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.6
+// @version      2.20.7
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.6';
-    const CHANGELOG = `Version 2.20.6:
+   const SCRIPT_VERSION = '2.20.7';
+    const CHANGELOG = `Version 2.20.7:
+- On Netskope tenants, the checkboxes in the Toolbar settings (Compact mode, Auto close, tooltips, pinned and dragging, labels and the pinned tools list) were invisible and could not be changed. They show and work again, also in the NS Policies Toolkit windows.
+
+Version 2.20.6:
 - Domain Tools: Domain Extractor: Copy Line by Line and Copy Comma Separated now copy only the ticked domains, not the whole list. They show how many are ticked and stay off until you tick one; Select all ticks every domain.
 
 Version 2.20.5:
@@ -2277,6 +2280,21 @@ Version 1.0.0:
     // Add custom styles with saved settings
     GM_addStyle(`
         ${getAnimationKeyframes(savedPosition, savedAnimationSpeed)}
+
+        /* Netskope styles its own checkboxes by hiding the native box and drawing one on the label.
+           Inside the suite's windows the native checkbox comes back, visible and clickable. */
+        :is(#toolbar-settings-modal, #ns-toolkit-settings-modal, #ns-save-reminder-modal, #ns-add-log-modal, #ns-view-log-modal, #ns-remove-older-confirm, #ns-ssl-removal-modal, #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal, #ns-username-modal, #policy-form-opener-modal) :is(input[type="checkbox"], input[type="radio"]) {
+            -webkit-appearance: auto !important; appearance: auto !important;
+            opacity: 1 !important; visibility: visible !important; display: inline-block !important;
+            position: static !important; left: auto !important; top: auto !important; transform: none !important;
+            width: 14px !important; height: 14px !important; min-width: 14px !important; min-height: 14px !important;
+            margin-left: 0 !important; padding: 0 !important; clip: auto !important; clip-path: none !important;
+            pointer-events: auto !important; cursor: pointer !important; flex-shrink: 0 !important;
+            accent-color: #667eea !important; vertical-align: middle !important;
+        }
+        :is(#toolbar-settings-modal, #ns-toolkit-settings-modal, #ns-save-reminder-modal, #ns-add-log-modal, #ns-view-log-modal, #ns-remove-older-confirm, #ns-ssl-removal-modal, #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal, #ns-username-modal, #policy-form-opener-modal) :is(input[type="checkbox"], input[type="radio"])::before,
+        :is(#toolbar-settings-modal, #ns-toolkit-settings-modal, #ns-save-reminder-modal, #ns-add-log-modal, #ns-view-log-modal, #ns-remove-older-confirm, #ns-ssl-removal-modal, #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal, #ns-username-modal, #policy-form-opener-modal) :is(input[type="checkbox"], input[type="radio"])::after,
+        :is(#toolbar-settings-modal, #ns-toolkit-settings-modal, #ns-save-reminder-modal, #ns-add-log-modal, #ns-view-log-modal, #ns-remove-older-confirm, #ns-ssl-removal-modal, #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal, #ns-username-modal, #policy-form-opener-modal) label::before, :is(#toolbar-settings-modal, #ns-toolkit-settings-modal, #ns-save-reminder-modal, #ns-add-log-modal, #ns-view-log-modal, #ns-remove-older-confirm, #ns-ssl-removal-modal, #ns-url-log-add-modal, #ns-url-del-modal, #ns-url-log-view-modal, #ns-username-modal, #policy-form-opener-modal) label::after { content: none !important; display: none !important; }
 
         .hidden {
             display: none !important;
