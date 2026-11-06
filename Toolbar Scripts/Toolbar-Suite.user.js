@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.19.1
+// @version      2.20.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.19.1';
-    const CHANGELOG = `Version 2.19.1:
+   const SCRIPT_VERSION = '2.20.0';
+    const CHANGELOG = `Version 2.20.0:
+- Change Tracker: new "⏰ Manage Reminders" tab next to the change log. The Newly Registered Domains review, "↺ Check now" and profiles buttons moved there from Configure. The tracker still opens on the change log, and everything works as before.
+- Change Tracker: the Manage Reminders tab shows how many domains are due for review.
+
+Version 2.19.1:
 - Destination Profile Editor: smaller buttons, fields and spacing, so the window takes less of the screen. When editing a profile the whole window now scrolls as one, instead of squeezing the profile into a small box.
 
 Version 2.19.0:
@@ -17484,8 +17488,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.7.1';
-    const CHANGELOG = `Version 2.7.1:
+    const SCRIPT_VERSION = '2.8.0';
+    const CHANGELOG = `Version 2.8.0:
+- Newly Registered Domains moved from Configure to the new "⏰ Manage Reminders" tab, with Review, "↺ Check now" and "🛠 Profiles" buttons and the last check result. The tracker still opens on the change log.
+
+Version 2.7.1:
 - Newly Registered Domains: removals through the Netskope API are applied in Netskope with the note "Domain is no longer categorized as Newly Registered Domain", and logged only once Netskope applied them.
 
 Version 2.7.0:
@@ -22776,7 +22783,13 @@ Version 1.4.3:
         // Log container
         sidebar.appendChild(mk('div', { id:'ct-log-container' }));
 
+        // Everything from the entry form down is the Change log tab. It is the tab every opening starts on.
+        const logPane = mk('div', { id:'ct-pane-log' });
+        for (let n = inputArea; n; ) { const next = n.nextSibling; logPane.appendChild(n); n = next; }
+        sidebar.append(buildCtTabs(), logPane, buildRemindersPane());
+
         document.body.appendChild(sidebar);
+        ctShowTab('log');
 
         // Reflect current connectivity state into the freshly-built DOM
         renderConnBanner();
@@ -23676,6 +23689,7 @@ Version 1.4.3:
                         chip('↺ Check now', 'transparent', { color: '#8a5a00', border: '1px solid #e0a800' })
                     ]));
                     caption(body, 'An orange dot on the Change Tracker icon and this banner show up when something is due. The tracker checks at most every 4 hours.');
+                    bullets(body, ['Everything about this lives in the "⏰ Manage Reminders" tab, next to the change log. The tracker always opens on the change log.']);
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', overflow: 'hidden', margin: '10px 0 4px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(hrow([span('EMA · tenant.goskope.com', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
@@ -23690,8 +23704,8 @@ Version 1.4.3:
                     bullets(body, [
                         'Check each category, take the domains that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". It is logged in the ticket where they were added.',
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
-                        'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in Configure, "⏰ Newly Registered Domains profiles", a list shared by the whole team.',
-                        '"↺ Check now" next to it in Configure looks right away, without waiting for the next automatic check.',
+                        'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in the Manage Reminders tab, "🛠 Profiles", a list shared by the whole team.',
+                        '"↺ Check now" in the Manage Reminders tab looks right away, without waiting for the next automatic check.',
                         'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the Netskope API keys of the toolbar, then test it and turn it on per tenant.',
                         'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm, applying it in Netskope with the change note "Domain is no longer categorized as Newly Registered Domain". A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
@@ -23955,6 +23969,7 @@ Version 1.4.3:
 
     function renderNrdAlert() {
         const due = nrdDueItems().length;
+        renderNrdTabInfo();
         // Toolbar dot, kept while something is due (the toolbar may redraw its buttons)
         const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
         const dot = document.getElementById('ct-nrd-dot');
@@ -23990,6 +24005,127 @@ Version 1.4.3:
         const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
         btns.append(review, again);
         banner.append(msg, btns);
+    }
+
+    /* ── Tabs: Change log (always the one that opens) and Manage Reminders ── */
+
+    const CT_TABS = ['log', 'reminders'];
+
+    function ctShowTab(name) {
+        const active = CT_TABS.includes(name) ? name : 'log';
+        CT_TABS.forEach(t => {
+            const pane = document.getElementById(`ct-pane-${t}`);
+            const tab = document.getElementById(`ct-tab-${t}`);
+            const on = t === active;
+            if (pane) pane.style.display = on ? 'block' : 'none';
+            if (tab) {
+                tab.setAttribute('aria-selected', on ? 'true' : 'false');
+                Object.assign(tab.style, { color: on ? '#333' : '#888', borderBottom: on ? '3px solid #667eea' : '3px solid transparent' });
+            }
+        });
+        if (active === 'reminders') renderNrdTabInfo();
+    }
+
+    function buildCtTabs() {
+        const bar = css(mk('div', { id:'ct-tabs', role:'tablist' }), {
+            display:'flex', gap:'4px', borderBottom:'1px solid #e0e0e0', margin:'0 0 12px'
+        });
+        [['log', '✏️ Change log'], ['reminders', '⏰ Manage Reminders']].forEach(([id, label]) => {
+            const b = css(mk('button', { id:`ct-tab-${id}`, type:'button', role:'tab' }), {
+                background:'transparent', border:'none', borderBottom:'3px solid transparent', cursor:'pointer',
+                padding:'6px 10px', fontSize:'12px', fontWeight:'bold', color:'#888', fontFamily:'Arial, sans-serif',
+                marginBottom:'-1px', display:'inline-flex', alignItems:'center', gap:'6px'
+            });
+            b.appendChild(document.createTextNode(label));
+            if (id === 'reminders') {
+                const n = css(mk('span', { id:'ct-tab-reminders-count' }), {
+                    display:'none', background:'#ff8c00', color:'#fff', borderRadius:'9px', padding:'0 6px',
+                    fontSize:'10px', lineHeight:'16px', fontWeight:'bold'
+                });
+                b.appendChild(n);
+            }
+            b.onclick = () => ctShowTab(id);
+            bar.appendChild(b);
+        });
+        return bar;
+    }
+
+    // The count on the tab and the status line of the Newly Registered Domains reminder
+    function renderNrdTabInfo() {
+        const due = nrdDueItems().length;
+        const count = document.getElementById('ct-tab-reminders-count');
+        if (count) { count.textContent = String(due); count.style.display = due ? 'inline-block' : 'none'; }
+        const status = document.getElementById('ct-nrd-status');
+        if (!status) return;
+        const cache = nrdCache();
+        if (!cache) { status.textContent = 'Not checked yet.'; return; }
+        const d = new Date(cache.at), p = n => String(n).padStart(2, '0');
+        status.textContent = `${nrdSummary(cache)} Last check ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}.`;
+    }
+
+    function buildRemindersPane() {
+        const pane = css(mk('div', { id:'ct-pane-reminders' }), { display:'none' });
+        const intro = css(mk('div'), { fontSize:'12px', color:'#555', margin:'0 0 10px', lineHeight:'1.5', fontFamily:'Arial, sans-serif' });
+        intro.textContent = 'Reminders shared by the whole team through the SharePoint list.';
+        pane.appendChild(intro);
+
+        const card = css(mk('div', { id:'ct-reminder-nrd' }), {
+            background:'#fff', border:'1px solid #ddd', borderRadius:'7px', padding:'12px', marginBottom:'10px', fontFamily:'Arial, sans-serif'
+        });
+        const title = css(mk('div'), { fontSize:'13px', fontWeight:'bold', color:'#333', marginBottom:'4px' });
+        title.textContent = '⏰ Newly Registered Domains';
+        const desc = css(mk('div'), { fontSize:'11px', color:'#666', lineHeight:'1.5', marginBottom:'8px' });
+        desc.textContent = 'Domains allowed in a Newly Registered Domains Destination Profile are due for review 30 days after they were added.';
+        const status = css(mk('div', { id:'ct-nrd-status' }), { fontSize:'12px', color:'#555', marginBottom:'8px' });
+
+        const btn = (id, text, title, primary) => {
+            const b = css(mk('button', { id, type:'button' }), {
+                padding:'5px 10px', background: primary ? '#ff8c00' : '#fff', color: primary ? '#fff' : '#667eea',
+                border: primary ? 'none' : '1px solid #c0c8f0', borderRadius:'4px', cursor:'pointer',
+                fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif'
+            });
+            b.textContent = text;
+            b.title = title;
+            return b;
+        };
+        const result = css(mk('div', { id:'ct-nrd-check-result' }), { fontSize:'12px', color:'#555', margin:'8px 0 0', minHeight:'16px' });
+        const review = btn('ct-nrd-open-review', 'Review', 'Domains due for review', true);
+        review.onclick = () => {
+            if (!api.isConfigured()) { result.textContent = 'Connect to SharePoint first.'; return; }
+            openNrdReview();
+        };
+        // Checks right away, without waiting for the next automatic check (every 4 hours)
+        const check = btn('ct-nrd-check-now', '↺ Check now', 'Looks for Newly Registered Domains due for review now', false);
+        check.onclick = async () => {
+            if (!api.isConfigured()) { result.textContent = 'Connect to SharePoint first.'; return; }
+            check.disabled = true;
+            check.textContent = '⏳ Checking…';
+            result.textContent = '';
+            const before = nrdCache();
+            const res = await nrdCheck({ force: true });
+            check.disabled = false;
+            check.textContent = '↺ Check now';
+            if (!res || res === before) { result.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
+            const due = res.items.filter(i => Date.now() >= i.dueAt).length;
+            result.textContent = nrdSummary(res) + ' ';
+            if (due) {
+                const link = css(mk('a', { href:'#' }), { color:'#667eea', fontWeight:'bold' });
+                link.dataset.nrdOpenReview = '1';
+                link.textContent = 'Review';
+                link.onclick = (e) => { e.preventDefault(); openNrdReview(); };
+                result.appendChild(link);
+            }
+        };
+        const profiles = btn('ct-nrd-settings-btn', '🛠 Profiles', 'The Destination Profiles whose domains are reviewed after 30 days, shared by the team', false);
+        profiles.onclick = () => {
+            if (spClient.siteUrl()) openNrdSettings();
+            else result.textContent = 'Connect to SharePoint first: save the site and list in Configure.';
+        };
+        const row = css(mk('div'), { display:'flex', gap:'6px', flexWrap:'wrap' });
+        row.append(review, check, profiles);
+        card.append(title, desc, status, row, result);
+        pane.appendChild(card);
+        return pane;
     }
 
     /* ── Review list ── */
@@ -24679,46 +24815,6 @@ Version 1.4.3:
         renewBox.append(renewLog, renewBtn, renewResult);
         modal.appendChild(renewBox);
 
-        const nrdBtn = css(mk('button', { id:'ct-nrd-settings-btn', type:'button' }), {
-            padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
-            cursor:'pointer', fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif', margin:'-6px 0 14px'
-        });
-        nrdBtn.textContent = '⏰ Newly Registered Domains profiles';
-        nrdBtn.title = 'The Destination Profiles whose domains are reviewed after 30 days, shared by the team';
-        nrdBtn.onclick = () => {
-            if (spClient.siteUrl()) openNrdSettings();
-            else nrdCheckResult.textContent = 'Connect to SharePoint first: save the site and list above.';
-        };
-        // Checks right away, without waiting for the next automatic check (every 4 hours)
-        const nrdCheckBtn = css(mk('button', { id:'ct-nrd-check-now', type:'button' }), {
-            padding:'4px 10px', background:'#fff', color:'#667eea', border:'1px solid #c0c8f0', borderRadius:'4px',
-            cursor:'pointer', fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif', margin:'-6px 0 14px 6px'
-        });
-        nrdCheckBtn.textContent = '↺ Check now';
-        nrdCheckBtn.title = 'Looks for Newly Registered Domains due for review now';
-        const nrdCheckResult = css(mk('div', { id:'ct-nrd-check-result' }), { fontSize:'12px', color:'#555', margin:'-8px 0 14px' });
-        nrdCheckBtn.onclick = async () => {
-            if (!api.isConfigured()) { nrdCheckResult.textContent = 'Connect to SharePoint first.'; return; }
-            nrdCheckBtn.disabled = true;
-            nrdCheckBtn.textContent = '⏳ Checking…';
-            nrdCheckResult.textContent = '';
-            const before = nrdCache();
-            const res = await nrdCheck({ force: true });
-            nrdCheckBtn.disabled = false;
-            nrdCheckBtn.textContent = '↺ Check now';
-            if (!res || res === before) { nrdCheckResult.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
-            const due = res.items.filter(i => Date.now() >= i.dueAt).length;
-            nrdCheckResult.textContent = nrdSummary(res) + ' ';
-            if (due) {
-                const link = css(mk('a', { href:'#' }), { color:'#667eea', fontWeight:'bold' });
-                link.dataset.nrdOpenReview = '1';
-                link.textContent = 'Review';
-                link.onclick = (e) => { e.preventDefault(); openNrdReview(); };
-                nrdCheckResult.appendChild(link);
-            }
-        };
-        modal.append(nrdBtn, nrdCheckBtn, nrdCheckResult);
-
         function renderRenewLog() {
             const rec = spClient.renewRecord();
             const when = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -25126,6 +25222,7 @@ Version 1.4.3:
 
         const ticket = getTicketNumber();
         touchTicketAccess(ticket);
+        ctShowTab('log');
         const badge  = document.getElementById('ct-ticket-badge');
         if (badge) badge.textContent = `Ticket: ${ticket}`;
 
