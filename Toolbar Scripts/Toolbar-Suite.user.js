@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.22.1
+// @version      2.23.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.22.1';
-    const CHANGELOG = `Version 2.22.1:
+   const SCRIPT_VERSION = '2.23.0';
+    const CHANGELOG = `Version 2.23.0:
+- ServiceNow Toolkit: New reminder on the SPM request form: when the Requesting Member Firm is Deloitte Germany, a box above the fields shows who goes in Requestor (the Requested for of the original ticket) and in Backup Exception Owner (its Opened by), with their names and whether they are already set. It can be turned off in Settings.
+
+Version 2.22.1:
 - Domain Tools and 🔑 API Keys: The VirusTotal limit per minute now counts the queries of every open tab and ticket together, so checks running in two tickets at once no longer go over it.
 
 Version 2.22.0:
@@ -748,7 +751,7 @@ Version 1.0.0:
           exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
         { id: 'changeTracker', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Change Tracker', description: 'Shared change log per ticket in your team\'s SharePoint list, written to the ticket', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
           exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerSpSiteUrl'] },
-        { id: 'serviceNowToolkit', pages: ['https://*.service-now.com/*'], name: 'ServiceNow Toolkit', description: 'Draft autosave and SCTASK auto open', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
+        { id: 'serviceNowToolkit', pages: ['https://*.service-now.com/*'], name: 'ServiceNow Toolkit', description: 'Draft autosave, SCTASK auto open and the SPM Germany reminder', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
         { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
@@ -5820,8 +5823,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4';
-    const CHANGELOG = `Version 1.4:
+    const SCRIPT_VERSION = '1.5';
+    const CHANGELOG = `Version 1.5:
+- New reminder on the SPM request form: when the Requesting Member Firm is Deloitte Germany, a box above the fields shows who goes in Requestor (the Requested for of the original ticket) and in Backup Exception Owner (its Opened by), with their names and whether they are already set. It can be turned off in Settings.
+
+Version 1.4:
 - Added a ? Help button to the settings panel that opens a visual Feature Guide covering draft autosave, restore prompts, the saved drafts panel, and the SCTASK auto-open feature.
 
 Version 1.3.8:
@@ -5919,6 +5925,7 @@ Version 1.1.4:
     const GM_KEY_DRAFTS        = 'sn_toolkit_drafts';
     const GM_KEY_AUTOSAVE      = 'sn_toolkit_autosave_enabled';
     const GM_KEY_AUTOOPEN_TAB  = 'sn_toolkit_autoopen_tab_enabled';
+    const GM_KEY_SPM_GERMANY   = 'sn_toolkit_spm_germany_enabled';
     const AUTOSAVE_DELAY  = 3000;
     const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -5949,6 +5956,8 @@ Version 1.1.4:
     function setAutosaveEnabled(v)     { GM_setValue(GM_KEY_AUTOSAVE, v); }
     function getAutoOpenTabEnabled()   { return GM_getValue(GM_KEY_AUTOOPEN_TAB, true); }
     function setAutoOpenTabEnabled(v)  { GM_setValue(GM_KEY_AUTOOPEN_TAB, v); }
+    function getSpmGermanyEnabled()    { return GM_getValue(GM_KEY_SPM_GERMANY, true); }
+    function setSpmGermanyEnabled(v)   { GM_setValue(GM_KEY_SPM_GERMANY, v); spmGermanyCheck(true); }
 
     /* ==========================================================
      *  DRAFT STORAGE  (GM storage — persists across sessions)
@@ -6470,6 +6479,26 @@ Version 1.1.4:
                 }
             },
             {
+                icon: '🇩🇪', title: 'SPM Request: Germany Reminder',
+                buildContent(body) {
+                    lead(body, 'On the SPM request form, choosing Deloitte Germany as Requesting Member Firm shows who goes in two fields.');
+                    const box = document.createElement('div');
+                    Object.assign(box.style, { background: '#fff8e1', border: '1px solid #f0c36d', borderLeft: '5px solid #f0a500', borderRadius: '6px',
+                        padding: '10px 14px', fontSize: '12px', color: '#4a3b00', fontFamily: 'Arial, sans-serif', marginBottom: '8px' });
+                    box.appendChild(span('🇩🇪 Germany selected as Requesting Member Firm', { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '4px' }));
+                    box.appendChild(span('Before submitting, fill these from the original ticket RITM0123456:', { display: 'block', marginBottom: '4px' }));
+                    box.appendChild(span('• Requestor → Ana López (Requested for)  ✓ set', { display: 'block', marginLeft: '8px' }));
+                    box.appendChild(span('• Backup Exception Owner → Juan Pérez (Opened by)  ⚠ not included yet', { display: 'block', marginLeft: '8px' }));
+                    body.appendChild(box);
+                    caption(body, 'Shown above Requestor, Requesting Member Firm and Backup Exception Owner, and gone as soon as another member firm is chosen.');
+                    bullets(body, [
+                        'The names come from the original ticket: the ticket in the SPM link (RITM number or ticket id), or the Original ticket number field.',
+                        '✓ and ⚠ follow the form as you fill it in. The reminder never changes the form.',
+                        'Can be turned off in Settings.',
+                    ]);
+                }
+            },
+            {
                 icon: '⚙️', title: 'Settings',
                 buildContent(body) {
                     lead(body, 'Open the Settings panel from the toolbar icon to toggle features and manage drafts.');
@@ -6503,6 +6532,7 @@ Version 1.1.4:
                     body.appendChild(togglesLabel);
                     body.appendChild(toggle('📝 Work Note Draft Autosave', true, 'Auto-saves Work Notes and Comments as you type. Drafts persist until deleted or expired after 7 days.'));
                     body.appendChild(toggle('🔗 Open SCTASK on Closed Save', true, 'Opens the linked SCTASK in a background tab when saving a ticket whose short description contains "Closed".'));
+                    body.appendChild(toggle('🇩🇪 SPM request: Germany reminder', true, 'Shows the Requestor and Backup Exception Owner reminder on the SPM request form when the member firm is Deloitte Germany.'));
                     const viewRow = document.createElement('div');
                     Object.assign(viewRow.style, {
                         display: 'flex', gap: '10px', alignItems: 'flex-start',
@@ -6854,6 +6884,32 @@ Version 1.1.4:
         autoOpenRow.addEventListener('click', e => { if (e.target !== autoOpenToggle) autoOpenToggle.click(); });
         updateRowStyle(autoOpenRow, autoOpenToggle.checked);
         view.appendChild(autoOpenRow);
+
+        // ── Feature: Germany reminder on the SPM request form ──
+        const deRow = document.createElement('div');
+        Object.assign(deRow.style, {
+            display: 'flex', alignItems: 'flex-start', gap: '14px', marginTop: '10px',
+            background: '#fff', border: '1px solid #e0e0e0', borderRadius: '8px', padding: '12px 14px', cursor: 'pointer', transition: 'border-color 0.15s',
+        });
+        const deToggle = document.createElement('input');
+        deToggle.type = 'checkbox';
+        deToggle.id = MODAL_ID + '-spm-germany-toggle';
+        deToggle.checked = getSpmGermanyEnabled();
+        Object.assign(deToggle.style, { width: '36px', height: '20px', cursor: 'pointer', accentColor: '#1a73e8', flexShrink: '0', marginTop: '2px' });
+        deToggle.addEventListener('change', () => { setSpmGermanyEnabled(deToggle.checked); updateRowStyle(deRow, deToggle.checked); });
+        const deText = document.createElement('div');
+        deText.style.flex = '1';
+        const deLabel = document.createElement('div');
+        deLabel.textContent = '🇩🇪 SPM request: Germany reminder';
+        Object.assign(deLabel.style, { fontWeight: 'bold', fontSize: '13px', color: '#222', marginBottom: '3px' });
+        const deDesc = document.createElement('div');
+        deDesc.textContent = 'On the SPM request form, when the Requesting Member Firm is Deloitte Germany, a reminder shows which users go in Requestor and Backup Exception Owner (the Requested for and Opened by of the original ticket), and whether they are already set.';
+        Object.assign(deDesc.style, { fontSize: '12px', color: '#666', lineHeight: '1.4' });
+        deText.append(deLabel, deDesc);
+        deRow.append(deToggle, deText);
+        deRow.addEventListener('click', e => { if (e.target !== deToggle) deToggle.click(); });
+        updateRowStyle(deRow, deToggle.checked);
+        view.appendChild(deRow);
 
         // ── Version footer ──
         const versionRow = document.createElement('div');
@@ -7452,9 +7508,118 @@ Version 1.1.4:
      *  INITIALIZATION
      * ==========================================================*/
 
+    /* ==========================================================
+     *  MAIN LOGIC — SPM REQUEST FORM: GERMANY REMINDER
+     *  The SPM form is a Service Portal page (one page app): the
+     *  state is checked every second and the reminder follows it.
+     *  It never changes the form; it only reads it and the original
+     *  ticket (ritm_id in the URL, a RITM number or a sys_id, else
+     *  the "Original ticket number" field).
+     * ==========================================================*/
+
+    const SPM_NOTICE_ID = 'sn-toolkit-spm-germany';
+    const spmOriginalCache = new Map();   // ticket ref → Promise of { number, requestedFor, openedBy } or { error }
+
+    const spmVal = (id) => { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+    function spmMemberFirm() {
+        const el = document.querySelector('#s2id_sp_formfield_u_member_firm .select2-chosen');
+        return el ? el.textContent.trim() : '';
+    }
+    function spmOriginalRef() {
+        const p = new URLSearchParams(location.search);
+        const fromUrl = String(p.get('ritm_id') || p.get('ritm id') || '').trim();
+        return fromUrl || spmVal('sp_formfield_wp_original_ticket_number');
+    }
+
+    function spmFetchOriginal(ref) {
+        if (spmOriginalCache.has(ref)) return spmOriginalCache.get(ref);
+        const query = /^[0-9a-f]{32}$/i.test(ref) ? `sys_id=${ref}` : /^RITM\d+$/i.test(ref) ? `number=${ref.toUpperCase()}` : null;
+        const job = (async () => {
+            if (!query) return { error: `"${ref}" is not a RITM number or a ticket id` };
+            const token = (typeof unsafeWindow !== 'undefined' && unsafeWindow.g_ck) || window.g_ck || '';
+            const r = await fetch(`/api/now/table/sc_req_item?sysparm_query=${encodeURIComponent(query)}&sysparm_fields=number,requested_for,opened_by&sysparm_display_value=all&sysparm_limit=1`,
+                { credentials: 'same-origin', headers: Object.assign({ Accept: 'application/json' }, token ? { 'X-UserToken': token } : {}) });
+            if (!r.ok) return { error: `ServiceNow answered ${r.status}` };
+            const x = ((await r.json()).result || [])[0];
+            if (!x) return { error: 'the original ticket was not found' };
+            const pick = f => ({ name: (f && (f.display_value || '')) || '', id: (f && (f.value || '')) || '' });
+            return { number: (x.number && (x.number.display_value || x.number.value)) || x.number || ref, requestedFor: pick(x.requested_for), openedBy: pick(x.opened_by) };
+        })().catch(err => ({ error: err.message }));
+        spmOriginalCache.set(ref, job);
+        return job;
+    }
+
+    function spmEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+    function spmNoticeHtml(ref, orig) {
+        const requestor = spmVal('sp_formfield_opened_by');
+        const backups = spmVal('sp_formfield_scc_dttl_app_manager').split(',').map(x => x.trim()).filter(Boolean);
+        const state = (ok, okText, badText) => ok
+            ? `<span style="color:#1e7e34;font-weight:bold">✓ ${okText}</span>`
+            : `<span style="color:#b45309;font-weight:bold">⚠ ${badText}</span>`;
+        const who = (u, fallback) => u && u.name ? `<b>${spmEsc(u.name)}</b>` : fallback;
+        let lines;
+        if (orig && !orig.error) {
+            lines = `
+                <li><b>Requestor</b> → ${who(orig.requestedFor, 'the Requested for user')} <span style="color:#666">(Requested for)</span>
+                    ${orig.requestedFor.id ? state(requestor === orig.requestedFor.id, 'set', 'not set yet') : ''}</li>
+                <li><b>Backup Exception Owner</b> → ${who(orig.openedBy, 'the Opened by user')} <span style="color:#666">(Opened by)</span>
+                    ${orig.openedBy.id ? state(backups.includes(orig.openedBy.id), 'included', 'not included yet') : ''}</li>`;
+        } else {
+            lines = `
+                <li><b>Requestor</b> → the <b>Requested for</b> user of the original ticket</li>
+                <li><b>Backup Exception Owner</b> → the <b>Opened by</b> user of the original ticket</li>`;
+        }
+        const source = orig && !orig.error ? ` ${spmEsc(orig.number)}` : '';
+        const note = orig && orig.error ? `<div style="margin-top:6px;font-size:11px;color:#666">Could not read the original ticket${ref ? ` (${spmEsc(ref)})` : ''}: ${spmEsc(orig.error)}.</div>`
+            : !ref ? '<div style="margin-top:6px;font-size:11px;color:#666">Fill in the Original ticket number to see the names here.</div>' : '';
+        return `<div style="font-weight:bold;font-size:14px;margin-bottom:4px">🇩🇪 Germany selected as Requesting Member Firm</div>
+            <div>Before submitting, fill these from the original ticket${source}:</div>
+            <ul style="margin:6px 0 0 18px;padding:0;line-height:1.7">${lines}</ul>${note}`;
+    }
+
+    let spmLastKey = '';
+    async function spmGermanyCheck(force) {
+        const notice = document.getElementById(SPM_NOTICE_ID);
+        const anchor = document.getElementById('opened_by');
+        const row = anchor && anchor.closest('.row');
+        const germany = /\bGermany\b/i.test(spmMemberFirm());
+        if (!getSpmGermanyEnabled() || !row || !germany || !document.getElementById('sp_formfield_u_member_firm')) {
+            if (notice) notice.remove();
+            spmLastKey = '';
+            return;
+        }
+        const ref = spmOriginalRef();
+        const key = [ref, spmVal('sp_formfield_opened_by'), spmVal('sp_formfield_scc_dttl_app_manager')].join('|');
+        if (!force && notice && notice.isConnected && key === spmLastKey) return;
+        spmLastKey = key;
+        let box = notice;
+        if (!box || !box.isConnected) {
+            box = document.createElement('div');
+            box.id = SPM_NOTICE_ID;
+            box.setAttribute('role', 'status');
+            const st = { background: '#fff8e1', color: '#4a3b00', border: '1px solid #f0c36d', 'border-left': '5px solid #f0a500',
+                'border-radius': '6px', padding: '10px 14px', margin: '0 0 14px 0', 'font-size': '13px', 'font-family': 'Arial, sans-serif', position: 'relative' };
+            Object.entries(st).forEach(([k, v]) => box.style.setProperty(k, v, 'important'));
+            row.parentElement.insertBefore(box, row);
+        }
+        if (!ref) { box.innerHTML = spmNoticeHtml('', null); return; }
+        const cached = spmOriginalCache.get(ref);
+        if (!cached) box.innerHTML = spmNoticeHtml(ref, null);
+        const orig = await (cached || suiteBusy(box, () => spmFetchOriginal(ref), 'Reading the original ticket…'));
+        if (box.isConnected) box.innerHTML = spmNoticeHtml(ref, orig);
+    }
+
+    function initSpmGermanyReminder() {
+        setInterval(() => { spmGermanyCheck(false).catch(err => console.error('[ServiceNow Toolkit] SPM reminder:', err)); }, 1000);
+    }
+
     function initialize() {
         if (isInitialized) return;
         isInitialized = true;
+
+        // SPM request forms live in the Service Portal (/mysupport), a one page app
+        if (/^\/mysupport/.test(location.pathname)) initSpmGermanyReminder();
 
         const isTicketPage = /\/(sc_req_item|incident)\.do(\?|$)/.test(location.pathname + location.search);
 
