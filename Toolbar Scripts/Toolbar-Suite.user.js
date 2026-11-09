@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.11
+// @version      2.21.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -19,6 +19,8 @@
 // @connect      sharepoint.com
 // @connect      deloitte.com
 // @connect      goskope.com
+// @connect      www.virustotal.com
+// @connect      api.xforce.ibmcloud.com
 // @run-at       document-start
 // ==/UserScript==
 
@@ -29,8 +31,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.11';
-    const CHANGELOG = `Version 2.20.11:
+   const SCRIPT_VERSION = '2.21.0';
+    const CHANGELOG = `Version 2.21.0:
+- Domain Tools: New optional API checks (⚙ API checks in the header, every switch off by default): the Netskope category, the VirusTotal score and the IBM X-Force score come straight into Domain Tools, ready to paste as URL,VT Score,IBM X-Force Score,Netskope Category; with # for what could not be obtained.
+- Domain Tools: Single check shows that line with a 📋 Copy button. Multiple check lists the URLs below with their values. The Extractor fills the values in its "Found" list when you click Check Selected. Values from an API are locked; missing ones can be typed by hand.
+- Domain Tools: Copy Line by Line and Copy Comma Separated copy the ticked URLs in that format once they were checked, and the plain domains otherwise. A service checked through its API no longer opens its browser tab.
+- 🔑 API Keys (was Netskope API keys): tabs for Netskope, VirusTotal and IBM X-Force. The VirusTotal and IBM X-Force keys are optional, encrypted with their own passphrase like the Netskope ones, and used by the Domain Tools API checks. VirusTotal has a requests per minute setting (4 for the free key, 0 for no limit).
+
+Version 2.20.11:
 - Destination Profile Editor: Saving a profile no longer fails with "type is a required field": the match type is now always sent with the values, as Netskope requires. When Netskope refuses some lines, the message lists those lines themselves, not only their numbers.
 - Change Tracker: The Newly Registered Domains removal through the Netskope API sends the profile's match type too, which Netskope requires.
 
@@ -1831,11 +1839,16 @@ Version 1.0.0:
             },
             {
                 icon: '🔑',
-                title: 'Netskope API keys',
+                title: 'API Keys',
                 buildContent: (body) => {
-                    lead(body, 'One place for the Netskope API key of every tenant, used by every tool that calls the Netskope API.');
+                    lead(body, 'One place for every API key: Netskope per tenant, and the optional VirusTotal and IBM X-Force keys.');
                     const win = document.createElement('div');
                     Object.assign(win.style, { border: '1px solid #e3e3ef', borderRadius: '8px', padding: '10px 12px', maxWidth: '460px', fontFamily: 'Arial, sans-serif' });
+                    win.appendChild(hrow([
+                        span('Netskope', { fontSize: '12px', fontWeight: 'bold', color: '#667eea', borderBottom: '2px solid #667eea', padding: '2px 6px' }),
+                        span('VirusTotal', { fontSize: '12px', color: '#777', padding: '2px 6px' }),
+                        span('IBM X-Force', { fontSize: '12px', color: '#777', padding: '2px 6px' }),
+                    ], { gap: '4px', margin: '0 0 8px 0' }));
                     [['EMA', 'ema.goskope.com', 'Unlocked · Expires 01/01/2027', '#d4edda', '#155724', 'Replace key'],
                      ['EU', 'eu.goskope.com', 'No key', '#f0f0f0', '#555', 'Set key']].forEach(([type, host, state, bg, color, set]) => {
                         const row = document.createElement('div');
@@ -1848,7 +1861,7 @@ Version 1.0.0:
                         win.appendChild(row);
                     });
                     body.appendChild(win);
-                    caption(body, 'Settings, Netskope API, 🔑 Netskope API keys. Tools that need a key also open it, for example 🔑 Manage keys in URL Lists.');
+                    caption(body, 'Settings, Netskope API, 🔑 API Keys. Tools that need a key also open it, for example 🔑 Manage keys in the Destination Profile Editor.');
                     const prompt = document.createElement('div');
                     Object.assign(prompt.style, { border: '2px solid #667eea', borderRadius: '10px', padding: '10px 12px', maxWidth: '360px', margin: '12px 0 0 0', fontFamily: 'Arial, sans-serif' });
                     prompt.appendChild(span('🔐 Unlock the EMA API key', { display: 'block', fontWeight: 'bold', fontSize: '13px', marginBottom: '6px' }));
@@ -1856,7 +1869,8 @@ Version 1.0.0:
                     prompt.appendChild(hrow([chip('Forgot it?', '#fff', { color: '#dc3545', border: '1px solid #dc3545' }), chip('Cancel', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Unlock', '#667eea')], { gap: '6px', margin: '0' }));
                     body.appendChild(prompt);
                     bullets(body, [
-                        'Each tenant has its own key and its own passphrase. Keys are encrypted in this browser and are only sent to your own tenants.',
+                        'Each tenant has its own key and its own passphrase. Keys are encrypted in this browser and each one is only sent to its own service.',
+                        'VirusTotal and IBM X-Force tabs: optional keys for the API checks of Domain Tools. X-Force needs the API key and the API password. VirusTotal has a requests per minute field: 4 for the free key, 0 for no limit.',
                         'The passphrase is asked once per browser session and per site, in a window that always shows above everything else, even other open panels.',
                         'Forgot it? deletes that key (it cannot be read without the passphrase) so you can save it again with a new one.',
                         'This works whatever tools you chose: it is part of the toolbar itself.',
@@ -3364,7 +3378,7 @@ Version 1.0.0:
                         <div class="settings-section">
                             <h3>Netskope API</h3>
                             <div class="setting-item">
-                                <button id="netskope-api-keys" class="btn-secondary">🔑 Netskope API keys</button>
+                                <button id="netskope-api-keys" class="btn-secondary">🔑 API Keys</button>
                                 <span class="setting-description">One API key per tenant, used by URL Lists and the Change Tracker. Set, test, lock or remove them here.</span>
                             </div>
                         </div>
@@ -3852,6 +3866,21 @@ Version 1.0.0:
             return h ? tenants().find(t => t.host.toLowerCase() === h) || null : null;
         }
 
+        // Other services whose key lives in the same window (one key each, its own passphrase).
+        // `host` is the slot name used for storage; the service is reached at `base`.
+        const SERVICES = {
+            virustotal: { id: 'virustotal', type: 'VirusTotal', host: 'virustotal.com', base: 'https://www.virustotal.com',
+                testPath: '/api/v3/ip_addresses/8.8.8.8', keyLabel: 'API key' },
+            xforce: { id: 'xforce', type: 'IBM X-Force', host: 'xforce.ibmcloud.com', base: 'https://api.xforce.ibmcloud.com',
+                testPath: '/ipr/8.8.8.8', keyLabel: 'API key', password: true },
+        };
+        const serviceOf = (id) => {
+            const h = String(id || '').trim().toLowerCase();
+            return Object.values(SERVICES).find(x => x.id === h || x.host === h) || null;
+        };
+        // A key slot: a Netskope tenant or one of the services
+        const slotOf = (id) => tenantOf(id) || serviceOf(id);
+
         /* ── Encryption (AES-256-GCM, key from the passphrase with PBKDF2) ── */
 
         const crypt = {
@@ -3916,7 +3945,7 @@ Version 1.0.0:
         const expiryOf = host => { const e = GM_getValue(K.expiry(host), null); return e && e.expiryDate ? e : null; };
 
         function status(host) {
-            const t = tenantOf(host);
+            const t = slotOf(host);
             const h = t ? t.host : String(host || '');
             const e = expiryOf(h);
             const key = !!t && hasKey(h);
@@ -3930,8 +3959,8 @@ Version 1.0.0:
         }
 
         async function saveKey(host, key, hours, passphrase) {
-            const t = tenantOf(host);
-            if (!t) throw new Error('This host is not one of your Netskope tenants.');
+            const t = slotOf(host);
+            if (!t) throw new Error('This is not one of your Netskope tenants or API services.');
             if (!key || !passphrase || !(hours > 0)) throw new Error('A key, a passphrase and a duration are needed.');
             GM_setValue(K.token(t.host), await crypt.encrypt(String(key).trim(), passphrase));
             GM_setValue(K.hash(t.host), await crypt.hash(passphrase));
@@ -3941,7 +3970,7 @@ Version 1.0.0:
         }
 
         function removeKey(host) {
-            const t = tenantOf(host);
+            const t = slotOf(host);
             const h = t ? t.host : host;
             GM_deleteValue(K.token(h));
             GM_deleteValue(K.hash(h));
@@ -3951,8 +3980,8 @@ Version 1.0.0:
         }
 
         function lock(host) {
-            if (host) { const t = tenantOf(host); sessionClear(t ? t.host : host); }
-            else tenants().forEach(t => sessionClear(t.host));
+            if (host) { const t = slotOf(host); sessionClear(t ? t.host : host); }
+            else [...tenants(), ...Object.values(SERVICES)].forEach(t => sessionClear(t.host));
             emit();
         }
 
@@ -4012,6 +4041,10 @@ Version 1.0.0:
                 form .dur { display: flex; gap: 6px; } form .dur input { width: 80px; } form .dur select { flex: 1; }
                 .msg { font-size: 12px; margin-top: 6px; color: #555; white-space: pre-wrap; } .msg:empty { display: none; }
                 .help { font-size: 12px; color: #777; }
+                .tabs { display: flex; gap: 4px; padding: 8px 18px 0; border-bottom: 1px solid #e3e3ef; }
+                .tabs button { border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: none; color: #777; padding: 6px 12px; }
+                .tabs button:hover { color: #333; background: #f5f6ff; }
+                .tabs button.on { color: #667eea; border-color: #e3e3ef; background: #fff; margin-bottom: -1px; }
             </style>`;
             // In the body like every other panel; the dialogs themselves go on the top layer
             (document.body || document.documentElement).appendChild(host);
@@ -4037,7 +4070,7 @@ Version 1.0.0:
         /* ── Unlock: one prompt per tenant, however many calls wait for it ── */
 
         function unlock(host, { caller } = {}) {
-            const t = tenantOf(host);
+            const t = slotOf(host);
             if (!t || !hasKey(t.host)) return Promise.resolve(false);
             if (isLegacy(t.host) || sessionGet(t.host)) return Promise.resolve(true);
             if (unlocking[t.host]) return unlocking[t.host];
@@ -4045,7 +4078,7 @@ Version 1.0.0:
                 const d = openDialog('nsapi-unlock', `
                     <div class="head"><h2>🔐 Unlock the ${esc(t.type)} API key</h2></div>
                     <div class="body">
-                        <p>${caller ? `<b>${esc(caller)}</b> needs` : 'A tool needs'} the Netskope API key of <b>${esc(t.type)}</b> (<span class="host">${esc(t.host)}</span>). Enter its passphrase to unlock it for this browser session.</p>
+                        <p>${caller ? `<b>${esc(caller)}</b> needs` : 'A tool needs'} the ${t.base ? '' : 'Netskope '}API key of <b>${esc(t.type)}</b> (<span class="host">${esc(t.host)}</span>). Enter its passphrase to unlock it for this browser session.</p>
                         <input type="password" id="nsapi-pass" placeholder="Passphrase" autocomplete="off" style="width:100%">
                         <div class="err" id="nsapi-unlock-err"></div>
                     </div>
@@ -4130,7 +4163,7 @@ Version 1.0.0:
             if (!st.hasKey || st.expired) {
                 offerSetup(t, caller, st.hasKey && st.expired);
                 return { ok: false, status: 0, code: st.hasKey ? 'expired' : 'noKey',
-                    error: st.hasKey ? `The ${t.type} API key expired. Set a new one in 🔑 Netskope API keys.` : `No API key for ${t.type}. Set one in 🔑 Netskope API keys.` };
+                    error: st.hasKey ? `The ${t.type} API key expired. Set a new one in 🔑 API Keys.` : `No API key for ${t.type}. Set one in 🔑 API Keys.` };
             }
             if (!(await unlock(t.host, { caller }))) {
                 return { ok: false, status: 0, code: 'locked', error: `The ${t.type} API key stays locked.` };
@@ -4206,7 +4239,71 @@ Version 1.0.0:
             return { ok: true, status: 200, applied };
         }
 
-        /* ── The "🔑 Netskope API keys" window ── */
+        /* ── VirusTotal and IBM X-Force calls ── */
+
+        const VT_RPM_KEY = 'netskope_api_vt_rpm';
+        // Requests per minute allowed for VirusTotal: 4 for the free key, 0 means no limit (premium)
+        function vtRpm() { const n = Number(GM_getValue(VT_RPM_KEY, 4)); return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 4; }
+        const vtSent = [];             // times of the recent VirusTotal calls
+        let vtChain = Promise.resolve();
+        const pause = ms => new Promise(r => setTimeout(r, ms));
+        // Waits its turn under the limit; onWait(seconds) shows the countdown
+        function vtTurn(onWait) {
+            const turn = vtChain.then(async () => {
+                for (;;) {
+                    const rpm = vtRpm();
+                    const now = Date.now();
+                    while (vtSent.length && now - vtSent[0] >= 60000) vtSent.shift();
+                    if (!rpm || vtSent.length < rpm) break;
+                    const wait = 60000 - (now - vtSent[0]) + 50;
+                    if (onWait) onWait(Math.ceil(wait / 1000));
+                    await pause(Math.min(wait, 1000));
+                }
+                vtSent.push(Date.now());
+            });
+            vtChain = turn.catch(() => {});
+            return turn;
+        }
+
+        // GET on VirusTotal or IBM X-Force with the saved key; a 429 from VirusTotal waits a minute and retries (twice)
+        async function serviceRequest(id, path, { caller, onWait } = {}) {
+            const sv = serviceOf(id);
+            if (!sv) return { ok: false, status: 0, error: 'Unknown API service.' };
+            const st = status(sv.host);
+            if (!st.hasKey || st.expired) {
+                return { ok: false, status: 0, code: st.hasKey ? 'expired' : 'noKey',
+                    error: st.hasKey ? `The ${sv.type} API key expired. Set a new one in 🔑 API Keys.` : `No ${sv.type} API key. Set one in 🔑 API Keys.` };
+            }
+            if (!(await unlock(sv.host, { caller }))) return { ok: false, status: 0, code: 'locked', error: `The ${sv.type} API key stays locked.` };
+            const key = await readKey(sv.host);
+            if (!key) return { ok: false, status: 0, code: 'locked', error: `The ${sv.type} API key could not be unlocked.` };
+            const headers = sv.id === 'virustotal'
+                ? { 'x-apikey': key, Accept: 'application/json' }
+                : { Authorization: 'Basic ' + btoa(key), Accept: 'application/json' };
+            for (let attempt = 0; ; attempt++) {
+                if (sv.id === 'virustotal') await vtTurn(onWait);
+                const r = await new Promise(resolve => GM_xmlhttpRequest({
+                    method: 'GET', url: sv.base + path, timeout: 30000, headers,
+                    onload: (x) => {
+                        let data = null;
+                        try { data = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { data = null; }
+                        const ok = x.status >= 200 && x.status < 300;
+                        if (!ok && x.status !== 404) console.warn(`[${sv.type} API] GET ${path} answered ${x.status}:`, x.responseText);
+                        const msg = data && ((data.error && (data.error.message || data.error)) || data.message || data.error);
+                        resolve({ ok, status: x.status, data, error: ok ? null : (typeof msg === 'string' ? msg : '') || `HTTP ${x.status}` });
+                    },
+                    onerror: (x) => resolve({ ok: false, status: 0, error: networkError(new URL(sv.base).host, x) }),
+                    ontimeout: () => resolve({ ok: false, status: 0, error: `${sv.type} did not answer in time` }),
+                }));
+                if (r.status === 429 && sv.id === 'virustotal' && attempt < 2) {
+                    for (let left = 60; left > 0; left--) { if (onWait) onWait(left); await pause(1000); }
+                    continue;
+                }
+                return r;
+            }
+        }
+
+        /* ── The "🔑 API Keys" window: one tab per service ── */
 
         function stateOf(host) {
             const s = status(host);
@@ -4217,22 +4314,11 @@ Version 1.0.0:
             return { text: (s.unlocked ? 'Unlocked' : 'Locked') + exp, cls: days < 7 ? 'warn' : 'ok' };
         }
 
-        function openManager({ host, caller } = {}) {
-            const list = tenants();
-            const d = openDialog('nsapi-manager', `
-                <div class="head"><h2>🔑 Netskope API keys</h2><button type="button" class="x" data-act="close" aria-label="Close">×</button></div>
-                <div class="body">
-                    <p>One API key per tenant, each encrypted in this browser with its own passphrase. Tools ask for the passphrase once per browser session.${caller ? ` Opened for <b>${esc(caller)}</b>.` : ''}</p>
-                    <div id="nsapi-rows">${list.length ? '' : '<p class="help">No Netskope tenant hosts are set up yet. Set them in the URL List Editor (⚙ Tenant Hosts).</p>'}</div>
-                </div>
-                <div class="foot"><button type="button" data-act="close">Close</button></div>`);
-            const rows = d.querySelector('#nsapi-rows');
-            list.forEach(t => {
-                const row = document.createElement('div');
-                row.className = 'row';
-                row.dataset.host = t.host;
-                row.innerHTML = `
-                    <div class="top"><span class="name">${esc(t.type)}</span><span class="host">${esc(t.host)}</span><span class="state"></span></div>
+        function rowHtml(slot) {
+            const sv = slot.base ? slot : null;
+            return `
+                <div class="row" data-host="${esc(slot.host)}"${sv ? ` data-service="${esc(sv.id)}"` : ''}>
+                    <div class="top"><span class="name">${esc(slot.type)}</span><span class="host">${esc(sv ? new URL(sv.base).host : slot.host)}</span><span class="state"></span></div>
                     <div class="acts">
                         <button type="button" class="small" data-act="set"></button>
                         <button type="button" class="small" data-act="test">Test</button>
@@ -4240,7 +4326,8 @@ Version 1.0.0:
                         <button type="button" class="small danger" data-act="remove">Remove</button>
                     </div>
                     <form hidden autocomplete="off">
-                        <input class="wide" type="password" name="key" placeholder="API key (REST API v2)">
+                        <input class="wide" type="password" name="key" placeholder="${sv ? esc(sv.type + ' ' + sv.keyLabel) : 'API key (REST API v2)'}">
+                        ${sv && sv.password ? `<input class="wide" type="password" name="kpass" placeholder="${esc(sv.type)} API password">` : ''}
                         <input type="password" name="pass" placeholder="Passphrase">
                         <input type="password" name="pass2" placeholder="Passphrase again">
                         <div class="dur wide"><span class="help" style="align-self:center">Keep it for</span><input type="number" name="n" min="1" value="1">
@@ -4248,16 +4335,62 @@ Version 1.0.0:
                         <div class="wide" style="display:flex;gap:6px;justify-content:flex-end"><button type="button" class="small" data-act="cancel">Cancel</button>
                             <button type="button" class="small primary" data-act="save">Save key</button></div>
                     </form>
-                    <div class="msg"></div>`;
-                rows.appendChild(row);
+                    <div class="msg"></div>
+                </div>`;
+        }
+
+        function openManager({ host, caller, service } = {}) {
+            const list = tenants();
+            const startSv = serviceOf(service || host);
+            const d = openDialog('nsapi-manager', `
+                <div class="head"><h2>🔑 API Keys</h2><button type="button" class="x" data-act="close" aria-label="Close">×</button></div>
+                <div class="tabs" role="tablist">
+                    <button type="button" role="tab" data-tab="netskope">Netskope</button>
+                    <button type="button" role="tab" data-tab="virustotal">VirusTotal</button>
+                    <button type="button" role="tab" data-tab="xforce">IBM X-Force</button>
+                </div>
+                <div class="body">
+                    <p>Each key is encrypted in this browser with its own passphrase. Tools ask for the passphrase once per browser session.${caller ? ` Opened for <b>${esc(caller)}</b>.` : ''}</p>
+                    <div data-pane="netskope">
+                        <p class="help">One key per tenant, used by the Destination Profile Editor, the Change Tracker and Domain Tools.</p>
+                        <div id="nsapi-rows">${list.length ? list.map(rowHtml).join('') : '<p class="help">No Netskope tenant hosts are set up yet. Set them in the Destination Profile Editor (⚙ Tenant Hosts).</p>'}</div>
+                    </div>
+                    <div data-pane="virustotal" hidden>
+                        <p class="help">Optional. Domain Tools uses it to read the VirusTotal score of a URL or IP, when its API check is turned on.</p>
+                        ${rowHtml(SERVICES.virustotal)}
+                        <label class="help" style="display:flex;align-items:center;gap:8px">Requests per minute
+                            <input type="number" id="nsapi-vt-rpm" min="0" step="1" style="width:80px" value="${vtRpm()}">
+                            <span>4 for the free key, 0 for no limit (premium key).</span></label>
+                    </div>
+                    <div data-pane="xforce" hidden>
+                        <p class="help">Optional. Domain Tools uses it to read the IBM X-Force risk score of a URL or IP, when its API check is turned on. It needs the API key and the API password.</p>
+                        ${rowHtml(SERVICES.xforce)}
+                    </div>
+                </div>
+                <div class="foot"><button type="button" data-act="close">Close</button></div>`);
+            const tabs = [...d.querySelectorAll('[data-tab]')];
+            const showTab = (name) => {
+                tabs.forEach(b => { const on = b.dataset.tab === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+                d.querySelectorAll('[data-pane]').forEach(p => { p.hidden = p.dataset.pane !== name; });
+            };
+            tabs.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+            showTab(startSv ? startSv.id : 'netskope');
+            const rpm = d.querySelector('#nsapi-vt-rpm');
+            rpm.addEventListener('change', () => {
+                const n = Math.max(0, Math.floor(Number(rpm.value)));
+                if (!Number.isFinite(n)) { rpm.value = vtRpm(); return; }
+                GM_setValue(VT_RPM_KEY, n);
+                rpm.value = n;
             });
-            const paint = () => rows.querySelectorAll('.row').forEach(row => {
+            const allRows = () => [...d.querySelectorAll('.row')];
+            const paint = () => allRows().forEach(row => {
                 const h = row.dataset.host, s = status(h), st = stateOf(h);
                 const el = row.querySelector('.state');
                 el.textContent = st.text;
                 el.className = 'state ' + st.cls;
                 row.querySelector('[data-act=set]').textContent = s.hasKey ? 'Replace key' : 'Set key';
                 row.querySelector('[data-act=test]').disabled = !s.hasKey || s.expired;
+                row.querySelector('[data-act=test]').title = !s.hasKey ? 'Set the key first' : s.expired ? 'The key expired: replace it first' : '';
                 row.querySelector('[data-act=lock]').hidden = !s.unlocked;
                 row.querySelector('[data-act=remove]').hidden = !s.hasKey;
             });
@@ -4273,6 +4406,7 @@ Version 1.0.0:
                 const row = b.closest('.row');
                 if (!row) return;
                 const h = row.dataset.host, form = row.querySelector('form'), msg = row.querySelector('.msg');
+                const sv = row.dataset.service ? SERVICES[row.dataset.service] : null;
                 const removeBtn = row.querySelector('[data-act=remove]');
                 if (act !== 'remove' && removeBtn.dataset.armed) { delete removeBtn.dataset.armed; removeBtn.textContent = 'Remove'; }
                 if (act === 'set') { form.hidden = false; msg.textContent = ''; form.querySelector('[name=key]').focus(); }
@@ -4286,15 +4420,18 @@ Version 1.0.0:
                     msg.textContent = 'Key removed.';
                 }
                 if (act === 'save') {
-                    const f = name => form.querySelector(`[name=${name}]`).value;
+                    const f = name => (form.querySelector(`[name=${name}]`) || { value: '' }).value;
                     const hours = Math.round(Number(f('n'))) * Number(f('scale'));
                     if (!f('key').trim()) { msg.textContent = '⚠ Paste the API key.'; return; }
+                    if (sv && sv.password && !f('kpass').trim()) { msg.textContent = '⚠ Paste the API password too.'; return; }
                     if (!f('pass')) { msg.textContent = '⚠ Choose a passphrase.'; return; }
                     if (f('pass') !== f('pass2')) { msg.textContent = '⚠ The passphrases do not match.'; return; }
                     if (!(hours > 0)) { msg.textContent = '⚠ Enter how long to keep the key, at least 1.'; return; }
+                    // IBM X-Force signs in with key and password together
+                    const secret = sv && sv.password ? `${f('key').trim()}:${f('kpass').trim()}` : f('key');
                     b.disabled = true;
                     try {
-                        await suiteBusy(row, () => saveKey(h, f('key'), hours, f('pass')), 'Encrypting and saving the key…');
+                        await suiteBusy(row, () => saveKey(h, secret, hours, f('pass')), 'Encrypting and saving the key…');
                         form.reset();
                         form.hidden = true;
                         msg.textContent = '✔ Key saved and encrypted. Use Test to check it.';
@@ -4304,16 +4441,23 @@ Version 1.0.0:
                 if (act === 'test') {
                     b.disabled = true;
                     msg.textContent = 'Testing…';
-                    const r = await suiteBusy(row, () => request(h, 'GET', TEST_PATH, null, { caller: 'Test' }), 'Testing the key with Netskope…');
-                    msg.textContent = r.ok ? '✔ The key works: Netskope answered with your Destination Profiles.'
-                        : r.status === 401 ? '⛔ Netskope refused the key (401): it may be expired or revoked. Replace it.'
-                        : r.status === 403 ? '⚠ The key works but has no permission for Destination Profiles (403). Tools that need other permissions may still work.'
-                        : '⛔ ' + r.error;
+                    if (sv) {
+                        const r = await suiteBusy(row, () => serviceRequest(sv.id, sv.testPath, { caller: 'Test', onWait: n => { msg.textContent = `Waiting for the VirusTotal limit, ${n} s…`; } }), `Testing the key with ${sv.type}…`);
+                        msg.textContent = r.ok ? `✔ The key works: ${sv.type} answered.`
+                            : (r.status === 401 || r.status === 403) ? `⛔ ${sv.type} refused the key (${r.status}): check it, or replace it.`
+                            : '⛔ ' + r.error;
+                    } else {
+                        const r = await suiteBusy(row, () => request(h, 'GET', TEST_PATH, null, { caller: 'Test' }), 'Testing the key with Netskope…');
+                        msg.textContent = r.ok ? '✔ The key works: Netskope answered with your Destination Profiles.'
+                            : r.status === 401 ? '⛔ Netskope refused the key (401): it may be expired or revoked. Replace it.'
+                            : r.status === 403 ? '⚠ The key works but has no permission for Destination Profiles (403). Tools that need other permissions may still work.'
+                            : '⛔ ' + r.error;
+                    }
                     b.disabled = false;
                 }
             });
-            const t = host ? tenantOf(host) : null;
-            const target = t && [...rows.querySelectorAll('.row')].find(r => r.dataset.host === t.host);
+            const t = startSv || (host ? tenantOf(host) : null);
+            const target = t && allRows().find(r => r.dataset.host === t.host);
             if (target && !status(t.host).hasKey) target.querySelector('form').hidden = false;
             if (target) setTimeout(() => target.scrollIntoView({ block: 'nearest' }), 0);
             return Promise.resolve();
@@ -4321,6 +4465,7 @@ Version 1.0.0:
 
         const api = {
             tenants, status, request, unlock, lock, openManager, saveKey, askChangeNote, deploy,
+            serviceRequest, vtRpm, serviceStatus: (id) => { const sv = serviceOf(id); return sv ? status(sv.host) : { hasKey: false }; },
             onChange: fn => { listeners.add(fn); return () => listeners.delete(fn); },
         };
         // Test only: the automated tests switch this on in their own storage
@@ -13003,7 +13148,7 @@ Version 1.4.1:
      *  TOKEN UI BUILDERS
      * ==========================================================*/
 
-    // The key of the tenant lives in the toolbar's Netskope API keys: here only its state and a way there
+    // The key of the tenant lives in the toolbar's API Keys: here only its state and a way there
     function buildTokenUI(tenant) {
         const container = document.getElementById('api-token-container');
         if (!container) return;
@@ -13222,7 +13367,7 @@ Version 1.4.1:
                 icon: '🔑',
                 title: 'API Configuration',
                 buildContent(body) {
-                    lead(body, 'The API key of each tenant lives in the toolbar\'s 🔑 Netskope API keys; this panel shows its state.');
+                    lead(body, 'The API key of each tenant lives in the toolbar\'s 🔑 API Keys; this panel shows its state.');
                     const keyRow = document.createElement('div');
                     Object.assign(keyRow.style, {
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px',
@@ -13234,7 +13379,7 @@ Version 1.4.1:
                     body.appendChild(keyRow);
                     caption(body, 'Yellow when the tenant has no key, the key is locked or it expired.');
                     bullets(body, [
-                        '🔑 Manage keys opens the Netskope API keys window on top: set, replace, test, lock or remove the key of each tenant.',
+                        '🔑 Manage keys opens the API Keys window on top: set, replace, test, lock or remove the key of each tenant.',
                         'When the tool needs the key, the toolbar asks for its passphrase once per browser session, in a window that always shows above everything.',
                         'The same keys serve the Change Tracker Newly Registered Domains reviews and any other tool that needs the Netskope API.',
                     ]);
@@ -23982,8 +24127,8 @@ Version 1.4.3:
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
                         'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in the Manage Reminders tab, "🛠 Profiles", a list shared by the whole team.',
                         '"↺ Check now" in the Manage Reminders tab looks right away, without waiting for the next automatic check.',
-                        'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the Netskope API keys of the toolbar, then test it and turn it on per tenant.',
-                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm, applying it in Netskope with the change note "Domain is no longer categorized as Newly Registered Domain". A profile with pending changes, or changed while you reviewed, is never touched.',
+                        'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the API Keys of the toolbar, then test it and turn it on per tenant.',
+                        'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 API Keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm, applying it in Netskope with the change note "Domain is no longer categorized as Newly Registered Domain". A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
                     ]);
                 }
@@ -24599,7 +24744,7 @@ Version 1.4.3:
         return parts.join(' ');
     }
 
-    /* ── Netskope API mode (optional, through the toolbar's Netskope API keys) ── */
+    /* ── Netskope API mode (optional, through the toolbar's API Keys) ── */
 
     const NRD_API_KEY     = 'changeTrackerNrdApi';   // { EMA: true, ... } in this browser only
     const NRD_LOOKUP_PATH = '/api/v2/nsiq/urllookup';
@@ -24655,8 +24800,8 @@ Version 1.4.3:
 
     const nrdApiError = (r, what) => r.status === 403
         ? `Netskope refused it (403${r.error && !/^HTTP 403$/.test(r.error) ? `: ${r.error}` : ''}). The token may have no permission for ${what}: ask for a token that includes it.`
-        : r.code === 'noKey' ? 'no API key saved for this tenant: set one in 🔑 Netskope API keys.'
-        : r.code === 'expired' ? 'the API key expired: set a new one in 🔑 Netskope API keys.'
+        : r.code === 'noKey' ? 'no API key saved for this tenant: set one in 🔑 API Keys.'
+        : r.code === 'expired' ? 'the API key expired: set a new one in 🔑 API Keys.'
         : r.code === 'locked' ? 'the API key stays locked.'
         : (r.error || `Netskope answered ${r.status}`);
 
@@ -24664,7 +24809,7 @@ Version 1.4.3:
     async function nrdApiTest(type) {
         const host = nrdHostOf(type);
         if (!host) return `⚠ No ${type} tenant host is set up in the URL Lists Editor.`;
-        if (!nrdHasKey(host)) return `⚠ No API token for ${type}: set one in 🔑 Netskope API keys.`;
+        if (!nrdHasKey(host)) return `⚠ No API token for ${type}: set one in 🔑 API Keys.`;
         const look = await nrdApiCall(host, 'POST', NRD_LOOKUP_PATH, { query: { disable_dns_lookup: true, category: 'swg', urls: ['example.com'] } });
         if (!look.ok) return `⛔ ${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`;
         const dest = await nrdApiCall(host, 'GET', `${NRD_DEST_PATH}?limit=1`);
@@ -24681,7 +24826,7 @@ Version 1.4.3:
         if (!byTenant.size) return { ok: false, message: 'The Netskope API is not turned on for these tenants: open ⚙ Profiles.' };
         for (const [type, items] of byTenant) {
             const host = nrdHostOf(type);
-            if (!host || !nrdHasKey(host)) { notes.push(`No API token for ${type}: set one in 🔑 Netskope API keys.`); continue; }
+            if (!host || !nrdHasKey(host)) { notes.push(`No API token for ${type}: set one in 🔑 API Keys.`); continue; }
             const look = await nrdApiLookup(host, items.map(i => i.domain));
             if (!look.ok) { notes.push(`${type}: ${nrdApiError(look, '/api/v2/nsiq/urllookup')}`); continue; }
             items.forEach(it => {
@@ -24867,11 +25012,11 @@ Version 1.4.3:
         ruleTitle.textContent = 'Found by the name, in the last 90 days';
         const ruleList = css(mk('div', { id:'ct-nrd-rule-list' }), { fontSize:'12px', color:'#555', lineHeight:'1.6' });
         ruleList.textContent = 'Loading…';
-        // The Netskope API is a personal choice per tenant: it uses the toolbar's Netskope API keys
+        // The Netskope API is a personal choice per tenant: it uses the toolbar's API Keys
         const apiTitle = css(mk('div'), { fontSize:'12px', fontWeight:'bold', margin:'16px 0 4px' });
         apiTitle.textContent = 'Netskope API (this browser only, optional)';
         const apiHelp = css(mk('div'), { fontSize:'11px', color:'#666', lineHeight:'1.5', marginBottom:'6px' });
-        apiHelp.textContent = 'With the API on, the review looks up the categories and takes the domains out of the profile for you. It uses the key of the tenant in 🔑 Netskope API keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.';
+        apiHelp.textContent = 'With the API on, the review looks up the categories and takes the domains out of the profile for you. It uses the key of the tenant in 🔑 API Keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations.';
         const apiBox = css(mk('div', { id:'ct-nrd-api' }), { display:'flex', flexDirection:'column', gap:'6px' });
         const smallBtn = { padding:'2px 8px', fontSize:'11px', border:'1px solid #c0c8f0', borderRadius:'4px', background:'#fff', color:'#667eea', cursor:'pointer' };
         Object.keys(TENANT_TYPE_TO_KEY).forEach(type => {
@@ -25665,8 +25810,13 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.3';
-    const CHANGELOG = `Version 1.5.3:
+    const SCRIPT_VERSION = '1.6.0';
+    const CHANGELOG = `Version 1.6.0:
+- New optional API checks (⚙ API checks in the header, every switch off by default): the Netskope category, the VirusTotal score and the IBM X-Force score come straight into Domain Tools, ready to paste as URL,VT Score,IBM X-Force Score,Netskope Category; with # for what could not be obtained.
+- Single check shows that line with a 📋 Copy button. Multiple check lists the URLs below with their values. The Extractor fills the values in its "Found" list when you click Check Selected. Values from an API are locked; missing ones can be typed by hand.
+- Copy Line by Line and Copy Comma Separated copy the ticked URLs in that format once they were checked, and the plain domains otherwise. A service checked through its API no longer opens its browser tab.
+
+Version 1.5.3:
 - Domain Extractor: Copy Line by Line and Copy Comma Separated now copy only the ticked domains, not the whole list. They show how many are ticked and stay off until you tick one; Select all ticks every domain.
 
 Version 1.5.2:
@@ -25954,6 +26104,142 @@ Version 1.0:
 
     const MODAL_ID = 'dt-modal';
 
+    /* ==========================================================
+     *  API CHECKS (optional): Netskope category, VirusTotal score,
+     *  IBM X-Force score. Each one is used only when its switch is on
+     *  and its key is in the toolbar's 🔑 API Keys; otherwise its tab
+     *  opens in the browser as before. A value not obtained is "#".
+     * ==========================================================*/
+
+    const DT_API = {
+        netskope:   { key: 'domainTools_api_netskope', label: 'Netskope category', short: 'Netskope' },
+        virustotal: { key: 'domainTools_api_virustotal', label: 'VirusTotal score', short: 'VirusTotal' },
+        xforce:     { key: 'domainTools_api_xforce', label: 'IBM X-Force score', short: 'IBM X-Force' },
+    };
+    const DT_TENANT_KEY = 'domainTools_api_tenant';
+    const dtSwitch = (svc) => GM_getValue(DT_API[svc].key, false) === true;
+
+    // The Netskope tenant: the one chosen in the panel, else the ticket's Member Firm
+    function dtTenant() {
+        const chosen = String(GM_getValue(DT_TENANT_KEY, '') || '').trim();
+        if (chosen && netskopeApi.status(chosen).configured) return chosen;
+        const ctx = typeof getTicketContext === 'function' ? getTicketContext() : null;
+        const t = detectTicketTenant((ctx && ctx.doc) || document);
+        return t && t.host ? t.host : null;
+    }
+
+    function dtHasKey(svc) {
+        if (svc === 'netskope') { const h = dtTenant(); return !!h && netskopeApi.status(h).hasKey; }
+        return netskopeApi.serviceStatus(svc).hasKey;
+    }
+    // Services checked through their API in this run
+    const dtApiServices = () => Object.keys(DT_API).filter(svc => dtSwitch(svc) && dtHasKey(svc));
+
+    const dtIsIp = (x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x) || (x.includes(':') && /^[0-9a-f:]+$/i.test(x));
+    // What is shown and checked: https:// + domain, IPs as they are
+    const dtUrlOf = (target) => dtIsIp(target) ? target : `https://${target}`;
+    // VirusTotal URL id: base64 (URL safe) without the "=" padding
+    const dtVtId = (url) => btoa(unescape(encodeURIComponent(url))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    function dtOpenTabs(domain, skip) {
+        if (!skip.has('netskope'))   GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${domain}`, { active: false, insert: true });
+        if (!skip.has('xforce'))     GM_openInTab(`https://exchange.xforce.ibmcloud.com/url/${domain}`,          { active: false, insert: true });
+        if (!skip.has('virustotal')) GM_openInTab(`https://www.virustotal.com/gui/domain/${domain}`,             { active: false, insert: true });
+        return 3 - skip.size;
+    }
+
+    // Looks up every target with the services given. onResult(target, svc, value|null, why) fires as answers arrive.
+    async function dtLookup(targets, services, { onResult, onProgress, onWait } = {}) {
+        const caller = 'Domain Tools';
+        if (services.includes('netskope')) {
+            const host = dtTenant();
+            for (let i = 0; i < targets.length; i += 50) {
+                const chunk = targets.slice(i, i + 50);
+                if (onProgress) onProgress(`Netskope categories ${Math.min(i + 50, targets.length)} of ${targets.length}…`);
+                const r = await netskopeApi.request(host, 'POST', '/api/v2/nsiq/urllookup',
+                    { query: { disable_dns_lookup: true, category: 'swg', urls: chunk } }, { caller });
+                const map = {};
+                if (r.ok) ((r.data && r.data.result) || []).forEach(x => { map[String(x.url).toLowerCase()] = (x.categories || []).map(c => c.name).filter(Boolean); });
+                chunk.forEach(tg => {
+                    const cats = map[tg.toLowerCase()] || map[dtUrlOf(tg).toLowerCase()];
+                    if (!r.ok) onResult(tg, 'netskope', null, `Netskope: ${r.error}`);
+                    else onResult(tg, 'netskope', cats && cats.length ? cats[0] : null, cats ? 'Netskope gave no category' : 'Netskope did not return this domain');
+                });
+            }
+        }
+        let n = 0;
+        for (const tg of targets) {
+            n++;
+            if (onProgress) onProgress(`Checking ${n} of ${targets.length}: ${tg}`);
+            const url = dtUrlOf(tg), ip = dtIsIp(tg);
+            const jobs = [];
+            if (services.includes('virustotal')) jobs.push(netskopeApi.serviceRequest('virustotal', ip ? `/api/v3/ip_addresses/${encodeURIComponent(tg)}` : `/api/v3/urls/${dtVtId(url)}`,
+                { caller, onWait: sec => onWait && onWait(`VirusTotal: next query in ${sec} s (limit per minute)`) })
+                .then(r => {
+                    const m = r.ok && r.data && r.data.data && r.data.data.attributes && r.data.data.attributes.last_analysis_stats;
+                    onResult(tg, 'virustotal', m && m.malicious != null ? String(m.malicious) : null,
+                        r.status === 404 ? 'VirusTotal has no analysis of this URL' : r.ok ? 'VirusTotal gave no score' : `VirusTotal: ${r.error}`);
+                }));
+            if (services.includes('xforce')) jobs.push(netskopeApi.serviceRequest('xforce', ip ? `/ipr/${encodeURIComponent(tg)}` : `/url/${encodeURIComponent(url)}`, { caller })
+                .then(r => {
+                    const score = r.ok && r.data ? (ip ? r.data.score : (r.data.result && r.data.result.score)) : null;
+                    onResult(tg, 'xforce', score != null && score !== '' ? String(score) : null,
+                        r.status === 404 ? 'IBM X-Force has no report for this' : r.ok ? 'IBM X-Force gave no score' : `IBM X-Force: ${r.error}`);
+                }));
+            await Promise.all(jobs);
+        }
+    }
+
+    // The three value fields of one URL: read only when an API filled them, editable (for manual entry) otherwise
+    function dtScoreCells(target) {
+        const wrap = document.createElement('span');
+        Object.assign(wrap.style, { display: 'none', gap: '4px', alignItems: 'center', flexShrink: '0' });
+        const make = (svc, width, ph) => {
+            const i = document.createElement('input');
+            i.type = 'text';
+            i.dataset.svc = svc;
+            i.placeholder = ph;
+            i.title = `${DT_API[svc].label}: type it by hand, or leave it empty for #`;
+            Object.assign(i.style, { width, padding: '2px 5px', fontSize: '11px', border: '1px solid #ccc', borderRadius: '3px',
+                fontFamily: '"Courier New", monospace', boxSizing: 'border-box' });
+            i.addEventListener('click', e => e.stopPropagation());
+            return i;
+        };
+        const cells = { virustotal: make('virustotal', '44px', 'VT'), xforce: make('xforce', '44px', 'IBM'), netskope: make('netskope', '150px', 'Category') };
+        wrap.append(cells.virustotal, cells.xforce, cells.netskope);
+        const api = {
+            el: wrap, checked: false,
+            show() { wrap.style.display = 'inline-flex'; },
+            set(svc, value, why) {
+                const i = cells[svc];
+                api.checked = true;
+                api.show();
+                if (value != null) {
+                    i.value = value;
+                    i.readOnly = true;
+                    i.title = `From ${DT_API[svc].short}. Locked: it came from the API.`;
+                    Object.assign(i.style, { background: '#eef0f3', color: '#333', borderColor: '#d0d4da' });
+                    i.style.setProperty('background-color', '#eef0f3', 'important');
+                } else {
+                    i.value = '';
+                    i.readOnly = false;
+                    i.title = `${why || 'Not obtained'}. Type it by hand, or leave it empty for #.`;
+                    i.style.setProperty('background-color', '#fff8e1', 'important');
+                    i.style.borderColor = '#f0c36d';
+                }
+            },
+            line() {
+                const v = svc => (cells[svc].value || '').trim().replace(/[,;]/g, ' ') || '#';
+                return `${dtUrlOf(target)},${v('virustotal')},${v('xforce')},${v('netskope')};`;
+            },
+        };
+        return api;
+    }
+
+    // Copy formats: with scores one "entry;" per line, or all on one line joined by "; "
+    const dtFormatLines = (rows) => rows.map(r => r.line()).join('\n');
+    const dtFormatComma = (rows) => rows.map(r => r.line()).join(' ');
+
     function buildModal() {
         if (document.getElementById(MODAL_ID)) return;
 
@@ -26046,11 +26332,89 @@ Version 1.0:
         });
         closeBtn.onclick = () => { modal.style.display = 'none'; };
 
+        const apiBtn = document.createElement('span');
+        apiBtn.id = 'dt-api-btn';
+        apiBtn.textContent = '⚙ API checks';
+        Object.assign(apiBtn.style, {
+            color: '#555', cursor: 'pointer', fontSize: '11px', display: 'inline-flex',
+            alignItems: 'center', padding: '1px 6px', borderRadius: '3px',
+            border: '1px solid #ccc', fontWeight: 'bold', userSelect: 'none',
+            backgroundColor: 'transparent', transition: 'background-color 0.2s ease',
+            fontFamily: 'Arial, sans-serif',
+        });
+        apiBtn.title = 'Optional: get the Netskope category, the VirusTotal score and the IBM X-Force score through their APIs';
+        apiBtn.onmouseover = () => { apiBtn.style.backgroundColor = '#f0f0f0'; };
+        apiBtn.onmouseout  = () => { apiBtn.style.backgroundColor = 'transparent'; };
+
         const headerRight = document.createElement('div');
         Object.assign(headerRight.style, { display: 'flex', alignItems: 'center', gap: '8px' });
-        headerRight.append(ibmLoginBtn, helpBtn, closeBtn);
+        headerRight.append(apiBtn, ibmLoginBtn, helpBtn, closeBtn);
 
         header.append(headerLeft, headerRight);
+
+        /* ── API checks panel (optional, every switch off by default) ── */
+        const apiPanel = document.createElement('div');
+        apiPanel.id = 'dt-api-panel';
+        Object.assign(apiPanel.style, { display: 'none', padding: '10px 16px', background: '#f5f6ff', borderBottom: '1px solid #dde', fontSize: '12px', color: '#444' });
+        function renderApiPanel() {
+            apiPanel.innerHTML = '';
+            const intro = document.createElement('div');
+            intro.textContent = 'Optional. With a switch on and its key in 🔑 API Keys, that value comes from the API and its browser tab no longer opens. Values not obtained show as # (you can type them).';
+            Object.assign(intro.style, { marginBottom: '8px', lineHeight: '1.4' });
+            apiPanel.appendChild(intro);
+            Object.entries(DT_API).forEach(([svc, conf]) => {
+                const row = document.createElement('label');
+                Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 0', cursor: 'pointer' });
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.api = svc;
+                cb.checked = dtSwitch(svc);
+                cb.onchange = () => { GM_setValue(conf.key, cb.checked); renderApiPanel(); };
+                const name = document.createElement('span');
+                name.textContent = conf.label;
+                name.style.fontWeight = 'bold';
+                const state = document.createElement('span');
+                const has = dtHasKey(svc);
+                const tenant = svc === 'netskope' ? dtTenant() : null;
+                state.textContent = svc === 'netskope' && !tenant ? 'No tenant found for this ticket'
+                    : has ? `✓ Key set${tenant ? ` (${tenant})` : ''}` : `No key${tenant ? ` for ${tenant}` : ''}`;
+                Object.assign(state.style, { color: has ? '#2e7d32' : '#b45309', fontSize: '11px' });
+                const keys = document.createElement('button');
+                keys.type = 'button';
+                keys.textContent = '🔑 API Keys';
+                keys.title = `Set, test or replace the ${conf.short} key`;
+                Object.assign(keys.style, { marginLeft: 'auto', fontSize: '11px', padding: '2px 8px', border: '1px solid #c0c8f0', borderRadius: '4px', background: '#fff', color: '#667eea', cursor: 'pointer' });
+                keys.onclick = (e) => { e.preventDefault(); netskopeApi.openManager(svc === 'netskope' ? { host: tenant, caller: 'Domain Tools' } : { service: svc, caller: 'Domain Tools' }); };
+                row.append(cb, name, state, keys);
+                if (cb.checked && !has) {
+                    const warn = document.createElement('span');
+                    warn.textContent = '⚠ On, but without a key its tab still opens';
+                    Object.assign(warn.style, { color: '#b45309', fontSize: '11px' });
+                    row.insertBefore(warn, keys);
+                }
+                apiPanel.appendChild(row);
+            });
+            if (Object.values(netskopeApi.tenants()).length > 1) {
+                const tr = document.createElement('div');
+                Object.assign(tr.style, { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' });
+                const lbl = document.createElement('span');
+                lbl.textContent = 'Netskope tenant:';
+                const sel = document.createElement('select');
+                sel.id = 'dt-api-tenant';
+                sel.innerHTML = '<option value="">Detected from the ticket</option>' + netskopeApi.tenants().map(t => `<option value="${t.host}">${t.type} (${t.host})</option>`).join('');
+                sel.value = String(GM_getValue(DT_TENANT_KEY, '') || '');
+                sel.onchange = () => { GM_setValue(DT_TENANT_KEY, sel.value); renderApiPanel(); };
+                Object.assign(sel.style, { fontSize: '11px', padding: '2px 4px' });
+                tr.append(lbl, sel);
+                apiPanel.appendChild(tr);
+            }
+        }
+        apiBtn.onclick = () => {
+            const open = apiPanel.style.display === 'none';
+            if (open) renderApiPanel();
+            apiPanel.style.display = open ? 'block' : 'none';
+        };
+        netskopeApi.onChange(() => { if (apiPanel.style.display !== 'none') renderApiPanel(); });
 
         /* ── Tab bar ── */
         const tabBar = document.createElement('div');
@@ -26258,8 +26622,12 @@ Version 1.0:
         const multiModeBtn  = makeModeBtn('Multiple');
         modeToggleRow.append(singleModeBtn, multiModeBtn);
 
+        // Single check with APIs: filled by renderSingleResult
+        const singleResult = document.createElement('div');
+        singleResult.id = 'dt-single-result';
+        Object.assign(singleResult.style, { display: 'none', marginTop: '10px', padding: '10px 12px', background: '#fff', border: '1px solid #d0d0f0', borderRadius: '6px' });
         const singleContent = document.createElement('div');
-        singleContent.append(checkDescription, checkInputLabel, checkInput, checkPreview, spmRow, checkBtn, infoBox);
+        singleContent.append(checkDescription, checkInputLabel, checkInput, checkPreview, spmRow, checkBtn, singleResult, infoBox);
 
         /* ── Multi-domain content ── */
         const multiContent = document.createElement('div');
@@ -26316,32 +26684,121 @@ Version 1.0:
                 multiTextarea.focus();
                 return;
             }
-            checkWithFeedback(domains, multiSpmCheckbox.checked, multiCheckBtn, multiContent, bulkProgress);
+            const services = dtApiServices();
+            let cellsFor = null;
+            if (services.length) {
+                const map = renderMultiResults(domains);
+                cellsFor = d => map.get(d);
+            } else multiResults.style.display = 'none';
+            checkWithFeedback(domains, multiSpmCheckbox.checked, multiCheckBtn, multiContent, bulkProgress, cellsFor);
         });
 
+        // Multiple check with APIs: the URLs listed below with their values, like the extractor
+        const multiResults = document.createElement('div');
+        multiResults.id = 'dt-multi-results';
+        Object.assign(multiResults.style, { display: 'none', marginTop: '12px' });
+        function renderMultiResults(domains) {
+            multiResults.innerHTML = '';
+            multiResults.style.display = 'block';
+            const map = new Map();
+            const unique = [...new Set(domains)];
+            const head = document.createElement('div');
+            Object.assign(head.style, { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px', fontSize: '12px', color: '#555' });
+            const count = document.createElement('span');
+            count.textContent = `${unique.length} URL${unique.length !== 1 ? 's' : ''}`;
+            const all = document.createElement('button');
+            all.type = 'button';
+            all.textContent = 'Deselect all';
+            Object.assign(all.style, { fontSize: '11px', color: '#667eea', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: '0' });
+            head.append(count, all);
+            const list = document.createElement('div');
+            Object.assign(list.style, { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' });
+            const boxes = [];
+            unique.forEach(domain => {
+                const row = document.createElement('label');
+                Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: '5px', cursor: 'pointer' });
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = true;
+                cb.onchange = sync;
+                boxes.push({ cb, domain });
+                const text = document.createElement('span');
+                text.textContent = dtUrlOf(domain);
+                Object.assign(text.style, { fontFamily: '"Courier New", monospace', fontSize: '13px', color: '#333', flex: '1', wordBreak: 'break-all' });
+                const sc = dtScoreCells(domain);
+                sc.show();
+                map.set(domain, sc);
+                row.append(cb, text, sc.el);
+                list.appendChild(row);
+            });
+            const copyBar = document.createElement('div');
+            Object.assign(copyBar.style, { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' });
+            const mkCopy = (label, fmt) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                styleCopyBtn(b);
+                b.dataset.label = label;
+                b.addEventListener('click', () => { const rows = boxes.filter(x => x.cb.checked).map(x => map.get(x.domain)); if (rows.length) copyText(fmt(rows), b, sync); });
+                return b;
+            };
+            const lineBtn = mkCopy('Copy Line by Line', dtFormatLines);
+            const commaBtn = mkCopy('Copy Comma Separated', dtFormatComma);
+            copyBar.append(lineBtn, commaBtn);
+            function sync() {
+                const n = boxes.filter(x => x.cb.checked).length;
+                all.textContent = n === boxes.length ? 'Deselect all' : 'Select all';
+                [lineBtn, commaBtn].forEach(b => {
+                    if (/Copied|failed/.test(b.textContent)) return;
+                    b.textContent = `${b.dataset.label} (${n})`;
+                    b.disabled = n === 0;
+                    b.style.opacity = n === 0 ? '0.5' : '1';
+                    b.style.cursor = n === 0 ? 'not-allowed' : 'pointer';
+                    b.title = n === 0 ? 'Tick the URLs you want to copy first' : `Copies the ${n} ticked URL${n !== 1 ? 's' : ''} as URL,VT,IBM,Category;`;
+                });
+            }
+            all.onclick = (e) => { e.preventDefault(); const on = boxes.some(x => !x.cb.checked); boxes.forEach(x => { x.cb.checked = on; }); sync(); };
+            sync();
+            multiResults.append(head, list, copyBar);
+            return map;
+        }
+
         // Check All Domains and the extractor's Check Selected: same wheel, progress and final line
-        function checkWithFeedback(domains, openSPM, btn, area, progressEl) {
+        // cellsFor(domain) gives the value fields to fill when APIs are on
+        function checkWithFeedback(domains, openSPM, btn, area, progressEl, cellsFor) {
             const n = domains.length, s = n !== 1 ? 's' : '';
+            const services = cellsFor ? dtApiServices() : [];
+            const skip = new Set(services);
             btn.disabled = true;
-            const wheel = suiteBusyStart(area, `Opening tabs for ${n} domain${s}…`);
-            runBulkCheck(domains, openSPM,
+            const wheel = suiteBusyStart(area, skip.size === 3 ? `Checking ${n} domain${s} through the APIs…` : `Opening tabs for ${n} domain${s}…`);
+            const finish = (apiNote) => {
+                wheel.stop();
+                btn.disabled = false;
+                progressEl.style.display = 'block';
+                const tabs = skip.size < 3 ? `Opened tabs for ${n} domain${s}${openSPM ? ' and the SPM request form' : ''}` : (openSPM ? 'Opened the SPM request form' : '');
+                progressEl.textContent = `Done. ${[tabs, apiNote].filter(Boolean).join('. ')}.`;
+                setTimeout(() => { progressEl.style.display = 'none'; }, apiNote ? 8000 : 4000);
+            };
+            const tabsDone = new Promise(resolve => runBulkCheck(domains, openSPM,
                 (current, total) => {
+                    if (skip.size === 3) return;
                     progressEl.style.display = 'block';
                     progressEl.textContent = `Checking domain ${current} of ${total}...`;
                     wheel.setLabel(`Opening the tabs of domain ${current} of ${total}…`);
-                },
-                () => {
-                    wheel.stop();
-                    btn.disabled = false;
-                    progressEl.style.display = 'block';
-                    progressEl.textContent = `Done. Opened tabs for ${n} domain${s}${openSPM ? ' and the SPM request form' : ''}.`;
-                    setTimeout(() => { progressEl.style.display = 'none'; }, 4000);
-                }
-            );
+                }, resolve, skip));
+            if (!services.length) { tabsDone.then(() => finish('')); return; }
+            let missing = 0;
+            domains.forEach(d => { const c = cellsFor(d); if (c) c.show(); });
+            const looked = dtLookup([...new Set(domains)], services, {
+                onResult: (d, svc, value, why) => { const c = cellsFor(d); if (c) c.set(svc, value, why); if (value == null) missing++; },
+                onProgress: (text) => wheel.setLabel(text),
+                onWait: (text) => wheel.setLabel(text),
+            });
+            Promise.all([tabsDone, looked]).then(() => finish(`Values from ${services.map(x => DT_API[x].short).join(', ')}${missing ? `; ${missing} not obtained, shown empty: type them or they copy as #` : ''}`))
+                .catch(err => { console.error('[Domain Tools] API check:', err); finish(`The API check stopped: ${err.message}`); });
         }
 
         const { row: multiSpmRow, checkbox: multiSpmCheckbox } = makeSPMRow('dt-multi-spm-checkbox', 'Open SPM Request Form (one for the whole batch)');
-        multiContent.append(multiLabel, multiTextarea, multiCountLabel, multiSpmRow, multiCheckBtn, bulkProgress);
+        multiContent.append(multiLabel, multiTextarea, multiCountLabel, multiSpmRow, multiCheckBtn, bulkProgress, multiResults);
 
         const { row: extractSpmRow, checkbox: extractSpmCheckbox } = makeSPMRow('dt-extract-spm-checkbox', 'Open SPM Request Form (one for the whole batch)');
         extractSpmRow.style.display = 'none';
@@ -26374,7 +26831,7 @@ Version 1.0:
         checkPanel.append(modeToggleRow, singleContent, multiContent);
 
         panels.append(extractPanel, checkPanel);
-        modal.append(header, tabBar, panels);
+        modal.append(header, apiPanel, tabBar, panels);
         document.body.appendChild(modal);
 
         /* ── Tab switching ── */
@@ -26402,6 +26859,7 @@ Version 1.0:
 
         /* ── Extract logic ── */
         let lastDomains = [];
+        const extractCells = new Map();   // domain → its value fields
         const selectedDomains = new Set();
 
         function updateCheckSelectedBtn() {
@@ -26431,6 +26889,7 @@ Version 1.0:
             if (!raw.trim()) return;
 
             lastDomains = extractDomainsFromText(raw);
+            extractCells.clear();
 
             if (lastDomains.length === 0) {
                 const empty = document.createElement('div');
@@ -26484,7 +26943,9 @@ Version 1.0:
                     cb.dispatchEvent(new Event('change'));
                 });
 
-                row.append(cb, domainText, checkRowBtn);
+                const sc = dtScoreCells(domain);
+                extractCells.set(domain, sc);
+                row.append(cb, domainText, sc.el, checkRowBtn);
                 domainList.appendChild(row);
             });
 
@@ -26505,7 +26966,7 @@ Version 1.0:
         checkSelectedBtn.addEventListener('click', () => {
             const domains = Array.from(selectedDomains).map(d => stripToDomain(d)).filter(Boolean);
             if (!domains.length) return;
-            checkWithFeedback(domains, extractSpmCheckbox.checked, checkSelectedBtn, extractPanel, extractProgress);
+            checkWithFeedback(domains, extractSpmCheckbox.checked, checkSelectedBtn, extractPanel, extractProgress, d => extractCells.get(d));
         });
 
         extractBtn.addEventListener('click', runExtract);
@@ -26524,8 +26985,11 @@ Version 1.0:
 
         // Only the ticked domains are copied, in the order they were found
         const pickedDomains = () => lastDomains.filter(d => selectedDomains.has(d));
-        copyLineBtn.addEventListener('click',  () => { if (pickedDomains().length) copyText(pickedDomains().join('\n'), copyLineBtn, updateCheckSelectedBtn); });
-        copyCommaBtn.addEventListener('click', () => { if (pickedDomains().length) copyText(pickedDomains().join(', '), copyCommaBtn, updateCheckSelectedBtn); });
+        // Once scores were checked, the ticked rows copy as "URL,VT,IBM,Category;"; otherwise the plain domains as before
+        const pickedRows = () => pickedDomains().map(d => extractCells.get(d)).filter(Boolean);
+        const scored = () => pickedRows().some(r => r.checked);
+        copyLineBtn.addEventListener('click',  () => { if (pickedDomains().length) copyText(scored() ? dtFormatLines(pickedRows()) : pickedDomains().join('\n'), copyLineBtn, updateCheckSelectedBtn); });
+        copyCommaBtn.addEventListener('click', () => { if (pickedDomains().length) copyText(scored() ? dtFormatComma(pickedRows()) : pickedDomains().join(', '), copyCommaBtn, updateCheckSelectedBtn); });
 
         /* ── Security check logic ── */
         checkInput.addEventListener('input', () => {
@@ -26548,30 +27012,66 @@ Version 1.0:
             const domain = stripToDomain(raw);
             if (!domain) { checkNote('⚠ Could not find a valid domain in what you entered.', true); checkInput.focus(); return; }
 
-            GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${domain}`, { active: false, insert: true });
-            GM_openInTab(`https://exchange.xforce.ibmcloud.com/url/${domain}`,          { active: false, insert: true });
-            GM_openInTab(`https://www.virustotal.com/gui/domain/${domain}`,             { active: false, insert: true });
-
+            const services = dtApiServices();
+            const skip = new Set(services);
+            const opened = dtOpenTabs(domain, skip);
             if (spmCheckbox.checked) {
                 GM_openInTab(buildSPMRequestURL(), { active: false, insert: true });
             }
-            checkNote(`✓ Opened ${spmCheckbox.checked ? 4 : 3} tabs in the background for ${domain}: Netskope URL Lookup, IBM X-Force, VirusTotal${spmCheckbox.checked ? ' and the SPM request form' : ''}.`);
+            const names = ['Netskope URL Lookup', 'IBM X-Force', 'VirusTotal'].filter((x, i) => !skip.has(['netskope', 'xforce', 'virustotal'][i]));
+            if (spmCheckbox.checked) names.push('the SPM request form');
+            const tabs = opened + (spmCheckbox.checked ? 1 : 0);
+            checkNote(tabs ? `✓ Opened ${tabs} tab${tabs !== 1 ? 's' : ''} in the background for ${domain}: ${names.join(', ')}.` : `Checking ${domain} through the APIs…`);
+            singleResult.style.display = 'none';
+            if (!services.length) return;
+            renderSingleResult(domain, services);
+        }
+
+        // Single check with APIs: the line in the copy format, its values, and a copy button
+        async function renderSingleResult(domain, services) {
+            singleResult.innerHTML = '';
+            singleResult.style.display = 'block';
+            const top = document.createElement('div');
+            Object.assign(top.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' });
+            const url = document.createElement('span');
+            url.textContent = dtUrlOf(domain);
+            Object.assign(url.style, { fontFamily: '"Courier New", monospace', fontSize: '13px', color: '#333', flex: '1', wordBreak: 'break-all' });
+            const sc = dtScoreCells(domain);
+            sc.show();
+            const copy = document.createElement('button');
+            copy.type = 'button';
+            copy.textContent = '📋 Copy';
+            copy.title = 'Copies URL,VT Score,IBM X-Force Score,Netskope Category;';
+            styleCopyBtn(copy);
+            const lineEl = document.createElement('div');
+            Object.assign(lineEl.style, { marginTop: '8px', fontFamily: '"Courier New", monospace', fontSize: '12px', color: '#555', wordBreak: 'break-all' });
+            const refresh = () => { lineEl.textContent = sc.line(); };
+            sc.el.addEventListener('input', refresh);
+            copy.addEventListener('click', () => copyText(sc.line(), copy));
+            top.append(url, sc.el, copy);
+            singleResult.append(top, lineEl);
+            refresh();
+            let missing = 0;
+            await suiteBusy(singleResult, () => dtLookup([domain], services, {
+                onResult: (d, svc, value, why) => { sc.set(svc, value, why); if (value == null) missing++; refresh(); },
+                onWait: (text) => checkNote(text),
+            }), 'Checking through the APIs…');
+            refresh();
+            checkNote(`✓ ${domain}: values from ${services.map(x => DT_API[x].short).join(', ')}${missing ? `. ${missing} not obtained, shown empty: type them or they copy as #` : ''}.`, false);
         }
 
         // Opens the reputation tabs for every domain, plus one SPM request tab for the batch.
-        function runBulkCheck(domains, openSPM, onProgress, onComplete) {
+        function runBulkCheck(domains, openSPM, onProgress, onComplete, skip = new Set()) {
             if (openSPM) GM_openInTab(buildSPMRequestURL(), { active: false, insert: true });
             const total = domains.length;
             let current = 0;
             function checkNext() {
                 if (current >= total) { if (onComplete) onComplete(); return; }
                 const domain = domains[current];
-                GM_openInTab(`https://www.netskope.com/url-lookup?url=https://${domain}`, { active: false, insert: true });
-                GM_openInTab(`https://exchange.xforce.ibmcloud.com/url/${domain}`,          { active: false, insert: true });
-                GM_openInTab(`https://www.virustotal.com/gui/domain/${domain}`,             { active: false, insert: true });
+                dtOpenTabs(domain, skip);
                 current++;
                 if (onProgress) onProgress(current, total);
-                if (current < total) setTimeout(checkNext, 800);
+                if (current < total) setTimeout(checkNext, skip.size === 3 ? 0 : 800);
                 else if (onComplete) onComplete();
             }
             checkNext();
@@ -26803,11 +27303,47 @@ Version 1.0:
                 }
             },
             {
+                icon: '🔌',
+                title: 'API checks (optional)',
+                buildContent(body) {
+                    lead(body, 'With API keys, the scores come straight into Domain Tools, ready to paste into the ticket.');
+                    const panel = document.createElement('div');
+                    Object.assign(panel.style, { background: '#f5f6ff', border: '1px solid #dde', borderRadius: '6px', padding: '8px 10px', marginBottom: '10px' });
+                    [['Netskope category', '✓ Key set (ema.goskope.com)', true], ['VirusTotal score', '✓ Key set', true], ['IBM X-Force score', 'No key', false]].forEach(([n, st, on]) => {
+                        const box = span(on ? '✓' : '', { width: '14px', height: '14px', borderRadius: '3px', display: 'inline-block', textAlign: 'center', lineHeight: '14px', fontSize: '10px',
+                            background: on ? '#667eea' : '#fff', color: '#fff', border: on ? 'none' : '1px solid #b0b0b0' });
+                        panel.appendChild(hrow([box, span(n, { fontSize: '12px', fontWeight: 'bold' }), span(st, { fontSize: '11px', color: on ? '#2e7d32' : '#b45309' }),
+                            chip('🔑 API Keys', '#fff', { color: '#667eea', border: '1px solid #c0c8f0' })], { margin: '0 0 4px 0' }));
+                    });
+                    body.appendChild(panel);
+                    caption(body, '⚙ API checks in the header. Every switch starts off; each one needs its key in the toolbar\'s 🔑 API Keys.');
+                    const row = document.createElement('div');
+                    Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', background: '#fff', border: '1px solid #e5e5e5', borderRadius: '5px', margin: '10px 0 4px 0' });
+                    const cell = (t, locked, w) => span(t, { fontFamily: 'monospace', fontSize: '11px', padding: '2px 5px', borderRadius: '3px', width: w, display: 'inline-block',
+                        border: `1px solid ${locked ? '#d0d4da' : '#f0c36d'}`, background: locked ? '#eef0f3' : '#fff8e1', color: locked ? '#333' : '#aaa' });
+                    row.append(span('abc.com', { fontFamily: 'monospace', fontSize: '12px', flex: '1' }), cell('4', true, '30px'), cell('IBM', false, '30px'), cell('Survey Solutions', true, '120px'));
+                    body.appendChild(row);
+                    caption(body, 'Grey values came from an API and are locked. Amber ones could not be obtained: type them by hand, or they copy as #.');
+                    const box = document.createElement('div');
+                    Object.assign(box.style, { background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px', padding: '10px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333', margin: '10px 0 0 0', whiteSpace: 'pre' });
+                    box.textContent = 'https://abc.com,4,1,Survey Solutions;\nhttps://qwe.com,1,1,Content Management;';
+                    body.appendChild(box);
+                    bullets(body, [
+                        'Format: URL, VirusTotal score (engines that flag it as malicious), IBM X-Force risk score (1 to 10), first Netskope category. Every entry ends with ;. # means not obtained.',
+                        'Single check shows the line with a 📋 Copy button. Multiple check lists the URLs below with their values. The Extractor fills them in the "Found" list when you click Check Selected.',
+                        'Copy Line by Line gives one entry per line; Copy Comma Separated puts them on one line. Without any API check they copy the plain domains, as before.',
+                        'A service checked through its API no longer opens its browser tab; the others still open. Netskope uses the tenant of the ticket\'s Member Firm, or the one chosen in the panel.',
+                        'VirusTotal free keys allow 4 queries a minute: the wheel shows the countdown while it waits. Set a higher number, or 0, for a premium key in 🔑 API Keys.'
+                    ]);
+                }
+            },
+            {
                 icon: '⚙️',
                 title: 'SPM Request & Settings',
                 buildContent(body) {
                     lead(body, 'Header controls and how the SPM request form opens.');
                     const controls = [
+                        { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ API checks', desc: 'Opens the optional API checks: switches for the Netskope category, the VirusTotal score and the IBM X-Force score, the state of each key, and the Netskope tenant to use.' },
                         { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '🔑 IBM X-Force login', desc: 'Opens the IBM X-Force Exchange home page so you can log in. IBM X-Force now requires a login, so do this before running checks or its tabs will ask you to sign in.' },
                         { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' },
                         { bg: 'transparent', color: '#667eea', border: 'none', label: "What's new", desc: 'Appears with a pulsing dot after an update. Opens the changelog.' },
