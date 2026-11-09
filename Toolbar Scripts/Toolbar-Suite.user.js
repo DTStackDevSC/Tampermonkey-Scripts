@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.8
+// @version      2.20.9
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.8';
-    const CHANGELOG = `Version 2.20.8:
+   const SCRIPT_VERSION = '2.20.9';
+    const CHANGELOG = `Version 2.20.9:
+- Change Tracker: The optional fields added with "+ Add fields" (Source IP, OS Family, App Instance, Activity Constraints and the others) are now written in the Work Notes and Comments, and listed in the change summary used by the Worknote summary button and by Solved Closure. Before, only the entry card and Copy showed them.
+- Destination Profile Editor: When Netskope refuses a save, the message now shows everything Netskope said (for example which value it did not accept) and what was sent. Nothing is saved in that case. The full answer is also in the browser console.
+
+Version 2.20.8:
 - The hints that show when you point at a button inside a suite window (for example the copy buttons in Domain Tools) appeared behind the window in ServiceNow. They now show on top.
 
 Version 2.20.7:
@@ -4101,6 +4105,17 @@ Version 1.0.0:
             return `Network error: the request did not reach ${host}${detail ? ` (${detail})` : ''}. Check that the tenant host is right and that this browser can open https://${host}.`;
         }
 
+        // Netskope's message plus the details it gives (which field or value was refused), never only the summary
+        function apiErrorText(data, r) {
+            const msg = (data && (data.message || data.error || data.title)) || '';
+            const extra = data && typeof data === 'object'
+                ? Object.entries(data).filter(([k, v]) => !['message', 'error', 'title', 'status', 'code'].includes(k) && v != null && v !== '' && !(Array.isArray(v) && !v.length))
+                : [];
+            const detail = extra.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('; ');
+            const text = [msg, detail].filter(Boolean).join(' · ') || (r.responseText || '').trim() || `HTTP ${r.status}`;
+            return text.length > 600 ? text.slice(0, 600) + '…' : text;
+        }
+
         async function request(host, method, path, body, { caller } = {}) {
             const t = tenantOf(host);
             if (!t) return { ok: false, status: 0, error: 'This host is not one of your Netskope tenants.' };
@@ -4123,8 +4138,8 @@ Version 1.0.0:
                     let data = null;
                     try { data = r.responseText ? JSON.parse(r.responseText) : null; } catch (e) { data = null; }
                     const ok = r.status >= 200 && r.status < 300;
-                    resolve({ ok, status: r.status, data, text: r.responseText,
-                        error: ok ? null : (data && (data.message || data.error)) || r.responseText || `HTTP ${r.status}` });
+                    if (!ok) console.warn(`[Netskope API] ${method} ${path} answered ${r.status}:`, r.responseText);
+                    resolve({ ok, status: r.status, data, text: r.responseText, error: ok ? null : apiErrorText(data, r) });
                 },
                 onerror: (r) => resolve({ ok: false, status: 0, error: networkError(t.host, r) }),
                 ontimeout: () => resolve({ ok: false, status: 0, error: 'Netskope did not answer in time' }),
@@ -12324,8 +12339,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.2';
-    const CHANGELOG = `Version 2.0.2:
+    const SCRIPT_VERSION = '2.0.3';
+    const CHANGELOG = `Version 2.0.3:
+- When Netskope refuses a save, the message now shows everything Netskope said (for example which value it did not accept) and what was sent. Nothing is saved in that case. The full answer is also in the browser console.
+
+Version 2.0.2:
 - While the editor fetches, looks up, creates, saves or applies, a loading wheel covers the window and says what it is doing, so nothing can be clicked twice. Buttons now change when you point at them.
 
 Version 2.0.1:
@@ -14411,7 +14429,9 @@ Version 1.4.1:
                 if (!r) return;
                 if (!r.ok) {
                     if (r.handled) return;
-                    return UI.showStatus(r.status === 409 && changes.name ? `⚠️ A Destination Profile called "${name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
+                    if (r.status === 409 && changes.name) return UI.showStatus(`⚠️ A Destination Profile called "${name}" already exists.`, 'warning');
+                    const sent = Object.keys(changes).map(k => k === 'values' ? `values (${changes.values.length} lines)` : k).join(', ');
+                    return UI.showStatus(`❌ Netskope did not accept the change (${r.status}): ${r.error}. Sent: ${sent}. Nothing was saved. The full answer is also in the browser console.`, 'error');
                 }
                 const what = [changes.name && 'name', changes.description !== undefined && 'description', changes.type && 'match type', changes.values && 'values'].filter(Boolean).join(', ');
                 currentProfiles = [];
@@ -17677,8 +17697,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.8.1';
-    const CHANGELOG = `Version 2.8.1:
+    const SCRIPT_VERSION = '2.8.2';
+    const CHANGELOG = `Version 2.8.2:
+- The optional fields added with "+ Add fields" (Source IP, OS Family, App Instance, Activity Constraints and the others) are now written in the Work Notes and Comments, and listed in the change summary used by the Worknote summary button and by Solved Closure. Before, only the entry card and Copy showed them.
+
+Version 2.8.1:
 - A a loading wheel now also covers the change log while the ticket is read again (when you open the tracker or come back to the tab), the reminder card during "↺ Check now", the review window while it reads the domains or checks with the Netskope API, the shared profiles list while it loads or saves, "Write all to ticket" and the session renewal test. A button that fails no longer stays stuck.
 
 Version 2.8.0:
@@ -17939,6 +17962,9 @@ Version 1.4.3:
         { key: 'activityConstraints', label: 'Activity Constraints' },
         { key: 'fileConstraints',     label: 'File Constraints'     },
     ];
+
+    // Every field of a schema in display order: each main field followed by its "+ Add fields" extras
+    const schemaWithExtras = schema => schema.reduce((all, f) => all.concat([f], f.extraFields || []), []);
 
     /* ==========================================================
      *  FIELD SCHEMAS
@@ -20425,7 +20451,7 @@ Version 1.4.3:
             const schema = getSchema(entry.type);
             if (!schema || !entry.fields) return [];
             const out = [];
-            schema.forEach(f => {
+            schemaWithExtras(schema).forEach(f => {
                 const raw = entry.fields[f.key];
                 if (!raw) return;
                 if (/\r?\n/.test(raw)) {
@@ -21848,7 +21874,7 @@ Version 1.4.3:
                         // Show latest field values (skip the name field itself — already on the header)
                         const schema = getSchema(latestType);
                         if (schema) {
-                            schema
+                            schemaWithExtras(schema)
                                 .filter(f => f.key !== lifecycleConf.nameKey && latestFields[f.key])
                                 .forEach(f => lines.push(`    • ${f.label}: ${latestFields[f.key]}`));
                         }
@@ -25562,7 +25588,7 @@ Version 1.4.3:
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue,
                 nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
-                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary };
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter };
         }
 
         return function register() {
