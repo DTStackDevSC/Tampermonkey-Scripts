@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.23.0
+// @version      2.23.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.23.0';
-    const CHANGELOG = `Version 2.23.0:
+   const SCRIPT_VERSION = '2.23.1';
+    const CHANGELOG = `Version 2.23.1:
+- ServiceNow Toolkit: The SPM Germany reminder now shows the right Requestor: the Requested for shown on the original ticket (the one of its request), instead of the user who opened it.
+
+Version 2.23.0:
 - ServiceNow Toolkit: New reminder on the SPM request form: when the Requesting Member Firm is Deloitte Germany, a box above the fields shows who goes in Requestor (the Requested for of the original ticket) and in Backup Exception Owner (its Opened by), with their names and whether they are already set. It can be turned off in Settings.
 
 Version 2.22.1:
@@ -5823,8 +5826,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5';
-    const CHANGELOG = `Version 1.5:
+    const SCRIPT_VERSION = '1.5.1';
+    const CHANGELOG = `Version 1.5.1:
+- The SPM Germany reminder now shows the right Requestor: the Requested for shown on the original ticket (the one of its request), instead of the user who opened it.
+
+Version 1.5:
 - New reminder on the SPM request form: when the Requesting Member Firm is Deloitte Germany, a box above the fields shows who goes in Requestor (the Requested for of the original ticket) and in Backup Exception Owner (its Opened by), with their names and whether they are already set. It can be turned off in Settings.
 
 Version 1.4:
@@ -7537,13 +7543,15 @@ Version 1.1.4:
         const job = (async () => {
             if (!query) return { error: `"${ref}" is not a RITM number or a ticket id` };
             const token = (typeof unsafeWindow !== 'undefined' && unsafeWindow.g_ck) || window.g_ck || '';
-            const r = await fetch(`/api/now/table/sc_req_item?sysparm_query=${encodeURIComponent(query)}&sysparm_fields=number,requested_for,opened_by&sysparm_display_value=all&sysparm_limit=1`,
+            const r = await fetch(`/api/now/table/sc_req_item?sysparm_query=${encodeURIComponent(query)}&sysparm_fields=number,request.requested_for,requested_for,opened_by&sysparm_display_value=all&sysparm_limit=1`,
                 { credentials: 'same-origin', headers: Object.assign({ Accept: 'application/json' }, token ? { 'X-UserToken': token } : {}) });
             if (!r.ok) return { error: `ServiceNow answered ${r.status}` };
             const x = ((await r.json()).result || [])[0];
             if (!x) return { error: 'the original ticket was not found' };
             const pick = f => ({ name: (f && (f.display_value || '')) || '', id: (f && (f.value || '')) || '' });
-            return { number: (x.number && (x.number.display_value || x.number.value)) || x.number || ref, requestedFor: pick(x.requested_for), openedBy: pick(x.opened_by) };
+            // The "Requested for" of the RITM form is the request's (request.requested_for); the RITM's own field often holds the opener
+            const rf = pick(x['request.requested_for']);
+            return { number: (x.number && (x.number.display_value || x.number.value)) || x.number || ref, requestedFor: rf.id ? rf : pick(x.requested_for), openedBy: pick(x.opened_by) };
         })().catch(err => ({ error: err.message }));
         spmOriginalCache.set(ref, job);
         return job;
