@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.21.0
+// @version      2.22.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.21.0';
-    const CHANGELOG = `Version 2.21.0:
+   const SCRIPT_VERSION = '2.22.0';
+    const CHANGELOG = `Version 2.22.0:
+- Domain Tools: VirusTotal: when https://domain is unknown, the domain alone is tried; when both are unknown, the URL is sent for scanning and its result is read again after a while (20, 30 and 40 seconds).
+- Domain Tools: New ↻ Scan again (missing) button in the single check, the multiple check list and the Extractor: it looks up again only the values still empty, and opens the browser tab of the values whose API is off.
+
+Version 2.21.0:
 - Domain Tools: New optional API checks (⚙ API checks in the header, every switch off by default): the Netskope category, the VirusTotal score and the IBM X-Force score come straight into Domain Tools, ready to paste as URL,VT Score,IBM X-Force Score,Netskope Category; with # for what could not be obtained.
 - Domain Tools: Single check shows that line with a 📋 Copy button. Multiple check lists the URLs below with their values. The Extractor fills the values in its "Found" list when you click Check Selected. Values from an API are locked; missing ones can be typed by hand.
 - Domain Tools: Copy Line by Line and Copy Comma Separated copy the ticked URLs in that format once they were checked, and the plain domains otherwise. A service checked through its API no longer opens its browser tab.
@@ -4265,8 +4269,8 @@ Version 1.0.0:
             return turn;
         }
 
-        // GET on VirusTotal or IBM X-Force with the saved key; a 429 from VirusTotal waits a minute and retries (twice)
-        async function serviceRequest(id, path, { caller, onWait } = {}) {
+        // A call to VirusTotal or IBM X-Force with the saved key (GET, or POST with a form); a 429 from VirusTotal waits a minute and retries (twice)
+        async function serviceRequest(id, path, { caller, onWait, method = 'GET', form = null } = {}) {
             const sv = serviceOf(id);
             if (!sv) return { ok: false, status: 0, error: 'Unknown API service.' };
             const st = status(sv.host);
@@ -4280,15 +4284,17 @@ Version 1.0.0:
             const headers = sv.id === 'virustotal'
                 ? { 'x-apikey': key, Accept: 'application/json' }
                 : { Authorization: 'Basic ' + btoa(key), Accept: 'application/json' };
+            const data = form ? Object.entries(form).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&') : undefined;
+            if (form) headers['Content-Type'] = 'application/x-www-form-urlencoded';
             for (let attempt = 0; ; attempt++) {
                 if (sv.id === 'virustotal') await vtTurn(onWait);
                 const r = await new Promise(resolve => GM_xmlhttpRequest({
-                    method: 'GET', url: sv.base + path, timeout: 30000, headers,
+                    method, url: sv.base + path, timeout: 30000, headers, data,
                     onload: (x) => {
                         let data = null;
                         try { data = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { data = null; }
                         const ok = x.status >= 200 && x.status < 300;
-                        if (!ok && x.status !== 404) console.warn(`[${sv.type} API] GET ${path} answered ${x.status}:`, x.responseText);
+                        if (!ok && x.status !== 404) console.warn(`[${sv.type} API] ${method} ${path} answered ${x.status}:`, x.responseText);
                         const msg = data && ((data.error && (data.error.message || data.error)) || data.message || data.error);
                         resolve({ ok, status: x.status, data, error: ok ? null : (typeof msg === 'string' ? msg : '') || `HTTP ${x.status}` });
                     },
@@ -25810,8 +25816,12 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.0';
-    const CHANGELOG = `Version 1.6.0:
+    const SCRIPT_VERSION = '1.7.0';
+    const CHANGELOG = `Version 1.7.0:
+- VirusTotal: when https://domain is unknown, the domain alone is tried; when both are unknown, the URL is sent for scanning and its result is read again after a while (20, 30 and 40 seconds).
+- New ↻ Scan again (missing) button in the single check, the multiple check list and the Extractor: it looks up again only the values still empty, and opens the browser tab of the values whose API is off.
+
+Version 1.6.0:
 - New optional API checks (⚙ API checks in the header, every switch off by default): the Netskope category, the VirusTotal score and the IBM X-Force score come straight into Domain Tools, ready to paste as URL,VT Score,IBM X-Force Score,Netskope Category; with # for what could not be obtained.
 - Single check shows that line with a 📋 Copy button. Multiple check lists the URLs below with their values. The Extractor fills the values in its "Found" list when you click Check Selected. Values from an API are locked; missing ones can be typed by hand.
 - Copy Line by Line and Copy Comma Separated copy the ticked URLs in that format once they were checked, and the plain domains otherwise. A service checked through its API no longer opens its browser tab.
@@ -26167,19 +26177,27 @@ Version 1.0:
                 });
             }
         }
+        const vtWait = sec => onWait && onWait(`VirusTotal: next query in ${sec} s (limit per minute)`);
+        const vtGet = (path) => netskopeApi.serviceRequest('virustotal', path, { caller, onWait: vtWait });
+        const vtScore = (r) => { const m = r.ok && r.data && r.data.data && r.data.data.attributes && r.data.data.attributes.last_analysis_stats; return m && m.malicious != null ? String(m.malicious) : null; };
+        const toScan = [];   // URLs VirusTotal does not know: sent for scanning, read again after a while
         let n = 0;
         for (const tg of targets) {
             n++;
             if (onProgress) onProgress(`Checking ${n} of ${targets.length}: ${tg}`);
             const url = dtUrlOf(tg), ip = dtIsIp(tg);
             const jobs = [];
-            if (services.includes('virustotal')) jobs.push(netskopeApi.serviceRequest('virustotal', ip ? `/api/v3/ip_addresses/${encodeURIComponent(tg)}` : `/api/v3/urls/${dtVtId(url)}`,
-                { caller, onWait: sec => onWait && onWait(`VirusTotal: next query in ${sec} s (limit per minute)`) })
-                .then(r => {
-                    const m = r.ok && r.data && r.data.data && r.data.data.attributes && r.data.data.attributes.last_analysis_stats;
-                    onResult(tg, 'virustotal', m && m.malicious != null ? String(m.malicious) : null,
-                        r.status === 404 ? 'VirusTotal has no analysis of this URL' : r.ok ? 'VirusTotal gave no score' : `VirusTotal: ${r.error}`);
-                }));
+            if (services.includes('virustotal')) jobs.push((async () => {
+                if (ip) {
+                    const r = await vtGet(`/api/v3/ip_addresses/${encodeURIComponent(tg)}`);
+                    return onResult(tg, 'virustotal', vtScore(r), r.ok ? 'VirusTotal gave no score' : `VirusTotal: ${r.error}`);
+                }
+                // 1. https://domain, 2. the domain alone, 3. not known: sent for scanning (read below)
+                let r = await vtGet(`/api/v3/urls/${dtVtId(url)}`);
+                if (r.status === 404) r = await vtGet(`/api/v3/urls/${dtVtId(tg)}`);
+                if (r.status === 404) { toScan.push(tg); return undefined; }
+                return onResult(tg, 'virustotal', vtScore(r), r.ok ? 'VirusTotal gave no score' : `VirusTotal: ${r.error}`);
+            })());
             if (services.includes('xforce')) jobs.push(netskopeApi.serviceRequest('xforce', ip ? `/ipr/${encodeURIComponent(tg)}` : `/url/${encodeURIComponent(url)}`, { caller })
                 .then(r => {
                     const score = r.ok && r.data ? (ip ? r.data.score : (r.data.result && r.data.result.score)) : null;
@@ -26188,6 +26206,84 @@ Version 1.0:
                 }));
             await Promise.all(jobs);
         }
+        if (!toScan.length) return;
+        // VirusTotal scan: the answer only says it is queued, so the URL report is read again after a while
+        const pending = [];
+        for (const tg of toScan) {
+            if (onProgress) onProgress(`Sending ${dtUrlOf(tg)} to VirusTotal for scanning…`);
+            const r = await netskopeApi.serviceRequest('virustotal', '/api/v3/urls', { caller, onWait: vtWait, method: 'POST', form: { url: dtUrlOf(tg) } });
+            if (r.ok) pending.push(tg);
+            else onResult(tg, 'virustotal', null, `VirusTotal did not know it and did not accept the scan: ${r.error}`);
+        }
+        for (const delay of DT_VT_RESCAN_WAIT) {
+            if (!pending.length) break;
+            for (let left = delay; left > 0; left--) {
+                if (onWait) onWait(`VirusTotal is scanning ${pending.length} URL${pending.length !== 1 ? 's' : ''}: reading the results in ${left} s`);
+                await new Promise(res => setTimeout(res, 1000));
+            }
+            for (const tg of [...pending]) {
+                const r = await vtGet(`/api/v3/urls/${dtVtId(dtUrlOf(tg))}`);
+                const v = vtScore(r);
+                if (v != null) { pending.splice(pending.indexOf(tg), 1); onResult(tg, 'virustotal', v, ''); }
+            }
+        }
+        pending.forEach(tg => onResult(tg, 'virustotal', null, 'Sent to VirusTotal for scanning, no result yet: use ↻ Scan again in a minute'));
+    }
+
+    // "↻ Scan again" for a list of { target, cells }; note(text) shows how it ended
+    function dtRescanButton(getRows, area, note) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'dt-rescan';
+        b.textContent = '↻ Scan again (missing)';
+        b.title = 'Looks up again the values still missing (VirusTotal also scans again). Values without an API turned on open their browser tab instead.';
+        Object.assign(b.style, { padding: '6px 14px', background: '#fff', color: '#667eea', border: '1px solid #667eea', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' });
+        b.onmouseover = () => { if (!b.disabled) b.style.background = '#eef0ff'; };
+        b.onmouseout  = () => { b.style.background = '#fff'; };
+        b.onclick = async () => {
+            const rows = getRows().filter(r => r.cells && r.cells.checked && r.cells.missing().length);
+            if (!rows.length) { note('ℹ️ Nothing missing: every value is filled.'); return; }
+            b.disabled = true;
+            const wheel = suiteBusyStart(area, 'Scanning again…');
+            try {
+                const res = await dtRescan(rows, { onProgress: t => wheel.setLabel(t), onWait: t => wheel.setLabel(t) });
+                const parts = [];
+                if (res.asked) parts.push(res.missing ? `${res.missing} value${res.missing !== 1 ? 's' : ''} still missing` : 'every missing value found');
+                if (res.tabs) parts.push(`${res.tabs} tab${res.tabs !== 1 ? 's' : ''} opened for the services without an API`);
+                note(`✓ Scanned again: ${parts.join(', ')}.`);
+            } catch (err) {
+                console.error('[Domain Tools] Scan again:', err);
+                note(`⚠ Scan again stopped: ${err.message}`);
+            } finally {
+                wheel.stop();
+                b.disabled = false;
+            }
+        };
+        return b;
+    }
+
+    // Seconds to wait before each new read of a URL sent for scanning (three tries)
+    const DT_VT_RESCAN_WAIT = [20, 30, 40];
+
+    // Scan again: the values still missing are looked up again through their API, or their tab opens when the API is off
+    async function dtRescan(rows, { onProgress, onWait } = {}) {
+        const on = new Set(dtApiServices());
+        const bySvc = { netskope: [], virustotal: [], xforce: [] };
+        const tabs = new Map();
+        rows.forEach(({ target, cells }) => cells.missing().forEach(svc => {
+            if (on.has(svc)) bySvc[svc].push(target);
+            else (tabs.get(target) || tabs.set(target, new Set()).get(target)).add(svc);
+        }));
+        tabs.forEach((svcs, target) => dtOpenTabs(target, new Set(Object.keys(DT_API).filter(x => !svcs.has(x)))));
+        let missing = 0;
+        const cellsOf = new Map(rows.map(r => [r.target, r.cells]));
+        for (const svc of Object.keys(bySvc)) {
+            if (!bySvc[svc].length) continue;
+            await dtLookup(bySvc[svc], [svc], { onProgress, onWait,
+                onResult: (d, s, value, why) => { const c = cellsOf.get(d); if (c) c.set(s, value, why); if (value == null) missing++; } });
+        }
+        const asked = Object.values(bySvc).reduce((a, l) => a + l.length, 0);
+        return { asked, missing, tabs: [...tabs.values()].reduce((a, s) => a + s.size, 0) };
     }
 
     // The three value fields of one URL: read only when an API filled them, editable (for manual entry) otherwise
@@ -26228,6 +26324,8 @@ Version 1.0:
                     i.style.borderColor = '#f0c36d';
                 }
             },
+            // Values still empty that no API gave (typed ones count as given)
+            missing() { return Object.keys(cells).filter(svc => !cells[svc].readOnly && !(cells[svc].value || '').trim()); },
             line() {
                 const v = svc => (cells[svc].value || '').trim().replace(/[,;]/g, ' ') || '#';
                 return `${dtUrlOf(target)},${v('virustotal')},${v('xforce')},${v('netskope')};`;
@@ -26515,7 +26613,10 @@ Version 1.0:
             fontSize: '12px', fontWeight: 'bold',
         });
 
-        copyRow.append(copyLineBtn, copyCommaBtn, checkSelectedBtn);
+        const extractRescanBtn = dtRescanButton(() => lastDomains.filter(d => selectedDomains.has(d)).map(d => ({ target: d, cells: extractCells.get(d) })), extractPanel,
+            (t) => { extractProgress.style.display = 'block'; extractProgress.textContent = t; });
+        extractRescanBtn.style.display = 'none';
+        copyRow.append(copyLineBtn, copyCommaBtn, checkSelectedBtn, extractRescanBtn);
         extractPanel.append(textareaLabel, textarea, extractBtn, countRow, domainList, copyRow);
 
         /* Security Check panel */
@@ -26743,7 +26844,9 @@ Version 1.0:
             };
             const lineBtn = mkCopy('Copy Line by Line', dtFormatLines);
             const commaBtn = mkCopy('Copy Comma Separated', dtFormatComma);
-            copyBar.append(lineBtn, commaBtn);
+            const again = dtRescanButton(() => boxes.filter(x => x.cb.checked).map(x => ({ target: x.domain, cells: map.get(x.domain) })), multiResults,
+                (t) => { bulkProgress.style.display = 'block'; bulkProgress.textContent = t; });
+            copyBar.append(lineBtn, commaBtn, again);
             function sync() {
                 const n = boxes.filter(x => x.cb.checked).length;
                 all.textContent = n === boxes.length ? 'Deselect all' : 'Select all';
@@ -26785,7 +26888,7 @@ Version 1.0:
                     progressEl.textContent = `Checking domain ${current} of ${total}...`;
                     wheel.setLabel(`Opening the tabs of domain ${current} of ${total}…`);
                 }, resolve, skip));
-            if (!services.length) { tabsDone.then(() => finish('')); return; }
+            if (!services.length) return tabsDone.then(() => finish(''));
             let missing = 0;
             domains.forEach(d => { const c = cellsFor(d); if (c) c.show(); });
             const looked = dtLookup([...new Set(domains)], services, {
@@ -26793,7 +26896,7 @@ Version 1.0:
                 onProgress: (text) => wheel.setLabel(text),
                 onWait: (text) => wheel.setLabel(text),
             });
-            Promise.all([tabsDone, looked]).then(() => finish(`Values from ${services.map(x => DT_API[x].short).join(', ')}${missing ? `; ${missing} not obtained, shown empty: type them or they copy as #` : ''}`))
+            return Promise.all([tabsDone, looked]).then(() => finish(`Values from ${services.map(x => DT_API[x].short).join(', ')}${missing ? `; ${missing} not obtained, shown empty: type them or they copy as #` : ''}`))
                 .catch(err => { console.error('[Domain Tools] API check:', err); finish(`The API check stopped: ${err.message}`); });
         }
 
@@ -26865,6 +26968,7 @@ Version 1.0:
         function updateCheckSelectedBtn() {
             const n = selectedDomains.size;
             checkSelectedBtn.textContent = `Check Selected (${n})`;
+            extractRescanBtn.style.display = [...extractCells.values()].some(c => c.checked) ? 'inline-block' : 'none';
             [[copyLineBtn, 'Copy Line by Line'], [copyCommaBtn, 'Copy Comma Separated']].forEach(([b, label]) => {
                 if (/Copied|failed/.test(b.textContent)) return;   // the copy result stays visible for its 2 seconds
                 b.textContent = `${label} (${n})`;
@@ -26966,7 +27070,7 @@ Version 1.0:
         checkSelectedBtn.addEventListener('click', () => {
             const domains = Array.from(selectedDomains).map(d => stripToDomain(d)).filter(Boolean);
             if (!domains.length) return;
-            checkWithFeedback(domains, extractSpmCheckbox.checked, checkSelectedBtn, extractPanel, extractProgress, d => extractCells.get(d));
+            checkWithFeedback(domains, extractSpmCheckbox.checked, checkSelectedBtn, extractPanel, extractProgress, d => extractCells.get(d)).then(updateCheckSelectedBtn);
         });
 
         extractBtn.addEventListener('click', runExtract);
@@ -27049,7 +27153,9 @@ Version 1.0:
             sc.el.addEventListener('input', refresh);
             copy.addEventListener('click', () => copyText(sc.line(), copy));
             top.append(url, sc.el, copy);
-            singleResult.append(top, lineEl);
+            const again = dtRescanButton(() => [{ target: domain, cells: sc }], singleResult, (t) => { refresh(); checkNote(t, /⚠/.test(t)); });
+            again.style.marginTop = '8px';
+            singleResult.append(top, lineEl, again);
             refresh();
             let missing = 0;
             await suiteBusy(singleResult, () => dtLookup([domain], services, {
@@ -27333,7 +27439,9 @@ Version 1.0:
                         'Single check shows the line with a 📋 Copy button. Multiple check lists the URLs below with their values. The Extractor fills them in the "Found" list when you click Check Selected.',
                         'Copy Line by Line gives one entry per line; Copy Comma Separated puts them on one line. Without any API check they copy the plain domains, as before.',
                         'A service checked through its API no longer opens its browser tab; the others still open. Netskope uses the tenant of the ticket\'s Member Firm, or the one chosen in the panel.',
-                        'VirusTotal free keys allow 4 queries a minute: the wheel shows the countdown while it waits. Set a higher number, or 0, for a premium key in 🔑 API Keys.'
+                        'VirusTotal free keys allow 4 queries a minute: the wheel shows the countdown while it waits. Set a higher number, or 0, for a premium key in 🔑 API Keys.',
+                        'When VirusTotal does not know https://domain it tries the domain alone; when it knows neither, it sends the URL for scanning and reads the result again after 20, 30 and 40 seconds.',
+                        '↻ Scan again (missing) looks up again only the values still empty (VirusTotal scans again). A value whose API is off opens its browser tab instead. Typed values are kept.'
                     ]);
                 }
             },
