@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.22.0
+// @version      2.22.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.22.0';
-    const CHANGELOG = `Version 2.22.0:
+   const SCRIPT_VERSION = '2.22.1';
+    const CHANGELOG = `Version 2.22.1:
+- Domain Tools and 🔑 API Keys: The VirusTotal limit per minute now counts the queries of every open tab and ticket together, so checks running in two tickets at once no longer go over it.
+
+Version 2.22.0:
 - Domain Tools: VirusTotal: when https://domain is unknown, the domain alone is tried; when both are unknown, the URL is sent for scanning and its result is read again after a while (20, 30 and 40 seconds).
 - Domain Tools: New ↻ Scan again (missing) button in the single check, the multiple check list and the Extractor: it looks up again only the values still empty, and opens the browser tab of the values whose API is off.
 
@@ -4248,7 +4251,13 @@ Version 1.0.0:
         const VT_RPM_KEY = 'netskope_api_vt_rpm';
         // Requests per minute allowed for VirusTotal: 4 for the free key, 0 means no limit (premium)
         function vtRpm() { const n = Number(GM_getValue(VT_RPM_KEY, 4)); return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 4; }
-        const vtSent = [];             // times of the recent VirusTotal calls
+        // Times of the recent VirusTotal calls, kept in the script's storage so every tab and ticket shares the same per minute limit
+        const VT_SENT_KEY = 'netskope_api_vt_sent';
+        const vtSentNow = () => {
+            const now = Date.now();
+            const list = GM_getValue(VT_SENT_KEY, []);
+            return (Array.isArray(list) ? list : []).filter(t => typeof t === 'number' && now - t < 60000 && t <= now + 1000).sort((a, b) => a - b);
+        };
         let vtChain = Promise.resolve();
         const pause = ms => new Promise(r => setTimeout(r, ms));
         // Waits its turn under the limit; onWait(seconds) shows the countdown
@@ -4256,14 +4265,13 @@ Version 1.0.0:
             const turn = vtChain.then(async () => {
                 for (;;) {
                     const rpm = vtRpm();
-                    const now = Date.now();
-                    while (vtSent.length && now - vtSent[0] >= 60000) vtSent.shift();
-                    if (!rpm || vtSent.length < rpm) break;
-                    const wait = 60000 - (now - vtSent[0]) + 50;
+                    const sent = vtSentNow();
+                    if (!rpm || sent.length < rpm) { sent.push(Date.now()); GM_setValue(VT_SENT_KEY, sent); break; }
+                    // A small random extra so two tabs waiting for the same slot do not take it together
+                    const wait = 60000 - (Date.now() - sent[0]) + 50 + Math.floor(Math.random() * 400);
                     if (onWait) onWait(Math.ceil(wait / 1000));
                     await pause(Math.min(wait, 1000));
                 }
-                vtSent.push(Date.now());
             });
             vtChain = turn.catch(() => {});
             return turn;
@@ -25816,8 +25824,11 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.0';
-    const CHANGELOG = `Version 1.7.0:
+    const SCRIPT_VERSION = '1.7.1';
+    const CHANGELOG = `Version 1.7.1:
+- The VirusTotal limit per minute now counts the queries of every open tab and ticket together, so checks running in two tickets at once no longer go over it.
+
+Version 1.7.0:
 - VirusTotal: when https://domain is unknown, the domain alone is tried; when both are unknown, the URL is sent for scanning and its result is read again after a while (20, 30 and 40 seconds).
 - New ↻ Scan again (missing) button in the single check, the multiple check list and the Extractor: it looks up again only the values still empty, and opens the browser tab of the values whose API is off.
 
