@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.3.3
+// @version      4.3.4
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.3';
-    const CHANGELOG = `Version 4.3.3:
+    const SCRIPT_VERSION = '4.3.4';
+    const CHANGELOG = `Version 4.3.4:
+- Ticket Response Helper and Formatted Text Helper: @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
+
+Version 4.3.3:
 - Ticket Response Helper: While Solved Closure waits for the Change Tracker summary (up to 6 seconds), a loading wheel covers the comments box and says so.
 - Formatted Text Helper: While a pasted image is prepared, a loading wheel covers the editor.
 
@@ -1017,6 +1020,38 @@ Version 4.0.0:
         textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
     }
 
+    // The picker of this textarea only: ServiceNow (ment.io) puts one menu per journal field on the page,
+    // its list is #mention-listbox-<textarea id>, hidden with visibility when closed
+    function mentionOptions(textarea) {
+        const doc = textarea.ownerDocument;
+        const listId = textarea.getAttribute('aria-controls') || (textarea.id ? `mention-listbox-${textarea.id}` : '');
+        const list = listId ? doc.getElementById(listId) : null;
+        if (!list) return [];
+        const view = doc.defaultView || window;
+        for (let n = list; n && n !== doc.body; n = n.parentElement) {
+            const cs = view.getComputedStyle(n);
+            if (cs.visibility === 'hidden' || cs.display === 'none') return [];
+        }
+        return [...list.querySelectorAll('li[role="option"]')].filter(li => li.offsetParent !== null);
+    }
+
+    const mentionTitle = li => ((li.querySelector('.sn-widget-list-title') || li).textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+    // A short note when ServiceNow did not list someone, so the mention is fixed before posting
+    function mentionFailNotice(name) {
+        const n = document.createElement('div');
+        n.className = 'helpers-mention-fail';
+        n.textContent = `⚠ ServiceNow did not suggest ${name}, so "@${name}" is plain text. Retype the mention before posting.`;
+        const st = { position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', 'z-index': '2147483647',
+            background: '#fff4e5', color: '#8a5a00', border: '1px solid #ffc680', 'border-radius': '6px', padding: '8px 14px',
+            'font-size': '12px', 'font-family': 'Arial, sans-serif', 'box-shadow': '0 4px 12px rgba(0,0,0,0.15)', 'max-width': '520px' };
+        Object.entries(st).forEach(([k, v]) => n.style.setProperty(k, v, 'important'));
+        document.body.appendChild(n);
+        setTimeout(() => n.remove(), 8000);
+    }
+
+    // Types @Name, waits for ServiceNow to list that person and picks them. Nothing is pressed blindly:
+    // when the person does not show up, "@Name" stays as plain text, a note says so and false is returned.
     async function triggerMentionPicker(textarea, name) {
         console.log('🔔 Triggering @ mention picker for:', name);
         textarea.focus();
@@ -1040,26 +1075,42 @@ Version 4.0.0:
             await mentionSleep(50);
         }
 
-        await mentionSleep(400);
-
-        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-        await mentionSleep(200);
-
-        const suggestionSelectors = ['.mention-suggestion', '.at-view-ul li', '[role="option"]', '.atwho-view li', '.atwho-view-ul li', '.mentions-autocomplete li', '[data-mention-item]'];
-        for (const selector of suggestionSelectors) {
-            const suggestion = document.querySelector(selector);
-            if (suggestion && suggestion.offsetParent !== null) {
-                console.log('✓ Found mention suggestion, clicking:', selector);
-                suggestion.click();
-                await mentionSleep(200);
-                return true;
-            }
+        // Wait (up to 5 s) until the list shows this person; a slow lookup no longer gets an early Enter
+        const wanted = name.trim().replace(/\s+/g, ' ').toLowerCase();
+        let pick = null;
+        for (let waited = 0; waited <= 5000; waited += 150) {
+            const opts = mentionOptions(textarea);
+            pick = opts.find(li => mentionTitle(li) === wanted) || null;
+            if (!pick && waited >= 2000 && opts.length === 1 && mentionTitle(opts[0]).startsWith(wanted)) pick = opts[0];
+            if (pick) break;
+            await mentionSleep(150);
+        }
+        if (!pick) {
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+            console.warn('⚠️ ServiceNow did not list', name, 'for the mention: left as plain text');
+            mentionFailNotice(name);
+            return false;
         }
 
-        console.warn('⚠️ No mention suggestion found to click');
-        return false;
+        const shown = (pick.querySelector('.sn-widget-list-title') || pick).textContent.trim();
+        const mentioned = () => textarea.value.includes(`@[${name}]`) || textarea.value.includes(`@[${shown}]`);
+        pick.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        pick.click();
+        await mentionSleep(250);
+        if (!mentioned() && mentionOptions(textarea).includes(pick) && (pick.classList.contains('active') || pick.getAttribute('aria-selected') === 'true')) {
+            // Picked through the keyboard only when this person is the highlighted one
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            await mentionSleep(250);
+        }
+        const ok = mentioned();
+        if (!ok) mentionFailNotice(name);
+        console[ok ? 'log' : 'warn'](ok ? `✓ Mentioned ${name}` : `⚠️ The mention of ${name} was not confirmed`);
+        return ok;
     }
+
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersMention = { triggerMentionPicker };
 
     appendStyleWhenReady(darkModeStyle);
 
@@ -1136,8 +1187,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.3';
-    const CHANGELOG = `Version 4.3.3:
+    const SCRIPT_VERSION = '4.3.4';
+    const CHANGELOG = `Version 4.3.4:
+- Ticket Response Helper and Formatted Text Helper: @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
+
+Version 4.3.3:
 - Ticket Response Helper: While Solved Closure waits for the Change Tracker summary (up to 6 seconds), a loading wheel covers the comments box and says so.
 - Formatted Text Helper: While a pasted image is prepared, a loading wheel covers the editor.
 
@@ -4342,8 +4396,11 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.3';
-    const CHANGELOG = `Version 2.21.3:
+    const SCRIPT_VERSION = '2.21.4';
+    const CHANGELOG = `Version 2.21.4:
+- @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
+
+Version 2.21.3:
 - While Solved Closure waits for the Change Tracker summary (up to 6 seconds), a loading wheel covers the comments box and says so.
 
 Version 2.21.2:
@@ -8861,8 +8918,11 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.2';
-    const CHANGELOG = `Version 1.4.2:
+    const SCRIPT_VERSION = '1.4.3';
+    const CHANGELOG = `Version 1.4.3:
+- @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
+
+Version 1.4.2:
 - While a pasted image is prepared, a loading wheel covers the editor.
 
 Version 1.4.1:
