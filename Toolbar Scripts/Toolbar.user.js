@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.9
+// @version      2.20.10
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.9';
-    const CHANGELOG = `Version 2.20.9:
+   const SCRIPT_VERSION = '2.20.10';
+    const CHANGELOG = `Version 2.20.10:
+- Ticket Assignment Tool: The @mentions in the assignment comment no longer turn into a line break. The tool now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the comment field's own list. If ServiceNow does not list someone, the name stays as plain text and the confirmation says so, so you can retype the mention before posting.
+
+Version 2.20.9:
 - Change Tracker: The optional fields added with "+ Add fields" (Source IP, OS Family, App Instance, Activity Constraints and the others) are now written in the Work Notes and Comments, and listed in the change summary used by the Worknote summary button and by Solved Closure. Before, only the entry card and Copy showed them.
 - Destination Profile Editor: When Netskope refuses a save, the message now shows everything Netskope said (for example which value it did not accept) and what was sent. Nothing is saved in that case. The full answer is also in the browser console.
 
@@ -9812,8 +9815,11 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.2';
-    const CHANGELOG = `Version 1.5.2:
+    const SCRIPT_VERSION = '1.5.3';
+    const CHANGELOG = `Version 1.5.3:
+- The @mentions in the assignment comment no longer turn into a line break. The tool now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the comment field's own list. If ServiceNow does not list someone, the name stays as plain text and the confirmation says so, so you can retype the mention before posting.
+
+Version 1.5.2:
 - The Feature Guide now has a Response Type section that explains the Default, SPM Request and Reassignment/Handover comments.
 
 Version 1.5.1:
@@ -11756,7 +11762,7 @@ Version 1.2.1:
         if (statusEl) statusEl.remove();
     }
 
-    function showAssignmentSuccess(clipText) {
+    function showAssignmentSuccess(clipText, failedMentions = []) {
         const loading = document.getElementById('sn-assign-loading');
         if (!loading) return;
 
@@ -11780,8 +11786,15 @@ Version 1.2.1:
             ? '📋 Snippet copied to clipboard'
             : 'No snippet — Short Description was empty';
         loading.appendChild(statusEl);
+        if (failedMentions.length) {
+            const warn = document.createElement('div');
+            warn.className = 'sn-assign-clip-status';
+            Object.assign(warn.style, { fontSize: '12px', fontFamily: 'Arial, sans-serif', marginTop: '6px', fontWeight: 'bold', textAlign: 'center', color: '#b45309', maxWidth: '360px' });
+            warn.textContent = `⚠ ServiceNow did not suggest ${failedMentions.join(' and ')}, so the comment has "@${failedMentions[0]}" as plain text. Retype the mention before posting.`;
+            loading.appendChild(warn);
+        }
 
-        setTimeout(() => { hideLoading(); hideModal(); }, 2500);
+        setTimeout(() => { hideLoading(); hideModal(); }, failedMentions.length ? 7000 : 2500);
     }
 
     /* ==========================================================
@@ -11811,69 +11824,76 @@ Version 1.2.1:
         textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
     }
 
+    // The picker of this textarea only: ServiceNow (ment.io) puts one menu per journal field on the page,
+    // its list is #mention-listbox-<textarea id>, hidden with visibility when closed
+    function mentionOptions(textarea) {
+        const doc = textarea.ownerDocument;
+        const listId = textarea.getAttribute('aria-controls') || (textarea.id ? `mention-listbox-${textarea.id}` : '');
+        const list = listId ? doc.getElementById(listId) : null;
+        if (!list) return [];
+        const view = doc.defaultView || window;
+        for (let n = list; n && n !== doc.body; n = n.parentElement) {
+            const cs = view.getComputedStyle(n);
+            if (cs.visibility === 'hidden' || cs.display === 'none') return [];
+        }
+        return [...list.querySelectorAll('li[role="option"]')].filter(li => li.offsetParent !== null);
+    }
+
+    const mentionTitle = li => ((li.querySelector('.sn-widget-list-title') || li).textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+    // Types @Name, waits for ServiceNow to list that person and picks them. Nothing is pressed blindly:
+    // when the person does not show up, "@Name" stays as plain text and false is returned.
     async function triggerMentionPicker(textarea, name) {
         console.log('🔔 Triggering @ mention picker for:', name);
         textarea.focus();
         await sleep(100);
 
+        // The picker only opens when the @ follows a space, a line break or the start of the field
+        const before = textarea.value.slice(0, textarea.selectionStart || 0);
+        if (before && !/\s$/.test(before)) insertTextDirectly(textarea, ' ');
+
         insertTextDirectly(textarea, '@');
         await sleep(150);
-
-        textarea.dispatchEvent(new InputEvent('input', {
-            bubbles: true, cancelable: true, data: '@', inputType: 'insertText'
-        }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup', {
-            key: '@', code: 'Digit2', keyCode: 50, which: 50,
-            shiftKey: true, bubbles: true, cancelable: true
-        }));
-
+        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: '@', inputType: 'insertText' }));
+        textarea.dispatchEvent(new KeyboardEvent('keyup', { key: '@', code: 'Digit2', keyCode: 50, which: 50, shiftKey: true, bubbles: true, cancelable: true }));
         await sleep(400);
 
         for (const char of name) {
             insertTextDirectly(textarea, char);
-            textarea.dispatchEvent(new InputEvent('input', {
-                bubbles: true, cancelable: true, data: char, inputType: 'insertText'
-            }));
-            textarea.dispatchEvent(new KeyboardEvent('keyup', {
-                key: char, bubbles: true, cancelable: true
-            }));
+            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: char, inputType: 'insertText' }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true, cancelable: true }));
             await sleep(50);
         }
 
-        await sleep(1000);
-
-        textarea.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
-        }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup', {
-            key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
-        }));
-
-        await sleep(200);
-
-        const suggestionSelectors = [
-            '.mention-suggestion',
-            '.at-view-ul li',
-            '[role="option"]',
-            '.atwho-view li',
-            '.atwho-view-ul li',
-            '.mentions-autocomplete li',
-            '[data-mention-item]'
-        ];
-
-        const ticketDoc = textarea.ownerDocument;
-        for (const selector of suggestionSelectors) {
-            const suggestion = ticketDoc.querySelector(selector);
-            if (suggestion && suggestion.offsetParent !== null) {
-                console.log('✓ Found mention suggestion, clicking:', selector);
-                suggestion.click();
-                await sleep(200);
-                return true;
-            }
+        // Wait (up to 5 s) until the list shows this person; a slow lookup no longer gets an early Enter
+        const wanted = name.trim().replace(/\s+/g, ' ').toLowerCase();
+        let pick = null;
+        for (let waited = 0; waited <= 5000; waited += 150) {
+            const opts = mentionOptions(textarea);
+            pick = opts.find(li => mentionTitle(li) === wanted) || null;
+            if (!pick && waited >= 2000 && opts.length === 1 && mentionTitle(opts[0]).startsWith(wanted)) pick = opts[0];
+            if (pick) break;
+            await sleep(150);
+        }
+        if (!pick) {
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+            console.warn('⚠️ ServiceNow did not list', name, 'for the mention: left as plain text');
+            return false;
         }
 
-        console.warn('⚠️ No mention suggestion found to click');
-        return false;
+        const mentioned = () => textarea.value.includes(`@[${name}]`) || textarea.value.includes(`@[${(pick.querySelector('.sn-widget-list-title') || pick).textContent.trim()}]`);
+        pick.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        pick.click();
+        await sleep(250);
+        if (!mentioned() && mentionOptions(textarea).includes(pick) && (pick.classList.contains('active') || pick.getAttribute('aria-selected') === 'true')) {
+            // Picked through the keyboard only when this person is the highlighted one
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            await sleep(250);
+        }
+        const ok = mentioned();
+        console[ok ? 'log' : 'warn'](ok ? `✓ Mentioned ${name}` : `⚠️ The mention of ${name} was not confirmed`);
+        return ok;
     }
 
     async function insertTextWithMention(textarea, text) {
@@ -11903,6 +11923,7 @@ Version 1.2.1:
         textarea.focus();
         await sleep(100);
 
+        const failed = [];
         let partIndex = 0;
         for (let i = 0; i < mentions.length; i++) {
             if (parts[partIndex]) {
@@ -11910,7 +11931,7 @@ Version 1.2.1:
                 await sleep(100);
             }
             partIndex++;
-            await triggerMentionPicker(textarea, mentions[i].name);
+            if (!(await triggerMentionPicker(textarea, mentions[i].name))) failed.push(mentions[i].name);
             await sleep(200);
             partIndex++;
         }
@@ -11924,6 +11945,7 @@ Version 1.2.1:
 
         console.log('✓ Text insertion complete');
         console.groupEnd();
+        return failed;
     }
 
     /* ==========================================================
@@ -11987,7 +12009,7 @@ Version 1.2.1:
             await assignToTeamMember(assigneeName);
             await updateShortDescription();
             const openedByName = getOpenedByName();
-            await addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType);
+            const failedMentions = (await addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType)) || [];
             await openSCTASKInBackground();
 
             let clipText = null;
@@ -12003,7 +12025,7 @@ Version 1.2.1:
                 console.log('📋 Copied to clipboard:', clipText);
             }
 
-            showAssignmentSuccess(clipText);
+            showAssignmentSuccess(clipText, failedMentions);
             console.log('✅ Ticket assignment completed successfully');
         } catch (error) {
             hideLoading();
@@ -12212,9 +12234,13 @@ Thank you for your cooperation.` : '';
             commentText = greeting + freezeReminderText + missingInfoText + signature;
         }
 
-        await insertTextWithMention(textarea, commentText);
+        const failed = (await insertTextWithMention(textarea, commentText)) || [];
         console.log('✓ Added Additional Comments with @mentions');
+        return failed;
     }
+
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('toolbarSuiteTestHooks', false) === true) unsafeWindow.__assignMention = { insertTextWithMention, triggerMentionPicker };
 
     function openSCTASKInBackground() {
         return new Promise((resolve) => {
