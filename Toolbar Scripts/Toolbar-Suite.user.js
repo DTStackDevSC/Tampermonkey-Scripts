@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.23.1
+// @version      2.24.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.23.1';
-    const CHANGELOG = `Version 2.23.1:
+   const SCRIPT_VERSION = '2.24.0';
+    const CHANGELOG = `Version 2.24.0:
+- ServiceNow Toolkit: The SPM Germany reminder also marks the fields themselves: Requestor or Backup Exception Owner glow red when they hold someone else, and orange (review) when they are empty or the original ticket could not be read. Pointing at the field says who it should be.
+
+Version 2.23.1:
 - ServiceNow Toolkit: The SPM Germany reminder now shows the right Requestor: the Requested for shown on the original ticket (the one of its request), instead of the user who opened it.
 
 Version 2.23.0:
@@ -5826,8 +5829,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.1';
-    const CHANGELOG = `Version 1.5.1:
+    const SCRIPT_VERSION = '1.6';
+    const CHANGELOG = `Version 1.6:
+- The SPM Germany reminder also marks the fields themselves: Requestor or Backup Exception Owner glow red when they hold someone else, and orange (review) when they are empty or the original ticket could not be read. Pointing at the field says who it should be.
+
+Version 1.5.1:
 - The SPM Germany reminder now shows the right Requestor: the Requested for shown on the original ticket (the one of its request), instead of the user who opened it.
 
 Version 1.5:
@@ -6497,9 +6503,17 @@ Version 1.1.4:
                     box.appendChild(span('• Backup Exception Owner → Juan Pérez (Opened by)  ⚠ not included yet', { display: 'block', marginLeft: '8px' }));
                     body.appendChild(box);
                     caption(body, 'Shown above Requestor, Requesting Member Firm and Backup Exception Owner, and gone as soon as another member firm is chosen.');
+                    const glowRow = (label, color, rgba, text) => {
+                        const f = span(label, { display: 'inline-block', padding: '4px 10px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '12px', background: '#fff',
+                            boxShadow: `0 0 0 2px ${color}, 0 0 10px 2px ${rgba}`, minWidth: '120px' });
+                        return hrow([f, span(text, { fontSize: '12px', color: '#555' })], { margin: '10px 0 0 4px' });
+                    };
+                    body.appendChild(glowRow('Persona B', '#dc3545', 'rgba(220,53,69,0.55)', 'Red: someone else is set.'));
+                    body.appendChild(glowRow('(empty)', '#f0a500', 'rgba(240,165,0,0.55)', 'Orange: empty, or the original ticket could not be read. Review it.'));
                     bullets(body, [
                         'The names come from the original ticket: the ticket in the SPM link (RITM number or ticket id), or the Original ticket number field.',
                         '✓ and ⚠ follow the form as you fill it in. The reminder never changes the form.',
+                        'The fields glow too: red when they hold someone else, orange (review) when they are empty or the original ticket could not be read. Point at a glowing field to see who it should be.',
                         'Can be turned off in Settings.',
                     ]);
                 }
@@ -7586,7 +7600,41 @@ Version 1.1.4:
             <ul style="margin:6px 0 0 18px;padding:0;line-height:1.7">${lines}</ul>${note}`;
     }
 
+    // Glow on the field itself: red when it holds someone else, orange (review) when empty or the original ticket could not be read
+    const SPM_GLOW = {
+        bad:    { shadow: '0 0 0 2px #dc3545, 0 0 10px 2px rgba(220,53,69,0.55)', tip: 'not the expected user' },
+        review: { shadow: '0 0 0 2px #f0a500, 0 0 10px 2px rgba(240,165,0,0.55)', tip: 'review this field' },
+    };
+    function spmGlow(name, level, tip) {
+        const el = document.getElementById(`s2id_sp_formfield_${name}`);
+        if (!el) return;
+        if (!level) {
+            if (el.dataset.snToolkitGlow) { el.style.removeProperty('box-shadow'); el.removeAttribute('title'); delete el.dataset.snToolkitGlow; }
+            return;
+        }
+        if (el.dataset.snToolkitGlow === level + '|' + tip) return;
+        el.dataset.snToolkitGlow = level + '|' + tip;
+        el.style.setProperty('box-shadow', SPM_GLOW[level].shadow, 'important');
+        el.style.setProperty('border-radius', '4px', 'important');
+        el.title = tip;
+    }
+    function spmMarkFields(orig) {
+        if (!orig) { spmGlow('opened_by', null); spmGlow('scc_dttl_app_manager', null); return; }
+        const requestor = spmVal('sp_formfield_opened_by');
+        const backups = spmVal('sp_formfield_scc_dttl_app_manager').split(',').map(x => x.trim()).filter(Boolean);
+        const known = !orig.error;
+        const rf = known && orig.requestedFor.id ? orig.requestedFor : null;
+        const ob = known && orig.openedBy.id ? orig.openedBy : null;
+        spmGlow('opened_by',
+            !rf || !requestor ? 'review' : requestor === rf.id ? null : 'bad',
+            !rf ? 'Review: the Requested for of the original ticket could not be read' : !requestor ? `Review: empty, it should be ${rf.name}` : `Should be ${rf.name} (Requested for of the original ticket)`);
+        spmGlow('scc_dttl_app_manager',
+            !ob || !backups.length ? 'review' : backups.includes(ob.id) ? null : 'bad',
+            !ob ? 'Review: the Opened by of the original ticket could not be read' : !backups.length ? `Review: empty, it should include ${ob.name}` : `Should include ${ob.name} (Opened by of the original ticket)`);
+    }
+
     let spmLastKey = '';
+    let spmLastOrig = null;   // what the reminder shows now, so the glow can be put back if the page redraws a field
     async function spmGermanyCheck(force) {
         const notice = document.getElementById(SPM_NOTICE_ID);
         const anchor = document.getElementById('opened_by');
@@ -7594,12 +7642,14 @@ Version 1.1.4:
         const germany = /\bGermany\b/i.test(spmMemberFirm());
         if (!getSpmGermanyEnabled() || !row || !germany || !document.getElementById('sp_formfield_u_member_firm')) {
             if (notice) notice.remove();
+            if (spmLastKey) spmMarkFields(null);
             spmLastKey = '';
+            spmLastOrig = null;
             return;
         }
         const ref = spmOriginalRef();
         const key = [ref, spmVal('sp_formfield_opened_by'), spmVal('sp_formfield_scc_dttl_app_manager')].join('|');
-        if (!force && notice && notice.isConnected && key === spmLastKey) return;
+        if (!force && notice && notice.isConnected && key === spmLastKey) { if (spmLastOrig) spmMarkFields(spmLastOrig); return; }
         spmLastKey = key;
         let box = notice;
         if (!box || !box.isConnected) {
@@ -7611,11 +7661,13 @@ Version 1.1.4:
             Object.entries(st).forEach(([k, v]) => box.style.setProperty(k, v, 'important'));
             row.parentElement.insertBefore(box, row);
         }
-        if (!ref) { box.innerHTML = spmNoticeHtml('', null); return; }
+        if (!ref) { box.innerHTML = spmNoticeHtml('', null); spmLastOrig = { error: 'no original ticket' }; spmMarkFields(spmLastOrig); return; }
         const cached = spmOriginalCache.get(ref);
         if (!cached) box.innerHTML = spmNoticeHtml(ref, null);
         const orig = await (cached || suiteBusy(box, () => spmFetchOriginal(ref), 'Reading the original ticket…'));
         if (box.isConnected) box.innerHTML = spmNoticeHtml(ref, orig);
+        spmLastOrig = orig;
+        spmMarkFields(orig);
     }
 
     function initSpmGermanyReminder() {
