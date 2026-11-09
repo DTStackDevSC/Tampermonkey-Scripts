@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.20.10
+// @version      2.20.11
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -29,8 +29,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.20.10';
-    const CHANGELOG = `Version 2.20.10:
+   const SCRIPT_VERSION = '2.20.11';
+    const CHANGELOG = `Version 2.20.11:
+- Destination Profile Editor: Saving a profile no longer fails with "type is a required field": the match type is now always sent with the values, as Netskope requires. When Netskope refuses some lines, the message lists those lines themselves, not only their numbers.
+- Change Tracker: The Newly Registered Domains removal through the Netskope API sends the profile's match type too, which Netskope requires.
+
+Version 2.20.10:
 - Ticket Assignment Tool: The @mentions in the assignment comment no longer turn into a line break. The tool now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the comment field's own list. If ServiceNow does not list someone, the name stays as plain text and the confirmation says so, so you can retype the mention before posting.
 
 Version 2.20.9:
@@ -12365,8 +12369,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.3';
-    const CHANGELOG = `Version 2.0.3:
+    const SCRIPT_VERSION = '2.0.4';
+    const CHANGELOG = `Version 2.0.4:
+- Saving a profile no longer fails with "type is a required field": the match type is now always sent with the values, as Netskope requires. When Netskope refuses some lines, the message lists those lines themselves, not only their numbers.
+
+Version 2.0.3:
 - When Netskope refuses a save, the message now shows everything Netskope said (for example which value it did not accept) and what was sent. Nothing is saved in that case. The full answer is also in the browser console.
 
 Version 2.0.2:
@@ -13897,6 +13904,13 @@ Version 1.4.1:
         return `<span style="padding:1px 8px;border-radius:10px;font-size:11px;font-weight:bold;background:${b.bg};border:1px solid ${b.border};color:${b.color};white-space:nowrap">${escapeHtml(b.text)}</span>`;
     };
     const dpFormatDate = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString(); } catch (e) { return iso; } };
+    // The lines Netskope named in its validation errors ("values[3] is not a valid ...")
+    function dpRefusedValues(data, values) {
+        const errs = (data && Array.isArray(data.validation_errors)) ? data.validation_errors : [];
+        const idx = [...new Set(errs.map(e => (String(e.field || '').match(/^values\[(\d+)\]$/) || [])[1]).filter(x => x != null).map(Number))];
+        return idx.sort((a, b) => a - b).map(i => values[i]).filter(v => v != null);
+    }
+
     const dpValuesFrom = text => String(text || '').split('\n').map(v => v.trim()).filter(Boolean);
     const dpConsoleUrl = host => `https://${host}/ns#/destination-profile`;
 
@@ -14451,13 +14465,22 @@ Version 1.4.1:
                 }
                 if (now.status === 'pending-delete') return UI.showStatus('⚠️ This profile is waiting to be deleted in Netskope, so it cannot be changed.', 'warning');
                 UI.showStatus('🔄 Saving…', 'info');
-                const r = await dpBusy('Saving…', () => dpCall('PATCH', `${DP_PATH}/${encodeURIComponent(data.id)}?interactive=true`, changes));
+                // Netskope wants the match type on every change, and the type always with the values
+                const body = Object.assign({}, changes, { type: typeIn.value, values });
+                const r = await dpBusy('Saving…', () => dpCall('PATCH', `${DP_PATH}/${encodeURIComponent(data.id)}?interactive=true`, body));
                 if (!r) return;
                 if (!r.ok) {
                     if (r.handled) return;
                     if (r.status === 409 && changes.name) return UI.showStatus(`⚠️ A Destination Profile called "${name}" already exists.`, 'warning');
-                    const sent = Object.keys(changes).map(k => k === 'values' ? `values (${changes.values.length} lines)` : k).join(', ');
-                    return UI.showStatus(`❌ Netskope did not accept the change (${r.status}): ${r.error}. Sent: ${sent}. Nothing was saved. The full answer is also in the browser console.`, 'error');
+                    const refused = dpRefusedValues(r.data, values);
+                    if (refused.length) {
+                        const shown = refused.slice(0, 8).map(v => `"${v}"`).join(', ') + (refused.length > 8 ? ` and ${refused.length - 8} more` : '');
+                        const allComments = refused.every(v => v.startsWith('#'));
+                        return UI.showStatus(`❌ Netskope did not accept ${refused.length} of the ${values.length} lines: ${shown}.` +
+                            (allComments ? ' They are all comment lines (#): Netskope does not accept them through its API.' : '') +
+                            ' Nothing was saved. The full answer is in the browser console.', 'error');
+                    }
+                    return UI.showStatus(`❌ Netskope did not accept the change (${r.status}): ${r.error}. Nothing was saved. The full answer is also in the browser console.`, 'error');
                 }
                 const what = [changes.name && 'name', changes.description !== undefined && 'description', changes.type && 'match type', changes.values && 'values'].filter(Boolean).join(', ');
                 currentProfiles = [];
@@ -17723,8 +17746,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.8.2';
-    const CHANGELOG = `Version 2.8.2:
+    const SCRIPT_VERSION = '2.8.3';
+    const CHANGELOG = `Version 2.8.3:
+- The Newly Registered Domains removal through the Netskope API sends the profile's match type too, which Netskope requires.
+
+Version 2.8.2:
 - The optional fields added with "+ Add fields" (Source IP, OS Family, App Instance, Activity Constraints and the others) are now written in the Work Notes and Comments, and listed in the change summary used by the Worknote summary button and by Solved Closure. Before, only the entry card and Copy showed them.
 
 Version 2.8.1:
@@ -24707,7 +24733,8 @@ Version 1.4.3:
             }
             const d = again.data;
             // Written pending, then applied with the audit note: only the values change
-            const res = await nrdApiCall(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}?interactive=true`, { values });
+            // Netskope wants the match type with the values on every change; it stays as it is
+            const res = await nrdApiCall(host, 'PATCH', `${NRD_DEST_PATH}/${encodeURIComponent(d.id)}?interactive=true`, { type: d.type, values });
             if (!res.ok) { notes.push(`${name}: not changed, ${nrdApiError(res, 'PATCH /api/v2/profiles/destinations')}`); continue; }
             changed.push({ host, id: String(d.id), name, rows });
         }
