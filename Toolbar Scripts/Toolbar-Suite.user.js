@@ -24722,16 +24722,18 @@ Version 1.4.3:
     // Forced check with a result line in the tracker status
     async function nrdCheckNow(btn) {
         return nrdRun(btn, 'Checking…', async () => {
-            const before = nrdCache();
-            const res = await nrdCheck({ force: true });
+            const before = nrdCache(), polBefore = policyCache();
+            const [res, pol] = await Promise.all([nrdCheck({ force: true }), policyCheck({ force: true })]);
             const ok = !!res && res !== before;
-            flashStatus(ok ? '✔ ' + nrdSummary(res) : '⚠ Could not read SharePoint. Try again later.', ok ? '#28a745' : '#dc3545', 8000);
+            const polText = pol && pol !== polBefore ? ' ' + policySummary(pol) : '';
+            flashStatus(ok ? '✔ ' + nrdSummary(res) + polText : '⚠ Could not read SharePoint. Try again later.', ok ? '#28a745' : '#dc3545', 8000);
             return ok ? res : null;
         });
     }
 
     function renderNrdAlert() {
-        const due = nrdDueItems().length;
+        const nrdDue = nrdDueItems().length, polDue = policyDueItems().length;
+        const due = nrdDue + polDue;
         renderNrdTabInfo();
         // Toolbar dot, kept while something is due (the toolbar may redraw its buttons)
         const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
@@ -24740,7 +24742,8 @@ Version 1.4.3:
         else if (toolEl && (!dot || !toolEl.contains(dot))) {
             dot?.remove();
             toolEl.style.position = 'relative';
-            const d = mk('div', { id:'ct-nrd-dot', title:`${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review` });
+            const d = mk('div', { id:'ct-nrd-dot', title: polDue ? `${due} ${due === 1 ? 'reminder' : 'reminders'} due in Manage Reminders`
+                : `${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review` });
             Object.assign(d.style, { position:'absolute', bottom:'2px', right:'2px', width:'9px', height:'9px', borderRadius:'50%',
                 background:'#ff8c00', border:'1px solid #fff', pointerEvents:'none', zIndex:'10' });
             toolEl.appendChild(d);
@@ -24748,13 +24751,15 @@ Version 1.4.3:
         const banner = document.getElementById('ct-nrd-banner');
         if (!banner) return;
         // Redrawn only when the count changes, so a button in use keeps its state
-        if (banner.dataset.due === String(due) && (banner.childElementCount || !due)) return;
-        banner.dataset.due = String(due);
+        const sig = `${nrdDue}/${polDue}`;
+        if (banner.dataset.due === sig && (banner.childElementCount || !due)) return;
+        banner.dataset.due = sig;
         banner.textContent = '';
         banner.style.display = due ? 'flex' : 'none';
         if (!due) return;
         const msg = mk('span');
-        msg.textContent = `⏰ ${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review`;
+        msg.textContent = polDue ? `⏰ ${due} ${due === 1 ? 'reminder' : 'reminders'} due`
+            : `⏰ ${due} Newly Registered ${due === 1 ? 'Domain is' : 'Domains are'} due for review`;
         const btn = (id, text, primary) => {
             const b = css(mk('button', { id, type:'button' }), { border: primary ? 'none' : '1px solid #e0a800', borderRadius:'3px', cursor:'pointer',
                 padding:'3px 10px', fontSize:'11px', fontWeight:'bold', background: primary ? '#ff8c00' : 'transparent', color: primary ? '#fff' : '#8a5a00' });
@@ -24762,7 +24767,8 @@ Version 1.4.3:
             return b;
         };
         const review = btn('ct-nrd-review-btn', 'Review', true);
-        review.onclick = () => openNrdReview();
+        // Only domains due: straight to their review. Otherwise the Manage Reminders tab shows everything.
+        review.onclick = () => { if (polDue) ctShowTab('reminders'); else openNrdReview(); };
         const again = btn('ct-nrd-check-btn', '↺ Check now', false);
         again.onclick = () => nrdCheckNow(again);
         const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
@@ -24815,7 +24821,8 @@ Version 1.4.3:
 
     // The count on the tab and the status line of the Newly Registered Domains reminder
     function renderNrdTabInfo() {
-        const due = nrdDueItems().length;
+        const due = nrdDueItems().length + policyDueItems().length;
+        renderPolicyCard();
         const count = document.getElementById('ct-tab-reminders-count');
         if (count) { count.textContent = String(due); count.style.display = due ? 'inline-block' : 'none'; }
         const status = document.getElementById('ct-nrd-status');
@@ -24858,13 +24865,14 @@ Version 1.4.3:
             openNrdReview();
         };
         // Checks right away, without waiting for the next automatic check (every 4 hours)
-        const check = btn('ct-nrd-check-now', '↺ Check now', 'Looks for Newly Registered Domains due for review now', false);
+        const check = btn('ct-nrd-check-now', '↺ Check now', 'Looks for Newly Registered Domains and policies due now', false);
         check.onclick = async () => {
             if (!api.isConfigured()) { result.textContent = 'Connect to SharePoint first.'; return; }
             result.textContent = '';
             const before = nrdCache();
             const res = await nrdRun(check, 'Checking…', () =>
-                withBusy(document.getElementById('ct-reminder-nrd'), () => nrdCheck({ force: true }), 'Checking SharePoint…'));
+                withBusy(document.getElementById('ct-pane-reminders'), () =>
+                    Promise.all([nrdCheck({ force: true }), policyCheck({ force: true })]).then(([n]) => n), 'Checking SharePoint…'));
             if (!res || res === before) { result.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
             const due = res.items.filter(i => Date.now() >= i.dueAt).length;
             result.textContent = nrdSummary(res) + ' ';
@@ -24885,7 +24893,216 @@ Version 1.4.3:
         row.append(review, check, profiles);
         card.append(title, desc, status, row, result);
         pane.appendChild(card);
+        pane.appendChild(buildPolicyCard());
         return pane;
+    }
+
+    /* ── Policies to delete ── */
+
+    const policyPicked = new Set();   // keys ticked in the card, kept across redraws
+    const policyDayMonth = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}`; };
+    const POLICY_TICKET_RULE = /^[A-Z]{2,6}\d{5,}$/i;
+
+    function policySummary(res) {
+        const due = res.items.filter(i => Date.now() >= i.dueAt).length;
+        return `Policies: ${due} due for deletion, ${res.items.length - due} coming up.`;
+    }
+
+    function buildPolicyCard() {
+        const card = css(mk('div', { id:'ct-reminder-policy' }), {
+            background:'#fff', border:'1px solid #ddd', borderRadius:'7px', padding:'12px', marginBottom:'10px', fontFamily:'Arial, sans-serif'
+        });
+        const title = css(mk('div'), { fontSize:'13px', fontWeight:'bold', color:'#333', marginBottom:'4px' });
+        title.textContent = '🗑 Policies to delete';
+        const desc = css(mk('div'), { fontSize:'11px', color:'#666', lineHeight:'1.5', marginBottom:'8px' });
+        desc.textContent = 'Policies logged as "Policy Deleted" are disabled now and due for deletion in Netskope 30 days later. Deleted policies cannot be postponed.';
+        const status = css(mk('div', { id:'ct-policy-status' }), { fontSize:'12px', color:'#555', marginBottom:'8px' });
+        const list = css(mk('div', { id:'ct-policy-list' }), { display:'flex', flexDirection:'column', gap:'4px', marginBottom:'8px' });
+        const btn = (id, text, title, primary) => {
+            const b = css(mk('button', { id, type:'button' }), {
+                padding:'5px 10px', background: primary ? '#dc3545' : '#fff', color: primary ? '#fff' : '#667eea',
+                border: primary ? 'none' : '1px solid #c0c8f0', borderRadius:'4px', cursor:'pointer',
+                fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif'
+            });
+            b.textContent = text;
+            b.title = title;
+            return b;
+        };
+        const selectDue = btn('ct-policy-select-due', '☑ Select all due', 'Ticks every policy that is due for deletion', false);
+        selectDue.onclick = () => {
+            policyDueItems().forEach(i => policyPicked.add(i.key));
+            card.querySelectorAll('[data-policy-pick]').forEach(c => { c.checked = true; });
+            policyUpdateMarkButton();
+        };
+        const mark = btn('ct-policy-mark-deleted', '🗑 Mark as deleted', 'Tick the policies first.', true);
+        const result = css(mk('div', { id:'ct-policy-result' }), { fontSize:'12px', color:'#555', margin:'8px 0 0', minHeight:'16px', lineHeight:'1.5' });
+        mark.onclick = async () => {
+            const picked = policyDueItems().filter(i => policyPicked.has(i.key));
+            if (!picked.length) { result.textContent = 'Tick the policies first.'; return; }
+            if (connState !== 'ONLINE') { result.textContent = '⚠ Connect to SharePoint first, then try again.'; return; }
+            result.textContent = '';
+            const label = mark.textContent;
+            mark.disabled = true;
+            mark.textContent = '⏳ Checking…';
+            try {
+                result.textContent = await withBusy(list, () => policyApplyDeleted(picked, (n, total) => {
+                    mark.textContent = `⏳ Saving ${n} of ${total}…`;
+                }), 'Saving…');
+            } catch (e) {
+                result.textContent = '⚠ Could not save to SharePoint. Try again later.';
+            } finally {
+                if (mark.isConnected) { mark.textContent = label; policyUpdateMarkButton(); }
+            }
+        };
+        const row = css(mk('div'), { display:'flex', gap:'6px', flexWrap:'wrap' });
+        row.append(selectDue, mark);
+        card.append(title, desc, status, list, row, result);
+        return card;
+    }
+
+    function policyUpdateMarkButton() {
+        const mark = document.getElementById('ct-policy-mark-deleted');
+        if (!mark) return;
+        const n = policyDueItems().filter(i => policyPicked.has(i.key)).length;
+        mark.disabled = !n;
+        mark.style.opacity = n ? '1' : '0.55';
+        mark.style.cursor = n ? 'pointer' : 'not-allowed';
+        mark.title = n ? `Records ${n === 1 ? 'this policy' : `these ${n} policies`} as deleted in Netskope` : 'Tick the policies first.';
+    }
+
+    // Redrawn only when the reminders change, so a re-enable being typed is not lost
+    function renderPolicyCard() {
+        const list = document.getElementById('ct-policy-list');
+        if (!list) return;
+        const cache = policyCache();
+        const status = document.getElementById('ct-policy-status');
+        const items = (cache && cache.items) || [];
+        const now = Date.now();
+        if (status) {
+            if (!cache) status.textContent = 'Not checked yet.';
+            else {
+                const d = new Date(cache.at), p = n => String(n).padStart(2, '0');
+                status.textContent = `${policySummary(cache)} Last check ${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}.`;
+            }
+        }
+        const sig = items.map(i => `${i.key}|${now >= i.dueAt ? 'due' : Math.ceil((i.dueAt - now) / NRD_DAY)}`).join('\n');
+        if (list.dataset.sig === sig) { policyUpdateMarkButton(); return; }
+        list.dataset.sig = sig;
+        list.textContent = '';
+        const keys = new Set(items.map(i => i.key));
+        [...policyPicked].forEach(k => { if (!keys.has(k)) policyPicked.delete(k); });
+        if (!items.length) {
+            const none = css(mk('div'), { fontSize:'12px', color:'#888', fontStyle:'italic' });
+            none.textContent = cache ? 'No policies waiting for deletion.' : '';
+            list.appendChild(none);
+        }
+        for (const it of items) {
+            const due = now >= it.dueAt;
+            const r = css(mk('div'), { border:'1px solid ' + (due ? '#f5c2c7' : '#e8e8f0'), background: due ? '#fff5f5' : '#fafafa',
+                borderRadius:'5px', padding:'6px 8px', fontSize:'12px', color:'#333' });
+            r.dataset.policyKey = it.key;
+            const top = css(mk('div'), { display:'flex', alignItems:'center', gap:'6px', flexWrap:'wrap' });
+            if (due) {
+                const cb = css(mk('input', { type:'checkbox' }), { margin:'0', cursor:'pointer' });
+                cb.dataset.policyPick = '1';
+                cb.checked = policyPicked.has(it.key);
+                cb.title = 'Tick to mark this policy as deleted';
+                cb.onchange = () => { if (cb.checked) policyPicked.add(it.key); else policyPicked.delete(it.key); policyUpdateMarkButton(); };
+                top.appendChild(cb);
+            }
+            const name = css(mk('span'), { fontWeight:'bold' });
+            name.textContent = `${due ? '⚠' : '●'} ${it.policyName}`;
+            const meta = css(mk('span'), { color:'#888', fontSize:'11px' });
+            meta.textContent = `${it.group}${it.tenantType ? ' · ' + it.tenantType : ''} · `;
+            const link = css(mk('a', { href:`/nav_to.do?uri=sc_req_item.do?sysparm_query=number=${encodeURIComponent(it.ticket)}`, target:'_blank', rel:'noopener' }), { color:'#667eea' });
+            link.textContent = it.ticket;
+            meta.appendChild(link);
+            const reBtn = css(mk('button', { type:'button' }), { marginLeft:'auto', padding:'2px 8px', fontSize:'11px', cursor:'pointer',
+                border:'1px solid #28a745', color:'#28a745', background:'#fff', borderRadius:'3px', fontWeight:'bold' });
+            reBtn.dataset.policyReenable = '1';
+            reBtn.textContent = '↩ Re-enabled';
+            reBtn.title = 'Another ticket asked to bring this policy back: no deletion';
+            top.append(name, meta, reBtn);
+            const when = css(mk('div'), { fontSize:'11px', color: due ? '#b02a37' : '#666', marginTop:'2px' });
+            const over = Math.floor((now - it.dueAt) / NRD_DAY), left = Math.ceil((it.dueAt - now) / NRD_DAY);
+            when.textContent = `Disabled ${policyDayMonth(nrdTime(it.disabledTs))} · delete by ${policyDayMonth(it.dueAt)} (${due
+                ? `overdue ${over} ${over === 1 ? 'day' : 'days'}` : `${left} ${left === 1 ? 'day' : 'days'} left`})`;
+            r.append(top, when);
+            reBtn.onclick = () => {
+                if (r.querySelector('[data-policy-newticket]')) return;
+                const form = css(mk('div'), { display:'flex', gap:'6px', alignItems:'center', marginTop:'6px', flexWrap:'wrap' });
+                const lbl = css(mk('span'), { fontSize:'11px', color:'#555' });
+                lbl.textContent = 'Ticket that asked to re-enable it:';
+                const input = css(mk('input', { type:'text', placeholder:'RITM0012345' }), { width:'120px', padding:'3px 6px', fontSize:'11px',
+                    border:'1px solid #ccc', borderRadius:'3px' });
+                input.dataset.policyNewticket = '1';
+                const current = getTicketNumber();
+                if (current && current !== it.ticket) input.value = current;
+                const ok = css(mk('button', { type:'button' }), { padding:'3px 8px', fontSize:'11px', cursor:'pointer', border:'none',
+                    background:'#28a745', color:'#fff', borderRadius:'3px', fontWeight:'bold' });
+                ok.dataset.policyReenableOk = '1';
+                ok.textContent = '✔ Confirm';
+                const cancel = css(mk('button', { type:'button' }), { padding:'3px 8px', fontSize:'11px', cursor:'pointer',
+                    border:'1px solid #ccc', background:'#fff', color:'#555', borderRadius:'3px' });
+                cancel.textContent = 'Cancel';
+                cancel.onclick = () => form.remove();
+                ok.onclick = async () => {
+                    const res = document.getElementById('ct-policy-result');
+                    const tk = input.value.trim().toUpperCase();
+                    if (!POLICY_TICKET_RULE.test(tk)) {
+                        res.textContent = '⚠ Type the ticket number: RITM, INC, ... followed by digits, for example RITM0012345.';
+                        input.focus();
+                        return;
+                    }
+                    if (connState !== 'ONLINE') { res.textContent = '⚠ Connect to SharePoint first, then try again.'; return; }
+                    ok.disabled = true; ok.textContent = '⏳ Saving…';
+                    try { res.textContent = await withBusy(r, () => policyApplyReenabled(it, tk), 'Saving…'); }
+                    catch (e) { res.textContent = '⚠ Could not save to SharePoint. Try again later.'; }
+                    finally { if (ok.isConnected) { ok.disabled = false; ok.textContent = '✔ Confirm'; } }
+                };
+                input.onkeydown = (e) => { if (e.key === 'Enter') ok.click(); };
+                form.append(lbl, input, ok, cancel);
+                r.appendChild(form);
+                input.focus();
+            };
+            list.appendChild(r);
+        }
+        policyUpdateMarkButton();
+    }
+
+    const policyTenantOf = (it) => it.tenantType ? { type: it.tenantType, host: nrdHostOf(it.tenantType) } : null;
+
+    // Writes one "deleted" review per ticked policy in its own ticket. Re-reads first: someone may have done it already.
+    async function policyApplyDeleted(items, progress) {
+        await policyCheck({ force: true });
+        const fresh = new Set(((policyCache() || {}).items || []).map(i => i.key));
+        const still = items.filter(i => fresh.has(i.key));
+        const gone = items.filter(i => !fresh.has(i.key));
+        for (let n = 0; n < still.length; n++) {
+            const it = still[n];
+            if (progress) progress(n + 1, still.length);
+            await addEntry(it.ticket, POLICY_REVIEW_TYPE, { policyName: it.policyName, group: it.group, outcome: 'deleted' },
+                `Policy deleted in Netskope ${it.days} days after it was disabled.`, { tenant: policyTenantOf(it) });
+            policyPicked.delete(it.key);
+        }
+        gone.forEach(i => policyPicked.delete(i.key));
+        await policyCheck({ force: true });
+        const parts = [];
+        if (still.length) parts.push(`✔ ${still.length} ${still.length === 1 ? 'policy' : 'policies'} marked as deleted.`);
+        if (gone.length) parts.push(`Already done by someone else: ${gone.map(i => i.policyName).join(', ')}.`);
+        return parts.join(' ') || 'ℹ️ Nothing to mark.';
+    }
+
+    // Logs the policy as re-enabled in the ticket that asked for it, which closes the reminder.
+    async function policyApplyReenabled(it, newTicket) {
+        const types = policyReminderTypes();
+        const reType = [...types.reenabled].find(([, g]) => g === it.group);
+        if (!reType) return `⚠ ${it.group} has no "Re-enabled" type, nothing was saved.`;
+        const open = newTicket === getTicketNumber() ? detectTicketTenant(getTicketDoc()) : null;
+        await addEntry(newTicket, reType[0], { policyName: it.policyName },
+            `Re-enabled within the 30 day window, was disabled in ${it.ticket}.`, { tenant: open || policyTenantOf(it) });
+        await policyCheck({ force: true });
+        return `✔ ${it.policyName} logged as re-enabled in ${newTicket}. It will not be deleted.`;
     }
 
     /* ── Review list ── */
@@ -26127,7 +26344,7 @@ Version 1.4.3:
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue, nrdTime,
-                policyComputeDue, policyCheck, policyCache, policyReminderTypes,
+                policyComputeDue, policyCheck, policyCache, policyReminderTypes, policyApplyDeleted, policyApplyReenabled,
                 nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter };
         }
