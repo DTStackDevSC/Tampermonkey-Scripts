@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.24.0
+// @version      2.25.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.24.0';
-    const CHANGELOG = `Version 2.24.0:
+   const SCRIPT_VERSION = '2.25.0';
+    const CHANGELOG = `Version 2.25.0:
+- Change Tracker: New "🗑 Policies to delete" card in the "⏰ Manage Reminders" tab. Every policy logged as "Policy Deleted" or "DLP Policy Deleted" shows up there by itself and is due for deletion in Netskope 30 days later, for the whole team. Nothing else to fill in.
+- Change Tracker: Tick the due policies (or "☑ Select all due") and click "🗑 Mark as deleted" once they are deleted in Netskope. It is logged in the ticket where they were disabled. Older entries can be cleared the same way, all at once.
+- Change Tracker: New "Policy Re-enabled" and "DLP Policy Re-enabled" entry types. When another ticket asks to bring a disabled policy back, log it with "↩ Re-enabled" on the card (or the new type in that ticket) and the policy is not deleted. If it is deleted again later, a new reminder starts.
+- Change Tracker: The orange dot, the banner and the tab counter now count the policies due too, and "↺ Check now" looks for both.
+
+Version 2.24.0:
 - ServiceNow Toolkit: The SPM Germany reminder also marks the fields themselves: Requestor or Backup Exception Owner glow red when they hold someone else, and orange (review) when they are empty or the original ticket could not be read. Pointing at the field says who it should be.
 
 Version 2.23.1:
@@ -18130,8 +18136,14 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.8.3';
-    const CHANGELOG = `Version 2.8.3:
+    const SCRIPT_VERSION = '2.9.0';
+    const CHANGELOG = `Version 2.9.0:
+- New "🗑 Policies to delete" card in the "⏰ Manage Reminders" tab. Every policy logged as "Policy Deleted" or "DLP Policy Deleted" shows up there by itself and is due for deletion in Netskope 30 days later, for the whole team. Nothing else to fill in.
+- Tick the due policies (or "☑ Select all due") and click "🗑 Mark as deleted" once they are deleted in Netskope. It is logged in the ticket where they were disabled. Older entries can be cleared the same way, all at once.
+- New "Policy Re-enabled" and "DLP Policy Re-enabled" entry types. When another ticket asks to bring a disabled policy back, log it with "↩ Re-enabled" on the card (or the new type in that ticket) and the policy is not deleted. If it is deleted again later, a new reminder starts.
+- The orange dot, the banner and the tab counter now count the policies due too, and "↺ Check now" looks for both.
+
+Version 2.8.3:
 - The Newly Registered Domains removal through the Netskope API sends the profile's match type too, which Netskope requires.
 
 Version 2.8.2:
@@ -24407,6 +24419,34 @@ Version 1.4.3:
                 }
             },
             {
+                icon: '🗑',
+                title: 'Policies to delete',
+                buildContent: (body) => {
+                    lead(body, 'A policy logged as "Policy Deleted" is only disabled: it is due for deletion in Netskope 30 days later. The card in "⏰ Manage Reminders" lists them for the whole team.');
+                    const card = document.createElement('div');
+                    Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', overflow: 'hidden', margin: '0 0 4px', fontFamily: 'Arial, sans-serif' });
+                    card.appendChild(hrow([span('🗑 Policies to delete', { fontSize: '12px', fontWeight: 'bold', color: '#333' })], { padding: '6px 10px', margin: '0', background: '#f8f8ff' }));
+                    [['☑', '⚠ Allow-OldApp', 'Policies · EMA · RITM0012345', 'Disabled 01/10 · delete by 31/10 (overdue 3 days)', '#b02a37'],
+                     ['', '● Block-Test', 'DLP Policies · AME · RITM0012399', 'Disabled 20/10 · delete by 19/11 (16 days left)', '#666']].forEach(([box, name, meta, when, color]) => {
+                        const r = hrow([span(box || ' ', { fontSize: '13px', width: '14px' }), span(name, { fontSize: '12px', fontWeight: 'bold' }), span(meta, { fontSize: '11px', color: '#777' }),
+                            chip('↩ Re-enabled', 'transparent', { color: '#28a745', border: '1px solid #28a745' })], { padding: '4px 10px 0', margin: '0' });
+                        card.appendChild(r);
+                        card.appendChild(hrow([span(when, { fontSize: '11px', color })], { padding: '0 10px 4px 34px', margin: '0' }));
+                    });
+                    body.appendChild(card);
+                    body.appendChild(hrow([chip('☑ Select all due', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' }), chip('🗑 Mark as deleted', '#dc3545')], { margin: '8px 0 0 0' }));
+                    bullets(body, [
+                        'Nothing to fill in: logging "Policy Deleted" or "DLP Policy Deleted" in a ticket is enough. The policy name and the ticket tenant are taken from that entry.',
+                        'Once deleted in Netskope, tick the policies and click "🗑 Mark as deleted". It is logged in the ticket where they were disabled. Policies already marked by a colleague are reported instead of saved twice.',
+                        'Deleted policies cannot be postponed: they stay on the list, in red, until they are marked as deleted.',
+                        'Another ticket asks to bring one back within the 30 days: click "↩ Re-enabled", type that ticket number and confirm. It logs "Policy Re-enabled" in that ticket and the reminder ends. The new "Policy Re-enabled" types in the change log do the same.',
+                        'Disabled again later: a new "Policy Deleted" starts a new 30 day reminder.',
+                        'The orange dot, the banner and the tab counter count these together with the Newly Registered Domains. "↺ Check now" looks for both.',
+                        'Any new policy kind added to the tracker with its own "Deleted" and "Re-enabled" types joins these reminders by itself.'
+                    ]);
+                }
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent: (body) => {
@@ -24871,8 +24911,8 @@ Version 1.4.3:
             result.textContent = '';
             const before = nrdCache();
             const res = await nrdRun(check, 'Checking…', () =>
-                withBusy(document.getElementById('ct-pane-reminders'), () =>
-                    Promise.all([nrdCheck({ force: true }), policyCheck({ force: true })]).then(([n]) => n), 'Checking SharePoint…'));
+                Promise.all([withBusy(document.getElementById('ct-reminder-nrd'), () => nrdCheck({ force: true }), 'Checking SharePoint…'),
+                    withBusy(document.getElementById('ct-reminder-policy'), () => policyCheck({ force: true }), 'Checking SharePoint…')]).then(([n]) => n));
             if (!res || res === before) { result.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
             const due = res.items.filter(i => Date.now() >= i.dueAt).length;
             result.textContent = nrdSummary(res) + ' ';
