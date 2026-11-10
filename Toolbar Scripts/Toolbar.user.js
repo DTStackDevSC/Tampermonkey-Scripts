@@ -24940,6 +24940,7 @@ Version 1.4.3:
     /* ── Policies to delete ── */
 
     const policyPicked = new Set();   // keys ticked in the card, kept across redraws
+    let policyApplying = false;
     const policyDayMonth = (ms) => { const d = new Date(ms), p = n => String(n).padStart(2, '0'); return `${p(d.getDate())}/${p(d.getMonth() + 1)}`; };
     const POLICY_TICKET_RULE = /^[A-Z]{2,6}\d{5,}$/i;
 
@@ -24982,15 +24983,17 @@ Version 1.4.3:
             if (connState !== 'ONLINE') { result.textContent = '⚠ Connect to SharePoint first, then try again.'; return; }
             result.textContent = '';
             const label = mark.textContent;
+            policyApplying = true;
             mark.disabled = true;
             mark.textContent = '⏳ Checking…';
             try {
-                result.textContent = await withBusy(list, () => policyApplyDeleted(picked, (n, total) => {
+                result.textContent = await withBusy(card, () => policyApplyDeleted(picked, (n, total) => {
                     mark.textContent = `⏳ Saving ${n} of ${total}…`;
                 }), 'Saving…');
             } catch (e) {
                 result.textContent = '⚠ Could not save to SharePoint. Try again later.';
             } finally {
+                policyApplying = false;
                 if (mark.isConnected) { mark.textContent = label; policyUpdateMarkButton(); }
             }
         };
@@ -25002,7 +25005,7 @@ Version 1.4.3:
 
     function policyUpdateMarkButton() {
         const mark = document.getElementById('ct-policy-mark-deleted');
-        if (!mark) return;
+        if (!mark || policyApplying) return;
         const n = policyDueItems().filter(i => policyPicked.has(i.key)).length;
         mark.disabled = !n;
         mark.style.opacity = n ? '1' : '0.55';
@@ -25054,7 +25057,7 @@ Version 1.4.3:
             name.textContent = `${due ? '⚠' : '●'} ${it.policyName}`;
             const meta = css(mk('span'), { color:'#888', fontSize:'11px' });
             meta.textContent = `${it.group}${it.tenantType ? ' · ' + it.tenantType : ''} · `;
-            const link = css(mk('a', { href:`/nav_to.do?uri=sc_req_item.do?sysparm_query=number=${encodeURIComponent(it.ticket)}`, target:'_blank', rel:'noopener' }), { color:'#667eea' });
+            const link = css(mk('a', { href:`/nav_to.do?uri=task.do?sysparm_query=number=${encodeURIComponent(it.ticket)}`, target:'_blank', rel:'noopener' }), { color:'#667eea' });
             link.textContent = it.ticket;
             meta.appendChild(link);
             const reBtn = css(mk('button', { type:'button' }), { marginLeft:'auto', padding:'2px 8px', fontSize:'11px', cursor:'pointer',
@@ -25138,10 +25141,14 @@ Version 1.4.3:
         const types = policyReminderTypes();
         const reType = [...types.reenabled].find(([, g]) => g === it.group);
         if (!reType) return `⚠ ${it.group} has no "Re-enabled" type, nothing was saved.`;
-        const open = newTicket === getTicketNumber() ? detectTicketTenant(getTicketDoc()) : null;
-        await addEntry(newTicket, reType[0], { policyName: it.policyName },
-            `Re-enabled within the 30 day window, was disabled in ${it.ticket}.`, { tenant: open || policyTenantOf(it) });
         await policyCheck({ force: true });
+        if (!(((policyCache() || {}).items) || []).some(i => i.key === it.key)) return `Already done by someone else: ${it.policyName}.`;
+        // The reminder's own tenant closes it; the open ticket's tenant only fills in when the reminder has none
+        const open = !it.tenantType && newTicket === getTicketNumber() ? detectTicketTenant(getTicketDoc()) : null;
+        await addEntry(newTicket, reType[0], { policyName: it.policyName },
+            `Re-enabled within the 30 day window, was disabled in ${it.ticket}.`, { tenant: policyTenantOf(it) || open });
+        await policyCheck({ force: true });
+        if ((((policyCache() || {}).items) || []).some(i => i.key === it.key)) return `⚠ ${it.policyName} was saved in ${newTicket} but its reminder is still open. Check the policy name and tenant.`;
         return `✔ ${it.policyName} logged as re-enabled in ${newTicket}. It will not be deleted.`;
     }
 
