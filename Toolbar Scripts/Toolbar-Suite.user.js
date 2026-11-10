@@ -18419,6 +18419,9 @@ Version 1.4.3:
         policy_deleted: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
         ],
+        policy_reenabled: [
+            { key: 'policyName', label: 'Policy name', type: 'text' },
+        ],
         dlp_policy_full: [
             { key: 'policyName',    label: 'Policy name',        type: 'text'     },
             { key: 'source',        label: 'Source',             type: 'text'     },
@@ -18548,6 +18551,8 @@ Version 1.4.3:
      *  schema: 'key' → renders FIELD_SCHEMAS[key]
      * ==========================================================*/
 
+    // Policy deletion reminders: a group joins them by having one item with schema 'policy_deleted'
+    // (opens a reminder, due 30 days later) and one with schema 'policy_reenabled' (closes it).
     const SNIPPET_GROUPS = [
         {
             group: 'Policies',
@@ -18555,6 +18560,7 @@ Version 1.4.3:
                 { label: 'Policy Created',  value: 'Policy Created',  color: '#007bff', schema: 'policy_full'    },
                 { label: 'Policy Modified', value: 'Policy Modified', color: '#6610f2', schema: 'policy_full'    },
                 { label: 'Policy Deleted',  value: 'Policy Deleted',  color: '#c0392b', schema: 'policy_deleted' },
+                { label: 'Policy Re-enabled', value: 'Policy Re-enabled', color: '#28a745', schema: 'policy_reenabled' },
             ],
         },
         {
@@ -18563,6 +18569,7 @@ Version 1.4.3:
                 { label: 'DLP Policy Created',  value: 'DLP Policy Created',  color: '#007bff', schema: 'dlp_policy_full' },
                 { label: 'DLP Policy Modified', value: 'DLP Policy Modified', color: '#6610f2', schema: 'dlp_policy_full' },
                 { label: 'DLP Policy Deleted',  value: 'DLP Policy Deleted',  color: '#c0392b', schema: 'policy_deleted'  },
+                { label: 'DLP Policy Re-enabled', value: 'DLP Policy Re-enabled', color: '#28a745', schema: 'policy_reenabled' },
             ],
         },
         {
@@ -18933,8 +18940,8 @@ Version 1.4.3:
      * ==========================================================*/
 
     const CATEGORY_GROUPS = [
-        { label: 'Policy Changes',              types: ['Policy Created', 'Policy Modified', 'Policy Deleted'] },
-        { label: 'DLP Policy Changes',          types: ['DLP Policy Created', 'DLP Policy Modified', 'DLP Policy Deleted'] },
+        { label: 'Policy Changes',              types: ['Policy Created', 'Policy Modified', 'Policy Deleted', 'Policy Re-enabled'] },
+        { label: 'DLP Policy Changes',          types: ['DLP Policy Created', 'DLP Policy Modified', 'DLP Policy Deleted', 'DLP Policy Re-enabled'] },
         { label: 'DLP Process Exceptions',      types: ['DLP Process Exception Added', 'DLP Process Exception Removed'] },
         { label: 'URL Lists',                   types: ['URL List Created', 'URL List — URLs Added', 'URL List — URLs Removed', 'URL List Removed'] },
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
@@ -20607,6 +20614,11 @@ Version 1.4.3:
                 commentsHeader: "We've scheduled for deletion the following Netskope policy to help address the issue:",
                 commentsCloser: 'This policy has been disabled and scheduled for deletion in 30 days.',
             },
+            'Policy Re-enabled': {
+                workNoteHeader: 'Netskope Policy has been re-enabled:',
+                commentsHeader: "We've re-enabled the following Netskope policy:",
+                commentsCloser: 'The policy is active again and will not be deleted.',
+            },
 
             // ── DLP Policies ───────────────────────────────────
             'DLP Policy Created': {
@@ -20623,6 +20635,11 @@ Version 1.4.3:
                 workNoteHeader: 'Netskope DLP Policy has been scheduled to be deleted (currently disabled):',
                 commentsHeader: "We've scheduled for deletion the following Netskope DLP policy to help address the issue:",
                 commentsCloser: 'This policy has been disabled and scheduled for deletion in 30 days.',
+            },
+            'DLP Policy Re-enabled': {
+                workNoteHeader: 'Netskope DLP Policy has been re-enabled:',
+                commentsHeader: "We've re-enabled the following Netskope DLP policy:",
+                commentsCloser: 'The policy is active again and will not be deleted.',
             },
 
             // ── DLP Process Exceptions ─────────────────────────
@@ -22089,12 +22106,14 @@ Version 1.4.3:
             createTypes: ['Policy Created'],
             modifyTypes: ['Policy Modified'],
             deleteTypes: ['Policy Deleted'],
+            reenableTypes: ['Policy Re-enabled'],
         },
         'DLP Policy Changes': {
             nameKey:     'policyName',
             createTypes: ['DLP Policy Created'],
             modifyTypes: ['DLP Policy Modified'],
             deleteTypes: ['DLP Policy Deleted'],
+            reenableTypes: ['DLP Policy Re-enabled'],
         },
         'Steering / Client Configs': {
             nameKey:     'configName',
@@ -22240,6 +22259,7 @@ Version 1.4.3:
             const cat = config.createTypes.includes(entry.type) ? 'create'
                       : config.modifyTypes.includes(entry.type) ? 'modify'
                       : config.deleteTypes.includes(entry.type) ? 'delete'
+                      : (config.reenableTypes || []).includes(entry.type) ? 'reenable'
                       : null;
             if (!cat) return;
 
@@ -22254,6 +22274,7 @@ Version 1.4.3:
                 const { firstCat, lastCat, latestFields, latestType } = entityMap[name];
                 // Determine summary tag
                 const tag = lastCat === 'delete' ? '[DELETED]'
+                          : lastCat === 'reenable' ? '[RE-ENABLED]'
                           : firstCat === 'create' ? '[CREATED]'
                           : '[MODIFIED]';
                 return { name, firstCat, lastCat, tag, latestFields, latestType };
