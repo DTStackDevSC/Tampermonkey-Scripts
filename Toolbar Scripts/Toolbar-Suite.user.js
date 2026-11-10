@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.25.0
+// @version      2.25.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.25.0';
-    const CHANGELOG = `Version 2.25.0:
+   const SCRIPT_VERSION = '2.25.1';
+    const CHANGELOG = `Version 2.25.1:
+- Change Tracker: the "🗑 Policies to delete" card has its own "↺ Check now" button to look for new policies to delete straight away.
+
+Version 2.25.0:
 - Change Tracker: New "🗑 Policies to delete" card in the "⏰ Manage Reminders" tab. Every policy logged as "Policy Deleted" or "DLP Policy Deleted" shows up there by itself and is due for deletion in Netskope 30 days later, for the whole team. Nothing else to fill in.
 - Change Tracker: Tick the due policies (or "☑ Select all due") and click "🗑 Mark as deleted" once they are deleted in Netskope. It is logged in the ticket where they were disabled. Older entries can be cleared the same way, all at once.
 - Change Tracker: New "Policy Re-enabled" and "DLP Policy Re-enabled" entry types. When another ticket asks to bring a disabled policy back, log it with "↩ Re-enabled" on the card (or the new type in that ticket) and the policy is not deleted. If it is deleted again later, a new reminder starts.
@@ -18136,8 +18139,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.9.0';
-    const CHANGELOG = `Version 2.9.0:
+    const SCRIPT_VERSION = '2.9.1';
+    const CHANGELOG = `Version 2.9.1:
+- The "🗑 Policies to delete" card has its own "↺ Check now" button to look for new policies to delete straight away.
+
+Version 2.9.0:
 - New "🗑 Policies to delete" card in the "⏰ Manage Reminders" tab. Every policy logged as "Policy Deleted" or "DLP Policy Deleted" shows up there by itself and is due for deletion in Netskope 30 days later, for the whole team. Nothing else to fill in.
 - Tick the due policies (or "☑ Select all due") and click "🗑 Mark as deleted" once they are deleted in Netskope. It is logged in the ticket where they were disabled. Older entries can be cleared the same way, all at once.
 - New "Policy Re-enabled" and "DLP Policy Re-enabled" entry types. When another ticket asks to bring a disabled policy back, log it with "↩ Re-enabled" on the card (or the new type in that ticket) and the policy is not deleted. If it is deleted again later, a new reminder starts.
@@ -24434,14 +24440,14 @@ Version 1.4.3:
                         card.appendChild(hrow([span(when, { fontSize: '11px', color })], { padding: '0 10px 4px 34px', margin: '0' }));
                     });
                     body.appendChild(card);
-                    body.appendChild(hrow([chip('☑ Select all due', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' }), chip('🗑 Mark as deleted', '#dc3545')], { margin: '8px 0 0 0' }));
+                    body.appendChild(hrow([chip('☑ Select all due', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' }), chip('🗑 Mark as deleted', '#dc3545'), chip('↺ Check now', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { margin: '8px 0 0 0' }));
                     bullets(body, [
                         'Nothing to fill in: logging "Policy Deleted" or "DLP Policy Deleted" in a ticket is enough. The policy name and the ticket tenant are taken from that entry.',
                         'Once deleted in Netskope, tick the policies and click "🗑 Mark as deleted". It is logged in the ticket where they were disabled. Policies already marked by a colleague are reported instead of saved twice.',
                         'Deleted policies cannot be postponed: they stay on the list, in red, until they are marked as deleted.',
                         'Another ticket asks to bring one back within the 30 days: click "↩ Re-enabled", type that ticket number and confirm. It logs "Policy Re-enabled" in that ticket and the reminder ends. The new "Policy Re-enabled" types in the change log do the same.',
                         'Disabled again later: a new "Policy Deleted" starts a new 30 day reminder.',
-                        'The orange dot, the banner and the tab counter count these together with the Newly Registered Domains. "↺ Check now" looks for both.',
+                        'The orange dot, the banner and the tab counter count these together with the Newly Registered Domains. "↺ Check now" in this card looks for policies at once; the one in the Newly Registered Domains card looks for both.',
                         'Any new policy kind added to the tracker with its own "Deleted" and "Re-enabled" types joins these reminders by itself.'
                     ]);
                 }
@@ -24998,7 +25004,15 @@ Version 1.4.3:
             }
         };
         const row = css(mk('div'), { display:'flex', gap:'6px', flexWrap:'wrap' });
-        row.append(selectDue, mark);
+        const checkNow = btn('ct-policy-check-now', '↺ Check now', 'Reads SharePoint again for policies due for deletion', false);
+        checkNow.onclick = async () => {
+            if (connState !== 'ONLINE') { result.textContent = '⚠ Connect to SharePoint first, then try again.'; return; }
+            result.textContent = '';
+            const before = (policyCache() || {}).at;
+            const res = await nrdRun(checkNow, 'Checking…', () => withBusy(card, () => policyCheck({ force: true }), 'Checking policies…'));
+            result.textContent = res && res.at !== before ? '✔ ' + policySummary(res) : '⚠ Could not read SharePoint. Try again later.';
+        };
+        row.append(selectDue, mark, checkNow);
         card.append(title, desc, status, list, row, result);
         return card;
     }
