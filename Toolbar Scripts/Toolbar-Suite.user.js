@@ -20097,6 +20097,19 @@ Version 1.4.3:
             return { ok: true, data };
         },
 
+        // Policy Deleted / Re-enabled entries of every ticket (any group with those schemas) since a date,
+        // plus the deletion review records. Same date only filter as above; the settings item is skipped.
+        async fetchPolicyEntriesSince(iso) {
+            const res = await api._allItems({ $filter: `CTEntryDate ge datetime'${iso}'`, $select: ITEM_SELECT + ',Title',
+                $expand: 'Author,Editor' });
+            if (!res.ok) return res;
+            const types = policyReminderTypes();
+            const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
+                .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
+                .filter(r => r.entry && (types.deleted.has(r.entry.type) || types.reenabled.has(r.entry.type) || r.entry.type === POLICY_REVIEW_TYPE));
+            return { ok: true, data };
+        },
+
         // The team's shared settings, one item in the list. Missing item = defaults.
         async loadSettings() {
             const res = await api.fetchEntries(NRD_SETTINGS_TICKET);
@@ -24623,6 +24636,75 @@ Version 1.4.3:
         return nrdChecking;
     }
 
+    /* ── Policy deletion reminders ──
+     *  A policy logged as deleted is only disabled; it is deleted in Netskope 30 days later.
+     *  Any snippet group whose items use the policy_deleted / policy_reenabled schemas joins in. */
+
+    const POLICY_REVIEW_TYPE   = 'Policy deletion review';
+    const POLICY_CACHE_KEY     = 'changeTrackerPolicyCache';
+    const POLICY_HISTORY_DAYS  = 365;
+    const POLICY_DELETE_DAYS   = 30;
+
+    function policyReminderTypes() {
+        const deleted = new Map(), reenabled = new Map();
+        SNIPPET_GROUPS.forEach(g => g.items.forEach(i => {
+            if (i.schema === 'policy_deleted') deleted.set(i.value, g.group);
+            else if (i.schema === 'policy_reenabled') reenabled.set(i.value, g.group);
+        }));
+        return { deleted, reenabled };
+    }
+
+    // rows: [{ ticket, entry }]. Walked in time order: a Deleted opens (or replaces) the reminder of that group,
+    // tenant and policy name; a later Re-enabled of the same group or a "deleted" review closes it.
+    function policyComputeDue(rows, now = Date.now()) {
+        const types = policyReminderTypes();
+        const open = new Map();
+        const sameTarget = (it, group, tenantType, name) => it.group === group && it.policyName === name
+            && (!tenantType || !it.tenantType || it.tenantType === tenantType);
+        const sorted = rows.filter(r => r && r.entry).slice().sort((a, b) => nrdTime(a.entry.ts) - nrdTime(b.entry.ts));
+        for (const { ticket, entry } of sorted) {
+            const f = entry.fields || {};
+            const name = String(f.policyName || '').trim();
+            if (!name) continue;
+            const tenantType = (entry.tenant && entry.tenant.type) || '';
+            const closeAll = (group) => { for (const [k, it] of open) if (sameTarget(it, group, tenantType, name)) open.delete(k); };
+            if (types.deleted.has(entry.type)) {
+                const group = types.deleted.get(entry.type);
+                closeAll(group);
+                const at = nrdTime(entry.ts);
+                open.set(`${group}\n${tenantType}\n${name}`, { key: `${group}\n${tenantType}\n${name}`, group, deletedType: entry.type,
+                    policyName: name, tenantType, host: (entry.tenant && entry.tenant.host) || '', ticket,
+                    disabledTs: entry.ts, dueAt: at + POLICY_DELETE_DAYS * NRD_DAY });
+            } else if (types.reenabled.has(entry.type)) {
+                closeAll(types.reenabled.get(entry.type));
+            } else if (entry.type === POLICY_REVIEW_TYPE && f.outcome === 'deleted') {
+                closeAll(String(f.group || ''));
+            }
+        }
+        return [...open.values()].map(it => Object.assign(it, {
+            days: Math.floor((now - nrdTime(it.disabledTs)) / NRD_DAY), state: now >= it.dueAt ? 'due' : 'upcoming' }))
+            .sort((a, b) => a.dueAt - b.dueAt);
+    }
+
+    const policyCache = () => GM_getValue(POLICY_CACHE_KEY, null);
+    const policyDueItems = () => ((policyCache() || {}).items || []).filter(i => i.state === 'due' || Date.now() >= i.dueAt);
+
+    let policyChecking = null;
+    // Reads the last 365 days across tickets and stores the reminders. At most every 4 hours unless forced.
+    function policyCheck({ force = false } = {}) {
+        if (policyChecking) return policyChecking;
+        const cache = policyCache();
+        if (!api.isConfigured() || (!force && cache && Date.now() - cache.at < NRD_CHECK_EVERY)) { renderNrdAlert(); return Promise.resolve(cache); }
+        policyChecking = (async () => {
+            const rows = await api.fetchPolicyEntriesSince(nrdSinceIso(POLICY_HISTORY_DAYS));
+            if (!rows.ok) return cache;
+            const next = { at: Date.now(), items: policyComputeDue(rows.data) };
+            GM_setValue(POLICY_CACHE_KEY, next);
+            return next;
+        })().catch(() => cache).finally(() => { policyChecking = null; renderNrdAlert(); });
+        return policyChecking;
+    }
+
     function nrdSummary(res) {
         const due = res.items.filter(i => Date.now() >= i.dueAt).length;
         return `Newly Registered Domains: ${due} due for review, ${res.items.length - due} coming up.`;
@@ -26029,8 +26111,8 @@ Version 1.4.3:
 
         // Newly Registered Domains: a few seconds after the page loads, then now and then (each check
         // reads SharePoint at most every 4 hours, across tabs). The dot is redrawn when the toolbar redraws.
-        setTimeout(() => { if (api.isConfigured()) nrdCheck(); }, 4000);
-        setInterval(() => { if (api.isConfigured()) nrdCheck(); }, 15 * 60000);
+        setTimeout(() => { if (api.isConfigured()) { nrdCheck(); policyCheck(); } }, 4000);
+        setInterval(() => { if (api.isConfigured()) { nrdCheck(); policyCheck(); } }, 15 * 60000);
         setInterval(renderNrdAlert, 5000);
 
         // While offline, retry the connection in the background every minute.
@@ -26044,7 +26126,8 @@ Version 1.4.3:
         // Test only: the automated tests switch this on in their own storage.
         if (GM_getValue('changeTrackerTestHooks', false) === true) {
             unsafeWindow.__ctsp = { api, loadEntries, addEntry, updateEntry, deleteEntry, clearEntries, syncTicket,
-                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue,
+                attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue, nrdTime,
+                policyComputeDue, policyCheck, policyCache, policyReminderTypes,
                 nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter };
         }
