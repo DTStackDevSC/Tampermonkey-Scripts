@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.25.1
+// @version      2.26.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.25.1';
-    const CHANGELOG = `Version 2.25.1:
+   const SCRIPT_VERSION = '2.26.0';
+    const CHANGELOG = `Version 2.26.0:
+- Change Tracker: new "↺ Check all" button at the top of "⏰ Manage Reminders" that looks for every kind of reminder at once. Each card's own "↺ Check now" now looks only for its own reminders.
+
+Version 2.25.1:
 - Change Tracker: the "🗑 Policies to delete" card has its own "↺ Check now" button to look for new policies to delete straight away.
 
 Version 2.25.0:
@@ -18139,8 +18142,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.9.1';
-    const CHANGELOG = `Version 2.9.1:
+    const SCRIPT_VERSION = '2.10.0';
+    const CHANGELOG = `Version 2.10.0:
+- New "↺ Check all" button at the top of "⏰ Manage Reminders" that looks for every kind of reminder at once. Each card's own "↺ Check now" now looks only for its own reminders.
+
+Version 2.9.1:
 - The "🗑 Policies to delete" card has its own "↺ Check now" button to look for new policies to delete straight away.
 
 Version 2.9.0:
@@ -24402,6 +24408,7 @@ Version 1.4.3:
                     ]));
                     caption(body, 'An orange dot on the Change Tracker icon and this banner show up when something is due. The tracker checks at most every 4 hours.');
                     bullets(body, ['Everything about this lives in the "⏰ Manage Reminders" tab, next to the change log. The tracker always opens on the change log.']);
+                    body.appendChild(hrow([chip('↺ Check all', '#667eea'), span('At the top of "⏰ Manage Reminders": looks for every kind of reminder at once, each card shows its own wheel.', { fontSize: '12px', color: '#555' })], { margin: '8px 0 0 0' }));
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', overflow: 'hidden', margin: '10px 0 4px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(hrow([span('EMA · tenant.goskope.com', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
@@ -24417,7 +24424,7 @@ Version 1.4.3:
                         'Check each category, take the domains that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". It is logged in the ticket where they were added.',
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
                         'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in the Manage Reminders tab, "🛠 Profiles", a list shared by the whole team.',
-                        '"↺ Check now" in the Manage Reminders tab looks right away, without waiting for the next automatic check.',
+                        '"↺ Check now" in the Newly Registered Domains card looks for domains right away, without waiting for the next automatic check. "↺ Check all" at the top of the tab, and "↺ Check now" in the banner, look for every kind of reminder.',
                         'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the API Keys of the toolbar, then test it and turn it on per tenant.',
                         'Optional, per tenant in the same window: the Netskope API. It uses the Netskope API key of the tenant, saved in 🔑 API Keys (Toolbar settings), which needs POST /api/v2/nsiq/urllookup and GET and PATCH /api/v2/profiles/destinations. The review then looks up the categories and proposes to remove the ones no longer NRD and to keep the others, and changes the profile after you confirm, applying it in Netskope with the change note "Domain is no longer categorized as Newly Registered Domain". A profile with pending changes, or changed while you reviewed, is never touched.',
                         'Every new entry records the Netskope tenant of its ticket, from the Requesting Member Firm.'
@@ -24447,7 +24454,7 @@ Version 1.4.3:
                         'Deleted policies cannot be postponed: they stay on the list, in red, until they are marked as deleted.',
                         'Another ticket asks to bring one back within the 30 days: click "↩ Re-enabled", type that ticket number and confirm. It logs "Policy Re-enabled" in that ticket and the reminder ends. The new "Policy Re-enabled" types in the change log do the same.',
                         'Disabled again later: a new "Policy Deleted" starts a new 30 day reminder.',
-                        'The orange dot, the banner and the tab counter count these together with the Newly Registered Domains. "↺ Check now" in this card looks for policies at once; the one in the Newly Registered Domains card looks for both.',
+                        'The orange dot, the banner and the tab counter count these together with the Newly Registered Domains. "↺ Check now" in this card looks for policies only; "↺ Check all" at the top of the tab looks for every kind of reminder.',
                         'Any new policy kind added to the tracker with its own "Deleted" and "Re-enabled" types joins these reminders by itself.'
                     ]);
                 }
@@ -24768,13 +24775,31 @@ Version 1.4.3:
     // Forced check with a result line in the tracker status
     async function nrdCheckNow(btn) {
         return nrdRun(btn, 'Checking…', async () => {
-            const before = nrdCache(), polBefore = policyCache();
-            const [res, pol] = await Promise.all([nrdCheck({ force: true }), policyCheck({ force: true })]);
+            const before = nrdCache();
+            const res = await nrdCheck({ force: true });
             const ok = !!res && res !== before;
-            const polText = pol && pol !== polBefore ? ' ' + policySummary(pol) : '';
-            flashStatus(ok ? '✔ ' + nrdSummary(res) + polText : '⚠ Could not read SharePoint. Try again later.', ok ? '#28a745' : '#dc3545', 8000);
+            flashStatus(ok ? '✔ ' + nrdSummary(res) : '⚠ Could not read SharePoint. Try again later.', ok ? '#28a745' : '#dc3545', 8000);
             return ok ? res : null;
         });
+    }
+
+    // Every reminder kind in Manage Reminders. A new kind adds one line here and "Check all" covers it.
+    const REMINDER_CHECKS = [
+        { card: 'ct-reminder-nrd',    check: () => nrdCheck({ force: true }),    cache: () => nrdCache(),    summary: (r) => nrdSummary(r) },
+        { card: 'ct-reminder-policy', check: () => policyCheck({ force: true }), cache: () => policyCache(), summary: (r) => policySummary(r) }
+    ];
+
+    // Reads every reminder kind at once, each card under its own wheel. Returns the summary line.
+    async function checkAllReminders() {
+        const results = await Promise.all(REMINDER_CHECKS.map(async (k) => {
+            const before = (k.cache() || {}).at;
+            const el = document.getElementById(k.card);
+            const res = await (el ? withBusy(el, k.check, 'Checking SharePoint…') : k.check()).catch(() => null);
+            return res && res.at !== before ? k.summary(res) : null;
+        }));
+        const ok = results.filter(Boolean);
+        if (!ok.length) return '⚠ Could not read SharePoint. Try again later.';
+        return (ok.length < results.length ? '⚠ Some reminders could not be read. ' : '✔ ') + ok.join(' ');
     }
 
     function renderNrdAlert() {
@@ -24816,7 +24841,10 @@ Version 1.4.3:
         // Only domains due: straight to their review. Otherwise the Manage Reminders tab shows everything.
         review.onclick = () => { if (polDue) ctShowTab('reminders'); else openNrdReview(); };
         const again = btn('ct-nrd-check-btn', '↺ Check now', false);
-        again.onclick = () => nrdCheckNow(again);
+        again.onclick = () => nrdRun(again, 'Checking…', async () => {
+            const text = await checkAllReminders();
+            flashStatus(text, /^✔/.test(text) ? '#28a745' : '#dc3545', 8000);
+        });
         const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
         btns.append(review, again);
         banner.append(msg, btns);
@@ -24883,7 +24911,21 @@ Version 1.4.3:
         const pane = css(mk('div', { id:'ct-pane-reminders' }), { display:'none' });
         const intro = css(mk('div'), { fontSize:'12px', color:'#555', margin:'0 0 10px', lineHeight:'1.5', fontFamily:'Arial, sans-serif' });
         intro.textContent = 'Reminders shared by the whole team through the SharePoint list.';
-        pane.appendChild(intro);
+        const allRow = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap', margin:'0 0 10px' });
+        const checkAll = css(mk('button', { id:'ct-reminders-check-all', type:'button' }), {
+            padding:'5px 10px', background:'#667eea', color:'#fff', border:'none', borderRadius:'4px', cursor:'pointer',
+            fontWeight:'bold', fontSize:'11px', fontFamily:'Arial, sans-serif'
+        });
+        checkAll.textContent = '↺ Check all';
+        checkAll.title = 'Looks for every kind of reminder due now';
+        const allResult = css(mk('div', { id:'ct-reminders-check-result' }), { fontSize:'12px', color:'#555', lineHeight:'1.5', flex:'1 1 200px', fontFamily:'Arial, sans-serif' });
+        checkAll.onclick = async () => {
+            if (!api.isConfigured()) { allResult.textContent = 'Connect to SharePoint first.'; return; }
+            allResult.textContent = '';
+            allResult.textContent = await nrdRun(checkAll, 'Checking all…', checkAllReminders);
+        };
+        allRow.append(checkAll, allResult);
+        pane.append(intro, allRow);
 
         const card = css(mk('div', { id:'ct-reminder-nrd' }), {
             background:'#fff', border:'1px solid #ddd', borderRadius:'7px', padding:'12px', marginBottom:'10px', fontFamily:'Arial, sans-serif'
@@ -24911,14 +24953,12 @@ Version 1.4.3:
             openNrdReview();
         };
         // Checks right away, without waiting for the next automatic check (every 4 hours)
-        const check = btn('ct-nrd-check-now', '↺ Check now', 'Looks for Newly Registered Domains and policies due now', false);
+        const check = btn('ct-nrd-check-now', '↺ Check now', 'Looks for Newly Registered Domains due now', false);
         check.onclick = async () => {
             if (!api.isConfigured()) { result.textContent = 'Connect to SharePoint first.'; return; }
             result.textContent = '';
             const before = nrdCache();
-            const res = await nrdRun(check, 'Checking…', () =>
-                Promise.all([withBusy(document.getElementById('ct-reminder-nrd'), () => nrdCheck({ force: true }), 'Checking SharePoint…'),
-                    withBusy(document.getElementById('ct-reminder-policy'), () => policyCheck({ force: true }), 'Checking SharePoint…')]).then(([n]) => n));
+            const res = await nrdRun(check, 'Checking…', () => withBusy(card, () => nrdCheck({ force: true }), 'Checking SharePoint…'));
             if (!res || res === before) { result.textContent = '⚠ Could not read SharePoint. Try again later.'; return; }
             const due = res.items.filter(i => Date.now() >= i.dueAt).length;
             result.textContent = nrdSummary(res) + ' ';
