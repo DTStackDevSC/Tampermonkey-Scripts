@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.26.0
+// @version      2.27.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.26.0';
-    const CHANGELOG = `Version 2.26.0:
+   const SCRIPT_VERSION = '2.27.0';
+    const CHANGELOG = `Version 2.27.0:
+- Change Tracker: new "🔁 SSL bypass → Domain bypass" entry in Steering Exceptions. One entry records domains moved from an SSL bypass to a Domain bypass, instead of one entry to remove them and another to add them. Purple chips suggest the domains still in an SSL bypass in this ticket, with their policy, and the steerings already used. The comment tells the user the bypasses were switched, and the change summary shows the domains removed from the SSL policy and added to the steerings.
+
+Version 2.26.0:
 - Change Tracker: new "↺ Check all" button at the top of "⏰ Manage Reminders" that looks for every kind of reminder at once. Each card's own "↺ Check now" now looks only for its own reminders.
 
 Version 2.25.1:
@@ -18142,8 +18145,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.10.0';
-    const CHANGELOG = `Version 2.10.0:
+    const SCRIPT_VERSION = '2.11.0';
+    const CHANGELOG = `Version 2.11.0:
+- New "🔁 SSL bypass → Domain bypass" entry in Steering Exceptions. One entry records domains moved from an SSL bypass to a Domain bypass, instead of one entry to remove them and another to add them. Purple chips suggest the domains still in an SSL bypass in this ticket, with their policy, and the steerings already used. The comment tells the user the bypasses were switched, and the change summary shows the domains removed from the SSL policy and added to the steerings.
+
+Version 2.10.0:
 - New "↺ Check all" button at the top of "⏰ Manage Reminders" that looks for every kind of reminder at once. Each card's own "↺ Check now" now looks only for its own reminders.
 
 Version 2.9.1:
@@ -18467,6 +18473,12 @@ Version 1.4.3:
             { key: 'urlsOrNetwork',   label: 'URLs / Network Location', type: 'textarea' },
             { key: 'steeringApplied', label: 'Steering/s applied to',   type: 'text'     },
         ],
+        // One entry for a move: removed from the SSL policy, added as a Steering Exception
+        ssl_to_domain: [
+            { key: 'sslPolicyName',   label: 'SSL Policy name',         type: 'text'     },
+            { key: 'domains',         label: 'Domains',                 type: 'textarea' },
+            { key: 'steeringApplied', label: 'Steering/s applied to',   type: 'text'     },
+        ],
         app_exception: [
             { key: 'app',             label: 'App',                     type: 'text' },
             { key: 'steeringApplied', label: 'Steering/s applied to',   type: 'text' },
@@ -18655,6 +18667,7 @@ Version 1.4.3:
             items: [
                 { label: 'Steering Exception Added',   value: 'Steering Exception Added',   color: '#28a745', schema: 'steering_exception' },
                 { label: 'Steering Exception Removed', value: 'Steering Exception Removed', color: '#e74c3c', schema: 'steering_exception' },
+                { label: '🔁 SSL bypass → Domain bypass', value: 'SSL bypass → Domain bypass', color: '#6f42c1', schema: 'ssl_to_domain' },
             ],
         },
         {
@@ -18971,8 +18984,9 @@ Version 1.4.3:
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
         { label: 'Destination Profiles',        types: ['Destination Profile Created', 'Destination Profile — Destinations Added', 'Destination Profile — Destinations Removed', 'Destination Profile Removed'] },
         { label: 'Custom Categories',           types: ['Custom Category Created', 'Custom Category — URL Lists Added', 'Custom Category — URL Lists Removed', 'Custom Category Removed'] },
-        { label: 'SSL Decryption Policies',     types: ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added', 'SSL Decryption — URLs Removed', 'SSL Decryption Policy Removed'] },
-        { label: 'Steering Exceptions',         types: ['Steering Exception Added', 'Steering Exception Removed'] },
+        // A move counts in both groups: removed from the SSL policy, added to the steering
+        { label: 'SSL Decryption Policies',     types: ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added', 'SSL Decryption — URLs Removed', 'SSL Decryption Policy Removed', 'SSL bypass → Domain bypass'] },
+        { label: 'Steering Exceptions',         types: ['Steering Exception Added', 'Steering Exception Removed', 'SSL bypass → Domain bypass'] },
         { label: 'App Exceptions',              types: ['App Exception Added', 'App Exception Removed'] },
         { label: 'Steering / Client Configs',   types: ['Steering/Client Config Created', 'Steering/Client Config Modified', 'Steering/Client Config Deleted'] },
         { label: 'User Notifications',          types: ['User Notification Added', 'User Notification Modified', 'User Notification Removed'] },
@@ -20792,6 +20806,11 @@ Version 1.4.3:
                 workNoteHeader: 'Removed Steering Exception:',
                 commentsHeader: "We've removed the following Steering Exception as requested:",
             },
+            'SSL bypass → Domain bypass': {
+                workNoteHeader: 'Moved from SSL Decryption bypass to Steering Exception (Domain bypass):',
+                commentsHeader: "We've switched the following bypasses from SSL Bypass to Domain Bypass to help address the issue:",
+                commentsCloser: 'When you have a moment, please update the agent configuration and run a quick test. Let me know if everything is working as expected or if you still encounter any problems.',
+            },
 
             // ── App Exceptions ─────────────────────────────────
             'App Exception Added': {
@@ -21591,11 +21610,114 @@ Version 1.4.3:
         container.append(addBtn, taWrap);
     }
 
+    /* ── SSL bypass → Domain bypass: suggestions from this ticket ──
+     * Domains still in an SSL bypass in this ticket (net state, per policy) and the steerings used in
+     * its Steering Exception entries. A chip toggles its value in the field; a domain of another policy
+     * starts the list over with that policy, since one entry names one SSL policy. */
+    const CT_SSL_MOVE_TYPE = 'SSL bypass → Domain bypass';
+
+    function ctSslMoveSources(entries) {
+        const conf = Object.assign({}, RECONCILE_CONFIG['SSL Decryption Policies'], { extraKeys: [] });
+        const types = new Set([...(conf.createTypes || []), ...conf.addTypes, ...conf.removeTypes, ...conf.deleteTypes]);
+        const chronological = entries.filter(e => types.has(e.type)).sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+        const policies = reconcileEntityEntries(chronological, conf)
+            .filter(p => !p.deleted)
+            .map(p => ({ name: p.name, domains: p.items.filter(i => i.op === '+').map(i => i.display) }))
+            .filter(p => p.domains.length);
+        const seen = new Set(), steerings = [];
+        entries.filter(e => e.type === 'Steering Exception Added' || e.type === 'Steering Exception Removed' || e.type === CT_SSL_MOVE_TYPE)
+            .forEach(e => (e.fields?.steeringApplied || '').split(/[\n,;]+/).map(v => v.trim()).filter(Boolean).forEach(v => {
+                const k = v.toLowerCase();
+                if (!seen.has(k)) { seen.add(k); steerings.push(v); }
+            }));
+        return { policies, steerings };
+    }
+
+    function buildSslMoveSuggestions(prefix, container) {
+        const domainsEl  = container.querySelector(`#${prefix}-domains`);
+        const policyEl   = container.querySelector(`#${prefix}-sslPolicyName`);
+        const steeringEl = container.querySelector(`#${prefix}-steeringApplied`);
+        if (!domainsEl || !policyEl || !steeringEl) return;
+        let src = { policies: [], steerings: [] };
+        try { src = ctSslMoveSources(loadEntries(getTicketNumber())); } catch (e) { console.warn('CT: no suggestions', e); }
+
+        const box = css(mk('div', { className: 'ct-move-suggest' }), {
+            margin: '0 0 8px 0', padding: '6px 8px', background: '#f6f3fc', border: '1px solid #ddd0f3',
+            borderRadius: '4px', fontFamily: 'Arial, sans-serif', fontSize: '11px', color: '#555'
+        });
+        const title = (text) => css(Object.assign(mk('div'), { textContent: text }), { fontWeight: 'bold', color: '#6f42c1', margin: '2px 0 4px 0' });
+        const listOf = (el) => el.value.split(/[\n,;]+/).map(v => v.trim()).filter(Boolean);
+        const has = (list, v) => list.some(x => x.toLowerCase() === v.toLowerCase());
+        const flash = (el) => { el.style.background = '#e6f4ea'; setTimeout(() => { el.style.background = '#fafafa'; }, 600); };
+        const chips = [];
+        function chip(text, tip, data, onClick) {
+            const c = css(mk('button', { type: 'button' }), {
+                display: 'inline-block', margin: '0 4px 4px 0', padding: '2px 8px', fontSize: '11px', borderRadius: '10px',
+                fontFamily: 'Arial, sans-serif', cursor: 'pointer', border: '1px solid #6f42c1', background: '#fff', color: '#6f42c1'
+            });
+            c.textContent = text;
+            c.title = tip;
+            Object.assign(c.dataset, data);
+            c.onclick = (e) => { e.preventDefault(); onClick(); refresh(); };
+            chips.push(c);
+            return c;
+        }
+        function setOn(c, on) {
+            c.setAttribute('aria-pressed', on ? 'true' : 'false');
+            c.style.background = on ? '#6f42c1' : '#fff';
+            c.style.color = on ? '#fff' : '#6f42c1';
+        }
+        function refresh() {
+            const ds = listOf(domainsEl), ss = listOf(steeringEl), pol = policyEl.value.trim().toLowerCase();
+            chips.forEach(c => {
+                if (c.dataset.ctMoveDomain) setOn(c, has(ds, c.dataset.ctMoveDomain) && c.dataset.ctMovePolicy.toLowerCase() === pol);
+                else setOn(c, has(ss, c.dataset.ctMoveSteering));
+            });
+        }
+
+        if (src.policies.length) {
+            box.appendChild(title('SSL bypasses in this ticket (click to move):'));
+            src.policies.forEach(p => {
+                const row = css(mk('div'), { margin: '0 0 2px 0' });
+                row.appendChild(css(Object.assign(mk('span'), { textContent: p.name + ': ' }), { color: '#444', marginRight: '4px' }));
+                p.domains.forEach(d => row.appendChild(chip(d, `Move ${d} (from ${p.name})`, { ctMoveDomain: d, ctMovePolicy: p.name }, () => {
+                    let ds = listOf(domainsEl);
+                    if (policyEl.value.trim().toLowerCase() !== p.name.toLowerCase()) {
+                        // One entry names one SSL policy: a domain of another policy starts over
+                        ds = [];
+                        policyEl.value = p.name;
+                        flash(policyEl);
+                    }
+                    ds = has(ds, d) ? ds.filter(x => x.toLowerCase() !== d.toLowerCase()) : [...ds, d];
+                    domainsEl.value = ds.join('\n');
+                    flash(domainsEl);
+                })));
+                box.appendChild(row);
+            });
+        } else {
+            box.appendChild(css(Object.assign(mk('div'), { textContent: 'No SSL bypass recorded in this ticket: type the policy and domains below.' }), { fontStyle: 'italic', margin: '2px 0 4px 0' }));
+        }
+        if (src.steerings.length) {
+            box.appendChild(title('Steerings used in this ticket:'));
+            const row = mk('div');
+            src.steerings.forEach(v => row.appendChild(chip(v, `Add or remove ${v}`, { ctMoveSteering: v }, () => {
+                const ss = listOf(steeringEl);
+                steeringEl.value = (has(ss, v) ? ss.filter(x => x.toLowerCase() !== v.toLowerCase()) : [...ss, v]).join(', ');
+                flash(steeringEl);
+            })));
+            box.appendChild(row);
+        }
+        [domainsEl, policyEl, steeringEl].forEach(el => el.addEventListener('input', refresh));
+        refresh();
+        container.insertBefore(box, container.firstChild);
+    }
+
     /** Rebuilds the dynamic input area based on selected type. */
     function rebuildInputFields(type, values, note, prefix, container) {
         const schema = getSchema(type);
         if (schema) {
             buildFieldInputs(schema, values || {}, prefix, container);
+            if (type === CT_SSL_MOVE_TYPE) buildSslMoveSuggestions(prefix, container);
             buildOptionalNoteInput(note || '', prefix, container);
             if (ctSchemaName(type)) buildPasteBar(type, prefix, container);
         } else {
@@ -22089,13 +22211,14 @@ Version 1.4.3:
             extraKeys:   [{ key: 'destinationProfiles', label: 'Destination Profile' }, { key: 'category', label: 'Category' }],
             createTypes: ['SSL Decryption Policy Created'],
             addTypes:    ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added'],
-            removeTypes: ['SSL Decryption — URLs Removed'],
+            removeTypes: ['SSL Decryption — URLs Removed', 'SSL bypass → Domain bypass'],
             deleteTypes: ['SSL Decryption Policy Removed'],
         },
         'Steering Exceptions': {
             nameKey:     'steeringApplied',
             domainKey:   'urlsOrNetwork',
-            addTypes:    ['Steering Exception Added'],
+            typeDomainKey: { 'SSL bypass → Domain bypass': 'domains' },   // a move keeps its domains in "domains"
+            addTypes:    ['Steering Exception Added', 'SSL bypass → Domain bypass'],
             removeTypes: ['Steering Exception Removed'],
             deleteTypes: [],
         },
@@ -22233,7 +22356,8 @@ Version 1.4.3:
 
             const rec   = entityMap[name];
             // Items of every reconciled field; an extra field's items carry its label so they never mix
-            const items = [{ key: config.domainKey, label: '' }, ...(config.extraKeys || [])].flatMap(({ key, label }) =>
+            const domainKey = (config.typeDomainKey && config.typeDomainKey[entry.type]) || config.domainKey;
+            const items = [{ key: domainKey, label: '' }, ...(config.extraKeys || [])].flatMap(({ key, label }) =>
                 parseDomains(entry.fields?.[key] || '').map(d => ({ id: (label ? label + '|' : '') + d.toLowerCase(), display: label ? `${label}: ${d}` : d })));
 
             if (config.createTypes?.includes(entry.type)) rec.isNew = true;
@@ -24284,6 +24408,31 @@ Version 1.4.3:
                         'When a field already has text, a "Conflict detected" window shows the current and the new value. Keep is chosen for each field unless you pick Replace, Replace all or Keep all.',
                         'No copy in this browser, or a copy from someone else? "Paste text instead" (or "📋 Paste policy text") opens a box to paste the Copy policy text.',
                         'Nothing is saved until you add or save the entry as usual.',
+                    ]);
+                }
+            },
+            {
+                icon: '🔁',
+                title: 'SSL bypass → Domain bypass',
+                buildContent: (body) => {
+                    lead(body, 'Moving domains from an SSL bypass to a Domain bypass takes one entry instead of two.');
+                    const card = panel({ border: '1px solid #ddd0f3', borderRadius: '4px', background: '#f6f3fc' });
+                    card.appendChild(span('SSL bypasses in this ticket (click to move):', { fontSize: '11px', color: '#6f42c1', fontWeight: 'bold', display: 'block', marginBottom: '4px' }));
+                    card.appendChild(hrow([
+                        span('SSL Bypass EMEA:', { fontSize: '11px', color: '#444' }),
+                        chip('a.com', '#6f42c1', { fontSize: '11px', padding: '2px 8px', radius: '10px' }),
+                        chip('b.com', '#fff', { fontSize: '11px', padding: '2px 8px', radius: '10px', color: '#6f42c1', border: '1px solid #6f42c1' }),
+                    ], { gap: '4px', margin: '0 0 4px 0' }));
+                    card.appendChild(span('Steerings used in this ticket:', { fontSize: '11px', color: '#6f42c1', fontWeight: 'bold', display: 'block', marginBottom: '4px' }));
+                    card.appendChild(hrow([
+                        chip('Default Steering EMEA', '#6f42c1', { fontSize: '11px', padding: '2px 8px', radius: '10px' }),
+                    ], { gap: '4px', margin: '0' }));
+                    body.appendChild(card);
+                    bullets(body, [
+                        'Pick "🔁 SSL bypass → Domain bypass" in Steering Exceptions and fill SSL Policy name, Domains and Steering/s applied to.',
+                        'The purple chips come from this ticket: the domains still in an SSL bypass, with their policy, and the steerings already used. A click adds the value (purple) and fills the policy, a second click takes it out. A domain of another policy starts the list over with that policy.',
+                        'The comment tells the user the bypasses were switched from SSL Bypass to Domain Bypass, with the policy, domains and steerings, and asks them to test.',
+                        'In the change summary the domains show as removed from the SSL policy and added to the steerings. Copy domains / IPs still copies them.',
                     ]);
                 }
             },
