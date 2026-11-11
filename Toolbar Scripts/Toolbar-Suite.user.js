@@ -19242,6 +19242,12 @@ Version 1.4.3:
         #ct-sidebar .ct-cat-empty, #ct-edit-modal .ct-cat-empty { color: #888888 !important; background-color: #ffffff !important; }
         #ct-sidebar .ct-cat-hint-warn, #ct-edit-modal .ct-cat-hint-warn { color: #b45309 !important; }
         #ct-sidebar .ct-cat-hint-ok, #ct-edit-modal .ct-cat-hint-ok { color: #2a7d4f !important; }
+        #ct-sidebar .ct-cat-chip-ok, #ct-edit-modal .ct-cat-chip-ok { background-color: #eef0ff !important; color: #3b4aa8 !important; }
+        #ct-sidebar .ct-cat-chip-missing, #ct-edit-modal .ct-cat-chip-missing { background-color: #fff4d6 !important; color: #8a5300 !important; }
+        #ct-sidebar .ct-cat-chip button, #ct-edit-modal .ct-cat-chip button { background-color: transparent !important; color: inherit !important; }
+        #ct-sidebar [data-ct-cat-add-all], #ct-edit-modal [data-ct-cat-add-all],
+        #ct-sidebar [data-ct-cat-update], #ct-edit-modal [data-ct-cat-update] { background-color: #ffffff !important; color: #667eea !important; }
+        #ct-sidebar .ct-cat-status, #ct-edit-modal .ct-cat-status { background-color: #ffffff !important; color: #444444 !important; }
         /* ── Z-INDEX NOTES ──────────────────────────────────────
          * Toolbar / Mini Summary Sidebar : 999997–999998
          * Change Tracker sidebar         : 999997  (peer)
@@ -21702,6 +21708,28 @@ Version 1.4.3:
         return local();
     }
 
+    let catalogUpdateTimeoutMs = 30000;
+
+    // Asks a Netskope tab of the tenant to read its lists now, then reloads the rows from SharePoint.
+    async function catalogRequestUpdate(tenant) {
+        const id = uid();
+        GM_setValue(CATALOG_REQUEST_KEY, { id, tenant, at: Date.now() });
+        let deadline = Date.now() + catalogUpdateTimeoutMs, extended = false, ans = null;
+        while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 400));
+            const a = GM_getValue(CATALOG_ANSWER_KEY, null);
+            if (!a || a.id !== id) continue;
+            // A tab claimed it and is reading Netskope: give it one more full wait.
+            if (a.pending) { if (!extended) { extended = true; deadline = Date.now() + catalogUpdateTimeoutMs; } continue; }
+            ans = a;
+            break;
+        }
+        if (!ans) return { ok: false, reason: 'noTab' };
+        catalogLoadedAt[tenant] = 0;
+        await catalogRefresh(tenant);
+        return { ok: true, results: ans.results || {} };
+    }
+
     // Labels of the name fields holding typed text that is not a listed or added name.
     function catalogBlockingFields(container) {
         if (!container) return [];
@@ -21711,6 +21739,12 @@ Version 1.4.3:
     }
 
     function attachCatalogPicker(input, spec, getTenant, label) {
+        const multi = !!spec.multi;
+        const SPLIT = /[\n,;]+/;
+        const lc = (v) => String(v).toLowerCase();
+        // Multi fields: the input holds "A, B" built from the chips plus the name being typed.
+        const trusted = new Set();
+        let list = [], pending = '';
         input.dataset.ctCat = spec.kind;
         input.dataset.ctCatState = 'ok';
         input.dataset.ctCatLabel = label || '';
@@ -21721,7 +21755,7 @@ Version 1.4.3:
         Object.defineProperty(input, 'value', {
             configurable: true,
             get() { return rawGet(); },
-            set(v) { rawSet(v); input.dataset.ctCatState = 'ok'; hideHint(); },
+            set(v) { rawSet(v); input.dataset.ctCatState = 'ok'; hideHint(); if (multi) fromValue(true); },
         });
 
         const panel = mk('div', { className: 'ct-cat-list' });
@@ -21741,12 +21775,159 @@ Version 1.4.3:
         optsWrap.appendChild(optsBox);
         const footer = mk('div', { className: 'ct-cat-footer' });
         css(footer, { fontSize: '10px', color: '#888', padding: '4px 8px', borderTop: '1px solid #eee' });
-        panel.append(top, optsWrap, footer);
+        const status = mk('div', { className: 'ct-cat-status' });
+        css(status, { display: 'none', fontSize: '11px', padding: '5px 8px', borderTop: '1px solid #eee', lineHeight: '1.4' });
+        panel.append(top, optsWrap, footer, status);
         const hint = mk('div', { className: 'ct-cat-hint' });
         css(hint, { display: 'none', fontSize: '11px', marginTop: '3px', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
-        input.after(panel, hint);
+        const chipsBox = mk('div', { className: 'ct-cat-chips' });
+        css(chipsBox, { display: 'none', flexWrap: 'wrap', gap: '4px', marginTop: '4px', alignItems: 'center' });
+        if (multi) input.after(chipsBox, panel, hint);
+        else input.after(panel, hint);
 
-        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false;
+        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false, updating = false;
+
+        function catalogHit(n) { return names().find(x => lc(x) === lc(n)); }
+        function isOk(n) { return trusted.has(lc(n)) || !!catalogHit(n); }
+        function missingNames() { return list.filter(n => !isOk(n)); }
+        function syncValue() { rawSet([...list, pending.trim()].filter(Boolean).join(', ')); }
+        function emit() { input.dispatchEvent(new Event('input', { bubbles: true })); }
+        function commit(name, trust) {
+            name = String(name).trim();
+            if (!name) return;
+            const v = catalogHit(name) || name;
+            if (trust) trusted.add(lc(v));
+            const i = list.findIndex(x => lc(x) === lc(v));
+            if (i < 0) list.push(v);
+            else if (!trusted.has(lc(list[i]))) list[i] = v;
+        }
+        function fromValue(trust) {
+            list = [];
+            pending = '';
+            rawGet().split(SPLIT).forEach(v => commit(v, trust));
+            renderChips(false);
+        }
+        function chipBtn(text, tip) {
+            const b = mk('button', { type: 'button', textContent: text, title: tip });
+            css(b, { border: 'none', background: 'transparent', cursor: 'pointer', padding: '0 2px', fontSize: '11px', lineHeight: '1', color: 'inherit' });
+            b.onmousedown = (e) => e.preventDefault();
+            return b;
+        }
+        // Draws the chips; warn: also show or clear the "not in the list" note.
+        function renderChips(warn) {
+            if (!multi) return;
+            if (!tenant) tenant = getTenant() || null;
+            chipsBox.innerHTML = '';
+            list.forEach(n => {
+                const ok = isOk(n);
+                const c = mk('span', { className: 'ct-cat-chip ' + (ok ? 'ct-cat-chip-ok' : 'ct-cat-chip-missing') });
+                c.setAttribute('data-ct-cat-chip', n);
+                c.dataset.state = ok ? 'ok' : 'missing';
+                c.title = ok ? n : `"${n}" is not in the ${tenant || 'tenant'} list`;
+                css(c, { display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '11px', padding: '2px 4px 2px 8px',
+                    borderRadius: '10px', border: ok ? '1px solid #c0c8f0' : '1px solid #f0c36d',
+                    background: ok ? '#eef0ff' : '#fff4d6', color: ok ? '#3b4aa8' : '#8a5300', fontFamily: 'Arial, sans-serif' });
+                c.appendChild(mk('span', { textContent: (ok ? '' : '⚠ ') + n }));
+                if (!ok) {
+                    const a = chipBtn('➕', `Add "${n}" to the ${tenant || 'tenant'} list`);
+                    a.setAttribute('data-ct-cat-chip-add', '');
+                    a.onclick = (e) => { e.preventDefault(); addMissing([n]); };
+                    c.appendChild(a);
+                }
+                const x = chipBtn('✕', `Remove ${n}`);
+                x.setAttribute('data-ct-cat-chip-remove', '');
+                x.onclick = (e) => { e.preventDefault(); removeName(n); };
+                c.appendChild(x);
+                chipsBox.appendChild(c);
+            });
+            const miss = missingNames();
+            if (miss.length) {
+                const all = mk('button', { type: 'button', textContent: miss.length > 1 ? `➕ Add all ${miss.length}` : '➕ Add all' });
+                all.setAttribute('data-ct-cat-add-all', '');
+                all.title = `Add the names marked ⚠ to the ${tenant || 'tenant'} list for everyone`;
+                css(all, { fontSize: '11px', padding: '2px 8px', borderRadius: '10px', border: '1px solid #c0c8f0',
+                    background: '#fff', color: '#667eea', cursor: 'pointer', fontWeight: 'bold', fontFamily: 'Arial, sans-serif' });
+                all.onmousedown = (e) => e.preventDefault();
+                all.onclick = (e) => { e.preventDefault(); addMissing(missingNames()); };
+                chipsBox.appendChild(all);
+            }
+            chipsBox.style.display = list.length ? 'flex' : 'none';
+            input.dataset.ctCatState = miss.length ? 'unverified' : 'ok';
+            if (warn) {
+                if (miss.length) showHint(`${miss.length} name${miss.length > 1 ? 's are' : ' is'} not in the ${tenant || 'tenant'} list. Click ➕ on a name to add it, or pick it from the list.`, false);
+                else if (hint.classList.contains('ct-cat-hint-warn')) hideHint();
+            }
+        }
+        function removeName(n) {
+            list = list.filter(x => lc(x) !== lc(n));
+            syncValue();
+            renderChips(hint.style.display !== 'none' && hint.classList.contains('ct-cat-hint-warn'));
+            emit();
+            if (isOpen) render();
+        }
+        async function addMissing(arr) {
+            if (adding || !arr.length) return;
+            adding = true;
+            const t = tenant || getTenant() || null;
+            tenant = t;
+            const allBtn = chipsBox.querySelector('[data-ct-cat-add-all]');
+            let local = 0;
+            try {
+                await withBusy(chipsBox, async () => {
+                    for (let i = 0; i < arr.length; i++) {
+                        if (allBtn) allBtn.textContent = `⏳ Adding ${i + 1} of ${arr.length}…`;
+                        let out = 'none';
+                        if (t) { try { out = await catalogAddName(t, spec.kind, arr[i]); } catch (e) { out = 'local'; } }
+                        if (out === 'local') local++;
+                        trusted.add(lc(arr[i]));
+                    }
+                }, arr.length > 1 ? 'Adding names…' : 'Adding…');
+            } finally {
+                adding = false;
+            }
+            syncValue();
+            renderChips(false);
+            emit();
+            if (isOpen) render();
+            const what = arr.length === 1 ? `"${arr[0]}"` : `${arr.length} names`;
+            if (!t) showHint(`✅ ${what} used. Not in any list because no tenant is chosen.`, true);
+            else if (local) showHint(`✅ ${what} kept on this computer. SharePoint could not be reached, so others will not see ${arr.length === 1 ? 'it' : 'them'} yet.`, true);
+            else showHint(`✅ ${what} added to the ${t} list.`, true);
+        }
+        function setStatus(text) {
+            status.textContent = text || '';
+            status.style.display = text ? 'block' : 'none';
+        }
+        function updateMessage(t, r) {
+            if (!r.ok) {
+                const noHost = !GM_getValue(TENANT_TYPE_TO_KEY[t], '');
+                return `⚠️ No Netskope tab of ${t} answered. Open ${t} in Netskope in this browser (signed in) and click Update now again.`
+                    + (noHost ? ` This browser has no ${t} tenant address saved yet, so add it in the toolbar settings first.` : '');
+            }
+            const res = (r.results || {})[spec.kind];
+            if (res === 'updated') return `✅ ${t} list updated from Netskope.`;
+            if (res === 'unchanged' || res === 'fresh') return '✅ Checked in Netskope: no change.';
+            if (res === 'conflict') return '✅ Someone updated the list at the same time. Showing the newest one.';
+            if (res === 'noReader') return '✅ The Netskope tab answered, but this list is not read from Netskope. Add missing names with ➕.';
+            return `⚠️ The ${t} Netskope tab could not read this list. Check you are signed in there and try again.`;
+        }
+        async function updateNow() {
+            if (updating || !tenant) return;
+            const t = tenant;
+            updating = true;
+            setStatus(`🔄 Asking a Netskope tab of ${t} to read its lists…`);
+            render();
+            let r;
+            try {
+                r = await withBusy(optsWrap, () => catalogRequestUpdate(t), 'Waiting for Netskope…');
+            } catch (e) {
+                r = { ok: false, reason: 'error' };
+            } finally {
+                updating = false;
+            }
+            if (isOpen) render();
+            if (tenant === t) setStatus(updateMessage(t, r));
+        }
 
         function names() { const r = tenant && catalogCached(tenant, spec.kind); return r ? r.names : []; }
         function showHint(text, ok) {
@@ -21770,12 +21951,13 @@ Version 1.4.3:
             const q = filtered ? search.value.trim() : '';
             const ql = q.toLowerCase();
             const all = names();
-            const shown = ql ? all.filter(n => n.toLowerCase().includes(ql)) : all;
+            let shown = ql ? all.filter(n => n.toLowerCase().includes(ql)) : all;
+            if (multi) shown = shown.filter(n => !list.some(x => lc(x) === lc(n)));
             optsBox.innerHTML = '';
             items = [];
             if (!tenant) message('Choose the tenant above to see its names.');
             else if (!all.length) message('No list for this tenant yet. It fills itself when someone opens this Netskope tenant. You can add the name.');
-            else if (!shown.length) message('No name matches.');
+            else if (!shown.length) message(multi && !ql ? 'Every listed name is already chosen.' : 'No name matches.');
             shown.forEach(n => {
                 const o = mk('div', { textContent: n });
                 o.setAttribute('data-ct-cat-option', '');
@@ -21799,9 +21981,19 @@ Version 1.4.3:
             active = Math.max(0, Math.min(active, items.length - 1));
             items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
             const row = tenant && catalogCached(tenant, spec.kind);
-            footer.textContent = !tenant ? ''
-                : (row && row.checkedAt) ? `Updated ${catalogAgo(row.checkedAt)} by ${row.checkedBy || 'someone'}`
-                : 'Not loaded from Netskope yet';
+            footer.innerHTML = '';
+            if (!tenant) return;
+            footer.appendChild(mk('span', { textContent: (row && row.checkedAt)
+                ? `Updated ${catalogAgo(row.checkedAt)} by ${row.checkedBy || 'someone'} · ` : 'Not loaded from Netskope yet · ' }));
+            const up = mk('button', { type: 'button', textContent: updating ? '⏳ Asking Netskope…' : '↻ Update now' });
+            up.setAttribute('data-ct-cat-update', '');
+            up.disabled = updating;
+            up.title = updating ? 'Waiting for a Netskope tab to answer' : `Ask an open Netskope tab of ${tenant} to read this list now`;
+            css(up, { border: 'none', background: 'none', padding: '0', fontSize: '10px', color: '#667eea',
+                cursor: updating ? 'progress' : 'pointer', textDecoration: 'underline', fontFamily: 'Arial, sans-serif' });
+            up.onmousedown = (e) => e.preventDefault();
+            up.onclick = (e) => { e.preventDefault(); updateNow(); };
+            footer.appendChild(up);
         }
         async function loadTenant() {
             const t = tenant;
@@ -21814,7 +22006,8 @@ Version 1.4.3:
             isOpen = true;
             if (!tenant) tenant = getTenant() || null;
             tenantSel.value = tenant || '';
-            search.value = rawGet();
+            pending = '';
+            search.value = multi ? '' : rawGet();
             filtered = false; active = 0;
             panel.style.display = 'block';
             render();
@@ -21828,17 +22021,26 @@ Version 1.4.3:
             isOpen = false;
             panel.style.display = 'none';
             document.removeEventListener('click', onOutside, true);
+            if (multi && pending.trim()) {
+                commit(pending, false);
+                pending = '';
+                search.value = '';
+                syncValue();
+                renderChips(false);
+                emit();
+            }
             if (verify) verify_();
         }
         function refocusInput() { quietFocus = true; input.focus(); quietFocus = false; }
         function onOutside(e) {
             const path = e.composedPath ? e.composedPath() : [];
-            if (path.includes(panel) || path.includes(input)) return;
+            if (path.includes(panel) || path.includes(input) || path.includes(chipsBox)) return;
             closeList(true);
         }
         // True when the field may be saved; fixes the spelling of a typed name that is in the list.
         // quiet: no note is shown or hidden (on blur, a note would move the button the user is clicking).
         function verify_(quiet) {
+            if (multi) return verifyMulti(quiet);
             if (input.dataset.ctCatState !== 'unverified') return true;
             const v = rawGet().trim();
             if (!tenant) tenant = getTenant() || null;
@@ -21848,8 +22050,27 @@ Version 1.4.3:
             showHint(`"${v}" is not in the ${tenant || 'tenant'} list. Pick a name or click ➕ Add.`, false);
             return false;
         }
+        function verifyMulti(quiet) {
+            if (!tenant) tenant = getTenant() || null;
+            const fixed = list.map(n => trusted.has(lc(n)) ? n : (catalogHit(n) || n));
+            if (fixed.join('\n') !== list.join('\n')) { list = fixed; syncValue(); }
+            renderChips(!quiet);
+            return !pending.trim() && !missingNames().length;
+        }
         catalogVerifiers.set(input, verify_);
+        function pickMulti(n, trust) {
+            commit(n, trust);
+            pending = '';
+            search.value = '';
+            syncValue();
+            renderChips(hint.classList.contains('ct-cat-hint-warn'));
+            emit();
+            filtered = false; active = 0;
+            render();
+            search.focus();
+        }
         function pick(n) {
+            if (multi) return pickMulti(n, true);
             setValue(n);
             hideHint();
             closeList(false);
@@ -21869,20 +22090,38 @@ Version 1.4.3:
             } finally {
                 adding = false;
             }
-            setValue(name);
-            closeList(false);
-            refocusInput();
+            if (multi) pickMulti(name, true);
+            else { setValue(name); closeList(false); refocusInput(); }
             if (outcome === 'shared') showHint(`✅ "${name}" added to the ${t} list.`, true);
             else if (outcome === 'local') showHint(`✅ "${name}" kept on this computer. SharePoint could not be reached, so others will not see it yet.`, true);
             else showHint(`✅ "${name}" used. It is not in any list because no tenant is chosen.`, true);
         }
 
-        input.addEventListener('input', (e) => { if (e.isTrusted) { input.dataset.ctCatState = 'unverified'; hideHint(); } });
+        input.addEventListener('input', (e) => {
+            if (!e.isTrusted) return;
+            hideHint();
+            if (multi) fromValue(false);
+            else input.dataset.ctCatState = 'unverified';
+        });
         input.addEventListener('focus', () => { if (!quietFocus) openList(); });
         input.addEventListener('click', () => openList());
         input.addEventListener('blur', () => { if (!isOpen) verify_(true); });
         search.addEventListener('input', (e) => {
             if (!e.isTrusted) return;
+            if (multi) {
+                // Text before a comma, semicolon or new line becomes chips; a paste turns every name into a chip.
+                const parts = search.value.split(SPLIT);
+                const last = e.inputType === 'insertFromPaste' ? '' : parts.pop();
+                parts.forEach(p => commit(p, false));
+                if (parts.length) search.value = last.replace(/^\s+/, '');
+                pending = search.value;
+                syncValue();
+                renderChips(hint.classList.contains('ct-cat-hint-warn'));
+                emit();
+                filtered = !!pending.trim(); active = 0;
+                render();
+                return;
+            }
             rawSet(search.value);
             input.dataset.ctCatState = 'unverified';
             filtered = true; active = 0;
@@ -21909,10 +22148,13 @@ Version 1.4.3:
         tenantSel.addEventListener('change', () => {
             tenant = tenantSel.value || null;
             active = 0;
+            setStatus('');
             render();
+            renderChips(hint.classList.contains('ct-cat-hint-warn'));
             search.focus();
             loadTenant();
         });
+        if (multi) fromValue(true);
     }
 
     function buildFieldInputs(schema, values, prefix, container) {
@@ -21961,7 +22203,7 @@ Version 1.4.3:
             wrap.append(lbl, input);
             container.appendChild(wrap);
             const catSpec = CATALOG_FIELDS[f.key];
-            if (catSpec && !catSpec.multi && input.tagName === 'INPUT') attachCatalogPicker(input, catSpec, catalogTicketTenant, f.label);
+            if (catSpec && input.tagName === 'INPUT') attachCatalogPicker(input, catSpec, catalogTicketTenant, f.label);
 
             if (f.extraFields && f.extraFields.length) {
                 const addedKeys    = new Set();
@@ -27155,7 +27397,8 @@ Version 1.4.3:
                 policyComputeDue, policyCheck, policyCache, policyReminderTypes, policyApplyDeleted, policyApplyReenabled,
                 nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
                 setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, openEditModal, catalogBlockingFields, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter, isSpecialTicket,
-                catalog: { load: api.loadCatalog, save: api.saveCatalog, normalize: catalogNormalize, cached: catalogCached } };
+                catalog: { load: api.loadCatalog, save: api.saveCatalog, normalize: catalogNormalize, cached: catalogCached,
+                    setUpdateTimeout: (ms) => { catalogUpdateTimeoutMs = ms; } } };
         }
 
         return function register() {
