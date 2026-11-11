@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.28.0
+// @version      2.28.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -15,6 +15,7 @@
 // @grant        GM_openInTab
 // @grant        GM_xmlhttpRequest
 // @grant        GM_listValues
+// @grant        GM_addValueChangeListener
 // @grant        unsafeWindow
 // @connect      sharepoint.com
 // @connect      deloitte.com
@@ -31,8 +32,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.28.0';
-    const CHANGELOG = `Version 2.28.0:
+   const SCRIPT_VERSION = '2.28.1';
+    const CHANGELOG = `Version 2.28.1:
+- Change Tracker: "↻ Update now" waits up to a minute and wakes a Netskope tab in the background right away, instead of saying no tab answered while one was open.
+- Change Tracker: Enter no longer adds a mistyped name to the team's list. A name that is not listed stays yellow until you click ➕ Add.
+- Change Tracker: a name you typed that is not in the list stays yellow when you click a suggestion chip.
+- Change Tracker: the Feature Guide and the notes say that Steering names are added with ➕ for now, as they are not read from Netskope yet.
+
+Version 2.28.0:
 - Change Tracker: policy, SSL policy, Destination Profile and Steering names are now picked from a list of the tenant's real Netskope names, kept up to date for the whole team.
 
 Version 2.27.1:
@@ -18177,12 +18184,18 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.12.0';
-    const CHANGELOG = `Version 2.12.0:
+    const SCRIPT_VERSION = '2.12.1';
+    const CHANGELOG = `Version 2.12.1:
+- "↻ Update now" waits up to a minute and wakes a Netskope tab in the background right away, instead of saying no tab answered while one was open.
+- Enter no longer adds a mistyped name to the team's list. A name that is not listed stays yellow until you click ➕ Add, or reach it with the arrow keys.
+- A name you typed that is not in the list stays yellow when you click a suggestion chip.
+- The Feature Guide says that Steering names are added with ➕ for now, as they are not read from Netskope yet.
+
+Version 2.12.0:
 - Policy, SSL policy and Destination Profile name fields open a list of the real names in the ticket's Netskope tenant. Type to filter, then Enter or click, and the name is written exactly as Netskope spells it.
 - A name that is not in the list blocks the entry until you pick the right one or click "➕ Add", for names you just created in Netskope.
 - Steerings and Destination Profiles in SSL entries take several names as chips. Type or paste them separated by commas, semicolons or new lines; names not in the list show in yellow with ➕ to add them, or "➕ Add all".
-- The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background and shares them through SharePoint.
+- The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background and shares them through SharePoint. Steering names are not read from Netskope yet: add them with ➕ the first time you use them.
 - "↻ Update now" at the bottom of the list asks an open Netskope tab of that tenant to read its names right away.
 
 Version 2.11.1:
@@ -20486,6 +20499,10 @@ Version 1.4.3:
             };
             setTimeout(attempt, 5000);
             setInterval(() => { catalogPollOnce().catch(e => console.warn('CT catalog:', e)); }, 3000);
+            // Background tabs run timers about once a minute; a change event wakes this tab at once.
+            if (typeof GM_addValueChangeListener === 'function') {
+                GM_addValueChangeListener(CATALOG_REQUEST_KEY, () => { catalogPollOnce().catch(e => console.warn('CT catalog:', e)); });
+            }
         };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
         else start();
@@ -21718,7 +21735,7 @@ Version 1.4.3:
         return local();
     }
 
-    let catalogUpdateTimeoutMs = 30000;
+    let catalogUpdateTimeoutMs = 75000;
 
     // Asks a Netskope tab of the tenant to read its lists now, then reloads the rows from SharePoint.
     async function catalogRequestUpdate(tenant) {
@@ -21765,7 +21782,7 @@ Version 1.4.3:
         Object.defineProperty(input, 'value', {
             configurable: true,
             get() { return rawGet(); },
-            set(v) { rawSet(v); input.dataset.ctCatState = 'ok'; hideHint(); if (multi) fromValue(true); },
+            set(v) { rawSet(v); input.dataset.ctCatState = 'ok'; hideHint(); if (multi) fromValue('new'); },
         });
 
         const panel = mk('div', { className: 'ct-cat-list' });
@@ -21795,7 +21812,7 @@ Version 1.4.3:
         if (multi) input.after(chipsBox, panel, hint);
         else input.after(panel, hint);
 
-        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false, updating = false;
+        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false, updating = false, arrowed = false;
 
         function catalogHit(n) { return names().find(x => lc(x) === lc(n)); }
         function isOk(n) { return trusted.has(lc(n)) || !!catalogHit(n); }
@@ -21811,10 +21828,12 @@ Version 1.4.3:
             if (i < 0) list.push(v);
             else if (!trusted.has(lc(list[i]))) list[i] = v;
         }
+        // trust 'new': names set by the tracker are accepted, names already in the field keep their state.
         function fromValue(trust) {
+            const before = new Set([...list, ...pending.split(SPLIT)].map(x => lc(String(x).trim())).filter(Boolean));
             list = [];
             pending = '';
-            rawGet().split(SPLIT).forEach(v => commit(v, trust));
+            rawGet().split(SPLIT).forEach(v => commit(v, trust === 'new' ? !before.has(lc(String(v).trim())) : trust));
             renderChips(false);
         }
         function chipBtn(text, tip) {
@@ -21925,7 +21944,7 @@ Version 1.4.3:
             if (updating || !tenant) return;
             const t = tenant;
             updating = true;
-            setStatus(`🔄 Asking a Netskope tab of ${t} to read its lists…`);
+            setStatus(`🔄 Asking a Netskope tab of ${t} to read its lists… This can take up to a minute when that tab is in the background.`);
             render();
             let r;
             try {
@@ -22118,6 +22137,7 @@ Version 1.4.3:
         input.addEventListener('blur', () => { if (!isOpen) verify_(true); });
         search.addEventListener('input', (e) => {
             if (!e.isTrusted) return;
+            arrowed = false;
             if (multi) {
                 // Text before a comma, semicolon or new line becomes chips; a paste turns every name into a chip.
                 const parts = search.value.split(SPLIT);
@@ -22141,12 +22161,15 @@ Version 1.4.3:
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (!items.length) return;
+                arrowed = true;
                 active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
                 items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
                 items[active].scrollIntoView({ block: 'nearest' });
             } else if (e.key === 'Enter') {
                 e.preventDefault(); e.stopPropagation();
-                if (items[active] && filtered) items[active].click();
+                // Enter never adds a typed name to the shared list by itself: ➕ Add needs a click or the arrow keys.
+                const it = items[active];
+                if (it && filtered && (arrowed || !it.hasAttribute('data-ct-cat-add'))) it.click();
                 else { closeList(true); refocusInput(); }
             } else if (e.key === 'Escape') {
                 e.preventDefault(); e.stopPropagation();
@@ -25385,7 +25408,8 @@ Version 1.4.3:
                     ], { margin: '10px 0 0 0' }));
                     caption(body, 'Steerings and Destination Profiles take several names. Type or paste them separated by commas, semicolons or new lines: each one becomes a chip.');
                     bullets(body, [
-                        'The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background (at most every 6 hours) and shares them through SharePoint.',
+                        'The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background (at most every 6 hours) and shares them through SharePoint. Steering names are not read from Netskope yet: add them with ➕ the first time you use them.',
+                        'Enter picks a listed name. A name that is not listed stays yellow: click ➕ Add, or reach it with the arrow keys, to add it for everyone.',
                         'A yellow ⚠ name is not in the list, so the entry cannot be saved yet. Pick the right name, or click ➕ to add a name you just created in Netskope.',
                         '"↻ Update now" asks an open Netskope tab of that tenant to read its names right away. Open the tenant in Netskope first.',
                         'Names filled in by the tracker itself (Paste policy, suggestion chips) and names already saved in an entry are accepted as they are.'
