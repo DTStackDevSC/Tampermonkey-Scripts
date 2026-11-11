@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.29.0
+// @version      2.29.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.29.0';
-    const CHANGELOG = `Version 2.29.0:
+   const SCRIPT_VERSION = '2.29.1';
+    const CHANGELOG = `Version 2.29.1:
+- Change Tracker: Typing in a name field after clicking back into it, while its list is open, now also updates the search box and the list, and the arrow keys, Enter and Escape work from the field too.
+
+Version 2.29.0:
 - Change Tracker: the Steering list now fills itself from Netskope too, with every steering config of the tenant, like policies and Destination Profiles. No need to add steerings with ➕ anymore.
 - Change Tracker: a Destination Profile list that Netskope sends incomplete no longer replaces the full list.
 
@@ -18188,8 +18191,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.13.0';
-    const CHANGELOG = `Version 2.13.0:
+    const SCRIPT_VERSION = '2.13.1';
+    const CHANGELOG = `Version 2.13.1:
+- Typing in a name field after clicking back into it, while its list is open, now also updates the search box and the list, and the arrow keys, Enter and Escape work from the field too.
+
+Version 2.13.0:
 - The Steering list now fills itself from Netskope too, with every steering config of the tenant, like policies and Destination Profiles. No need to add steerings with ➕ anymore.
 - A Destination Profile list that Netskope sends incomplete no longer replaces the full list.
 
@@ -21837,11 +21843,14 @@ Version 1.4.3:
             else if (!trusted.has(lc(list[i]))) list[i] = v;
         }
         // trust 'new': names set by the tracker are accepted, names already in the field keep their state.
-        function fromValue(trust) {
+        // keepLast: the name after the last comma is still being typed, so it stays pending.
+        function fromValue(trust, keepLast) {
             const before = new Set([...list, ...pending.split(SPLIT)].map(x => lc(String(x).trim())).filter(Boolean));
             list = [];
             pending = '';
-            rawGet().split(SPLIT).forEach(v => commit(v, trust === 'new' ? !before.has(lc(String(v).trim())) : trust));
+            const parts = rawGet().split(SPLIT);
+            if (keepLast) pending = parts.pop().replace(/^\s+/, '');
+            parts.forEach(v => commit(v, trust === 'new' ? !before.has(lc(String(v).trim())) : trust));
             renderChips(false);
         }
         function chipBtn(text, tip) {
@@ -22137,8 +22146,16 @@ Version 1.4.3:
         input.addEventListener('input', (e) => {
             if (!e.isTrusted) return;
             hideHint();
-            if (multi) fromValue(false);
+            if (multi) fromValue(false, isOpen);
             else input.dataset.ctCatState = 'unverified';
+            if (!isOpen) return;
+            // Typing in the form field while the list is open keeps the search box and the list in step.
+            search.value = multi ? pending : rawGet();
+            filtered = !!search.value.trim(); active = 0; arrowed = false;
+            render();
+        });
+        input.addEventListener('keydown', (e) => {
+            if (isOpen && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) onSearchKey(e);
         });
         input.addEventListener('focus', () => { if (!quietFocus) openList(); });
         input.addEventListener('click', () => openList());
@@ -22152,6 +22169,7 @@ Version 1.4.3:
                 const last = e.inputType === 'insertFromPaste' ? '' : parts.pop();
                 parts.forEach(p => commit(p, false));
                 if (parts.length) search.value = last.replace(/^\s+/, '');
+                if (/^\s/.test(search.value)) search.value = search.value.replace(/^\s+/, '');
                 pending = search.value;
                 syncValue();
                 renderChips(hint.classList.contains('ct-cat-hint-warn'));
@@ -22165,7 +22183,8 @@ Version 1.4.3:
             filtered = true; active = 0;
             render();
         });
-        search.addEventListener('keydown', (e) => {
+        search.addEventListener('keydown', onSearchKey);
+        function onSearchKey(e) {
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (!items.length) return;
@@ -22185,7 +22204,7 @@ Version 1.4.3:
             } else if (e.key === 'Tab') {
                 closeList(true);
             }
-        });
+        }
         tenantSel.addEventListener('change', () => {
             tenant = tenantSel.value || null;
             active = 0;
