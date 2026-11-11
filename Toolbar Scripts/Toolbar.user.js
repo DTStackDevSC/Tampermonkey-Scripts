@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.27.0
+// @version      2.27.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.27.0';
-    const CHANGELOG = `Version 2.27.0:
+   const SCRIPT_VERSION = '2.27.1';
+    const CHANGELOG = `Version 2.27.1:
+- Change Tracker: "🔁 SSL bypass → Domain bypass" no longer saves an entry of its own. It saves two ordinary entries, "SSL Decryption — URLs Removed" and "Steering Exception Added", with the same domains, and still writes a single comment saying the bypasses were switched. It is offered only for new entries, not in the edit window.
+
+Version 2.27.0:
 - Change Tracker: new "🔁 SSL bypass → Domain bypass" entry in Steering Exceptions. One entry records domains moved from an SSL bypass to a Domain bypass, instead of one entry to remove them and another to add them. Purple chips suggest the domains still in an SSL bypass in this ticket, with their policy, and the steerings already used. The comment tells the user the bypasses were switched, and the change summary shows the domains removed from the SSL policy and added to the steerings.
 
 Version 2.26.0:
@@ -18145,8 +18148,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.11.0';
-    const CHANGELOG = `Version 2.11.0:
+    const SCRIPT_VERSION = '2.11.1';
+    const CHANGELOG = `Version 2.11.1:
+- "🔁 SSL bypass → Domain bypass" no longer saves an entry of its own. It saves two ordinary entries, "SSL Decryption — URLs Removed" and "Steering Exception Added", with the same domains, and still writes a single comment saying the bypasses were switched. It is offered only for new entries, not in the edit window.
+
+Version 2.11.0:
 - New "🔁 SSL bypass → Domain bypass" entry in Steering Exceptions. One entry records domains moved from an SSL bypass to a Domain bypass, instead of one entry to remove them and another to add them. Purple chips suggest the domains still in an SSL bypass in this ticket, with their policy, and the steerings already used. The comment tells the user the bypasses were switched, and the change summary shows the domains removed from the SSL policy and added to the steerings.
 
 Version 2.10.0:
@@ -18473,7 +18479,7 @@ Version 1.4.3:
             { key: 'urlsOrNetwork',   label: 'URLs / Network Location', type: 'textarea' },
             { key: 'steeringApplied', label: 'Steering/s applied to',   type: 'text'     },
         ],
-        // One entry for a move: removed from the SSL policy, added as a Steering Exception
+        // The "SSL bypass → Domain bypass" form: saved as two entries (URLs Removed + Steering Exception Added)
         ssl_to_domain: [
             { key: 'sslPolicyName',   label: 'SSL Policy name',         type: 'text'     },
             { key: 'domains',         label: 'Domains',                 type: 'textarea' },
@@ -18667,7 +18673,8 @@ Version 1.4.3:
             items: [
                 { label: 'Steering Exception Added',   value: 'Steering Exception Added',   color: '#28a745', schema: 'steering_exception' },
                 { label: 'Steering Exception Removed', value: 'Steering Exception Removed', color: '#e74c3c', schema: 'steering_exception' },
-                { label: '🔁 SSL bypass → Domain bypass', value: 'SSL bypass → Domain bypass', color: '#6f42c1', schema: 'ssl_to_domain' },
+                // Add only: saves an "SSL Decryption — URLs Removed" and a "Steering Exception Added" entry
+                { label: '🔁 SSL bypass → Domain bypass', value: 'SSL bypass → Domain bypass', color: '#6f42c1', schema: 'ssl_to_domain', addOnly: true },
             ],
         },
         {
@@ -18796,6 +18803,7 @@ Version 1.4.3:
             grp.label = group;
             items.forEach(s => {
                 if (s.auto && s.value !== selectedValue) return;
+                if (s.addOnly && !addPlaceholder) return;   // not a type an existing entry can take
                 const opt = mk('option');
                 opt.value = s.value; opt.textContent = s.label;
                 if (s.value === selectedValue) opt.selected = true;
@@ -18864,7 +18872,7 @@ Version 1.4.3:
             let hasAny = false;
             SNIPPET_GROUPS.forEach(({ group, items }) => {
                 const groupMatch   = group.toLowerCase().includes(q);
-                const offered = items.filter(s => !s.auto);
+                const offered = items.filter(s => !s.auto && !(s.addOnly && !addPlaceholder));
                 const visibleItems = groupMatch ? offered : offered.filter(s => s.label.toLowerCase().includes(q));
                 if (!visibleItems.length) return;
                 hasAny = true;
@@ -18984,7 +18992,7 @@ Version 1.4.3:
         { label: 'Network Locations',           types: ['Network Location Created', 'Network Location — IPs Added', 'Network Location — IPs Removed', 'Network Location Removed'] },
         { label: 'Destination Profiles',        types: ['Destination Profile Created', 'Destination Profile — Destinations Added', 'Destination Profile — Destinations Removed', 'Destination Profile Removed'] },
         { label: 'Custom Categories',           types: ['Custom Category Created', 'Custom Category — URL Lists Added', 'Custom Category — URL Lists Removed', 'Custom Category Removed'] },
-        // A move counts in both groups: removed from the SSL policy, added to the steering
+        // "SSL bypass → Domain bypass" now saves two ordinary entries; entries of that type saved by 2.27.0 still count in both groups
         { label: 'SSL Decryption Policies',     types: ['SSL Decryption Policy Created', 'SSL Decryption — URLs Added', 'SSL Decryption — URLs Removed', 'SSL Decryption Policy Removed', 'SSL bypass → Domain bypass'] },
         { label: 'Steering Exceptions',         types: ['Steering Exception Added', 'Steering Exception Removed', 'SSL bypass → Domain bypass'] },
         { label: 'App Exceptions',              types: ['App Exception Added', 'App Exception Removed'] },
@@ -23770,6 +23778,40 @@ Version 1.4.3:
 
         const ticket    = getTicketNumber();
         const knownIds  = new Set(loadEntries(ticket).map(e => e.id));
+
+        // SSL bypass → Domain bypass: two ordinary entries, one combined note in the ticket
+        if (type === CT_SSL_MOVE_TYPE) {
+            if (!fields.domains) { flashStatus('⚠️ Add the domains to move.', '#e67e22'); return; }
+            const pair = [
+                { type: 'SSL Decryption — URLs Removed', fields: { sslPolicyName: fields.sslPolicyName, domains: fields.domains } },
+                { type: 'Steering Exception Added',      fields: { urlsOrNetwork: fields.domains, steeringApplied: fields.steeringApplied } },
+            ];
+            let all = [];
+            await withBusy(document.getElementById('ct-input-area'), async () => {
+                for (const p of pair) all = await addEntry(ticket, p.type, p.fields, note);
+            }, 'Saving 2 entries…');
+            select.value = '';
+            const fc0 = document.getElementById('ct-input-fields');
+            if (fc0) rebuildInputFields('', {}, '', 'ct-field', fc0);
+            renderInputLock();
+            const added = all.filter(e => !knownIds.has(e.id));
+            if (getBatchSession(ticket)) {
+                added.forEach(e => addToBatchSession(ticket, e.id));
+                refreshLog(ticket);
+                flashStatus(`✓ 2 entries added to batch  (${getBatchEntries(ticket).length} pending)`);
+                return;
+            }
+            refreshLog(ticket);
+            if (added.some(e => isEntryPending(ticket, e.id))) flashStatus('⏳ Saved locally. It syncs with SharePoint when the connection is back.', '#e67e22', 4000);
+            else flashStatus(`✓ 2 entries added: URLs Removed + Steering Exception Added  (${all.length} total)`);
+            const moveTargets = getWriteChecks();
+            resetWriteChecks();
+            if (moveTargets.workNotes || moveTargets.comments) {
+                ticketWriter.writeEntry({ type: CT_SSL_MOVE_TYPE, fields, note }, moveTargets).catch(err => console.warn('CT: ticket auto-write failed', err));
+            }
+            return;
+        }
+
         const entries   = await withBusy(document.getElementById('ct-input-area'), () => addEntry(ticket, type, fields, note), 'Saving…');
 
         // Reset
@@ -24415,7 +24457,7 @@ Version 1.4.3:
                 icon: '🔁',
                 title: 'SSL bypass → Domain bypass',
                 buildContent: (body) => {
-                    lead(body, 'Moving domains from an SSL bypass to a Domain bypass takes one entry instead of two.');
+                    lead(body, 'Moving domains from an SSL bypass to a Domain bypass takes one form instead of two.');
                     const card = panel({ border: '1px solid #ddd0f3', borderRadius: '4px', background: '#f6f3fc' });
                     card.appendChild(span('SSL bypasses in this ticket (click to move):', { fontSize: '11px', color: '#6f42c1', fontWeight: 'bold', display: 'block', marginBottom: '4px' }));
                     card.appendChild(hrow([
@@ -24429,10 +24471,10 @@ Version 1.4.3:
                     ], { gap: '4px', margin: '0' }));
                     body.appendChild(card);
                     bullets(body, [
-                        'Pick "🔁 SSL bypass → Domain bypass" in Steering Exceptions and fill SSL Policy name, Domains and Steering/s applied to.',
+                        'Pick "🔁 SSL bypass → Domain bypass" in Steering Exceptions and fill SSL Policy name, Domains and Steering/s applied to. "+ Add Entry" saves two ordinary entries: "SSL Decryption — URLs Removed" and "Steering Exception Added", and says so.',
                         'The purple chips come from this ticket: the domains still in an SSL bypass, with their policy, and the steerings already used. A click adds the value (purple) and fills the policy, a second click takes it out. A domain of another policy starts the list over with that policy.',
-                        'The comment tells the user the bypasses were switched from SSL Bypass to Domain Bypass, with the policy, domains and steerings, and asks them to test.',
-                        'In the change summary the domains show as removed from the SSL policy and added to the steerings. Copy domains / IPs still copies them.',
+                        'Only one comment is written: it tells the user the bypasses were switched from SSL Bypass to Domain Bypass, with the policy, domains and steerings, and asks them to test.',
+                        'In a batch session both entries join the batch. Each entry can be edited or deleted on its own like any other.',
                     ]);
                 }
             },
