@@ -3845,6 +3845,28 @@ Version 1.0.0:
         'AME': 'netskopeHost_AME',
     };
 
+    // Change Tracker name catalog: the NS Policies Toolkit registers one reader per kind here
+    // (each returns the names Netskope holds), the Change Tracker calls them on tenant pages.
+    const nsCatalogReaders = {};
+
+    function normalizeTenantHost(host) {
+        return String(host || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '').split('/')[0];
+    }
+
+    // The tenant type whose configured host is this host, or null.
+    function tenantTypeOfHost(host) {
+        const h = normalizeTenantHost(host);
+        if (!h) return null;
+        for (const [type, key] of Object.entries(TENANT_TYPE_TO_KEY)) {
+            if (normalizeTenantHost(GM_getValue(key, '')) === h) return type;
+        }
+        return null;
+    }
+
+    if (GM_getValue('changeTrackerTestHooks', false) === true) {
+        try { (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__nscat = { readers: nsCatalogReaders, tenantTypeOfHost }; } catch (e) { /* test only */ }
+    }
+
     // Returns { type, host } (host '' when that tenant is not set up yet), or null when the ticket has no member firm.
     function detectTicketTenant(doc) {
         const selectors = ['input.form-control.element_reference_input', 'input[type="hidden"][id*="display_hidden"]'];
@@ -35066,7 +35088,8 @@ Version 1.16:
     }
 
     // Must run before the console app starts so its first requests are seen
-    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy') || getSetting('bulkGroupAdd')) nsInstallSniffer();
+    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy') || getSetting('bulkGroupAdd') ||
+        isToolEnabled('changeTracker')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -39225,6 +39248,30 @@ Version 1.16:
         }
         return map;
     }
+
+    // Name readers for the Change Tracker catalog. They only read, and reuse the page's own session.
+    nsCatalogReaders.policies = async () => {
+        const data = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        return [...new Set(bgPoliciesOf(data).map(p => p.name).filter(Boolean))];
+    };
+    nsCatalogReaders.ssl = async () => {
+        const json = await sxGet('/api/v2/balkan/policies/ssldecryption');
+        return [...new Set((Array.isArray(json && json.data) ? json.data : []).map(p => p && p.name).filter(Boolean).map(String))];
+    };
+    nsCatalogReaders.destinations = async () => {
+        const headers = { 'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest' };
+        if (sm.resource) headers.resource = sm.resource;
+        const names = new Set();
+        for (let offset = 0; offset < 20000; offset += 100) {
+            const res = await fetch(`${PC_DEST_PATH}?limit=100&offset=${offset}&fields=id,name`, { credentials: 'same-origin', headers });
+            if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${PC_DEST_PATH}.`);
+            const json = await res.json();
+            const els = (json && json.elements) || [];
+            els.forEach(e => { if (e && e.name) names.add(String(e.name)); });
+            if (els.length < 100) break;
+        }
+        return [...names];
+    };
 
     async function pcLookup(kind, ruleData) {
         if (kind === 'dest') return pcDestinations([...new Set((ruleData.destinationProfiles || []).map(String))]);
