@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.29.1
+// @version      2.29.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.29.1';
-    const CHANGELOG = `Version 2.29.1:
+   const SCRIPT_VERSION = '2.29.2';
+    const CHANGELOG = `Version 2.29.2:
+- ServiceNow Toolkit: The SPM Germany reminder also reads the Original ticket number field when you type it by hand or change it, and uses it when the ticket of the SPM link cannot be read. It waits until the full RITM number is typed.
+
+Version 2.29.1:
 - Change Tracker: Typing in a name field after clicking back into it, while its list is open, now also updates the search box and the list, and the arrow keys, Enter and Escape work from the field too.
 
 Version 2.29.0:
@@ -5886,8 +5889,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6';
-    const CHANGELOG = `Version 1.6:
+    const SCRIPT_VERSION = '1.6.1';
+    const CHANGELOG = `Version 1.6.1:
+- The SPM Germany reminder also reads the Original ticket number field when you type it by hand or change it, and uses it when the ticket of the SPM link cannot be read. It waits until the full RITM number is typed.
+
+Version 1.6:
 - The SPM Germany reminder also marks the fields themselves: Requestor or Backup Exception Owner glow red when they hold someone else, and orange (review) when they are empty or the original ticket could not be read. Pointing at the field says who it should be.
 
 Version 1.5.1:
@@ -6568,7 +6574,7 @@ Version 1.1.4:
                     body.appendChild(glowRow('Persona B', '#dc3545', 'rgba(220,53,69,0.55)', 'Red: someone else is set.'));
                     body.appendChild(glowRow('(empty)', '#f0a500', 'rgba(240,165,0,0.55)', 'Orange: empty, or the original ticket could not be read. Review it.'));
                     bullets(body, [
-                        'The names come from the original ticket: the ticket in the SPM link (RITM number or ticket id), or the Original ticket number field.',
+                        'The names come from the original ticket: the RITM in the Original ticket number field (also when typed by hand), else the ticket in the SPM link. If one cannot be read, the other is tried.',
                         '✓ and ⚠ follow the form as you fill it in. The reminder never changes the form.',
                         'The fields glow too: red when they hold someone else, orange (review) when they are empty or the original ticket could not be read. Point at a glowing field to see who it should be.',
                         'Can be turned off in Settings.',
@@ -7602,10 +7608,17 @@ Version 1.1.4:
         const el = document.querySelector('#s2id_sp_formfield_u_member_firm .select2-chosen');
         return el ? el.textContent.trim() : '';
     }
-    function spmOriginalRef() {
+    // Tickets to try, in order. A full RITM number in the Original ticket number field comes first, so a
+    // number typed or changed by hand counts; the ritm_id of the link is next. Half typed numbers are skipped.
+    function spmOriginalRefs() {
         const p = new URLSearchParams(location.search);
         const fromUrl = String(p.get('ritm_id') || p.get('ritm id') || '').trim();
-        return fromUrl || spmVal('sp_formfield_wp_original_ticket_number');
+        const typed = spmVal('sp_formfield_wp_original_ticket_number');
+        const m = typed.match(/\bRITM\d{7,}\b/i) || typed.match(/\b[0-9a-f]{32}\b/i);
+        const fromField = m ? m[0].toUpperCase().replace(/^([0-9A-F]{32})$/, s => s.toLowerCase()) : '';
+        const refs = [fromField, fromUrl].filter(Boolean).filter((r, i, a) => a.findIndex(x => x.toLowerCase() === r.toLowerCase()) === i);
+        if (!refs.length && typed && !/^RITM\d{0,6}$/i.test(typed)) refs.push(typed);
+        return refs;
     }
 
     function spmFetchOriginal(ref) {
@@ -7704,8 +7717,9 @@ Version 1.1.4:
             spmLastOrig = null;
             return;
         }
-        const ref = spmOriginalRef();
-        const key = [ref, spmVal('sp_formfield_opened_by'), spmVal('sp_formfield_scc_dttl_app_manager')].join('|');
+        const refs = spmOriginalRefs();
+        let ref = refs[0] || '';
+        const key = [refs.join(','), spmVal('sp_formfield_opened_by'), spmVal('sp_formfield_scc_dttl_app_manager')].join('|');
         if (!force && notice && notice.isConnected && key === spmLastKey) { if (spmLastOrig) spmMarkFields(spmLastOrig); return; }
         spmLastKey = key;
         let box = notice;
@@ -7719,9 +7733,15 @@ Version 1.1.4:
             row.parentElement.insertBefore(box, row);
         }
         if (!ref) { box.innerHTML = spmNoticeHtml('', null); spmLastOrig = { error: 'no original ticket' }; spmMarkFields(spmLastOrig); return; }
-        const cached = spmOriginalCache.get(ref);
-        if (!cached) box.innerHTML = spmNoticeHtml(ref, null);
-        const orig = await (cached || suiteBusy(box, () => spmFetchOriginal(ref), 'Reading the original ticket…'));
+        let orig = null;
+        for (const r of refs) {
+            const cached = spmOriginalCache.get(r);
+            if (!cached && !orig) box.innerHTML = spmNoticeHtml(r, null);
+            const o = await (cached || suiteBusy(box, () => spmFetchOriginal(r), 'Reading the original ticket…'));
+            if (spmLastKey !== key) return;   // the form changed meanwhile, the next check takes over
+            if (!orig || !o.error) { orig = o; ref = r; }
+            if (!o.error) break;
+        }
         if (box.isConnected) box.innerHTML = spmNoticeHtml(ref, orig);
         spmLastOrig = orig;
         spmMarkFields(orig);
