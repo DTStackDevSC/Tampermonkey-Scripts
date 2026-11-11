@@ -18159,8 +18159,12 @@ Version 2.3.1:
     const registerServiceNowTicketHistory = (() => {
         'use strict';
 
+    // On a configured Netskope tenant page the tracker runs without any UI: it only keeps the name catalog up to date.
+    const CT_TENANT = /\.goskope\.com$/.test(location.hostname) ? tenantTypeOfHost(location.hostname) : null;
+    const CT_HEADLESS = !!CT_TENANT && !dtToolRunsHere('changeTracker');
+
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
-    if (!isToolEnabled('changeTracker') || !dtToolRunsHere('changeTracker')) return function register() {};
+    if (!isToolEnabled('changeTracker') || (!dtToolRunsHere('changeTracker') && !CT_HEADLESS)) return function register() {};
 
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
 
@@ -19728,7 +19732,8 @@ Version 1.4.3:
             const refused = refusal(opts, url);
             if (refused) { console.warn('CT SP:', refused, url); return { ok: false, status: 0, kind: 'bad', data: null, message: refused, etag: null }; }
             const isWrite = opts.method !== 'GET';
-            let digestRetried = false, netRetried = false, throttleTries = 0, renewTried = false;
+            // Background work (and every call on a Netskope page) never opens a sign in tab.
+            let digestRetried = false, netRetried = false, throttleTries = 0, renewTried = !!opts.noRenew || CT_HEADLESS;
             const signInFailed = kind => kind === 'session' || kind === 'forbidden';
             for (;;) {
                 const headers = { Accept: SP_ACCEPT };
@@ -19784,8 +19789,10 @@ Version 1.4.3:
             renewSession, lastRenewal: () => lastRenewal, renewRecord, setOnRenew: (fn) => { onRenew = fn; } };
     })();
 
-    spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
-    spClient.setOnRenew((manual) => { if (!manual) flashStatus('🔄 Renewing the SharePoint sign in in a background tab…', '#17a2b8', 6000); });
+    if (!CT_HEADLESS) {
+        spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
+        spClient.setOnRenew((manual) => { if (!manual) flashStatus('🔄 Renewing the SharePoint sign in in a background tab…', '#17a2b8', 6000); });
+    }
 
     /* ==========================================================
      *  ENTRY MAPPER  (tracker entry <-> SharePoint list item)
@@ -20357,6 +20364,104 @@ Version 1.4.3:
         },
     };
 
+
+    /* ==========================================================
+     *  CATALOG SYNC  (Netskope tenant pages, no UI)
+     *  Reads the names Netskope holds through the page's own session and
+     *  writes them over the tenant's catalog rows. Team wide: a row checked
+     *  less than 6 hours ago by anyone is left alone.
+     * ==========================================================*/
+
+    const CATALOG_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+    const CATALOG_REQUEST_KEY = 'changeTrackerCatalogRequest';
+    const CATALOG_ANSWER_KEY  = 'changeTrackerCatalogAnswer';
+    const CATALOG_REQUEST_MAX_AGE_MS = 2 * 60 * 1000;
+
+    // One sync at a time per page.
+    let catalogChain = Promise.resolve();
+    function catalogQueued(fn) {
+        const p = catalogChain.then(fn, fn);
+        catalogChain = p.catch(() => {});
+        return p;
+    }
+
+    async function catalogSyncTenantNow(tenant, force) {
+        const results = {};
+        const loaded = await api.loadCatalog(tenant);
+        if (!loaded.ok) {
+            console.warn('CT catalog: could not read the catalog rows', loaded);
+            CATALOG_KINDS.forEach(k => { results[k] = nsCatalogReaders[k] ? 'failed' : 'noReader'; });
+            return results;
+        }
+        let who = null;
+        for (const kind of CATALOG_KINDS) {
+            const reader = nsCatalogReaders[kind];
+            if (!reader) { results[kind] = 'noReader'; continue; }
+            const prev = loaded.data[kind] || null;
+            const age = prev && prev.checkedAt ? Date.now() - Date.parse(prev.checkedAt) : Infinity;
+            if (!force && age < CATALOG_MAX_AGE_MS) { results[kind] = 'fresh'; continue; }
+            let names;
+            try { names = catalogNormalize(await reader()); } catch (e) {
+                console.warn(`CT catalog: reading ${kind} failed:`, e && e.message);
+                results[kind] = 'failed'; continue;
+            }
+            // An empty answer is more likely a page that is not ready than a tenant with nothing in it.
+            if (!names.length && prev && prev.names.length) { results[kind] = 'failed'; continue; }
+            if (who === null) {
+                const me = await spClient.currentUser();
+                who = me.ok && me.data ? String(me.data.Title || '') : '';
+            }
+            const same = !!prev && JSON.stringify(prev.names) === JSON.stringify(names);
+            const res = await api.saveCatalog(tenant, kind, names, prev, { checkedBy: who, checkedAt: new Date().toISOString() });
+            if (!res.ok) {
+                if (res.kind === 'tooLarge') console.warn(`CT catalog: ${kind} has too many names for one SharePoint row.`);
+                results[kind] = res.kind === 'conflict' ? 'conflict' : 'failed';
+                continue;
+            }
+            results[kind] = same ? 'unchanged' : 'updated';
+        }
+        return results;
+    }
+
+    function catalogSyncTenant(tenant, { force = false } = {}) {
+        return catalogQueued(() => catalogSyncTenantNow(tenant, force));
+    }
+
+    // A ServiceNow tab asked for "Update now": answer it when it is for this tenant.
+    async function catalogPollOnce() {
+        const req = GM_getValue(CATALOG_REQUEST_KEY, null);
+        if (!req || !req.id || req.tenant !== CT_TENANT) return null;
+        if (Date.now() - Number(req.at || 0) > CATALOG_REQUEST_MAX_AGE_MS) return null;
+        const answered = GM_getValue(CATALOG_ANSWER_KEY, null);
+        if (answered && answered.id === req.id) return null;
+        // Claim it first so a second tab of the same tenant does not run it too.
+        GM_setValue(CATALOG_ANSWER_KEY, { id: req.id, tenant: CT_TENANT, results: null, at: Date.now(), pending: true });
+        const results = await catalogSyncTenant(CT_TENANT, { force: true });
+        GM_setValue(CATALOG_ANSWER_KEY, { id: req.id, tenant: CT_TENANT, results, at: Date.now() });
+        return results;
+    }
+
+    function catalogStartHeadless() {
+        if (GM_getValue('changeTrackerTestHooks', false) === true) {
+            try { unsafeWindow.__ctcat = { sync: catalogSyncTenant, pollOnce: catalogPollOnce }; } catch (e) { /* test only */ }
+        }
+        if (!api.isConfigured()) return;
+        const start = () => {
+            let tries = 0;
+            const attempt = async () => {
+                tries++;
+                let r = {};
+                try { r = await catalogSyncTenant(CT_TENANT); } catch (e) { console.warn('CT catalog:', e); }
+                if (Object.values(r).includes('failed') && tries < 10) setTimeout(attempt, 30000);
+            };
+            setTimeout(attempt, 5000);
+            setInterval(() => { catalogPollOnce().catch(e => console.warn('CT catalog:', e)); }, 3000);
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+        else start();
+    }
+
+    if (CT_HEADLESS) { catalogStartHeadless(); return function register() {}; }
 
     /* ==========================================================
      *  TICKET WRITER  (auto-write entries into SNow worknote/comments)
