@@ -20099,6 +20099,50 @@ Version 1.4.3:
 
 
     /* ==========================================================
+     *  NAME CATALOG  (special rows: the names Netskope holds, per tenant)
+     * ==========================================================*/
+
+    const NRD_SETTINGS_TICKET = '__CT_SETTINGS__';
+    const CATALOG_TICKET = '__CT_CATALOG__';
+    const CATALOG_TYPE   = 'Name catalog';
+    const CATALOG_KINDS  = ['policies', 'ssl', 'destinations', 'steering'];
+    const CATALOG_CACHE_PREFIX = 'changeTrackerCatalog_';
+
+    // Rows that are not tickets: every cross ticket read skips them.
+    function isSpecialTicket(title) {
+        return title === NRD_SETTINGS_TICKET || title === CATALOG_TICKET;
+    }
+
+    function catalogNormalize(names) {
+        const seen = new Set(), out = [];
+        (Array.isArray(names) ? names : []).forEach(n => {
+            const v = String(n == null ? '' : n).trim();
+            const k = v.toLowerCase();
+            if (!v || seen.has(k)) return;
+            seen.add(k); out.push(v);
+        });
+        return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
+    function catalogCached(tenant, kind) {
+        const row = GM_getValue(CATALOG_CACHE_PREFIX + tenant + '_' + kind, null);
+        return row && Array.isArray(row.names) ? row : null;
+    }
+
+    function catalogStore(tenant, kind, row) {
+        if (!tenant || !kind || !row) return;
+        GM_setValue(CATALOG_CACHE_PREFIX + tenant + '_' + kind, { names: row.names || [], checkedAt: row.checkedAt || null,
+            checkedBy: row.checkedBy || '', id: row.id || null, spId: row.spId || null });
+    }
+
+    // The entry date of a catalog row is its last check, in the tracker's local stamp format.
+    function catalogStamp(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return nowStamp();
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    /* ==========================================================
      *  API  (SharePoint list)
      *  Same surface the rest of the tool has always used. Calls never
      *  throw; failures go through handleApiResponse().
@@ -20159,7 +20203,7 @@ Version 1.4.3:
             if (!res.ok) return res;
             const groupOf = {};
             SNIPPET_GROUPS.forEach(g => g.items.forEach(i => { groupOf[i.value] = g.group; }));
-            const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
+            const data = res.data.filter(it => !isSpecialTicket(it.Title))
                 .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
                 .filter(r => r.entry && (groupOf[r.entry.type] === 'Destination Profiles' || r.entry.type === NRD_REVIEW_TYPE));
             return { ok: true, data };
@@ -20172,7 +20216,7 @@ Version 1.4.3:
                 $expand: 'Author,Editor' });
             if (!res.ok) return res;
             const types = policyReminderTypes();
-            const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
+            const data = res.data.filter(it => !isSpecialTicket(it.Title))
                 .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
                 .filter(r => r.entry && (types.deleted.has(r.entry.type) || types.reenabled.has(r.entry.type) || r.entry.type === POLICY_REVIEW_TYPE));
             return { ok: true, data };
@@ -20199,6 +20243,39 @@ Version 1.4.3:
             const res = await api.saveEntry(entry);
             if (!res.ok) return res;
             return { ok: true, data: { nrdProfiles, id: entry.id, spId: res.data.spId, etag: res.data.etag } };
+        },
+
+        // The name catalog rows of one tenant: { [kind]: { names, checkedAt, checkedBy, id, spId, etag } }.
+        async loadCatalog(tenant) {
+            const res = await api.fetchEntries(CATALOG_TICKET);
+            if (!res.ok) return res;
+            const data = {};
+            res.data.entries.forEach(e => {
+                const f = e.fields || {};
+                if (e.type !== CATALOG_TYPE || f.tenant !== tenant || !CATALOG_KINDS.includes(f.kind)) return;
+                data[f.kind] = { names: catalogNormalize(f.names), checkedAt: f.checkedAt || null, checkedBy: f.checkedBy || '',
+                    id: e.id, spId: e.spId, etag: e.etag };
+                catalogStore(tenant, f.kind, data[f.kind]);
+            });
+            return { ok: true, data };
+        },
+
+        // Replaces one kind's names over `prev` (as loaded, or null for a new row). Someone else's save in between: kind 'conflict'.
+        async saveCatalog(tenant, kind, names, prev, { checkedBy, checkedAt } = {}) {
+            if (!prev || !prev.spId) {
+                const now = await api.loadCatalog(tenant);
+                if (!now.ok) return now;
+                if (now.data[kind]) return { ok: false, kind: 'conflict' };
+            }
+            const at = checkedAt || new Date().toISOString();
+            const fields = { tenant, kind, names: catalogNormalize(names), checkedAt: at, checkedBy: checkedBy || '' };
+            const entry = { id: (prev && prev.id) || `ct-catalog-${tenant}-${kind}`, ts: catalogStamp(at), type: CATALOG_TYPE, fields,
+                note: null, ticket: CATALOG_TICKET, spId: prev && prev.spId, etag: prev && prev.etag };
+            const res = await api.saveEntry(entry);
+            if (!res.ok) return res;
+            const row = { names: fields.names, checkedAt: at, checkedBy: fields.checkedBy, id: entry.id, spId: res.data.spId, etag: res.data.etag };
+            catalogStore(tenant, kind, row);
+            return { ok: true, data: row };
         },
 
         async findItem(entryId) {
@@ -24818,7 +24895,6 @@ Version 1.4.3:
      *  tickets and helps take them out again.
      * ==========================================================*/
 
-    const NRD_SETTINGS_TICKET = '__CT_SETTINGS__';
     const NRD_SETTINGS_TYPE   = 'Tracker settings';
     const NRD_NAME_RULE       = /newly registered domains?/i;   // "Newly Registered Domain" or "Domains"
     const NRD_HISTORY_DAYS    = 90;
@@ -26660,7 +26736,8 @@ Version 1.4.3:
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue, nrdTime,
                 policyComputeDue, policyCheck, policyCache, policyReminderTypes, policyApplyDeleted, policyApplyReenabled,
                 nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
-                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter };
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter, isSpecialTicket,
+                catalog: { load: api.loadCatalog, save: api.saveCatalog, normalize: catalogNormalize, cached: catalogCached } };
         }
 
         return function register() {
