@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.27.1
+// @version      2.28.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.27.1';
-    const CHANGELOG = `Version 2.27.1:
+   const SCRIPT_VERSION = '2.28.0';
+    const CHANGELOG = `Version 2.28.0:
+- Change Tracker: policy, SSL policy, Destination Profile and Steering names are now picked from a list of the tenant's real Netskope names, kept up to date for the whole team.
+
+Version 2.27.1:
 - Change Tracker: "🔁 SSL bypass → Domain bypass" no longer saves an entry of its own. It saves two ordinary entries, "SSL Decryption — URLs Removed" and "Steering Exception Added", with the same domains, and still writes a single comment saying the bypasses were switched. It is offered only for new entries, not in the edit window.
 
 Version 2.27.0:
@@ -3844,6 +3847,28 @@ Version 1.0.0:
         'APAC': 'netskopeHost_APAC',
         'AME': 'netskopeHost_AME',
     };
+
+    // Change Tracker name catalog: the NS Policies Toolkit registers one reader per kind here
+    // (each returns the names Netskope holds), the Change Tracker calls them on tenant pages.
+    const nsCatalogReaders = {};
+
+    function normalizeTenantHost(host) {
+        return String(host || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '').split('/')[0];
+    }
+
+    // The tenant type whose configured host is this host, or null.
+    function tenantTypeOfHost(host) {
+        const h = normalizeTenantHost(host);
+        if (!h) return null;
+        for (const [type, key] of Object.entries(TENANT_TYPE_TO_KEY)) {
+            if (normalizeTenantHost(GM_getValue(key, '')) === h) return type;
+        }
+        return null;
+    }
+
+    if (GM_getValue('changeTrackerTestHooks', false) === true) {
+        try { (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__nscat = { readers: nsCatalogReaders, tenantTypeOfHost }; } catch (e) { /* test only */ }
+    }
 
     // Returns { type, host } (host '' when that tenant is not set up yet), or null when the ticket has no member firm.
     function detectTicketTenant(doc) {
@@ -18137,8 +18162,12 @@ Version 2.3.1:
     const registerServiceNowTicketHistory = (() => {
         'use strict';
 
+    // On a configured Netskope tenant page the tracker runs without any UI: it only keeps the name catalog up to date.
+    const CT_TENANT = /\.goskope\.com$/.test(location.hostname) ? tenantTypeOfHost(location.hostname) : null;
+    const CT_HEADLESS = !!CT_TENANT && !dtToolRunsHere('changeTracker');
+
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
-    if (!isToolEnabled('changeTracker') || !dtToolRunsHere('changeTracker')) return function register() {};
+    if (!isToolEnabled('changeTracker') || (!dtToolRunsHere('changeTracker') && !CT_HEADLESS)) return function register() {};
 
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
 
@@ -18148,8 +18177,15 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.11.1';
-    const CHANGELOG = `Version 2.11.1:
+    const SCRIPT_VERSION = '2.12.0';
+    const CHANGELOG = `Version 2.12.0:
+- Policy, SSL policy and Destination Profile name fields open a list of the real names in the ticket's Netskope tenant. Type to filter, then Enter or click, and the name is written exactly as Netskope spells it.
+- A name that is not in the list blocks the entry until you pick the right one or click "➕ Add", for names you just created in Netskope.
+- Steerings and Destination Profiles in SSL entries take several names as chips. Type or paste them separated by commas, semicolons or new lines; names not in the list show in yellow with ➕ to add them, or "➕ Add all".
+- The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background and shares them through SharePoint.
+- "↻ Update now" at the bottom of the list asks an open Netskope tab of that tenant to read its names right away.
+
+Version 2.11.1:
 - "🔁 SSL bypass → Domain bypass" no longer saves an entry of its own. It saves two ordinary entries, "SSL Decryption — URLs Removed" and "Steering Exception Added", with the same domains, and still writes a single comment saying the bypasses were switched. It is offered only for new entries, not in the edit window.
 
 Version 2.11.0:
@@ -19204,6 +19240,24 @@ Version 1.4.3:
 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
+        #ct-sidebar .ct-cat-list, #ct-edit-modal .ct-cat-list { background-color: #ffffff !important; color: #333333 !important; }
+        #ct-sidebar .ct-cat-list input, #ct-sidebar .ct-cat-list select,
+        #ct-edit-modal .ct-cat-list input, #ct-edit-modal .ct-cat-list select { background-color: #ffffff !important; color: #333333 !important; }
+        #ct-sidebar [data-ct-cat-option], #ct-edit-modal [data-ct-cat-option] { color: #333333 !important; background-color: #ffffff !important; }
+        #ct-sidebar [data-ct-cat-add], #ct-edit-modal [data-ct-cat-add] { color: #667eea !important; background-color: #ffffff !important; }
+        #ct-sidebar [data-ct-cat-option]:hover, #ct-edit-modal [data-ct-cat-option]:hover,
+        #ct-sidebar [data-ct-cat-add]:hover, #ct-edit-modal [data-ct-cat-add]:hover,
+        #ct-sidebar .ct-cat-active, #ct-edit-modal .ct-cat-active { background-color: #e8f0fe !important; }
+        #ct-sidebar .ct-cat-footer, #ct-edit-modal .ct-cat-footer,
+        #ct-sidebar .ct-cat-empty, #ct-edit-modal .ct-cat-empty { color: #888888 !important; background-color: #ffffff !important; }
+        #ct-sidebar .ct-cat-hint-warn, #ct-edit-modal .ct-cat-hint-warn { color: #b45309 !important; }
+        #ct-sidebar .ct-cat-hint-ok, #ct-edit-modal .ct-cat-hint-ok { color: #2a7d4f !important; }
+        #ct-sidebar .ct-cat-chip-ok, #ct-edit-modal .ct-cat-chip-ok { background-color: #eef0ff !important; color: #3b4aa8 !important; }
+        #ct-sidebar .ct-cat-chip-missing, #ct-edit-modal .ct-cat-chip-missing { background-color: #fff4d6 !important; color: #8a5300 !important; }
+        #ct-sidebar .ct-cat-chip button, #ct-edit-modal .ct-cat-chip button { background-color: transparent !important; color: inherit !important; }
+        #ct-sidebar [data-ct-cat-add-all], #ct-edit-modal [data-ct-cat-add-all],
+        #ct-sidebar [data-ct-cat-update], #ct-edit-modal [data-ct-cat-update] { background-color: #ffffff !important; color: #667eea !important; }
+        #ct-sidebar .ct-cat-status, #ct-edit-modal .ct-cat-status { background-color: #ffffff !important; color: #444444 !important; }
         /* ── Z-INDEX NOTES ──────────────────────────────────────
          * Toolbar / Mini Summary Sidebar : 999997–999998
          * Change Tracker sidebar         : 999997  (peer)
@@ -19706,7 +19760,8 @@ Version 1.4.3:
             const refused = refusal(opts, url);
             if (refused) { console.warn('CT SP:', refused, url); return { ok: false, status: 0, kind: 'bad', data: null, message: refused, etag: null }; }
             const isWrite = opts.method !== 'GET';
-            let digestRetried = false, netRetried = false, throttleTries = 0, renewTried = false;
+            // Background work (and every call on a Netskope page) never opens a sign in tab.
+            let digestRetried = false, netRetried = false, throttleTries = 0, renewTried = !!opts.noRenew || CT_HEADLESS;
             const signInFailed = kind => kind === 'session' || kind === 'forbidden';
             for (;;) {
                 const headers = { Accept: SP_ACCEPT };
@@ -19762,8 +19817,10 @@ Version 1.4.3:
             renewSession, lastRenewal: () => lastRenewal, renewRecord, setOnRenew: (fn) => { onRenew = fn; } };
     })();
 
-    spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
-    spClient.setOnRenew((manual) => { if (!manual) flashStatus('🔄 Renewing the SharePoint sign in in a background tab…', '#17a2b8', 6000); });
+    if (!CT_HEADLESS) {
+        spClient.setOnWait((seconds) => flashStatus(`SharePoint is busy, retrying in ${seconds} s…`, '#e67e22', seconds * 1000));
+        spClient.setOnRenew((manual) => { if (!manual) flashStatus('🔄 Renewing the SharePoint sign in in a background tab…', '#17a2b8', 6000); });
+    }
 
     /* ==========================================================
      *  ENTRY MAPPER  (tracker entry <-> SharePoint list item)
@@ -20077,6 +20134,50 @@ Version 1.4.3:
 
 
     /* ==========================================================
+     *  NAME CATALOG  (special rows: the names Netskope holds, per tenant)
+     * ==========================================================*/
+
+    const NRD_SETTINGS_TICKET = '__CT_SETTINGS__';
+    const CATALOG_TICKET = '__CT_CATALOG__';
+    const CATALOG_TYPE   = 'Name catalog';
+    const CATALOG_KINDS  = ['policies', 'ssl', 'destinations', 'steering'];
+    const CATALOG_CACHE_PREFIX = 'changeTrackerCatalog_';
+
+    // Rows that are not tickets: every cross ticket read skips them.
+    function isSpecialTicket(title) {
+        return title === NRD_SETTINGS_TICKET || title === CATALOG_TICKET;
+    }
+
+    function catalogNormalize(names) {
+        const seen = new Set(), out = [];
+        (Array.isArray(names) ? names : []).forEach(n => {
+            const v = String(n == null ? '' : n).trim();
+            const k = v.toLowerCase();
+            if (!v || seen.has(k)) return;
+            seen.add(k); out.push(v);
+        });
+        return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
+    function catalogCached(tenant, kind) {
+        const row = GM_getValue(CATALOG_CACHE_PREFIX + tenant + '_' + kind, null);
+        return row && Array.isArray(row.names) ? row : null;
+    }
+
+    function catalogStore(tenant, kind, row) {
+        if (!tenant || !kind || !row) return;
+        GM_setValue(CATALOG_CACHE_PREFIX + tenant + '_' + kind, { names: row.names || [], checkedAt: row.checkedAt || null,
+            checkedBy: row.checkedBy || '', id: row.id || null, spId: row.spId || null });
+    }
+
+    // The entry date of a catalog row is its last check, in the tracker's local stamp format.
+    function catalogStamp(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return nowStamp();
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    /* ==========================================================
      *  API  (SharePoint list)
      *  Same surface the rest of the tool has always used. Calls never
      *  throw; failures go through handleApiResponse().
@@ -20137,7 +20238,7 @@ Version 1.4.3:
             if (!res.ok) return res;
             const groupOf = {};
             SNIPPET_GROUPS.forEach(g => g.items.forEach(i => { groupOf[i.value] = g.group; }));
-            const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
+            const data = res.data.filter(it => !isSpecialTicket(it.Title))
                 .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
                 .filter(r => r.entry && (groupOf[r.entry.type] === 'Destination Profiles' || r.entry.type === NRD_REVIEW_TYPE));
             return { ok: true, data };
@@ -20150,7 +20251,7 @@ Version 1.4.3:
                 $expand: 'Author,Editor' });
             if (!res.ok) return res;
             const types = policyReminderTypes();
-            const data = res.data.filter(it => it.Title !== NRD_SETTINGS_TICKET)
+            const data = res.data.filter(it => !isSpecialTicket(it.Title))
                 .map(it => ({ ticket: it.Title, entry: entryMapper.fromItem(it) }))
                 .filter(r => r.entry && (types.deleted.has(r.entry.type) || types.reenabled.has(r.entry.type) || r.entry.type === POLICY_REVIEW_TYPE));
             return { ok: true, data };
@@ -20177,6 +20278,41 @@ Version 1.4.3:
             const res = await api.saveEntry(entry);
             if (!res.ok) return res;
             return { ok: true, data: { nrdProfiles, id: entry.id, spId: res.data.spId, etag: res.data.etag } };
+        },
+
+        // The name catalog rows of one tenant: { [kind]: { names, checkedAt, checkedBy, id, spId, etag } }.
+        async loadCatalog(tenant) {
+            const res = await api.fetchEntries(CATALOG_TICKET);
+            if (!res.ok) return res;
+            const data = {};
+            res.data.entries.forEach(e => {
+                const f = e.fields || {};
+                if (e.type !== CATALOG_TYPE || f.tenant !== tenant || !CATALOG_KINDS.includes(f.kind)) return;
+                data[f.kind] = { names: catalogNormalize(f.names), checkedAt: f.checkedAt || null, checkedBy: f.checkedBy || '',
+                    id: e.id, spId: e.spId, etag: e.etag };
+                catalogStore(tenant, f.kind, data[f.kind]);
+            });
+            return { ok: true, data };
+        },
+
+        // Replaces one kind's names over `prev` (as loaded, or null for a new row). Someone else's save in between: kind 'conflict'.
+        // An explicit checkedAt (null too) is kept as is, so adding a name by hand never counts as a Netskope check.
+        async saveCatalog(tenant, kind, names, prev, opts = {}) {
+            const { checkedBy } = opts;
+            if (!prev || !prev.spId) {
+                const now = await api.loadCatalog(tenant);
+                if (!now.ok) return now;
+                if (now.data[kind]) return { ok: false, kind: 'conflict' };
+            }
+            const at = ('checkedAt' in opts) ? (opts.checkedAt || null) : new Date().toISOString();
+            const fields = { tenant, kind, names: catalogNormalize(names), checkedAt: at, checkedBy: checkedBy || '' };
+            const entry = { id: (prev && prev.id) || `ct-catalog-${tenant}-${kind}`, ts: catalogStamp(at), type: CATALOG_TYPE, fields,
+                note: null, ticket: CATALOG_TICKET, spId: prev && prev.spId, etag: prev && prev.etag };
+            const res = await api.saveEntry(entry);
+            if (!res.ok) return res;
+            const row = { names: fields.names, checkedAt: at, checkedBy: fields.checkedBy, id: entry.id, spId: res.data.spId, etag: res.data.etag };
+            catalogStore(tenant, kind, row);
+            return { ok: true, data: row };
         },
 
         async findItem(entryId) {
@@ -20258,6 +20394,104 @@ Version 1.4.3:
         },
     };
 
+
+    /* ==========================================================
+     *  CATALOG SYNC  (Netskope tenant pages, no UI)
+     *  Reads the names Netskope holds through the page's own session and
+     *  writes them over the tenant's catalog rows. Team wide: a row checked
+     *  less than 6 hours ago by anyone is left alone.
+     * ==========================================================*/
+
+    const CATALOG_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+    const CATALOG_REQUEST_KEY = 'changeTrackerCatalogRequest';
+    const CATALOG_ANSWER_KEY  = 'changeTrackerCatalogAnswer';
+    const CATALOG_REQUEST_MAX_AGE_MS = 2 * 60 * 1000;
+
+    // One sync at a time per page.
+    let catalogChain = Promise.resolve();
+    function catalogQueued(fn) {
+        const p = catalogChain.then(fn, fn);
+        catalogChain = p.catch(() => {});
+        return p;
+    }
+
+    async function catalogSyncTenantNow(tenant, force) {
+        const results = {};
+        const loaded = await api.loadCatalog(tenant);
+        if (!loaded.ok) {
+            console.warn('CT catalog: could not read the catalog rows', loaded);
+            CATALOG_KINDS.forEach(k => { results[k] = nsCatalogReaders[k] ? 'failed' : 'noReader'; });
+            return results;
+        }
+        let who = null;
+        for (const kind of CATALOG_KINDS) {
+            const reader = nsCatalogReaders[kind];
+            if (!reader) { results[kind] = 'noReader'; continue; }
+            const prev = loaded.data[kind] || null;
+            const age = prev && prev.checkedAt ? Date.now() - Date.parse(prev.checkedAt) : Infinity;
+            if (!force && age < CATALOG_MAX_AGE_MS) { results[kind] = 'fresh'; continue; }
+            let names;
+            try { names = catalogNormalize(await reader()); } catch (e) {
+                console.warn(`CT catalog: reading ${kind} failed:`, e && e.message);
+                results[kind] = 'failed'; continue;
+            }
+            // An empty answer is more likely a page that is not ready than a tenant with nothing in it.
+            if (!names.length && prev && prev.names.length) { results[kind] = 'failed'; continue; }
+            if (who === null) {
+                const me = await spClient.currentUser();
+                who = me.ok && me.data ? String(me.data.Title || '') : '';
+            }
+            const same = !!prev && JSON.stringify(prev.names) === JSON.stringify(names);
+            const res = await api.saveCatalog(tenant, kind, names, prev, { checkedBy: who, checkedAt: new Date().toISOString() });
+            if (!res.ok) {
+                if (res.kind === 'tooLarge') console.warn(`CT catalog: ${kind} has too many names for one SharePoint row.`);
+                results[kind] = res.kind === 'conflict' ? 'conflict' : 'failed';
+                continue;
+            }
+            results[kind] = same ? 'unchanged' : 'updated';
+        }
+        return results;
+    }
+
+    function catalogSyncTenant(tenant, { force = false } = {}) {
+        return catalogQueued(() => catalogSyncTenantNow(tenant, force));
+    }
+
+    // A ServiceNow tab asked for "Update now": answer it when it is for this tenant.
+    async function catalogPollOnce() {
+        const req = GM_getValue(CATALOG_REQUEST_KEY, null);
+        if (!req || !req.id || req.tenant !== CT_TENANT) return null;
+        if (Date.now() - Number(req.at || 0) > CATALOG_REQUEST_MAX_AGE_MS) return null;
+        const answered = GM_getValue(CATALOG_ANSWER_KEY, null);
+        if (answered && answered.id === req.id) return null;
+        // Claim it first so a second tab of the same tenant does not run it too.
+        GM_setValue(CATALOG_ANSWER_KEY, { id: req.id, tenant: CT_TENANT, results: null, at: Date.now(), pending: true });
+        const results = await catalogSyncTenant(CT_TENANT, { force: true });
+        GM_setValue(CATALOG_ANSWER_KEY, { id: req.id, tenant: CT_TENANT, results, at: Date.now() });
+        return results;
+    }
+
+    function catalogStartHeadless() {
+        if (GM_getValue('changeTrackerTestHooks', false) === true) {
+            try { unsafeWindow.__ctcat = { sync: catalogSyncTenant, pollOnce: catalogPollOnce }; } catch (e) { /* test only */ }
+        }
+        if (!api.isConfigured()) return;
+        const start = () => {
+            let tries = 0;
+            const attempt = async () => {
+                tries++;
+                let r = {};
+                try { r = await catalogSyncTenant(CT_TENANT); } catch (e) { console.warn('CT catalog:', e); }
+                if (Object.values(r).includes('failed') && tries < 10) setTimeout(attempt, 30000);
+            };
+            setTimeout(attempt, 5000);
+            setInterval(() => { catalogPollOnce().catch(e => console.warn('CT catalog:', e)); }, 3000);
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+        else start();
+    }
+
+    if (CT_HEADLESS) { catalogStartHeadless(); return function register() {}; }
 
     /* ==========================================================
      *  TICKET WRITER  (auto-write entries into SNow worknote/comments)
@@ -21416,6 +21650,523 @@ Version 1.4.3:
      * @param {string} prefix   - ID prefix to avoid collisions between sidebar and modal
      * @param {HTMLElement} container - target container (its contents are replaced)
      */
+    /* ==========================================================
+     *  NAME PICKER
+     *  Name fields open a searchable list of the tenant's Netskope
+     *  names. The input stays the value holder: what the user types
+     *  must match a listed or added name before the entry saves,
+     *  while values filled by the tool itself are trusted.
+     * ==========================================================*/
+
+    const CATALOG_FIELDS = {
+        policyName:          { kind: 'policies' },
+        sslPolicyName:       { kind: 'ssl' },
+        profileName:         { kind: 'destinations' },
+        destinationProfiles: { kind: 'destinations', multi: true },
+        steeringApplied:     { kind: 'steering', multi: true },
+    };
+    const CATALOG_TENANTS = Object.keys(TENANT_TYPE_TO_KEY);
+    const CATALOG_RELOAD_MS = 5 * 60 * 1000;
+    const catalogLoadedAt = {};
+    const catalogVerifiers = new WeakMap();
+    const nativeInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+
+    function catalogAgo(iso) {
+        const ms = Date.now() - Date.parse(iso);
+        if (!isFinite(ms)) return '';
+        const min = Math.floor(ms / 60000);
+        if (min < 1) return 'just now';
+        if (min < 60) return `${min} min ago`;
+        const h = Math.floor(min / 60);
+        if (h < 48) return `${h} h ago`;
+        return `${Math.floor(h / 24)} days ago`;
+    }
+
+    function catalogTicketTenant() {
+        const t = detectTicketTenant(getTicketDoc());
+        return t ? t.type : null;
+    }
+
+    // Loads the tenant's rows from SharePoint when this page has not done so in the last 5 minutes.
+    async function catalogRefresh(tenant) {
+        if (!tenant || connState !== 'ONLINE') return false;
+        if (Date.now() - (catalogLoadedAt[tenant] || 0) < CATALOG_RELOAD_MS) return false;
+        catalogLoadedAt[tenant] = Date.now();
+        const res = await api.loadCatalog(tenant);
+        if (!res.ok) { catalogLoadedAt[tenant] = 0; return false; }
+        return true;
+    }
+
+    // Adds one name to the shared list. Returns 'shared', or 'local' when SharePoint could not be reached.
+    async function catalogAddName(tenant, kind, name) {
+        const local = () => {
+            const row = catalogCached(tenant, kind) || { names: [], checkedAt: null, checkedBy: '' };
+            catalogStore(tenant, kind, Object.assign({}, row, { names: catalogNormalize(row.names.concat(name)) }));
+            return 'local';
+        };
+        if (connState !== 'ONLINE') return local();
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const now = await api.loadCatalog(tenant);
+            if (!now.ok) { if (isTransientFailure(now)) handleApiResponse(now); return local(); }
+            const prev = now.data[kind] || null;
+            if (prev && prev.names.some(n => n.toLowerCase() === name.toLowerCase())) return 'shared';
+            const res = await api.saveCatalog(tenant, kind, (prev ? prev.names : []).concat(name), prev,
+                { checkedBy: prev ? prev.checkedBy : '', checkedAt: prev ? prev.checkedAt : null });
+            if (res.ok) return 'shared';
+            if (res.kind !== 'conflict') { if (isTransientFailure(res)) handleApiResponse(res); return local(); }
+        }
+        return local();
+    }
+
+    let catalogUpdateTimeoutMs = 30000;
+
+    // Asks a Netskope tab of the tenant to read its lists now, then reloads the rows from SharePoint.
+    async function catalogRequestUpdate(tenant) {
+        const id = uid();
+        GM_setValue(CATALOG_REQUEST_KEY, { id, tenant, at: Date.now() });
+        let deadline = Date.now() + catalogUpdateTimeoutMs, extended = false, ans = null;
+        while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 400));
+            const a = GM_getValue(CATALOG_ANSWER_KEY, null);
+            if (!a || a.id !== id) continue;
+            // A tab claimed it and is reading Netskope: give it one more full wait.
+            if (a.pending) { if (!extended) { extended = true; deadline = Date.now() + catalogUpdateTimeoutMs; } continue; }
+            ans = a;
+            break;
+        }
+        if (!ans) return { ok: false, reason: 'noTab' };
+        catalogLoadedAt[tenant] = 0;
+        await catalogRefresh(tenant);
+        return { ok: true, results: ans.results || {} };
+    }
+
+    // Labels of the name fields holding typed text that is not a listed or added name.
+    function catalogBlockingFields(container) {
+        if (!container) return [];
+        return [...container.querySelectorAll('[data-ct-cat]')]
+            .filter(inp => { const v = catalogVerifiers.get(inp); return v ? !v() : false; })
+            .map(inp => inp.dataset.ctCatLabel || inp.placeholder || inp.id);
+    }
+
+    function attachCatalogPicker(input, spec, getTenant, label) {
+        const multi = !!spec.multi;
+        const SPLIT = /[\n,;]+/;
+        const lc = (v) => String(v).toLowerCase();
+        // Multi fields: the input holds "A, B" built from the chips plus the name being typed.
+        const trusted = new Set();
+        let list = [], pending = '';
+        input.dataset.ctCat = spec.kind;
+        input.dataset.ctCatState = 'ok';
+        input.dataset.ctCatLabel = label || '';
+        input.autocomplete = 'off';
+        const rawGet = () => nativeInputValue.get.call(input);
+        const rawSet = (v) => nativeInputValue.set.call(input, v);
+        // Values set by code (fills, suggestions, pastes from other tools) are trusted.
+        Object.defineProperty(input, 'value', {
+            configurable: true,
+            get() { return rawGet(); },
+            set(v) { rawSet(v); input.dataset.ctCatState = 'ok'; hideHint(); if (multi) fromValue(true); },
+        });
+
+        const panel = mk('div', { className: 'ct-cat-list' });
+        css(panel, { display: 'none', marginTop: '3px', border: '1px solid #c0c8f0', borderRadius: '6px',
+            background: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,.12)', overflow: 'hidden', fontFamily: 'Arial, sans-serif' });
+        const top = css(mk('div'), { display: 'flex', gap: '6px', padding: '6px', borderBottom: '1px solid #eee' });
+        const tenantSel = mk('select', { className: 'ct-cat-tenant', title: 'Tenant whose names are listed' });
+        css(tenantSel, { fontSize: '11px', padding: '3px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' });
+        const none = mk('option', { value: '', textContent: 'Tenant?' });
+        tenantSel.appendChild(none);
+        CATALOG_TENANTS.forEach(t => tenantSel.appendChild(mk('option', { value: t, textContent: t })));
+        const search = mk('input', { className: 'ct-cat-search', type: 'text', placeholder: 'Search names…', autocomplete: 'off' });
+        css(search, { flex: '1', minWidth: '0', fontSize: '12px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: '4px', outline: 'none' });
+        top.append(tenantSel, search);
+        const optsWrap = css(mk('div'), { position: 'relative', minHeight: '28px' });
+        const optsBox = css(mk('div', { className: 'ct-cat-options' }), { maxHeight: '180px', overflowY: 'auto' });
+        optsWrap.appendChild(optsBox);
+        const footer = mk('div', { className: 'ct-cat-footer' });
+        css(footer, { fontSize: '10px', color: '#888', padding: '4px 8px', borderTop: '1px solid #eee' });
+        const status = mk('div', { className: 'ct-cat-status' });
+        css(status, { display: 'none', fontSize: '11px', padding: '5px 8px', borderTop: '1px solid #eee', lineHeight: '1.4' });
+        panel.append(top, optsWrap, footer, status);
+        const hint = mk('div', { className: 'ct-cat-hint' });
+        css(hint, { display: 'none', fontSize: '11px', marginTop: '3px', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
+        const chipsBox = mk('div', { className: 'ct-cat-chips' });
+        css(chipsBox, { display: 'none', flexWrap: 'wrap', gap: '4px', marginTop: '4px', alignItems: 'center' });
+        if (multi) input.after(chipsBox, panel, hint);
+        else input.after(panel, hint);
+
+        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false, updating = false;
+
+        function catalogHit(n) { return names().find(x => lc(x) === lc(n)); }
+        function isOk(n) { return trusted.has(lc(n)) || !!catalogHit(n); }
+        function missingNames() { return list.filter(n => !isOk(n)); }
+        function syncValue() { rawSet([...list, pending.trim()].filter(Boolean).join(', ')); }
+        function emit() { input.dispatchEvent(new Event('input', { bubbles: true })); }
+        function commit(name, trust) {
+            name = String(name).trim();
+            if (!name) return;
+            const v = catalogHit(name) || name;
+            if (trust) trusted.add(lc(v));
+            const i = list.findIndex(x => lc(x) === lc(v));
+            if (i < 0) list.push(v);
+            else if (!trusted.has(lc(list[i]))) list[i] = v;
+        }
+        function fromValue(trust) {
+            list = [];
+            pending = '';
+            rawGet().split(SPLIT).forEach(v => commit(v, trust));
+            renderChips(false);
+        }
+        function chipBtn(text, tip) {
+            const b = mk('button', { type: 'button', textContent: text, title: tip });
+            css(b, { border: 'none', background: 'transparent', cursor: 'pointer', padding: '0 2px', fontSize: '11px', lineHeight: '1', color: 'inherit' });
+            b.onmousedown = (e) => e.preventDefault();
+            return b;
+        }
+        // Draws the chips; warn: also show or clear the "not in the list" note.
+        function renderChips(warn) {
+            if (!multi) return;
+            if (!tenant) tenant = getTenant() || null;
+            chipsBox.innerHTML = '';
+            list.forEach(n => {
+                const ok = isOk(n);
+                const c = mk('span', { className: 'ct-cat-chip ' + (ok ? 'ct-cat-chip-ok' : 'ct-cat-chip-missing') });
+                c.setAttribute('data-ct-cat-chip', n);
+                c.dataset.state = ok ? 'ok' : 'missing';
+                c.title = ok ? n : `"${n}" is not in the ${tenant || 'tenant'} list`;
+                css(c, { display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '11px', padding: '2px 4px 2px 8px',
+                    borderRadius: '10px', border: ok ? '1px solid #c0c8f0' : '1px solid #f0c36d',
+                    background: ok ? '#eef0ff' : '#fff4d6', color: ok ? '#3b4aa8' : '#8a5300', fontFamily: 'Arial, sans-serif' });
+                c.appendChild(mk('span', { textContent: (ok ? '' : '⚠ ') + n }));
+                if (!ok) {
+                    const a = chipBtn('➕', `Add "${n}" to the ${tenant || 'tenant'} list`);
+                    a.setAttribute('data-ct-cat-chip-add', '');
+                    a.onclick = (e) => { e.preventDefault(); addMissing([n]); };
+                    c.appendChild(a);
+                }
+                const x = chipBtn('✕', `Remove ${n}`);
+                x.setAttribute('data-ct-cat-chip-remove', '');
+                x.onclick = (e) => { e.preventDefault(); removeName(n); };
+                c.appendChild(x);
+                chipsBox.appendChild(c);
+            });
+            const miss = missingNames();
+            if (miss.length) {
+                const all = mk('button', { type: 'button', textContent: miss.length > 1 ? `➕ Add all ${miss.length}` : '➕ Add all' });
+                all.setAttribute('data-ct-cat-add-all', '');
+                all.title = `Add the names marked ⚠ to the ${tenant || 'tenant'} list for everyone`;
+                css(all, { fontSize: '11px', padding: '2px 8px', borderRadius: '10px', border: '1px solid #c0c8f0',
+                    background: '#fff', color: '#667eea', cursor: 'pointer', fontWeight: 'bold', fontFamily: 'Arial, sans-serif' });
+                all.onmousedown = (e) => e.preventDefault();
+                all.onclick = (e) => { e.preventDefault(); addMissing(missingNames()); };
+                chipsBox.appendChild(all);
+            }
+            chipsBox.style.display = list.length ? 'flex' : 'none';
+            input.dataset.ctCatState = miss.length ? 'unverified' : 'ok';
+            if (warn) {
+                if (miss.length) showHint(`${miss.length} name${miss.length > 1 ? 's are' : ' is'} not in the ${tenant || 'tenant'} list. Click ➕ on a name to add it, or pick it from the list.`, false);
+                else if (hint.classList.contains('ct-cat-hint-warn')) hideHint();
+            }
+        }
+        function removeName(n) {
+            list = list.filter(x => lc(x) !== lc(n));
+            syncValue();
+            renderChips(hint.style.display !== 'none' && hint.classList.contains('ct-cat-hint-warn'));
+            emit();
+            if (isOpen) render();
+        }
+        async function addMissing(arr) {
+            if (adding || !arr.length) return;
+            adding = true;
+            const t = tenant || getTenant() || null;
+            tenant = t;
+            const allBtn = chipsBox.querySelector('[data-ct-cat-add-all]');
+            let local = 0;
+            try {
+                await withBusy(chipsBox, async () => {
+                    for (let i = 0; i < arr.length; i++) {
+                        if (allBtn) allBtn.textContent = `⏳ Adding ${i + 1} of ${arr.length}…`;
+                        let out = 'none';
+                        if (t) { try { out = await catalogAddName(t, spec.kind, arr[i]); } catch (e) { out = 'local'; } }
+                        if (out === 'local') local++;
+                        trusted.add(lc(arr[i]));
+                    }
+                }, arr.length > 1 ? 'Adding names…' : 'Adding…');
+            } finally {
+                adding = false;
+            }
+            syncValue();
+            renderChips(false);
+            emit();
+            if (isOpen) render();
+            const what = arr.length === 1 ? `"${arr[0]}"` : `${arr.length} names`;
+            if (!t) showHint(`✅ ${what} used. Not in any list because no tenant is chosen.`, true);
+            else if (local) showHint(`✅ ${what} kept on this computer. SharePoint could not be reached, so others will not see ${arr.length === 1 ? 'it' : 'them'} yet.`, true);
+            else showHint(`✅ ${what} added to the ${t} list.`, true);
+        }
+        function setStatus(text) {
+            status.textContent = text || '';
+            status.style.display = text ? 'block' : 'none';
+        }
+        function updateMessage(t, r) {
+            if (!r.ok) {
+                const noHost = !GM_getValue(TENANT_TYPE_TO_KEY[t], '');
+                return `⚠️ No Netskope tab of ${t} answered. Open ${t} in Netskope in this browser (signed in) and click Update now again.`
+                    + (noHost ? ` This browser has no ${t} tenant address saved yet, so add it in the toolbar settings first.` : '');
+            }
+            const res = (r.results || {})[spec.kind];
+            if (res === 'updated') return `✅ ${t} list updated from Netskope.`;
+            if (res === 'unchanged' || res === 'fresh') return '✅ Checked in Netskope: no change.';
+            if (res === 'conflict') return '✅ Someone updated the list at the same time. Showing the newest one.';
+            if (res === 'noReader') return '✅ The Netskope tab answered, but this list is not read from Netskope. Add missing names with ➕.';
+            return `⚠️ The ${t} Netskope tab could not read this list. Check you are signed in there and try again.`;
+        }
+        async function updateNow() {
+            if (updating || !tenant) return;
+            const t = tenant;
+            updating = true;
+            setStatus(`🔄 Asking a Netskope tab of ${t} to read its lists…`);
+            render();
+            let r;
+            try {
+                r = await withBusy(optsWrap, () => catalogRequestUpdate(t), 'Waiting for Netskope…');
+            } catch (e) {
+                r = { ok: false, reason: 'error' };
+            } finally {
+                updating = false;
+            }
+            if (isOpen) render();
+            if (tenant === t) setStatus(updateMessage(t, r));
+        }
+
+        function names() { const r = tenant && catalogCached(tenant, spec.kind); return r ? r.names : []; }
+        function showHint(text, ok) {
+            hint.textContent = text;
+            hint.classList.toggle('ct-cat-hint-ok', !!ok);
+            hint.classList.toggle('ct-cat-hint-warn', !ok);
+            hint.style.display = 'block';
+        }
+        function hideHint() { hint.style.display = 'none'; }
+        function setValue(v) {
+            rawSet(v);
+            input.dataset.ctCatState = 'ok';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        function message(text) {
+            optsBox.appendChild(css(mk('div', { className: 'ct-cat-empty', textContent: text }),
+                { fontSize: '11px', color: '#888', padding: '6px 8px', lineHeight: '1.4' }));
+        }
+        function render() {
+            const q = filtered ? search.value.trim() : '';
+            const ql = q.toLowerCase();
+            const all = names();
+            let shown = ql ? all.filter(n => n.toLowerCase().includes(ql)) : all;
+            if (multi) shown = shown.filter(n => !list.some(x => lc(x) === lc(n)));
+            optsBox.innerHTML = '';
+            items = [];
+            if (!tenant) message('Choose the tenant above to see its names.');
+            else if (!all.length) message('No list for this tenant yet. It fills itself when someone opens this Netskope tenant. You can add the name.');
+            else if (!shown.length) message(multi && !ql ? 'Every listed name is already chosen.' : 'No name matches.');
+            shown.forEach(n => {
+                const o = mk('div', { textContent: n });
+                o.setAttribute('data-ct-cat-option', '');
+                css(o, { fontSize: '12px', padding: '5px 8px', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' });
+                o.title = n;
+                o.onmousedown = (e) => e.preventDefault();
+                o.onclick = () => pick(n);
+                optsBox.appendChild(o);
+                items.push(o);
+            });
+            if (q && !all.some(n => n.toLowerCase() === ql)) {
+                const a = mk('div', { textContent: `➕ Add "${q}"` });
+                a.setAttribute('data-ct-cat-add', '');
+                a.title = tenant ? `Add "${q}" to the ${tenant} list for everyone` : 'Use this name (choose a tenant to keep it in a list)';
+                css(a, { fontSize: '12px', padding: '5px 8px', cursor: 'pointer', fontWeight: 'bold', color: '#667eea', borderTop: '1px solid #eee' });
+                a.onmousedown = (e) => e.preventDefault();
+                a.onclick = () => addName(q);
+                optsBox.appendChild(a);
+                items.push(a);
+            }
+            active = Math.max(0, Math.min(active, items.length - 1));
+            items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
+            const row = tenant && catalogCached(tenant, spec.kind);
+            footer.innerHTML = '';
+            if (!tenant) return;
+            footer.appendChild(mk('span', { textContent: (row && row.checkedAt)
+                ? `Updated ${catalogAgo(row.checkedAt)} by ${row.checkedBy || 'someone'} · ` : 'Not loaded from Netskope yet · ' }));
+            const up = mk('button', { type: 'button', textContent: updating ? '⏳ Asking Netskope…' : '↻ Update now' });
+            up.setAttribute('data-ct-cat-update', '');
+            up.disabled = updating;
+            up.title = updating ? 'Waiting for a Netskope tab to answer' : `Ask an open Netskope tab of ${tenant} to read this list now`;
+            css(up, { border: 'none', background: 'none', padding: '0', fontSize: '10px', color: '#667eea',
+                cursor: updating ? 'progress' : 'pointer', textDecoration: 'underline', fontFamily: 'Arial, sans-serif' });
+            up.onmousedown = (e) => e.preventDefault();
+            up.onclick = (e) => { e.preventDefault(); updateNow(); };
+            footer.appendChild(up);
+        }
+        async function loadTenant() {
+            const t = tenant;
+            if (!t || connState !== 'ONLINE' || Date.now() - (catalogLoadedAt[t] || 0) < CATALOG_RELOAD_MS) return;
+            await withBusy(optsWrap, () => catalogRefresh(t), 'Loading names…');
+            if (isOpen && tenant === t) render();
+        }
+        function openList() {
+            if (isOpen || adding) return;
+            isOpen = true;
+            if (!tenant) tenant = getTenant() || null;
+            tenantSel.value = tenant || '';
+            pending = '';
+            search.value = multi ? '' : rawGet();
+            filtered = false; active = 0;
+            panel.style.display = 'block';
+            render();
+            search.focus(); search.select();
+            // Closing on click (not mousedown) keeps the layout still until the click has found its target.
+            document.addEventListener('click', onOutside, true);
+            loadTenant();
+        }
+        function closeList(verify) {
+            if (!isOpen) return;
+            isOpen = false;
+            panel.style.display = 'none';
+            document.removeEventListener('click', onOutside, true);
+            if (multi && pending.trim()) {
+                commit(pending, false);
+                pending = '';
+                search.value = '';
+                syncValue();
+                renderChips(false);
+                emit();
+            }
+            if (verify) verify_();
+        }
+        function refocusInput() { quietFocus = true; input.focus(); quietFocus = false; }
+        function onOutside(e) {
+            const path = e.composedPath ? e.composedPath() : [];
+            if (path.includes(panel) || path.includes(input) || path.includes(chipsBox)) return;
+            closeList(true);
+        }
+        // True when the field may be saved; fixes the spelling of a typed name that is in the list.
+        // quiet: no note is shown or hidden (on blur, a note would move the button the user is clicking).
+        function verify_(quiet) {
+            if (multi) return verifyMulti(quiet);
+            if (input.dataset.ctCatState !== 'unverified') return true;
+            const v = rawGet().trim();
+            if (!tenant) tenant = getTenant() || null;
+            const hit = names().find(n => n.toLowerCase() === v.toLowerCase());
+            if (!v || hit) { if (hit && hit !== rawGet()) setValue(hit); input.dataset.ctCatState = 'ok'; if (!quiet && hint.classList.contains('ct-cat-hint-warn')) hideHint(); return true; }
+            if (quiet) return false;
+            showHint(`"${v}" is not in the ${tenant || 'tenant'} list. Pick a name or click ➕ Add.`, false);
+            return false;
+        }
+        function verifyMulti(quiet) {
+            if (!tenant) tenant = getTenant() || null;
+            const fixed = list.map(n => trusted.has(lc(n)) ? n : (catalogHit(n) || n));
+            if (fixed.join('\n') !== list.join('\n')) { list = fixed; syncValue(); }
+            renderChips(!quiet);
+            return !pending.trim() && !missingNames().length;
+        }
+        catalogVerifiers.set(input, verify_);
+        function pickMulti(n, trust) {
+            commit(n, trust);
+            pending = '';
+            search.value = '';
+            syncValue();
+            renderChips(hint.classList.contains('ct-cat-hint-warn'));
+            emit();
+            filtered = false; active = 0;
+            render();
+            search.focus();
+        }
+        function pick(n) {
+            if (multi) return pickMulti(n, true);
+            setValue(n);
+            hideHint();
+            closeList(false);
+            refocusInput();
+        }
+        async function addName(name) {
+            if (adding) return;
+            adding = true;
+            const t = tenant;
+            const addEl = optsBox.querySelector('[data-ct-cat-add]');
+            if (addEl) addEl.textContent = `⏳ Adding "${name}"…`;
+            let outcome = 'none';
+            try {
+                if (t) outcome = await withBusy(optsWrap, () => catalogAddName(t, spec.kind, name), 'Adding…');
+            } catch (e) {
+                outcome = 'local';
+            } finally {
+                adding = false;
+            }
+            if (multi) pickMulti(name, true);
+            else { setValue(name); closeList(false); refocusInput(); }
+            if (outcome === 'shared') showHint(`✅ "${name}" added to the ${t} list.`, true);
+            else if (outcome === 'local') showHint(`✅ "${name}" kept on this computer. SharePoint could not be reached, so others will not see it yet.`, true);
+            else showHint(`✅ "${name}" used. It is not in any list because no tenant is chosen.`, true);
+        }
+
+        input.addEventListener('input', (e) => {
+            if (!e.isTrusted) return;
+            hideHint();
+            if (multi) fromValue(false);
+            else input.dataset.ctCatState = 'unverified';
+        });
+        input.addEventListener('focus', () => { if (!quietFocus) openList(); });
+        input.addEventListener('click', () => openList());
+        input.addEventListener('blur', () => { if (!isOpen) verify_(true); });
+        search.addEventListener('input', (e) => {
+            if (!e.isTrusted) return;
+            if (multi) {
+                // Text before a comma, semicolon or new line becomes chips; a paste turns every name into a chip.
+                const parts = search.value.split(SPLIT);
+                const last = e.inputType === 'insertFromPaste' ? '' : parts.pop();
+                parts.forEach(p => commit(p, false));
+                if (parts.length) search.value = last.replace(/^\s+/, '');
+                pending = search.value;
+                syncValue();
+                renderChips(hint.classList.contains('ct-cat-hint-warn'));
+                emit();
+                filtered = !!pending.trim(); active = 0;
+                render();
+                return;
+            }
+            rawSet(search.value);
+            input.dataset.ctCatState = 'unverified';
+            filtered = true; active = 0;
+            render();
+        });
+        search.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!items.length) return;
+                active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
+                items[active].scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                e.preventDefault(); e.stopPropagation();
+                if (items[active] && filtered) items[active].click();
+                else { closeList(true); refocusInput(); }
+            } else if (e.key === 'Escape') {
+                e.preventDefault(); e.stopPropagation();
+                closeList(true); refocusInput();
+            } else if (e.key === 'Tab') {
+                closeList(true);
+            }
+        });
+        tenantSel.addEventListener('change', () => {
+            tenant = tenantSel.value || null;
+            active = 0;
+            setStatus('');
+            render();
+            renderChips(hint.classList.contains('ct-cat-hint-warn'));
+            search.focus();
+            loadTenant();
+        });
+        if (multi) fromValue(true);
+    }
+
     function buildFieldInputs(schema, values, prefix, container) {
         container.innerHTML = '';
         schema.forEach(f => {
@@ -21461,6 +22212,8 @@ Version 1.4.3:
 
             wrap.append(lbl, input);
             container.appendChild(wrap);
+            const catSpec = CATALOG_FIELDS[f.key];
+            if (catSpec && input.tagName === 'INPUT') attachCatalogPicker(input, catSpec, catalogTicketTenant, f.label);
 
             if (f.extraFields && f.extraFields.length) {
                 const addedKeys    = new Set();
@@ -23289,6 +24042,12 @@ Version 1.4.3:
         });
         saveBtn.textContent = '✓ Save Changes';
         saveBtn.onclick = async () => {
+            const blocked = catalogBlockingFields(fieldsContainer);
+            if (blocked.length) {
+                saveBtn.title = `${blocked.join(', ')}: pick a name from the list or click ➕ Add.`;
+                return;
+            }
+            saveBtn.title = '';
             const newType  = typeSelect.value;
             const schema   = getSchema(newType);
             const newFields = schema ? collectFieldValues(schema, 'ct-edit-field') : null;
@@ -23758,6 +24517,16 @@ Version 1.4.3:
             else                                    flashStatus('⚠️ Not connected yet.', '#e67e22');
             return;
         }
+
+        const addBtnEl = document.getElementById('ct-add-btn');
+        const blocked = catalogBlockingFields(document.getElementById('ct-input-fields'));
+        if (blocked.length) {
+            const why = `⚠️ ${blocked.join(', ')}: pick a name from the list or click ➕ Add.`;
+            flashStatus(why, '#e67e22', 4000);
+            if (addBtnEl) addBtnEl.title = why;
+            return;
+        }
+        if (addBtnEl) addBtnEl.title = 'Ctrl+Enter also works inside the detail field';
 
         // Empty selection → treat as "Custom"
         let type = select.value.trim() || 'Custom';
@@ -24588,6 +25357,42 @@ Version 1.4.3:
                 }
             },
             {
+                icon: '🏷️',
+                title: 'Name lists',
+                buildContent: (body) => {
+                    lead(body, 'Policy, SSL policy, Destination Profile and Steering name fields open a list of the real names in the ticket\'s Netskope tenant.');
+                    const list = css(document.createElement('div'), {
+                        border: '1px solid #c0c8f0', borderRadius: '6px', background: '#fff', maxWidth: '330px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,.12)', overflow: 'hidden', fontFamily: 'Arial, sans-serif'
+                    });
+                    const top = css(document.createElement('div'), { display: 'flex', gap: '6px', padding: '6px', borderBottom: '1px solid #eee' });
+                    top.appendChild(span('EMA ▾', { fontSize: '11px', border: '1px solid #ccc', borderRadius: '4px', padding: '2px 5px', color: '#333' }));
+                    top.appendChild(span('fin', { flex: '1', fontSize: '12px', border: '1px solid #667eea', borderRadius: '4px', padding: '2px 6px', color: '#333' }));
+                    list.appendChild(top);
+                    [['Allow-Finance-SaaS', true], ['Block-Finance-Upload', false]].forEach(([n, on]) => list.appendChild(
+                        span(n, { display: 'block', fontSize: '12px', padding: '4px 8px', color: '#333', background: on ? '#e8f0fe' : '#fff' })));
+                    list.appendChild(span('➕ Add "fin"', { display: 'block', fontSize: '12px', padding: '4px 8px', color: '#667eea', fontWeight: 'bold', borderTop: '1px solid #eee' }));
+                    const foot = span('Updated 2 h ago by Juan · ', { display: 'block', fontSize: '10px', color: '#888', padding: '4px 8px', borderTop: '1px solid #eee' });
+                    foot.appendChild(span('↻ Update now', { color: '#667eea', textDecoration: 'underline' }));
+                    list.appendChild(foot);
+                    body.appendChild(list);
+                    caption(body, 'Type to filter, then Enter or click. The tenant switch on the left lists another tenant\'s names.');
+                    body.appendChild(hrow([
+                        chip('Steering 1  ✕', '#eef0ff', { color: '#3b4aa8', border: '1px solid #c0c8f0' }),
+                        chip('Steering 3  ✕', '#eef0ff', { color: '#3b4aa8', border: '1px solid #c0c8f0' }),
+                        chip('⚠ Steerng 4 ➕ ✕', '#fff4d6', { color: '#8a5300', border: '1px solid #f0c36d' }),
+                        chip('➕ Add all', '#fff', { color: '#667eea', border: '1px solid #c0c8f0' })
+                    ], { margin: '10px 0 0 0' }));
+                    caption(body, 'Steerings and Destination Profiles take several names. Type or paste them separated by commas, semicolons or new lines: each one becomes a chip.');
+                    bullets(body, [
+                        'The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background (at most every 6 hours) and shares them through SharePoint.',
+                        'A yellow ⚠ name is not in the list, so the entry cannot be saved yet. Pick the right name, or click ➕ to add a name you just created in Netskope.',
+                        '"↻ Update now" asks an open Netskope tab of that tenant to read its names right away. Open the tenant in Netskope first.',
+                        'Names filled in by the tracker itself (Paste policy, suggestion chips) and names already saved in an entry are accepted as they are.'
+                    ]);
+                }
+            },
+            {
                 icon: '⏰',
                 title: 'Newly Registered Domains',
                 buildContent: (body) => {
@@ -24796,7 +25601,6 @@ Version 1.4.3:
      *  tickets and helps take them out again.
      * ==========================================================*/
 
-    const NRD_SETTINGS_TICKET = '__CT_SETTINGS__';
     const NRD_SETTINGS_TYPE   = 'Tracker settings';
     const NRD_NAME_RULE       = /newly registered domains?/i;   // "Newly Registered Domain" or "Domains"
     const NRD_HISTORY_DAYS    = 90;
@@ -26638,7 +27442,9 @@ Version 1.4.3:
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue, nrdTime,
                 policyComputeDue, policyCheck, policyCache, policyReminderTypes, policyApplyDeleted, policyApplyReenabled,
                 nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
-                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter };
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, openEditModal, catalogBlockingFields, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter, isSpecialTicket,
+                catalog: { load: api.loadCatalog, save: api.saveCatalog, normalize: catalogNormalize, cached: catalogCached,
+                    setUpdateTimeout: (ms) => { catalogUpdateTimeoutMs = ms; } } };
         }
 
         return function register() {
@@ -35066,7 +35872,8 @@ Version 1.16:
     }
 
     // Must run before the console app starts so its first requests are seen
-    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy') || getSetting('bulkGroupAdd')) nsInstallSniffer();
+    if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy') || getSetting('bulkGroupAdd') ||
+        isToolEnabled('changeTracker')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -39225,6 +40032,30 @@ Version 1.16:
         }
         return map;
     }
+
+    // Name readers for the Change Tracker catalog. They only read, and reuse the page's own session.
+    nsCatalogReaders.policies = async () => {
+        const data = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        return [...new Set(bgPoliciesOf(data).map(p => p.name).filter(Boolean))];
+    };
+    nsCatalogReaders.ssl = async () => {
+        const json = await sxGet('/api/v2/balkan/policies/ssldecryption');
+        return [...new Set((Array.isArray(json && json.data) ? json.data : []).map(p => p && p.name).filter(Boolean).map(String))];
+    };
+    nsCatalogReaders.destinations = async () => {
+        const headers = { 'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest' };
+        if (sm.resource) headers.resource = sm.resource;
+        const names = new Set();
+        for (let offset = 0; offset < 20000; offset += 100) {
+            const res = await fetch(`${PC_DEST_PATH}?limit=100&offset=${offset}&fields=id,name`, { credentials: 'same-origin', headers });
+            if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${PC_DEST_PATH}.`);
+            const json = await res.json();
+            const els = (json && json.elements) || [];
+            els.forEach(e => { if (e && e.name) names.add(String(e.name)); });
+            if (els.length < 100) break;
+        }
+        return [...names];
+    };
 
     async function pcLookup(kind, ruleData) {
         if (kind === 'dest') return pcDestinations([...new Set((ruleData.destinationProfiles || []).map(String))]);

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.27.1
+// @version      2.28.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -31,8 +31,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.27.1';
-    const CHANGELOG = `Version 2.27.1:
+   const SCRIPT_VERSION = '2.28.0';
+    const CHANGELOG = `Version 2.28.0:
+- Change Tracker: policy, SSL policy, Destination Profile and Steering names are now picked from a list of the tenant's real Netskope names, kept up to date for the whole team.
+
+Version 2.27.1:
 - Change Tracker: "🔁 SSL bypass → Domain bypass" no longer saves an entry of its own. It saves two ordinary entries, "SSL Decryption — URLs Removed" and "Steering Exception Added", with the same domains, and still writes a single comment saying the bypasses were switched. It is offered only for new entries, not in the edit window.
 
 Version 2.27.0:
@@ -18174,8 +18177,15 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.11.1';
-    const CHANGELOG = `Version 2.11.1:
+    const SCRIPT_VERSION = '2.12.0';
+    const CHANGELOG = `Version 2.12.0:
+- Policy, SSL policy and Destination Profile name fields open a list of the real names in the ticket's Netskope tenant. Type to filter, then Enter or click, and the name is written exactly as Netskope spells it.
+- A name that is not in the list blocks the entry until you pick the right one or click "➕ Add", for names you just created in Netskope.
+- Steerings and Destination Profiles in SSL entries take several names as chips. Type or paste them separated by commas, semicolons or new lines; names not in the list show in yellow with ➕ to add them, or "➕ Add all".
+- The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background and shares them through SharePoint.
+- "↻ Update now" at the bottom of the list asks an open Netskope tab of that tenant to read its names right away.
+
+Version 2.11.1:
 - "🔁 SSL bypass → Domain bypass" no longer saves an entry of its own. It saves two ordinary entries, "SSL Decryption — URLs Removed" and "Steering Exception Added", with the same domains, and still writes a single comment saying the bypasses were switched. It is offered only for new entries, not in the edit window.
 
 Version 2.11.0:
@@ -25343,6 +25353,42 @@ Version 1.4.3:
                         '"🧪 Test session renewal" in Configure runs that renewal on demand and shows how often it was needed.',
                         'Each entry shows who created it and who edited it last.',
                         'While SharePoint is saving, a spinning wheel covers the form, entry or window you are working on, so nothing is clicked twice.'
+                    ]);
+                }
+            },
+            {
+                icon: '🏷️',
+                title: 'Name lists',
+                buildContent: (body) => {
+                    lead(body, 'Policy, SSL policy, Destination Profile and Steering name fields open a list of the real names in the ticket\'s Netskope tenant.');
+                    const list = css(document.createElement('div'), {
+                        border: '1px solid #c0c8f0', borderRadius: '6px', background: '#fff', maxWidth: '330px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,.12)', overflow: 'hidden', fontFamily: 'Arial, sans-serif'
+                    });
+                    const top = css(document.createElement('div'), { display: 'flex', gap: '6px', padding: '6px', borderBottom: '1px solid #eee' });
+                    top.appendChild(span('EMA ▾', { fontSize: '11px', border: '1px solid #ccc', borderRadius: '4px', padding: '2px 5px', color: '#333' }));
+                    top.appendChild(span('fin', { flex: '1', fontSize: '12px', border: '1px solid #667eea', borderRadius: '4px', padding: '2px 6px', color: '#333' }));
+                    list.appendChild(top);
+                    [['Allow-Finance-SaaS', true], ['Block-Finance-Upload', false]].forEach(([n, on]) => list.appendChild(
+                        span(n, { display: 'block', fontSize: '12px', padding: '4px 8px', color: '#333', background: on ? '#e8f0fe' : '#fff' })));
+                    list.appendChild(span('➕ Add "fin"', { display: 'block', fontSize: '12px', padding: '4px 8px', color: '#667eea', fontWeight: 'bold', borderTop: '1px solid #eee' }));
+                    const foot = span('Updated 2 h ago by Juan · ', { display: 'block', fontSize: '10px', color: '#888', padding: '4px 8px', borderTop: '1px solid #eee' });
+                    foot.appendChild(span('↻ Update now', { color: '#667eea', textDecoration: 'underline' }));
+                    list.appendChild(foot);
+                    body.appendChild(list);
+                    caption(body, 'Type to filter, then Enter or click. The tenant switch on the left lists another tenant\'s names.');
+                    body.appendChild(hrow([
+                        chip('Steering 1  ✕', '#eef0ff', { color: '#3b4aa8', border: '1px solid #c0c8f0' }),
+                        chip('Steering 3  ✕', '#eef0ff', { color: '#3b4aa8', border: '1px solid #c0c8f0' }),
+                        chip('⚠ Steerng 4 ➕ ✕', '#fff4d6', { color: '#8a5300', border: '1px solid #f0c36d' }),
+                        chip('➕ Add all', '#fff', { color: '#667eea', border: '1px solid #c0c8f0' })
+                    ], { margin: '10px 0 0 0' }));
+                    caption(body, 'Steerings and Destination Profiles take several names. Type or paste them separated by commas, semicolons or new lines: each one becomes a chip.');
+                    bullets(body, [
+                        'The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background (at most every 6 hours) and shares them through SharePoint.',
+                        'A yellow ⚠ name is not in the list, so the entry cannot be saved yet. Pick the right name, or click ➕ to add a name you just created in Netskope.',
+                        '"↻ Update now" asks an open Netskope tab of that tenant to read its names right away. Open the tenant in Netskope first.',
+                        'Names filled in by the tracker itself (Paste policy, suggestion chips) and names already saved in an entry are accepted as they are.'
                     ]);
                 }
             },
