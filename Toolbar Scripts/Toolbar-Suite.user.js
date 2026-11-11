@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.28.1
+// @version      2.29.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.28.1';
-    const CHANGELOG = `Version 2.28.1:
+   const SCRIPT_VERSION = '2.29.0';
+    const CHANGELOG = `Version 2.29.0:
+- Change Tracker: the Steering list now fills itself from Netskope too, with every steering config of the tenant, like policies and Destination Profiles. No need to add steerings with ➕ anymore.
+- Change Tracker: a Destination Profile list that Netskope sends incomplete no longer replaces the full list.
+
+Version 2.28.1:
 - Change Tracker: "↻ Update now" waits up to a minute and wakes a Netskope tab in the background right away, instead of saying no tab answered while one was open.
 - Change Tracker: Enter no longer adds a mistyped name to the team's list. A name that is not listed stays yellow until you click ➕ Add.
 - Change Tracker: a name you typed that is not in the list stays yellow when you click a suggestion chip.
@@ -18184,8 +18188,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.12.1';
-    const CHANGELOG = `Version 2.12.1:
+    const SCRIPT_VERSION = '2.13.0';
+    const CHANGELOG = `Version 2.13.0:
+- The Steering list now fills itself from Netskope too, with every steering config of the tenant, like policies and Destination Profiles. No need to add steerings with ➕ anymore.
+- A Destination Profile list that Netskope sends incomplete no longer replaces the full list.
+
+Version 2.12.1:
 - "↻ Update now" waits up to a minute and wakes a Netskope tab in the background right away, instead of saying no tab answered while one was open.
 - Enter no longer adds a mistyped name to the team's list. A name that is not listed stays yellow until you click ➕ Add, or reach it with the arrow keys.
 - A name you typed that is not in the list stays yellow when you click a suggestion chip.
@@ -25408,7 +25416,7 @@ Version 1.4.3:
                     ], { margin: '10px 0 0 0' }));
                     caption(body, 'Steerings and Destination Profiles take several names. Type or paste them separated by commas, semicolons or new lines: each one becomes a chip.');
                     bullets(body, [
-                        'The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background (at most every 6 hours) and shares them through SharePoint. Steering names are not read from Netskope yet: add them with ➕ the first time you use them.',
+                        'The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background (at most every 6 hours) and shares them through SharePoint. Policies, SSL policies, Destination Profiles and Steering configs are all read.',
                         'Enter picks a listed name. A name that is not listed stays yellow: click ➕ Add, or reach it with the arrow keys, to add it for everyone.',
                         'A yellow ⚠ name is not in the list, so the entry cannot be saved yet. Pick the right name, or click ➕ to add a name you just created in Netskope.',
                         '"↻ Update now" asks an open Netskope tab of that tenant to read its names right away. Open the tenant in Netskope first.',
@@ -40070,15 +40078,25 @@ Version 1.16:
         const headers = { 'Accept': 'application/json, text/plain, */*', 'X-Requested-With': 'XMLHttpRequest' };
         if (sm.resource) headers.resource = sm.resource;
         const names = new Set();
+        let read = 0, total = null;
         for (let offset = 0; offset < 20000; offset += 100) {
             const res = await fetch(`${PC_DEST_PATH}?limit=100&offset=${offset}&fields=id,name`, { credentials: 'same-origin', headers });
             if (!res.ok) throw new Error(`Netskope answered ${res.status} to ${PC_DEST_PATH}.`);
             const json = await res.json();
             const els = (json && json.elements) || [];
+            if (json && Number.isFinite(Number(json.total_count))) total = Number(json.total_count);
+            read += els.length;
             els.forEach(e => { if (e && e.name) names.add(String(e.name)); });
-            if (els.length < 100) break;
+            if (els.length < 100 || (total !== null && read >= total)) break;
         }
+        // A short read would shrink the shared list: keep the old one instead.
+        if (total !== null && read < total) throw new Error(`Netskope counts ${total} destination profiles but sent ${read}.`);
         return [...names];
+    };
+    nsCatalogReaders.steering = async () => {
+        const data = await smPost('/settings/steering_config/getSteeringList', { searchOu: '' });
+        if (!Array.isArray(data)) throw new Error('Netskope sent an unexpected steering list.');
+        return [...new Set(data.map(c => c && c.config_name).filter(Boolean).map(String))];
     };
 
     async function pcLookup(kind, ruleData) {
