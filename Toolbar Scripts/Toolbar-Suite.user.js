@@ -19230,6 +19230,18 @@ Version 1.4.3:
 
     const styleEl = document.createElement('style');
     styleEl.textContent = `
+        #ct-sidebar .ct-cat-list, #ct-edit-modal .ct-cat-list { background-color: #ffffff !important; color: #333333 !important; }
+        #ct-sidebar .ct-cat-list input, #ct-sidebar .ct-cat-list select,
+        #ct-edit-modal .ct-cat-list input, #ct-edit-modal .ct-cat-list select { background-color: #ffffff !important; color: #333333 !important; }
+        #ct-sidebar [data-ct-cat-option], #ct-edit-modal [data-ct-cat-option] { color: #333333 !important; background-color: #ffffff !important; }
+        #ct-sidebar [data-ct-cat-add], #ct-edit-modal [data-ct-cat-add] { color: #667eea !important; background-color: #ffffff !important; }
+        #ct-sidebar [data-ct-cat-option]:hover, #ct-edit-modal [data-ct-cat-option]:hover,
+        #ct-sidebar [data-ct-cat-add]:hover, #ct-edit-modal [data-ct-cat-add]:hover,
+        #ct-sidebar .ct-cat-active, #ct-edit-modal .ct-cat-active { background-color: #e8f0fe !important; }
+        #ct-sidebar .ct-cat-footer, #ct-edit-modal .ct-cat-footer,
+        #ct-sidebar .ct-cat-empty, #ct-edit-modal .ct-cat-empty { color: #888888 !important; background-color: #ffffff !important; }
+        #ct-sidebar .ct-cat-hint-warn, #ct-edit-modal .ct-cat-hint-warn { color: #b45309 !important; }
+        #ct-sidebar .ct-cat-hint-ok, #ct-edit-modal .ct-cat-hint-ok { color: #2a7d4f !important; }
         /* ── Z-INDEX NOTES ──────────────────────────────────────
          * Toolbar / Mini Summary Sidebar : 999997–999998
          * Change Tracker sidebar         : 999997  (peer)
@@ -20268,13 +20280,15 @@ Version 1.4.3:
         },
 
         // Replaces one kind's names over `prev` (as loaded, or null for a new row). Someone else's save in between: kind 'conflict'.
-        async saveCatalog(tenant, kind, names, prev, { checkedBy, checkedAt } = {}) {
+        // An explicit checkedAt (null too) is kept as is, so adding a name by hand never counts as a Netskope check.
+        async saveCatalog(tenant, kind, names, prev, opts = {}) {
+            const { checkedBy } = opts;
             if (!prev || !prev.spId) {
                 const now = await api.loadCatalog(tenant);
                 if (!now.ok) return now;
                 if (now.data[kind]) return { ok: false, kind: 'conflict' };
             }
-            const at = checkedAt || new Date().toISOString();
+            const at = ('checkedAt' in opts) ? (opts.checkedAt || null) : new Date().toISOString();
             const fields = { tenant, kind, names: catalogNormalize(names), checkedAt: at, checkedBy: checkedBy || '' };
             const entry = { id: (prev && prev.id) || `ct-catalog-${tenant}-${kind}`, ts: catalogStamp(at), type: CATALOG_TYPE, fields,
                 note: null, ticket: CATALOG_TICKET, spId: prev && prev.spId, etag: prev && prev.etag };
@@ -21620,6 +21634,287 @@ Version 1.4.3:
      * @param {string} prefix   - ID prefix to avoid collisions between sidebar and modal
      * @param {HTMLElement} container - target container (its contents are replaced)
      */
+    /* ==========================================================
+     *  NAME PICKER
+     *  Name fields open a searchable list of the tenant's Netskope
+     *  names. The input stays the value holder: what the user types
+     *  must match a listed or added name before the entry saves,
+     *  while values filled by the tool itself are trusted.
+     * ==========================================================*/
+
+    const CATALOG_FIELDS = {
+        policyName:          { kind: 'policies' },
+        sslPolicyName:       { kind: 'ssl' },
+        profileName:         { kind: 'destinations' },
+        destinationProfiles: { kind: 'destinations', multi: true },
+        steeringApplied:     { kind: 'steering', multi: true },
+    };
+    const CATALOG_TENANTS = Object.keys(TENANT_TYPE_TO_KEY);
+    const CATALOG_RELOAD_MS = 5 * 60 * 1000;
+    const catalogLoadedAt = {};
+    const catalogVerifiers = new WeakMap();
+    const nativeInputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+
+    function catalogAgo(iso) {
+        const ms = Date.now() - Date.parse(iso);
+        if (!isFinite(ms)) return '';
+        const min = Math.floor(ms / 60000);
+        if (min < 1) return 'just now';
+        if (min < 60) return `${min} min ago`;
+        const h = Math.floor(min / 60);
+        if (h < 48) return `${h} h ago`;
+        return `${Math.floor(h / 24)} days ago`;
+    }
+
+    function catalogTicketTenant() {
+        const t = detectTicketTenant(getTicketDoc());
+        return t ? t.type : null;
+    }
+
+    // Loads the tenant's rows from SharePoint when this page has not done so in the last 5 minutes.
+    async function catalogRefresh(tenant) {
+        if (!tenant || connState !== 'ONLINE') return false;
+        if (Date.now() - (catalogLoadedAt[tenant] || 0) < CATALOG_RELOAD_MS) return false;
+        catalogLoadedAt[tenant] = Date.now();
+        const res = await api.loadCatalog(tenant);
+        if (!res.ok) { catalogLoadedAt[tenant] = 0; return false; }
+        return true;
+    }
+
+    // Adds one name to the shared list. Returns 'shared', or 'local' when SharePoint could not be reached.
+    async function catalogAddName(tenant, kind, name) {
+        const local = () => {
+            const row = catalogCached(tenant, kind) || { names: [], checkedAt: null, checkedBy: '' };
+            catalogStore(tenant, kind, Object.assign({}, row, { names: catalogNormalize(row.names.concat(name)) }));
+            return 'local';
+        };
+        if (connState !== 'ONLINE') return local();
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const now = await api.loadCatalog(tenant);
+            if (!now.ok) { if (isTransientFailure(now)) handleApiResponse(now); return local(); }
+            const prev = now.data[kind] || null;
+            if (prev && prev.names.some(n => n.toLowerCase() === name.toLowerCase())) return 'shared';
+            const res = await api.saveCatalog(tenant, kind, (prev ? prev.names : []).concat(name), prev,
+                { checkedBy: prev ? prev.checkedBy : '', checkedAt: prev ? prev.checkedAt : null });
+            if (res.ok) return 'shared';
+            if (res.kind !== 'conflict') { if (isTransientFailure(res)) handleApiResponse(res); return local(); }
+        }
+        return local();
+    }
+
+    // Labels of the name fields holding typed text that is not a listed or added name.
+    function catalogBlockingFields(container) {
+        if (!container) return [];
+        return [...container.querySelectorAll('[data-ct-cat]')]
+            .filter(inp => { const v = catalogVerifiers.get(inp); return v ? !v() : false; })
+            .map(inp => inp.dataset.ctCatLabel || inp.placeholder || inp.id);
+    }
+
+    function attachCatalogPicker(input, spec, getTenant, label) {
+        input.dataset.ctCat = spec.kind;
+        input.dataset.ctCatState = 'ok';
+        input.dataset.ctCatLabel = label || '';
+        input.autocomplete = 'off';
+        const rawGet = () => nativeInputValue.get.call(input);
+        const rawSet = (v) => nativeInputValue.set.call(input, v);
+        // Values set by code (fills, suggestions, pastes from other tools) are trusted.
+        Object.defineProperty(input, 'value', {
+            configurable: true,
+            get() { return rawGet(); },
+            set(v) { rawSet(v); input.dataset.ctCatState = 'ok'; hideHint(); },
+        });
+
+        const panel = mk('div', { className: 'ct-cat-list' });
+        css(panel, { display: 'none', marginTop: '3px', border: '1px solid #c0c8f0', borderRadius: '6px',
+            background: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,.12)', overflow: 'hidden', fontFamily: 'Arial, sans-serif' });
+        const top = css(mk('div'), { display: 'flex', gap: '6px', padding: '6px', borderBottom: '1px solid #eee' });
+        const tenantSel = mk('select', { className: 'ct-cat-tenant', title: 'Tenant whose names are listed' });
+        css(tenantSel, { fontSize: '11px', padding: '3px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' });
+        const none = mk('option', { value: '', textContent: 'Tenant?' });
+        tenantSel.appendChild(none);
+        CATALOG_TENANTS.forEach(t => tenantSel.appendChild(mk('option', { value: t, textContent: t })));
+        const search = mk('input', { className: 'ct-cat-search', type: 'text', placeholder: 'Search names…', autocomplete: 'off' });
+        css(search, { flex: '1', minWidth: '0', fontSize: '12px', padding: '4px 6px', border: '1px solid #ccc', borderRadius: '4px', outline: 'none' });
+        top.append(tenantSel, search);
+        const optsWrap = css(mk('div'), { position: 'relative', minHeight: '28px' });
+        const optsBox = css(mk('div', { className: 'ct-cat-options' }), { maxHeight: '180px', overflowY: 'auto' });
+        optsWrap.appendChild(optsBox);
+        const footer = mk('div', { className: 'ct-cat-footer' });
+        css(footer, { fontSize: '10px', color: '#888', padding: '4px 8px', borderTop: '1px solid #eee' });
+        panel.append(top, optsWrap, footer);
+        const hint = mk('div', { className: 'ct-cat-hint' });
+        css(hint, { display: 'none', fontSize: '11px', marginTop: '3px', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
+        input.after(panel, hint);
+
+        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false;
+
+        function names() { const r = tenant && catalogCached(tenant, spec.kind); return r ? r.names : []; }
+        function showHint(text, ok) {
+            hint.textContent = text;
+            hint.classList.toggle('ct-cat-hint-ok', !!ok);
+            hint.classList.toggle('ct-cat-hint-warn', !ok);
+            hint.style.display = 'block';
+        }
+        function hideHint() { hint.style.display = 'none'; }
+        function setValue(v) {
+            rawSet(v);
+            input.dataset.ctCatState = 'ok';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        function message(text) {
+            optsBox.appendChild(css(mk('div', { className: 'ct-cat-empty', textContent: text }),
+                { fontSize: '11px', color: '#888', padding: '6px 8px', lineHeight: '1.4' }));
+        }
+        function render() {
+            const q = filtered ? search.value.trim() : '';
+            const ql = q.toLowerCase();
+            const all = names();
+            const shown = ql ? all.filter(n => n.toLowerCase().includes(ql)) : all;
+            optsBox.innerHTML = '';
+            items = [];
+            if (!tenant) message('Choose the tenant above to see its names.');
+            else if (!all.length) message('No list for this tenant yet. It fills itself when someone opens this Netskope tenant. You can add the name.');
+            else if (!shown.length) message('No name matches.');
+            shown.forEach(n => {
+                const o = mk('div', { textContent: n });
+                o.setAttribute('data-ct-cat-option', '');
+                css(o, { fontSize: '12px', padding: '5px 8px', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' });
+                o.title = n;
+                o.onmousedown = (e) => e.preventDefault();
+                o.onclick = () => pick(n);
+                optsBox.appendChild(o);
+                items.push(o);
+            });
+            if (q && !all.some(n => n.toLowerCase() === ql)) {
+                const a = mk('div', { textContent: `➕ Add "${q}"` });
+                a.setAttribute('data-ct-cat-add', '');
+                a.title = tenant ? `Add "${q}" to the ${tenant} list for everyone` : 'Use this name (choose a tenant to keep it in a list)';
+                css(a, { fontSize: '12px', padding: '5px 8px', cursor: 'pointer', fontWeight: 'bold', color: '#667eea', borderTop: '1px solid #eee' });
+                a.onmousedown = (e) => e.preventDefault();
+                a.onclick = () => addName(q);
+                optsBox.appendChild(a);
+                items.push(a);
+            }
+            active = Math.max(0, Math.min(active, items.length - 1));
+            items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
+            const row = tenant && catalogCached(tenant, spec.kind);
+            footer.textContent = !tenant ? ''
+                : (row && row.checkedAt) ? `Updated ${catalogAgo(row.checkedAt)} by ${row.checkedBy || 'someone'}`
+                : 'Not loaded from Netskope yet';
+        }
+        async function loadTenant() {
+            const t = tenant;
+            if (!t || connState !== 'ONLINE' || Date.now() - (catalogLoadedAt[t] || 0) < CATALOG_RELOAD_MS) return;
+            await withBusy(optsWrap, () => catalogRefresh(t), 'Loading names…');
+            if (isOpen && tenant === t) render();
+        }
+        function openList() {
+            if (isOpen || adding) return;
+            isOpen = true;
+            if (!tenant) tenant = getTenant() || null;
+            tenantSel.value = tenant || '';
+            search.value = rawGet();
+            filtered = false; active = 0;
+            panel.style.display = 'block';
+            render();
+            search.focus(); search.select();
+            // Closing on click (not mousedown) keeps the layout still until the click has found its target.
+            document.addEventListener('click', onOutside, true);
+            loadTenant();
+        }
+        function closeList(verify) {
+            if (!isOpen) return;
+            isOpen = false;
+            panel.style.display = 'none';
+            document.removeEventListener('click', onOutside, true);
+            if (verify) verify_();
+        }
+        function refocusInput() { quietFocus = true; input.focus(); quietFocus = false; }
+        function onOutside(e) {
+            const path = e.composedPath ? e.composedPath() : [];
+            if (path.includes(panel) || path.includes(input)) return;
+            closeList(true);
+        }
+        // True when the field may be saved; fixes the spelling of a typed name that is in the list.
+        // quiet: no note is shown or hidden (on blur, a note would move the button the user is clicking).
+        function verify_(quiet) {
+            if (input.dataset.ctCatState !== 'unverified') return true;
+            const v = rawGet().trim();
+            if (!tenant) tenant = getTenant() || null;
+            const hit = names().find(n => n.toLowerCase() === v.toLowerCase());
+            if (!v || hit) { if (hit && hit !== rawGet()) setValue(hit); input.dataset.ctCatState = 'ok'; if (!quiet && hint.classList.contains('ct-cat-hint-warn')) hideHint(); return true; }
+            if (quiet) return false;
+            showHint(`"${v}" is not in the ${tenant || 'tenant'} list. Pick a name or click ➕ Add.`, false);
+            return false;
+        }
+        catalogVerifiers.set(input, verify_);
+        function pick(n) {
+            setValue(n);
+            hideHint();
+            closeList(false);
+            refocusInput();
+        }
+        async function addName(name) {
+            if (adding) return;
+            adding = true;
+            const t = tenant;
+            const addEl = optsBox.querySelector('[data-ct-cat-add]');
+            if (addEl) addEl.textContent = `⏳ Adding "${name}"…`;
+            let outcome = 'none';
+            try {
+                if (t) outcome = await withBusy(optsWrap, () => catalogAddName(t, spec.kind, name), 'Adding…');
+            } catch (e) {
+                outcome = 'local';
+            } finally {
+                adding = false;
+            }
+            setValue(name);
+            closeList(false);
+            refocusInput();
+            if (outcome === 'shared') showHint(`✅ "${name}" added to the ${t} list.`, true);
+            else if (outcome === 'local') showHint(`✅ "${name}" kept on this computer. SharePoint could not be reached, so others will not see it yet.`, true);
+            else showHint(`✅ "${name}" used. It is not in any list because no tenant is chosen.`, true);
+        }
+
+        input.addEventListener('input', (e) => { if (e.isTrusted) { input.dataset.ctCatState = 'unverified'; hideHint(); } });
+        input.addEventListener('focus', () => { if (!quietFocus) openList(); });
+        input.addEventListener('click', () => openList());
+        input.addEventListener('blur', () => { if (!isOpen) verify_(true); });
+        search.addEventListener('input', (e) => {
+            if (!e.isTrusted) return;
+            rawSet(search.value);
+            input.dataset.ctCatState = 'unverified';
+            filtered = true; active = 0;
+            render();
+        });
+        search.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (!items.length) return;
+                active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
+                items[active].scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                e.preventDefault(); e.stopPropagation();
+                if (items[active] && filtered) items[active].click();
+                else { closeList(true); refocusInput(); }
+            } else if (e.key === 'Escape') {
+                e.preventDefault(); e.stopPropagation();
+                closeList(true); refocusInput();
+            } else if (e.key === 'Tab') {
+                closeList(true);
+            }
+        });
+        tenantSel.addEventListener('change', () => {
+            tenant = tenantSel.value || null;
+            active = 0;
+            render();
+            search.focus();
+            loadTenant();
+        });
+    }
+
     function buildFieldInputs(schema, values, prefix, container) {
         container.innerHTML = '';
         schema.forEach(f => {
@@ -21665,6 +21960,8 @@ Version 1.4.3:
 
             wrap.append(lbl, input);
             container.appendChild(wrap);
+            const catSpec = CATALOG_FIELDS[f.key];
+            if (catSpec && !catSpec.multi && input.tagName === 'INPUT') attachCatalogPicker(input, catSpec, catalogTicketTenant, f.label);
 
             if (f.extraFields && f.extraFields.length) {
                 const addedKeys    = new Set();
@@ -23493,6 +23790,12 @@ Version 1.4.3:
         });
         saveBtn.textContent = '✓ Save Changes';
         saveBtn.onclick = async () => {
+            const blocked = catalogBlockingFields(fieldsContainer);
+            if (blocked.length) {
+                saveBtn.title = `${blocked.join(', ')}: pick a name from the list or click ➕ Add.`;
+                return;
+            }
+            saveBtn.title = '';
             const newType  = typeSelect.value;
             const schema   = getSchema(newType);
             const newFields = schema ? collectFieldValues(schema, 'ct-edit-field') : null;
@@ -23962,6 +24265,16 @@ Version 1.4.3:
             else                                    flashStatus('⚠️ Not connected yet.', '#e67e22');
             return;
         }
+
+        const addBtnEl = document.getElementById('ct-add-btn');
+        const blocked = catalogBlockingFields(document.getElementById('ct-input-fields'));
+        if (blocked.length) {
+            const why = `⚠️ ${blocked.join(', ')}: pick a name from the list or click ➕ Add.`;
+            flashStatus(why, '#e67e22', 4000);
+            if (addBtnEl) addBtnEl.title = why;
+            return;
+        }
+        if (addBtnEl) addBtnEl.title = 'Ctrl+Enter also works inside the detail field';
 
         // Empty selection → treat as "Custom"
         let type = select.value.trim() || 'Custom';
@@ -26841,7 +27154,7 @@ Version 1.4.3:
                 attemptReconnect, getState: () => connState, getTicketNumber, SNIPPET_GROUPS, FIELD_SCHEMAS, spClient, qs, entryMapper, listSchema, isNrdProfile, nrdCheck, nrdCache, nrdComputeDue, nrdTime,
                 policyComputeDue, policyCheck, policyCache, policyReminderTypes, policyApplyDeleted, policyApplyReenabled,
                 nsapi: netskopeApi, nrdRebuildValues, nrdApiLookup,
-                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter, isSpecialTicket,
+                setHiddenSince: (v) => { hiddenSince = v; }, refreshLog, withBusy, openEditModal, catalogBlockingFields, isPending: (tk) => hasPending(tk), buildGroupedSummary, ticketWriter, isSpecialTicket,
                 catalog: { load: api.loadCatalog, save: api.saveCatalog, normalize: catalogNormalize, cached: catalogCached } };
         }
 
