@@ -14,6 +14,8 @@ public abstract class JsNode
     /// <summary>Comment lines written just above this node when it is an array item.</summary>
     public string? LeadingComment { get; set; }
     public bool BlankLineBefore { get; set; }
+    /// <summary>Spaces before this item inside a one line array, as read (null for the first item or when unknown).</summary>
+    public string? InlineGap { get; set; }
 
     /// <summary>Formatting independent fingerprint, used for deep equality.</summary>
     public string Canonical()
@@ -33,6 +35,7 @@ public abstract class JsNode
         target.OriginKey = OriginKey;
         target.LeadingComment = LeadingComment;
         target.BlankLineBefore = BlankLineBefore;
+        target.InlineGap = InlineGap;
         return target;
     }
 
@@ -59,10 +62,13 @@ public sealed class JsProperty
     public string? LeadingComment { get; set; }
     public bool BlankLineBefore { get; set; }
     public bool BlankLineAfterComment { get; set; }
+    /// <summary>Spaces before this property inside a one line object, as read (null for the first one or when unknown).</summary>
+    public string? InlineGap { get; set; }
 
     public JsProperty Clone() => new(Key, Value.Clone())
     {
-        LeadingComment = LeadingComment, BlankLineBefore = BlankLineBefore, BlankLineAfterComment = BlankLineAfterComment
+        LeadingComment = LeadingComment, BlankLineBefore = BlankLineBefore, BlankLineAfterComment = BlankLineAfterComment,
+        InlineGap = InlineGap
     };
 }
 
@@ -74,6 +80,11 @@ public abstract class JsContainer : JsNode
     public string? ChildIndent { get; set; }
     public string? CloseIndent { get; set; }
     public string? TrailingComment { get; set; }
+    public bool BlankLineBeforeClose { get; set; }
+    /// <summary>One line layout as read: spaces after the opening bracket, after each comma, and before the closing one.</summary>
+    public string? OpenGap { get; set; }
+    public string? SeparatorGap { get; set; }
+    public string? CloseGap { get; set; }
 
     protected T CopyLayout<T>(T target) where T : JsContainer
     {
@@ -83,6 +94,10 @@ public abstract class JsContainer : JsNode
         target.ChildIndent = ChildIndent;
         target.CloseIndent = CloseIndent;
         target.TrailingComment = TrailingComment;
+        target.BlankLineBeforeClose = BlankLineBeforeClose;
+        target.OpenGap = OpenGap;
+        target.SeparatorGap = SeparatorGap;
+        target.CloseGap = CloseGap;
         return target;
     }
 }

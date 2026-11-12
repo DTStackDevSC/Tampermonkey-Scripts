@@ -57,4 +57,24 @@ public class JsWriterTests
         o.Props.Add(new JsProperty("b", new JsBool(false)) { LeadingComment = "/// B TEAM ///" });
         Assert.Equal("{\n    a: true,\n\n    /// B TEAM ///\n    b: false\n}", JsWriter.Write(o, "", "\n"));
     }
+    [Fact]
+    public void Changed_inline_container_keeps_its_spacing()
+    {
+        var src = "[\n    { key: 'a',  label: 'EU',   mfs: ['AT','BE'] },\n    { key: 'b',  label: 'CE',   mfs: ['FR'] }\n]";
+        var node = (JsArray)JsReader.Parse(src);
+        var first = (JsObject)node.Items[0];
+        first["label"] = new JsString("Europe");
+        ((JsArray)first["mfs"]!).Items.Add(new JsString("XX"));
+        Assert.Equal("[\n    { key: 'a',  label: 'Europe',   mfs: ['AT','BE','XX'] },\n    { key: 'b',  label: 'CE',   mfs: ['FR'] }\n]",
+            JsWriter.Write(node, "", "\n"));
+    }
+
+    [Fact]
+    public void Changed_container_keeps_blank_line_before_close()
+    {
+        var src = "{\n    a: {\n        x: 1\n    }\n\n}";
+        var node = (JsObject)JsReader.Parse(src);
+        ((JsObject)node["a"]!)["x"] = new JsNumber("2");
+        Assert.Equal("{\n    a: {\n        x: 2\n    }\n\n}", JsWriter.Write(node, "    ", "\n"));
+    }
 }

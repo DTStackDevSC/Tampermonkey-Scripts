@@ -70,9 +70,9 @@ public static class JsWriter
                     break;
                 case JsObject o: EmitContainer(sb, o, indent, '{', '}', o.Props.Count, i => o.Props[i].Value,
                     i => (o.Props[i].LeadingComment, o.Props[i].BlankLineBefore, o.Props[i].BlankLineAfterComment),
-                    i => Key(o.Props[i].Key) + ": "); break;
+                    i => Key(o.Props[i].Key) + ": ", i => o.Props[i].InlineGap); break;
                 case JsArray a: EmitContainer(sb, a, indent, '[', ']', a.Items.Count, i => a.Items[i],
-                    i => (a.Items[i].LeadingComment, a.Items[i].BlankLineBefore, false), _ => ""); break;
+                    i => (a.Items[i].LeadingComment, a.Items[i].BlankLineBefore, false), _ => "", i => a.Items[i].InlineGap); break;
                 default: throw new InvalidOperationException("Unknown node " + node.GetType().Name);
             }
         }
@@ -80,7 +80,8 @@ public static class JsWriter
         static bool IsPrimitive(JsNode n) => n is JsString or JsNumber or JsBool;
 
         void EmitContainer(StringBuilder sb, JsContainer c, string indent, char open, char close, int count,
-            Func<int, JsNode> value, Func<int, (string? Comment, bool Blank, bool BlankAfter)> trivia, Func<int, string> prefix)
+            Func<int, JsNode> value, Func<int, (string? Comment, bool Blank, bool BlankAfter)> trivia, Func<int, string> prefix,
+            Func<int, string?> gap)
         {
             if (count == 0 && c.TrailingComment == null) { sb.Append(open).Append(close); return; }
             var anyComment = c.TrailingComment != null || Enumerable.Range(0, count).Any(i => trivia(i).Comment != null);
@@ -99,8 +100,14 @@ public static class JsWriter
                 }
                 if (parts != null)
                 {
-                    var body = string.Join(", ", parts);
-                    inline = open == '{' ? "{ " + body + " }" : "[" + body + "]";
+                    var pad = open == '{' ? " " : "";
+                    var line = new StringBuilder().Append(open).Append(c.OpenGap ?? pad);
+                    for (var i = 0; i < parts.Count; i++)
+                    {
+                        if (i > 0) line.Append(',').Append(gap(i) ?? c.SeparatorGap ?? " ");
+                        line.Append(parts[i]);
+                    }
+                    inline = line.Append(c.CloseGap ?? pad).Append(close).ToString();
                     if (c.Inline == null && inline.Length > MaxInline) inline = null;
                 }
             }
@@ -124,6 +131,7 @@ public static class JsWriter
                 if (i < count - 1 || c.TrailingComma) sb.Append(',');
             }
             if (c.TrailingComment != null) sb.Append(nl).Append(child).Append(Eol(c.TrailingComment));
+            if (c.BlankLineBeforeClose) sb.Append(nl);
             sb.Append(nl).Append(closeIndent).Append(close);
         }
     }

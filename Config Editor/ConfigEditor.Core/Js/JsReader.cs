@@ -153,17 +153,23 @@ public static class JsReader
             var lastComma = false;
             while (true)
             {
+                var gapStart = i;
                 var tv = ReadTrivia(ref i);
+                var gap = !tv.NewLine && tv.Comments.Count == 0 ? t.Substring(gapStart, i - gapStart) : null;
                 if (i >= t.Length) throw new JsParseException("Unterminated object", start);
                 if (t[i] == '}')
                 {
                     if (tv.Comments.Count > 0) o.TrailingComment = string.Join("\n", tv.Comments);
                     if (tv.NewLine) o.CloseIndent = LineIndent(i);
+                    o.BlankLineBeforeClose = tv.BlankBefore && tv.Comments.Count == 0;
+                    o.CloseGap = gap;
                     i++;
                     break;
                 }
                 if (o.Props.Count > 0 && !lastComma) throw new JsParseException("Expected ,", i);
                 if (o.Props.Count == 0 && tv.NewLine) o.ChildIndent = LineIndent(i);
+                if (o.Props.Count == 0) o.OpenGap = gap;
+                else if (o.Props.Count == 1) o.SeparatorGap = gap;
                 string key;
                 if (t[i] == '\'' || t[i] == '"') key = ReadString(ref i);
                 else if (JsScan.IsIdentStart(t[i]) || char.IsDigit(t[i]))
@@ -181,11 +187,12 @@ public static class JsReader
                 {
                     LeadingComment = tv.Comments.Count > 0 ? string.Join("\n", tv.Comments) : null,
                     BlankLineBefore = tv.BlankBefore,
-                    BlankLineAfterComment = tv.BlankAfterComment
+                    BlankLineAfterComment = tv.BlankAfterComment,
+                    InlineGap = o.Props.Count > 0 ? gap : null
                 });
-                i = SkipWs(i);
-                lastComma = i < t.Length && t[i] == ',';
-                if (lastComma) i++;
+                var afterValue = SkipWs(i);
+                lastComma = afterValue < t.Length && t[afterValue] == ',';
+                if (lastComma) i = afterValue + 1;
             }
             o.TrailingComma = lastComma && o.Props.Count > 0;
             o.Inline = t.IndexOf('\n', start, i - start) < 0;
@@ -200,24 +207,31 @@ public static class JsReader
             var lastComma = false;
             while (true)
             {
+                var gapStart = i;
                 var tv = ReadTrivia(ref i);
+                var gap = !tv.NewLine && tv.Comments.Count == 0 ? t.Substring(gapStart, i - gapStart) : null;
                 if (i >= t.Length) throw new JsParseException("Unterminated array", start);
                 if (t[i] == ']')
                 {
                     if (tv.Comments.Count > 0) a.TrailingComment = string.Join("\n", tv.Comments);
                     if (tv.NewLine) a.CloseIndent = LineIndent(i);
+                    a.BlankLineBeforeClose = tv.BlankBefore && tv.Comments.Count == 0;
+                    a.CloseGap = gap;
                     i++;
                     break;
                 }
                 if (a.Items.Count > 0 && !lastComma) throw new JsParseException("Expected ,", i);
                 if (a.Items.Count == 0 && tv.NewLine) a.ChildIndent = LineIndent(i);
+                if (a.Items.Count == 0) a.OpenGap = gap;
+                else if (a.Items.Count == 1) a.SeparatorGap = gap;
                 var v = ParseValue(ref i);
                 v.LeadingComment = tv.Comments.Count > 0 ? string.Join("\n", tv.Comments) : null;
                 v.BlankLineBefore = tv.BlankBefore;
+                v.InlineGap = a.Items.Count > 0 ? gap : null;
                 a.Items.Add(v);
-                i = SkipWs(i);
-                lastComma = i < t.Length && t[i] == ',';
-                if (lastComma) i++;
+                var afterValue = SkipWs(i);
+                lastComma = afterValue < t.Length && t[afterValue] == ',';
+                if (lastComma) i = afterValue + 1;
             }
             a.TrailingComma = lastComma && a.Items.Count > 0;
             a.Inline = t.IndexOf('\n', start, i - start) < 0;
