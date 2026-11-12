@@ -38,7 +38,8 @@ public sealed class EditSession
         new(false, conflict, items ?? Array.Empty<ChangeItem>(), NoFiles, null, error);
 
     /// <summary>Applies the edits onto the latest scripts, bumps versions and validates the result.</summary>
-    public async Task<PrepareResult> PrepareAsync(IScriptSource latest, CancellationToken ct)
+    /// <param name="items">Changelog bullets to use instead of the generated ones (as edited by the user).</param>
+    public async Task<PrepareResult> PrepareAsync(IScriptSource latest, CancellationToken ct, IReadOnlyList<ChangeItem>? items = null)
     {
         var changed = Edited.Changed;
         if (changed.Count == 0) return new PrepareResult(true, null, Array.Empty<ChangeItem>(), NoFiles, null);
@@ -68,7 +69,7 @@ public sealed class EditSession
 
         var target = ConfigDocument.Load(latestTh, latestTb);
         foreach (var b in changed) target.Set(b, Edited.Get(b)!);
-        var items = ChangeSummary.Build(Original, Edited);
+        items ??= ChangeSummary.Build(Original, Edited);
         var (newTh, newTb) = target.Render();
 
         var files = new Dictionary<string, string>();

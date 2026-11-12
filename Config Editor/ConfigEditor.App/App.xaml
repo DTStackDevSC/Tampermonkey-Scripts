@@ -1,0 +1,16 @@
+<Application x:Class="ConfigEditor.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ConfigEditor.App"
+             ThemeMode="System" ShutdownMode="OnMainWindowClose">
+    <Application.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <local:InverseBoolToVisibility x:Key="InverseBoolToVis"/>
+        <local:NullToVisibility x:Key="NullToVis"/>
+        <Style x:Key="HintText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </Application.Resources>
+</Application>

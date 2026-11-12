@@ -165,4 +165,19 @@ public class EditSessionTests
         Assert.Empty(r.Files);
         Assert.Empty(r.Items);
     }
+
+    [Fact]
+    public async Task Edited_bullets_replace_generated_ones_in_changelog()
+    {
+        var session = await EditSession.OpenAsync(new FakeSource(), default);
+        EditNote(session.Edited);
+        var first = await session.PrepareAsync(new FakeSource(), default);
+        var mine = first.Items.Select(i => i with { Bullet = "Reworded the closing texts." }).ToList();
+
+        var r = await session.PrepareAsync(new FakeSource(), default, mine);
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(mine, r.Items);
+        Assert.Contains("- Change Tracker: Reworded the closing texts.", r.Files[SuitePaths.Toolbar]);
+        Assert.DoesNotContain(first.Items[0].Bullet, r.Files[SuitePaths.Toolbar].Split("const CHANGELOG")[1][..400]);
+    }
 }
