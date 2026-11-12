@@ -33,15 +33,22 @@ Do not uninstall the old scripts before importing: their saved data is deleted w
 
 **If you did not have the Short Description Helper:** install || Ticket Helpers || from the script installer page (card "Ticket Helpers Suite"), then follow steps 2 to 4.
 
-### Configuration Editors
+### Config Editor (Windows app)
 
-The `Helpers/` subfolder contains PyQt5-based GUI editors for modifying the team configuration blocks inside three of the scripts above, without editing JavaScript directly:
+**Config Editor** is a Windows app that lets anyone change the texts and option lists of both suites without touching code: Short Description options, Ticket Response texts, Policy Naming lists, Ticket Subject options, Change Tracker note texts and member firm codes. It replaced the old Python editors.
 
-- `ServiceNowTicketResponseHelper_Editor.py`
-- `ServiceNowShortDescriptionHelper_Editor.py`
-- `NetskopePolicyNameHelper_Editor.py`
+**Get it:** download `ConfigEditor.exe` from the latest `config-editor-v*` release on the [Releases page](https://github.com/DTStackDevSC/Tampermonkey-Scripts/releases). No install is needed. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
 
-These editors were written for the separate scripts. They will be updated to work on the Ticket Helpers Suite file; until then, edit the team blocks in the suite by hand.
+**Use it:**
+
+1. Open the app. It downloads the current scripts from GitHub on start (or open a local copy with **Open folder**).
+2. Pick a section on the left and edit. Every change is checked before it is saved.
+3. Click **Save**. The app bumps the script version and adds a changelog entry for you.
+4. Upload the saved `.user.js` files on GitHub (the app shows the steps and opens the right page). Tampermonkey then updates everyone.
+
+**Optional, publish from the app:** in **Settings** turn on publishing and paste a fine grained GitHub token with *Contents: Read and write* on this repository only. **Publish** then commits the change for you under your own GitHub account, using your private noreply email.
+
+The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `config-editor.yml` workflow.
 
 ---
 
