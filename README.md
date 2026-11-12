@@ -46,6 +46,8 @@ Do not uninstall the old scripts before importing: their saved data is deleted w
 3. Click **Save**. The app bumps the script version and adds a changelog entry for you.
 4. Upload the saved `.user.js` files on GitHub (the app shows the steps and opens the right page). Tampermonkey then updates everyone.
 
+The **? Help** button at the top right opens a visual guide to the window, every section and the save steps.
+
 **Optional, publish from the app:** in **Settings** turn on publishing and paste a fine grained GitHub token with *Contents: Read and write* on this repository only. **Publish** then commits the change for you under your own GitHub account, using your private noreply email.
 
 The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `config-editor.yml` workflow.

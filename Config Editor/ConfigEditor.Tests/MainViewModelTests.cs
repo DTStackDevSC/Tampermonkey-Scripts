@@ -58,6 +58,8 @@ public class MainViewModelTests
         }
         public void ShowSettings(SettingsViewModel vm) { }
         public void OpenUrl(string url) { }
+        public int HelpShown;
+        public void ShowHelp(HelpGuide guide) => HelpShown++;
     }
 
     internal sealed class Clock : TimeProvider

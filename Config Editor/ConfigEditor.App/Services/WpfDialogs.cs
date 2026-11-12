@@ -29,6 +29,16 @@ public sealed class WpfDialogs : IDialogs
 
     public void ShowSettings(SettingsViewModel vm) => new SettingsDialog(vm) { Owner = Owner }.ShowDialog();
 
+    HelpWindow? help;
+
+    public void ShowHelp(HelpGuide guide)
+    {
+        if (help is { IsLoaded: true }) { help.Activate(); return; }
+        help = new HelpWindow(guide) { Owner = Owner };
+        help.Closed += (_, _) => help = null;
+        help.Show();
+    }
+
     public void OpenUrl(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }

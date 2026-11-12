@@ -223,6 +223,11 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     void OpenSettings() => dialogs.ShowSettings(CreateSettings());
 
+    [RelayCommand]
+    void OpenHelp() => dialogs.ShowHelp(CreateHelp());
+
+    public HelpGuide CreateHelp() => HelpGuide.For(Nav, settings.PublishEnabled);
+
     public SettingsViewModel CreateSettings() => new(settings, tokens, publisherFactory, () =>
     {
         OnPropertyChanged(nameof(ShowPublish));

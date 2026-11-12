@@ -27,6 +27,7 @@ public interface IDialogs
     void ShowSave(SaveDialogViewModel vm);
     void ShowSettings(SettingsViewModel vm);
     void OpenUrl(string url);
+    void ShowHelp(HelpGuide guide);
 }
 
 public sealed record NewTeamRequest(string DisplayName, string ShortLabel, string CopyFromKey);

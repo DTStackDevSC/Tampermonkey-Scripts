@@ -9,7 +9,6 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <AssemblyName>ConfigEditor</AssemblyName>
     <RootNamespace>ConfigEditor.App</RootNamespace>
-    <Version>1.0.1</Version>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>

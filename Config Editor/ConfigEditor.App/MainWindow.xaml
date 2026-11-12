@@ -25,7 +25,8 @@
                             ToolTip="Download the newest scripts from GitHub"/>
                     <Button Content="📁 Open folder" Command="{Binding OpenFolderCommand}" Margin="0,0,8,0"
                             ToolTip="Work on a folder that holds 'Standalone Scripts' and 'Toolbar Scripts'"/>
-                    <Button Content="⚙ Settings" Command="{Binding OpenSettingsCommand}" ToolTip="Publishing to GitHub and your token"/>
+                    <Button Content="⚙ Settings" Command="{Binding OpenSettingsCommand}" Margin="0,0,8,0" ToolTip="Publishing to GitHub and your token"/>
+                    <Button Content="? Help" Command="{Binding OpenHelpCommand}" ToolTip="How to use the app and what each section changes"/>
                 </StackPanel>
             </DockPanel>
         </Border>
