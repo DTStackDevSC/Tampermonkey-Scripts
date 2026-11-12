@@ -99,7 +99,7 @@ public static class JsReader
                 var bodyEnd = JsScan.SkipTemplate(t, bodyStart);
                 i = bodyEnd;
                 var param = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : "";
-                return new JsTemplateFn(param, t.Substring(bodyStart + 1, bodyEnd - bodyStart - 2));
+                return new JsTemplateFn(param, t.Substring(bodyStart + 1, bodyEnd - bodyStart - 2).ReplaceLineEndings("\n"));
             }
             if (Word(i, "true")) { i += 4; return new JsBool(true); }
             if (Word(i, "false")) { i += 5; return new JsBool(false); }
@@ -131,7 +131,7 @@ public static class JsReader
                 else if (nl == 1 && comments.Count > 0) blankAfter = false;
                 var e = i < t.Length ? JsScan.SkipComment(t, i) : -1;
                 if (e < 0) break;
-                comments.Add(t.Substring(i, e - i).TrimEnd());
+                comments.Add(t.Substring(i, e - i).TrimEnd().ReplaceLineEndings("\n"));
                 blankAfter = false;
                 i = e;
             }
