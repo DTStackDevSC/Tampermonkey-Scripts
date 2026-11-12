@@ -8,7 +8,7 @@ namespace ConfigEditor.Tests;
 
 public class MainViewModelTests
 {
-    sealed class MemorySource : IScriptSource
+    internal sealed class MemorySource : IScriptSource
     {
         public Dictionary<string, string> Files { get; } = new()
         {
@@ -21,14 +21,14 @@ public class MainViewModelTests
             Offline ? throw new HttpRequestException("proxy refused") : Task.FromResult(Files[relativePath]);
     }
 
-    sealed class Factory : IScriptSourceFactory
+    internal sealed class Factory : IScriptSourceFactory
     {
         public MemorySource Current { get; set; } = new();
         public IScriptSource GitHub() => Current;
         public IScriptSource Folder(string path) => new FolderSource(path);
     }
 
-    sealed class Settings : IAppSettings
+    internal sealed class Settings : IAppSettings
     {
         public bool PublishEnabled { get; set; }
         public bool EmailReminderShown { get; set; }
@@ -36,7 +36,7 @@ public class MainViewModelTests
         public void Save() { }
     }
 
-    sealed class Tokens : ITokenStore
+    internal sealed class Tokens : ITokenStore
     {
         public string? Value;
         public string? Load() => Value;
@@ -44,7 +44,7 @@ public class MainViewModelTests
         public void Clear() => Value = null;
     }
 
-    sealed class Dialogs : IDialogs
+    internal sealed class Dialogs : IDialogs
     {
         public int SaveShown;
         public bool ConfirmInDialog = true;
@@ -60,13 +60,13 @@ public class MainViewModelTests
         public void OpenUrl(string url) { }
     }
 
-    sealed class Clock : TimeProvider
+    internal sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now = DateTimeOffset.UnixEpoch;
         public override DateTimeOffset GetUtcNow() => Now;
     }
 
-    static (MainViewModel vm, Factory f, Settings s, Dialogs d, Clock c) Make()
+    internal static (MainViewModel vm, Factory f, Settings s, Dialogs d, Clock c) Make()
     {
         var f = new Factory(); var s = new Settings(); var d = new Dialogs(); var c = new Clock();
         return (new MainViewModel(f, new Tokens(), d, s, c), f, s, d, c);

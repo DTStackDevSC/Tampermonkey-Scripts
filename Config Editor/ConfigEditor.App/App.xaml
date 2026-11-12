@@ -2,6 +2,8 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:ConfigEditor.App"
+             xmlns:p="clr-namespace:ConfigEditor.ViewModels.Pages;assembly=ConfigEditor.ViewModels"
+             xmlns:v="clr-namespace:ConfigEditor.App.Views.Pages"
              ThemeMode="System" ShutdownMode="OnMainWindowClose">
     <Application.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -12,5 +14,28 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
             <Setter Property="FontSize" Value="12"/>
         </Style>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}"/>
+        </Style>
+        <Style x:Key="CardTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,10,0,4"/>
+        </Style>
+        <DataTemplate DataType="{x:Type p:ShortDescriptionPage}"><v:ShortDescriptionView/></DataTemplate>
+        <DataTemplate DataType="{x:Type p:ResponsesPage}"><v:ResponsesView/></DataTemplate>
+        <DataTemplate DataType="{x:Type p:PolicyNamingPage}"><v:PolicyNamingView/></DataTemplate>
+        <DataTemplate DataType="{x:Type p:TicketSubjectPage}"><v:TicketSubjectView/></DataTemplate>
+        <DataTemplate DataType="{x:Type p:NoteTextsPage}"><v:NoteTextsView/></DataTemplate>
+        <DataTemplate DataType="{x:Type p:MfCodesPage}"><v:MfCodesView/></DataTemplate>
     </Application.Resources>
 </Application>

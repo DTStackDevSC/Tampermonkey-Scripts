@@ -42,6 +42,12 @@ public partial class MainViewModel : ObservableObject
             new("noteTexts", "Change Tracker note texts", tb, false, BlockCatalog.NoteTemplates),
             new("mfCodes", "Ticket Assignment member firms", tb, false, BlockCatalog.MfCodeMap),
         };
+        Nav[0].Page = new Pages.ShortDescriptionPage(this);
+        Nav[1].Page = new Pages.ResponsesPage(this);
+        Nav[2].Page = new Pages.PolicyNamingPage(this);
+        Nav[3].Page = new Pages.TicketSubjectPage(this);
+        Nav[4].Page = new Pages.NoteTextsPage(this);
+        Nav[5].Page = new Pages.MfCodesPage(this);
         selectedNav = Nav[0];
     }
 

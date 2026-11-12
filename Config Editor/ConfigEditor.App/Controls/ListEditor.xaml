@@ -1,0 +1,21 @@
+<UserControl x:Class="ConfigEditor.App.Controls.ListEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+            <Button Content="＋ Add" Command="{Binding AddCommand}" Margin="0,0,6,0" ToolTip="Add a row below the selected one"
+                    Visibility="{Binding CanAdd, Converter={StaticResource BoolToVis}}"/>
+            <Button Content="📄 Copy" Command="{Binding DuplicateCommand}" Margin="0,0,6,0" ToolTip="Copy the selected row"
+                    Visibility="{Binding CanDuplicate, Converter={StaticResource BoolToVis}}"/>
+            <Button Content="⬆" Command="{Binding MoveUpCommand}" Margin="0,0,6,0" ToolTip="Move the selected row up"/>
+            <Button Content="⬇" Command="{Binding MoveDownCommand}" Margin="0,0,6,0" ToolTip="Move the selected row down"/>
+            <Button Content="{Binding RemoveText}" Command="{Binding RemoveCommand}" ToolTip="Delete the selected row. Needs a second click."/>
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Bottom" Text="{Binding Message}" Style="{StaticResource HintText}" Margin="0,4,0,0"
+                   Visibility="{Binding Message, Converter={StaticResource NullToVis}}"/>
+        <DataGrid x:Name="Grid" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" AutoGenerateColumns="True"
+                  AutoGeneratingColumn="OnAutoColumn" CanUserAddRows="False" CanUserDeleteRows="False"
+                  CanUserSortColumns="False" CanUserReorderColumns="False" SelectionMode="Single"
+                  HeadersVisibility="Column" MaxHeight="340" MinHeight="80"/>
+    </DockPanel>
+</UserControl>
