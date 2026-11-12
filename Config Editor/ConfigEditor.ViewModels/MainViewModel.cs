@@ -274,6 +274,7 @@ public partial class MainViewModel : ObservableObject
             return await session.PrepareAsync(sources.GitHub(), CancellationToken.None, items);
         }
 
+        PrepareResult? written = null;
         Func<IReadOnlyList<ChangeItem>, IProgress<string>, Task<SaveOutcome>> run = mode == SaveMode.Save
             ? async (items, progress) =>
             {
@@ -281,6 +282,7 @@ public partial class MainViewModel : ObservableObject
                 if (r is not { Ok: true }) return Failed(FailText(r!));
                 progress.Report($"💾 Writing {r.Files.Count} file(s)…");
                 await EditSession.SaveAsync(folder, r.Files);
+                written = r;
                 var links = r.Files.Keys.Select(p => p[..p.LastIndexOf('/')]).Distinct()
                     .Select(dir => new LinkItem($"Upload to {dir} on GitHub", UploadBase + Uri.EscapeDataString(dir))).ToList();
                 links.Add(new LinkItem("Open the saved folder", folder));
@@ -294,9 +296,7 @@ public partial class MainViewModel : ObservableObject
                 var r = await Reprepare(items, progress);
                 if (r is not { Ok: true }) return Failed(FailText(r!));
                 progress.Report("🚀 Publishing to GitHub…");
-                var message = GitHubPublisher.CommitMessage(r.Files, r.Items);
-                var res = await publisherFactory(token!).PublishAsync(r.Files, message,
-                    () => session.PrepareAsync(sources.GitHub(), CancellationToken.None, items));
+                var res = await publisherFactory(token!).PublishAsync(src => session.PrepareAsync(src, CancellationToken.None, r.Items));
                 if (!res.Ok) return Failed("❌ " + res.Error);
                 return new SaveOutcome(true, "✅ Published. Tampermonkey will offer the update to everyone soon.",
                     new[] { new LinkItem("See the commit on GitHub", res.CommitUrl!) }, false);
@@ -309,6 +309,13 @@ public partial class MainViewModel : ObservableObject
         if (dialog.Outcome == null) { Status = mode == SaveMode.Save ? "ℹ️ Save cancelled. Your edits are kept." : "ℹ️ Publish cancelled. Your edits are kept."; return; }
         Status = dialog.Outcome.Message;
         if (dialog.Outcome.Ok) HasUnsavedWork = false;
+        if (dialog.Outcome.Ok && written != null)
+        {
+            // Keep editing on top of what was saved, so the next save does not see the own upload as a conflict.
+            Session = session.AfterSave(written);
+            UnsavedCount = 0;
+            SessionOpened?.Invoke();
+        }
         if (dialog.Outcome.Ok && mode == SaveMode.Publish) await OpenAsync(sources.GitHub(), null);
     }
 

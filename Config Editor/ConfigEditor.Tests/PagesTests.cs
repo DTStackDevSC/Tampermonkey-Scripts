@@ -115,4 +115,45 @@ public class PagesTests
         Assert.Equal(sd[1].StatusOptions.Count + 1,
             ShortDescriptionTeam.ReadAll(vm.Session.Edited).Single(t => t.Key == sd[1].Key).StatusOptions.Count);
     }
+
+    /// <summary>Does what a WPF ComboBox does: when its selected value leaves the list, it writes null back to the bound property.</summary>
+    static void LikeComboBox(System.Collections.ObjectModel.ObservableCollection<Choice> choices, ResponsesPage page, Action<ResponseRow> clear, Func<ResponseRow, string> value) =>
+        choices.CollectionChanged += (_, _) =>
+        {
+            var row = page.Items.Selected;
+            if (row != null && !choices.Any(c => c.Value == value(row))) clear(row);
+        };
+
+    [Fact]
+    public async Task Switching_team_with_a_selected_response_changes_nothing()
+    {
+        var vm = await Started();
+        vm.SelectedTeamKey = "emeaTeam";
+        var page = Page<ResponsesPage>(vm, "responses");
+        LikeComboBox(page.SectionChoices, page, r => r.Category = null!, r => r.Category);
+        LikeComboBox(page.StatusChoices, page, r => r.StatusAfter = null!, r => r.StatusAfter);
+        LikeComboBox(page.ParentChoices, page, r => r.Parent = null!, r => r.Parent);
+        page.Items.Selected = page.Items.Items.First(r => r.Parent.Length > 0);
+
+        vm.SelectedTeamKey = "ameTeam";
+
+        Assert.Empty(vm.Session!.Edited.Changed);
+        Assert.False(vm.HasUnsavedWork);
+    }
+
+    [Fact]
+    public async Task Ticking_submenu_keeps_the_parent_of_the_selected_response()
+    {
+        var vm = await Started();
+        vm.SelectedTeamKey = "emeaTeam";
+        var page = Page<ResponsesPage>(vm, "responses");
+        LikeComboBox(page.ParentChoices, page, r => r.Parent = null!, r => r.Parent);
+        var child = page.Items.Items.First(r => r.Parent.Length > 0);
+        var parent = child.Parent;
+        page.Items.Selected = child;
+
+        page.Items.Items.First(r => !r.HasSubmenu && r != child).HasSubmenu = true;
+
+        Assert.Equal(parent, child.Parent);
+    }
 }

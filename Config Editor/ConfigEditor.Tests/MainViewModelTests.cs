@@ -187,4 +187,25 @@ public class MainViewModelTests
         Assert.StartsWith("✅", vm.Status);
         Assert.False(vm.HasUnsavedWork);
     }
+
+    [Fact]
+    public async Task Second_save_after_upload_has_no_false_conflict()
+    {
+        var (vm, f, s, _, _) = Make();
+        await vm.StartAsync();
+        EditEmeaResponse(vm.Session!.Edited);
+        vm.NotifyEdited();
+        await vm.SaveCommand.ExecuteAsync(null);
+        Assert.Equal(0, vm.UnsavedCount);
+
+        var path = Path.Combine(s.WorkFolder, "Standalone Scripts", "ServiceNowShortDescriptionHelper.user.js");
+        f.Current.Files[SuitePaths.TicketHelpers] = File.ReadAllText(path);
+        EditEmeaResponse(vm.Session!.Edited);
+        vm.NotifyEdited();
+        await vm.SaveCommand.ExecuteAsync(null);
+
+        Assert.StartsWith("✅", vm.Status);
+        Assert.Contains(" Thanks. Thanks.", File.ReadAllText(path));
+        Assert.Contains("// @version      4.3.6", File.ReadAllText(path));
+    }
 }

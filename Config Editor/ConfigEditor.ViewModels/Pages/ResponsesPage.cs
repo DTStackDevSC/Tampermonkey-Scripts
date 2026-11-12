@@ -62,6 +62,7 @@ public sealed class ResponseRow : ObservableObject
 public sealed partial class ResponsesPage : PageBase
 {
     ResponseTeam? team;
+    bool loading;
 
     public ResponsesPage(MainViewModel main) : base(main, true)
     {
@@ -82,7 +83,7 @@ public sealed partial class ResponsesPage : PageBase
 
     void Write(IReadOnlyList<ResponseRow> rows)
     {
-        if (team == null) return;
+        if (team == null || loading) return;
         team.Responses = rows.Select(r => r.Item).ToList();
         ResponseTeam.Save(Doc, team);
         Edited();
@@ -113,29 +114,42 @@ public sealed partial class ResponsesPage : PageBase
     void RefreshParents()
     {
         var wanted = Items.Items.Where(r => r.HasSubmenu).Select(r => new Choice(r.Key, r.Label)).Prepend(new Choice("", "None (top level)")).ToList();
-        if (wanted.SequenceEqual(ParentChoices)) return;
-        ParentChoices.Clear();
-        foreach (var c in wanted) ParentChoices.Add(c);
+        Sync(ParentChoices, wanted);
+    }
+
+    /// <summary>Makes <paramref name="list"/> equal to <paramref name="wanted"/> without clearing it, so a combo box keeps a selection that is still there.</summary>
+    static void Sync(ObservableCollection<Choice> list, IReadOnlyList<Choice> wanted)
+    {
+        for (var i = list.Count - 1; i >= 0; i--)
+            if (!wanted.Contains(list[i])) list.RemoveAt(i);
+        for (var i = 0; i < wanted.Count; i++)
+        {
+            var at = list.IndexOf(wanted[i]);
+            if (at == i) continue;
+            if (at < 0) list.Insert(i, wanted[i]); else list.Move(at, i);
+        }
     }
 
     protected override string? Load()
     {
-        team = ResponseTeam.ReadAll(Doc).FirstOrDefault(t => t.Key == Main.SelectedTeamKey);
-        if (team == null) return "This team has no Ticket Response menu yet.";
+        loading = true;
+        try
+        {
+            Items.Selected = null;
+            team = ResponseTeam.ReadAll(Doc).FirstOrDefault(t => t.Key == Main.SelectedTeamKey);
+            if (team == null) { Items.Load(Array.Empty<ResponseRow>()); return "This team has no Ticket Response menu yet."; }
 
-        SectionChoices.Clear();
-        foreach (var s in team.DefaultSectionOrder.Concat(team.Responses.Select(r => r.Category)).Where(s => s.Length > 0).Distinct())
-            SectionChoices.Add(new Choice(s, s));
+            Sync(SectionChoices, team.DefaultSectionOrder.Concat(team.Responses.Select(r => r.Category))
+                .Where(s => s.Length > 0).Distinct().Select(s => new Choice(s, s)).ToList());
 
-        StatusChoices.Clear();
-        StatusChoices.Add(new Choice("", "Do not change"));
-        var sd = ShortDescriptionTeam.ReadAll(Doc).FirstOrDefault(t => t.Key == team.Key);
-        var statuses = (sd?.StatusOptions ?? new()).Concat(team.Responses.Select(r => r.StatusAfter ?? "")).Where(s => s.Length > 0).Distinct();
-        foreach (var s in statuses) StatusChoices.Add(new Choice(s, s));
+            var sd = ShortDescriptionTeam.ReadAll(Doc).FirstOrDefault(t => t.Key == team.Key);
+            var statuses = (sd?.StatusOptions ?? new()).Concat(team.Responses.Select(r => r.StatusAfter ?? "")).Where(s => s.Length > 0).Distinct();
+            Sync(StatusChoices, statuses.Select(s => new Choice(s, s)).Prepend(new Choice("", "Do not change")).ToList());
 
-        Items.Load(team.Responses.Select(r => new ResponseRow(r)));
-        ParentChoices.Clear();
-        RefreshParents();
-        return null;
+            Items.Load(team.Responses.Select(r => new ResponseRow(r)));
+            RefreshParents();
+            return null;
+        }
+        finally { loading = false; }
     }
 }

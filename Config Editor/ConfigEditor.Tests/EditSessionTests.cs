@@ -180,4 +180,59 @@ public class EditSessionTests
         Assert.Contains("- Change Tracker: Reworded the closing texts.", r.Files[SuitePaths.Toolbar]);
         Assert.DoesNotContain(first.Items[0].Bullet, r.Files[SuitePaths.Toolbar].Split("const CHANGELOG")[1][..400]);
     }
+
+    [Fact]
+    public async Task Changed_block_without_bullet_still_bumps_its_suite()
+    {
+        var session = await EditSession.OpenAsync(new FakeSource(), default);
+        EditNote(session.Edited);
+        EditEmeaResponse(session.Edited);
+        var first = await session.PrepareAsync(new FakeSource(), default);
+        var onlyTicketHelpers = first.Items.Where(i => i.Block.Suite == SuiteId.TicketHelpers).ToList();
+
+        var r = await session.PrepareAsync(new FakeSource(), default, onlyTicketHelpers);
+        Assert.True(r.Ok, r.Error);
+        Assert.Contains("// @version      2.29.3", r.Files[SuitePaths.Toolbar]);
+        Assert.Contains(r.Items, i => i.Block.Suite == SuiteId.Toolbar);
+    }
+
+    [Fact]
+    public async Task Second_save_after_upload_continues_from_saved_files()
+    {
+        var github = new FakeSource();
+        var session = await EditSession.OpenAsync(github, default);
+        EditNote(session.Edited);
+        var first = await session.PrepareAsync(github, default);
+        session = session.AfterSave(first);
+        Assert.Empty(session.Edited.Changed);
+
+        github.Files[SuitePaths.Toolbar] = first.Files[SuitePaths.Toolbar];
+        EditNote(session.Edited);
+        var second = await session.PrepareAsync(github, default);
+        Assert.True(second.Ok, second.Error ?? second.ConflictSection);
+        Assert.Contains("// @version      2.29.4", second.Files[SuitePaths.Toolbar]);
+        Assert.Contains(" Thanks. Thanks.", second.Files[SuitePaths.Toolbar]);
+    }
+
+    [Fact]
+    public async Task Second_save_before_upload_builds_on_the_saved_files()
+    {
+        var github = new FakeSource();
+        var session = await EditSession.OpenAsync(github, default);
+        EditNote(session.Edited);
+        var first = await session.PrepareAsync(github, default);
+        session = session.AfterSave(first);
+
+        EditEmeaResponse(session.Edited);
+        var second = await session.PrepareAsync(github, default);
+        Assert.True(second.Ok, second.Error ?? second.ConflictSection);
+        Assert.Equal(first.Files[SuitePaths.Toolbar], second.Files.TryGetValue(SuitePaths.Toolbar, out var tb) ? tb : first.Files[SuitePaths.Toolbar]);
+        Assert.Contains("// @version      4.3.5", second.Files[SuitePaths.TicketHelpers]);
+
+        EditNote(session.Edited);
+        var third = await session.PrepareAsync(github, default);
+        Assert.True(third.Ok, third.Error ?? third.ConflictSection);
+        Assert.Contains("// @version      2.29.4", third.Files[SuitePaths.Toolbar]);
+        Assert.Contains(" Thanks. Thanks.", third.Files[SuitePaths.Toolbar]);
+    }
 }

@@ -20,8 +20,10 @@ public class GitHubPublisherTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage req, CancellationToken ct)
         {
             var body = req.Content == null ? "" : await req.Content.ReadAsStringAsync(ct);
-            var path = req.RequestUri!.AbsolutePath.Replace("/repos/DTStackDevSC/Tampermonkey-Scripts/", "");
-            Requests.Add((req.Method.Method, path, body));
+            var path = Uri.UnescapeDataString(req.RequestUri!.AbsolutePath).Replace("/repos/DTStackDevSC/Tampermonkey-Scripts/", "");
+            Requests.Add((req.Method.Method, path + req.RequestUri.Query, body));
+            if (req.Method == HttpMethod.Get && path.StartsWith("contents/"))
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($"{path[9..]} at {req.RequestUri.Query}") };
             Assert.Equal("Bearer tok", req.Headers.Authorization?.ToString());
             Assert.NotEmpty(req.Headers.UserAgent);
             (HttpStatusCode, string) answer = (req.Method.Method, path) switch
@@ -47,6 +49,7 @@ public class GitHubPublisherTests
     };
 
     static PrepareResult Prepared() => new(true, null, Array.Empty<ChangeItem>(), Files, null);
+    static Func<IScriptSource, Task<PrepareResult>> Always(Func<PrepareResult> r) => _ => Task.FromResult(r());
 
     static GitHubPublisher Publisher(FakeGitHub gh) => new(new HttpClient(gh), "tok");
 
@@ -54,7 +57,7 @@ public class GitHubPublisherTests
     public async Task One_commit_with_all_files_and_noreply_author()
     {
         var gh = new FakeGitHub();
-        var r = await Publisher(gh).PublishAsync(Files, "msg", () => Task.FromResult(Prepared()));
+        var r = await Publisher(gh).PublishAsync(Always(Prepared));
         Assert.True(r.Ok, r.Error);
         Assert.Equal("https://github.com/x/commit/c2", r.CommitUrl);
         Assert.Equal(3, gh.Requests.Count(q => q.Path == "git/blobs"));
@@ -68,7 +71,7 @@ public class GitHubPublisherTests
         Assert.Contains(tree.GetProperty("tree").EnumerateArray(), e => e.GetProperty("path").GetString() == SuitePaths.ToolbarCopy);
 
         var commit = JsonDocument.Parse(gh.Requests.Single(q => q.Path == "git/commits").Body).RootElement;
-        Assert.Equal("msg", commit.GetProperty("message").GetString());
+        Assert.Equal("Ticket Helpers 4.3.5 and Tools Toolbar 2.29.3: configuration update", commit.GetProperty("message").GetString());
         Assert.Equal("base1", commit.GetProperty("parents")[0].GetString());
         foreach (var who in new[] { "author", "committer" })
         {
@@ -86,9 +89,9 @@ public class GitHubPublisherTests
         var gh = new FakeGitHub();
         gh.RefAnswers.Enqueue(HttpStatusCode.UnprocessableEntity);
         var calls = 0;
-        var r = await Publisher(gh).PublishAsync(Files, "msg", () => { calls++; return Task.FromResult(Prepared()); });
+        var r = await Publisher(gh).PublishAsync(Always(() => { calls++; return Prepared(); }));
         Assert.True(r.Ok, r.Error);
-        Assert.Equal(1, calls);
+        Assert.Equal(2, calls);
         Assert.Equal(2, gh.Requests.Count(q => q.Method == "PATCH"));
     }
 
@@ -98,7 +101,7 @@ public class GitHubPublisherTests
         var gh = new FakeGitHub();
         gh.RefAnswers.Enqueue(HttpStatusCode.UnprocessableEntity);
         gh.RefAnswers.Enqueue(HttpStatusCode.UnprocessableEntity);
-        var r = await Publisher(gh).PublishAsync(Files, "msg", () => Task.FromResult(Prepared()));
+        var r = await Publisher(gh).PublishAsync(Always(Prepared));
         Assert.False(r.Ok);
         Assert.Equal("main changed while publishing. Reopen and try again.", r.Error);
     }
@@ -108,8 +111,9 @@ public class GitHubPublisherTests
     {
         var gh = new FakeGitHub();
         gh.RefAnswers.Enqueue(HttpStatusCode.UnprocessableEntity);
-        var r = await Publisher(gh).PublishAsync(Files, "msg",
-            () => Task.FromResult(new PrepareResult(false, "Change Tracker", Array.Empty<ChangeItem>(), new Dictionary<string, string>(), null)));
+        var calls = 0;
+        var r = await Publisher(gh).PublishAsync(Always(() => ++calls == 1 ? Prepared()
+            : new PrepareResult(false, "Change Tracker", Array.Empty<ChangeItem>(), new Dictionary<string, string>(), null)));
         Assert.False(r.Ok);
         Assert.Contains("Change Tracker", r.Error);
         Assert.Single(gh.Requests, q => q.Method == "PATCH");
@@ -119,7 +123,7 @@ public class GitHubPublisherTests
     public async Task Unauthorized_returns_token_message()
     {
         var gh = new FakeGitHub { UserStatus = HttpStatusCode.Unauthorized };
-        var r = await Publisher(gh).PublishAsync(Files, "msg", () => Task.FromResult(Prepared()));
+        var r = await Publisher(gh).PublishAsync(Always(Prepared));
         Assert.False(r.Ok);
         Assert.Contains("token", r.Error);
         Assert.DoesNotContain(gh.Requests, q => q.Method != "GET");
@@ -131,5 +135,32 @@ public class GitHubPublisherTests
         var items = new[] { new ChangeItem(Core.Sections.BlockCatalog.NoteTemplates, "Change Tracker", "Updated the ticket note texts for \"Policy Created\" entries.") };
         Assert.Equal("Ticket Helpers 4.3.5 and Tools Toolbar 2.29.3: Change Tracker: Updated the ticket note texts for \"Policy Created\" entries",
             GitHubPublisher.CommitMessage(Files, items));
+    }
+
+    [Fact]
+    public async Task Files_are_prepared_from_the_commit_used_as_parent()
+    {
+        var gh = new FakeGitHub();
+        string? seen = null;
+        var r = await Publisher(gh).PublishAsync(async src =>
+        {
+            seen = await src.ReadAsync(SuitePaths.TicketHelpers, default);
+            return Prepared();
+        });
+        Assert.True(r.Ok, r.Error);
+        Assert.Equal(SuitePaths.TicketHelpers + " at ?ref=base1", seen);
+        var commit = JsonDocument.Parse(gh.Requests.Single(q => q.Path == "git/commits").Body).RootElement;
+        Assert.Equal("base1", commit.GetProperty("parents")[0].GetString());
+    }
+
+    [Fact]
+    public async Task Conflict_found_at_head_creates_no_commit()
+    {
+        var gh = new FakeGitHub();
+        var r = await Publisher(gh).PublishAsync(Always(() =>
+            new PrepareResult(false, "Ticket Response Helper", Array.Empty<ChangeItem>(), new Dictionary<string, string>(), null)));
+        Assert.False(r.Ok);
+        Assert.Contains("Ticket Response Helper", r.Error);
+        Assert.DoesNotContain(gh.Requests, q => q.Method != "GET");
     }
 }
