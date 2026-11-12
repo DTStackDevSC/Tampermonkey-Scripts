@@ -9,12 +9,16 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <AssemblyName>ConfigEditor</AssemblyName>
     <RootNamespace>ConfigEditor.App</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ConfigEditor.ViewModels\ConfigEditor.ViewModels.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="app.ico" />
   </ItemGroup>
 </Project>
