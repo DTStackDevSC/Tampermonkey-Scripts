@@ -77,4 +77,22 @@ public class JsWriterTests
         ((JsObject)node["a"]!)["x"] = new JsNumber("2");
         Assert.Equal("{\n    a: {\n        x: 2\n    }\n\n}", JsWriter.Write(node, "    ", "\n"));
     }
+
+    [Fact]
+    public void Changed_container_keeps_blank_line_before_trailing_comment()
+    {
+        var src = "{\n    a: 1,\n\n    // note\n}";
+        var node = (JsObject)JsReader.Parse(src);
+        node["a"] = new JsNumber("2");
+        Assert.Equal("{\n    a: 2,\n\n    // note\n}", JsWriter.Write(node, "    ", "\n"));
+    }
+
+    [Fact]
+    public void Changed_container_keeps_quotes_on_quoted_keys()
+    {
+        var src = "{\n    'DTTL':  'GLB',\n    'A b': 'X'\n}";
+        var node = (JsObject)JsReader.Parse(src);
+        node["A b"] = new JsString("Y");
+        Assert.Equal("{\n    'DTTL':  'GLB',\n    'A b': 'Y'\n}", JsWriter.Write(node, "    ", "\n"));
+    }
 }

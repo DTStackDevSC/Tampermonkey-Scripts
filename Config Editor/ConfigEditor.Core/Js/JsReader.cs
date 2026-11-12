@@ -162,6 +162,7 @@ public static class JsReader
                     if (tv.Comments.Count > 0) o.TrailingComment = string.Join("\n", tv.Comments);
                     if (tv.NewLine) o.CloseIndent = LineIndent(i);
                     o.BlankLineBeforeClose = tv.BlankBefore && tv.Comments.Count == 0;
+                    o.BlankLineBeforeTrailingComment = tv.BlankBefore && tv.Comments.Count > 0;
                     o.CloseGap = gap;
                     i++;
                     break;
@@ -171,7 +172,8 @@ public static class JsReader
                 if (o.Props.Count == 0) o.OpenGap = gap;
                 else if (o.Props.Count == 1) o.SeparatorGap = gap;
                 string key;
-                if (t[i] == '\'' || t[i] == '"') key = ReadString(ref i);
+                var quoted = t[i] == '\'' || t[i] == '"';
+                if (quoted) key = ReadString(ref i);
                 else if (JsScan.IsIdentStart(t[i]) || char.IsDigit(t[i]))
                 {
                     var k = i;
@@ -181,14 +183,18 @@ public static class JsReader
                 else throw new JsParseException("Expected a property name", i);
                 i = SkipWs(i);
                 if (i >= t.Length || t[i] != ':') throw new JsParseException("Expected :", i);
+                var colon = i;
                 i = SkipWs(i + 1);
+                var valueGap = t.Substring(colon + 1, i - colon - 1);
                 var v = ParseValue(ref i);
                 o.Props.Add(new JsProperty(key, v)
                 {
                     LeadingComment = tv.Comments.Count > 0 ? string.Join("\n", tv.Comments) : null,
                     BlankLineBefore = tv.BlankBefore,
                     BlankLineAfterComment = tv.BlankAfterComment,
-                    InlineGap = o.Props.Count > 0 ? gap : null
+                    InlineGap = o.Props.Count > 0 ? gap : null,
+                    ValueGap = valueGap.Contains('\n') ? null : valueGap,
+                    KeyQuoted = quoted
                 });
                 var afterValue = SkipWs(i);
                 lastComma = afterValue < t.Length && t[afterValue] == ',';
@@ -216,6 +222,7 @@ public static class JsReader
                     if (tv.Comments.Count > 0) a.TrailingComment = string.Join("\n", tv.Comments);
                     if (tv.NewLine) a.CloseIndent = LineIndent(i);
                     a.BlankLineBeforeClose = tv.BlankBefore && tv.Comments.Count == 0;
+                    a.BlankLineBeforeTrailingComment = tv.BlankBefore && tv.Comments.Count > 0;
                     a.CloseGap = gap;
                     i++;
                     break;

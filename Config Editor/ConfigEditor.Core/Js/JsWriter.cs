@@ -70,7 +70,7 @@ public static class JsWriter
                     break;
                 case JsObject o: EmitContainer(sb, o, indent, '{', '}', o.Props.Count, i => o.Props[i].Value,
                     i => (o.Props[i].LeadingComment, o.Props[i].BlankLineBefore, o.Props[i].BlankLineAfterComment),
-                    i => Key(o.Props[i].Key) + ": ", i => o.Props[i].InlineGap); break;
+                    i => (o.Props[i].KeyQuoted ? Quote(o.Props[i].Key) : Key(o.Props[i].Key)) + ":" + (o.Props[i].ValueGap ?? " "), i => o.Props[i].InlineGap); break;
                 case JsArray a: EmitContainer(sb, a, indent, '[', ']', a.Items.Count, i => a.Items[i],
                     i => (a.Items[i].LeadingComment, a.Items[i].BlankLineBefore, false), _ => "", i => a.Items[i].InlineGap); break;
                 default: throw new InvalidOperationException("Unknown node " + node.GetType().Name);
@@ -130,6 +130,7 @@ public static class JsWriter
                 Emit(sb, value(i), child);
                 if (i < count - 1 || c.TrailingComma) sb.Append(',');
             }
+            if (c.TrailingComment != null && c.BlankLineBeforeTrailingComment) sb.Append(nl);
             if (c.TrailingComment != null) sb.Append(nl).Append(child).Append(Eol(c.TrailingComment));
             if (c.BlankLineBeforeClose) sb.Append(nl);
             sb.Append(nl).Append(closeIndent).Append(close);

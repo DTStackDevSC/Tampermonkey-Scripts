@@ -64,11 +64,15 @@ public sealed class JsProperty
     public bool BlankLineAfterComment { get; set; }
     /// <summary>Spaces before this property inside a one line object, as read (null for the first one or when unknown).</summary>
     public string? InlineGap { get; set; }
+    /// <summary>Spaces between the colon and the value, as read (aligned columns).</summary>
+    public string? ValueGap { get; set; }
+    /// <summary>The key was written in quotes in the source.</summary>
+    public bool KeyQuoted { get; set; }
 
     public JsProperty Clone() => new(Key, Value.Clone())
     {
         LeadingComment = LeadingComment, BlankLineBefore = BlankLineBefore, BlankLineAfterComment = BlankLineAfterComment,
-        InlineGap = InlineGap
+        InlineGap = InlineGap, ValueGap = ValueGap, KeyQuoted = KeyQuoted
     };
 }
 
@@ -81,6 +85,8 @@ public abstract class JsContainer : JsNode
     public string? CloseIndent { get; set; }
     public string? TrailingComment { get; set; }
     public bool BlankLineBeforeClose { get; set; }
+    /// <summary>A blank line separates the last item from the trailing comment.</summary>
+    public bool BlankLineBeforeTrailingComment { get; set; }
     /// <summary>One line layout as read: spaces after the opening bracket, after each comma, and before the closing one.</summary>
     public string? OpenGap { get; set; }
     public string? SeparatorGap { get; set; }
@@ -95,6 +101,7 @@ public abstract class JsContainer : JsNode
         target.CloseIndent = CloseIndent;
         target.TrailingComment = TrailingComment;
         target.BlankLineBeforeClose = BlankLineBeforeClose;
+        target.BlankLineBeforeTrailingComment = BlankLineBeforeTrailingComment;
         target.OpenGap = OpenGap;
         target.SeparatorGap = SeparatorGap;
         target.CloseGap = CloseGap;
