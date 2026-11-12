@@ -1,0 +1,11 @@
+<Window x:Class="Spike.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Config Editor connectivity test" Width="560" Height="300">
+    <StackPanel Margin="20">
+        <TextBlock Text="This test checks that the Config Editor can run on this computer and reach GitHub." TextWrapping="Wrap" Margin="0,0,0,12"/>
+        <Button x:Name="RunBtn" Content="Run checks" Click="Run_Click" HorizontalAlignment="Left" Padding="14,6"/>
+        <TextBlock x:Name="RawResult" Margin="0,16,0,4" TextWrapping="Wrap"/>
+        <TextBlock x:Name="ApiResult" TextWrapping="Wrap"/>
+    </StackPanel>
+</Window>
