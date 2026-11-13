@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.29.2
+// @version      2.29.3
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.29.2';
-    const CHANGELOG = `Version 2.29.2:
+   const SCRIPT_VERSION = '2.29.3';
+    const CHANGELOG = `Version 2.29.3:
+- Change Tracker: Enter on a name that is not in the list now adds it as a new entry, like clicking ➕ Add.
+- Change Tracker: Leaving a name field and clicking back into it without typing keeps offering ➕ Add for the name you typed.
+- Change Tracker: ➕ Add now explains that it only adds the name to the list and does not change anything on the Netskope tenant.
+
+Version 2.29.2:
 - ServiceNow Toolkit: The SPM Germany reminder also reads the Original ticket number field when you type it by hand or change it, and uses it when the ticket of the SPM link cannot be read. It waits until the full RITM number is typed.
 
 Version 2.29.1:
@@ -18211,8 +18216,13 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.13.1';
-    const CHANGELOG = `Version 2.13.1:
+    const SCRIPT_VERSION = '2.13.2';
+    const CHANGELOG = `Version 2.13.2:
+- Enter on a name that is not in the list now adds it as a new entry, like clicking ➕ Add.
+- Leaving a name field and clicking back into it without typing keeps offering ➕ Add for the name you typed.
+- ➕ Add now explains that it only adds the name to the list and does not change anything on the Netskope tenant.
+
+Version 2.13.1:
 - Typing in a name field after clicking back into it, while its list is open, now also updates the search box and the list, and the arrow keys, Enter and Escape work from the field too.
 
 Version 2.13.0:
@@ -21799,6 +21809,8 @@ Version 1.4.3:
             .map(inp => inp.dataset.ctCatLabel || inp.placeholder || inp.id);
     }
 
+    const CATALOG_ADD_NOTE = 'Use this if the name is not in this list yet, for example when you just created it in Netskope. It does not change anything on the Netskope tenant.';
+
     function attachCatalogPicker(input, spec, getTenant, label) {
         const multi = !!spec.multi;
         const SPLIT = /[\n,;]+/;
@@ -21846,7 +21858,7 @@ Version 1.4.3:
         if (multi) input.after(chipsBox, panel, hint);
         else input.after(panel, hint);
 
-        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false, updating = false, arrowed = false;
+        let tenant = null, isOpen = false, filtered = false, active = 0, items = [], adding = false, quietFocus = false, updating = false;
 
         function catalogHit(n) { return names().find(x => lc(x) === lc(n)); }
         function isOk(n) { return trusted.has(lc(n)) || !!catalogHit(n); }
@@ -21895,7 +21907,7 @@ Version 1.4.3:
                     background: ok ? '#eef0ff' : '#fff4d6', color: ok ? '#3b4aa8' : '#8a5300', fontFamily: 'Arial, sans-serif' });
                 c.appendChild(mk('span', { textContent: (ok ? '' : '⚠ ') + n }));
                 if (!ok) {
-                    const a = chipBtn('➕', `Add "${n}" to the ${tenant || 'tenant'} list`);
+                    const a = chipBtn('➕', `Add "${n}" to the ${tenant || 'tenant'} list. ${CATALOG_ADD_NOTE}`);
                     a.setAttribute('data-ct-cat-chip-add', '');
                     a.onclick = (e) => { e.preventDefault(); addMissing([n]); };
                     c.appendChild(a);
@@ -21910,7 +21922,7 @@ Version 1.4.3:
             if (miss.length) {
                 const all = mk('button', { type: 'button', textContent: miss.length > 1 ? `➕ Add all ${miss.length}` : '➕ Add all' });
                 all.setAttribute('data-ct-cat-add-all', '');
-                all.title = `Add the names marked ⚠ to the ${tenant || 'tenant'} list for everyone`;
+                all.title = `Add the names marked ⚠ to the ${tenant || 'tenant'} list for everyone. ${CATALOG_ADD_NOTE}`;
                 css(all, { fontSize: '11px', padding: '2px 8px', borderRadius: '10px', border: '1px solid #c0c8f0',
                     background: '#fff', color: '#667eea', cursor: 'pointer', fontWeight: 'bold', fontFamily: 'Arial, sans-serif' });
                 all.onmousedown = (e) => e.preventDefault();
@@ -22036,6 +22048,8 @@ Version 1.4.3:
             });
             if (q && !all.some(n => n.toLowerCase() === ql)) {
                 const a = mk('div', { textContent: `➕ Add "${q}"` });
+                a.appendChild(css(mk('div', { textContent: CATALOG_ADD_NOTE }),
+                    { fontSize: '10px', fontWeight: 'normal', color: '#888', lineHeight: '1.4', marginTop: '2px', whiteSpace: 'normal' }));
                 a.setAttribute('data-ct-cat-add', '');
                 a.title = tenant ? `Add "${q}" to the ${tenant} list for everyone` : 'Use this name (choose a tenant to keep it in a list)';
                 css(a, { fontSize: '12px', padding: '5px 8px', cursor: 'pointer', fontWeight: 'bold', color: '#667eea', borderTop: '1px solid #eee' });
@@ -22074,7 +22088,9 @@ Version 1.4.3:
             tenantSel.value = tenant || '';
             pending = '';
             search.value = multi ? '' : rawGet();
-            filtered = false; active = 0;
+            // A typed name that is not accepted yet keeps filtering, so ➕ Add is still offered.
+            filtered = !multi && input.dataset.ctCatState === 'unverified' && !!search.value.trim();
+            active = 0;
             panel.style.display = 'block';
             render();
             search.focus(); search.select();
@@ -22171,7 +22187,7 @@ Version 1.4.3:
             if (!isOpen) return;
             // Typing in the form field while the list is open keeps the search box and the list in step.
             search.value = multi ? pending : rawGet();
-            filtered = !!search.value.trim(); active = 0; arrowed = false;
+            filtered = !!search.value.trim(); active = 0;
             render();
         });
         input.addEventListener('keydown', (e) => {
@@ -22182,7 +22198,6 @@ Version 1.4.3:
         input.addEventListener('blur', () => { if (!isOpen) verify_(true); });
         search.addEventListener('input', (e) => {
             if (!e.isTrusted) return;
-            arrowed = false;
             if (multi) {
                 // Text before a comma, semicolon or new line becomes chips; a paste turns every name into a chip.
                 const parts = search.value.split(SPLIT);
@@ -22208,15 +22223,14 @@ Version 1.4.3:
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (!items.length) return;
-                arrowed = true;
                 active = (active + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
                 items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
                 items[active].scrollIntoView({ block: 'nearest' });
             } else if (e.key === 'Enter') {
                 e.preventDefault(); e.stopPropagation();
-                // Enter never adds a typed name to the shared list by itself: ➕ Add needs a click or the arrow keys.
+                // Enter picks the highlighted name, or adds the typed name when no listed name matches.
                 const it = items[active];
-                if (it && filtered && (arrowed || !it.hasAttribute('data-ct-cat-add'))) it.click();
+                if (it && filtered) it.click();
                 else { closeList(true); refocusInput(); }
             } else if (e.key === 'Escape') {
                 e.preventDefault(); e.stopPropagation();
@@ -25441,7 +25455,9 @@ Version 1.4.3:
                     list.appendChild(top);
                     [['Allow-Finance-SaaS', true], ['Block-Finance-Upload', false]].forEach(([n, on]) => list.appendChild(
                         span(n, { display: 'block', fontSize: '12px', padding: '4px 8px', color: '#333', background: on ? '#e8f0fe' : '#fff' })));
-                    list.appendChild(span('➕ Add "fin"', { display: 'block', fontSize: '12px', padding: '4px 8px', color: '#667eea', fontWeight: 'bold', borderTop: '1px solid #eee' }));
+                    const addMock = span('➕ Add "fin"', { display: 'block', fontSize: '12px', padding: '4px 8px', color: '#667eea', fontWeight: 'bold', borderTop: '1px solid #eee' });
+                    addMock.appendChild(span('Use this if the name is not in this list yet. It does not change anything on the Netskope tenant.', { display: 'block', fontSize: '10px', fontWeight: 'normal', color: '#888', marginTop: '2px' }));
+                    list.appendChild(addMock);
                     const foot = span('Updated 2 h ago by Juan · ', { display: 'block', fontSize: '10px', color: '#888', padding: '4px 8px', borderTop: '1px solid #eee' });
                     foot.appendChild(span('↻ Update now', { color: '#667eea', textDecoration: 'underline' }));
                     list.appendChild(foot);
@@ -25456,7 +25472,7 @@ Version 1.4.3:
                     caption(body, 'Steerings and Destination Profiles take several names. Type or paste them separated by commas, semicolons or new lines: each one becomes a chip.');
                     bullets(body, [
                         'The lists fill themselves: when anyone on the team has a Netskope tenant open, the toolbar reads its names in the background (at most every 6 hours) and shares them through SharePoint. Policies, SSL policies, Destination Profiles and Steering configs are all read.',
-                        'Enter picks a listed name. A name that is not listed stays yellow: click ➕ Add, or reach it with the arrow keys, to add it for everyone.',
+                        'Enter picks the highlighted name. When no listed name matches, Enter or ➕ Add adds what you typed to the list for everyone. It does not change anything on the Netskope tenant.',
                         'A yellow ⚠ name is not in the list, so the entry cannot be saved yet. Pick the right name, or click ➕ to add a name you just created in Netskope.',
                         '"↻ Update now" asks an open Netskope tab of that tenant to read its names right away. Open the tenant in Netskope first.',
                         'Names filled in by the tracker itself (Paste policy, suggestion chips) and names already saved in an entry are accepted as they are.'
