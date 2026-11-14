@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.29.4
+// @version      2.30.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.29.4';
-    const CHANGELOG = `Version 2.29.4:
+   const SCRIPT_VERSION = '2.30.0';
+    const CHANGELOG = `Version 2.30.0:
+- NS Policies Toolkit: "👥 Bulk add groups" is now "🧰 Policy tools": one button next to Apply Changes opens a window with three tabs, Groups, Enable / Disable and Delete. Adding groups works as before.
+- NS Policies Toolkit: Enable / Disable: choose many policies and turn them on or off at once. Policies already in that state are skipped, and the result is checked in Netskope at the end.
+- NS Policies Toolkit: Delete: choose many policies and delete them with a second click. A copy of each policy is saved right before it is deleted, and ↩ Backups shows, copies or downloads it for 90 days.
+- NS Policies Toolkit: Choose the policies by pasting names (an Excel column works), by ticking them in a searchable list, or with a filter by group, name and state. The three ways add up, and short hints explain each one.
+- NS Policies Toolkit: ↩ Revert these undoes the last Enable / Disable or Delete run before you click Apply Changes, also after a reload. It asks for a second click and warns that it also undoes other pending changes of those policies.
+
+Version 2.29.4:
 - Toolbar: a ticket opened from a ServiceNow dashboard now shows one 🔧 with every tool of the ticket (Mini Summary, Change Tracker, Ticket Assignment, Domain Tools, Destination Profile Editor and the others). Before, a second 🔧 with only the general tools covered it.
 - Toolbar: going back to the dashboard shows only the general tools again, even after reloading the page while a ticket was open.
 - Row Highlighter: rows are now colored on the first load of a dashboard too, and the browser console no longer fills up with its messages.
@@ -30526,8 +30533,15 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.38.3';
-    const CHANGELOG = `Version 1.38.3:
+    const SCRIPT_VERSION = '1.39.0';
+    const CHANGELOG = `Version 1.39.0:
+- "👥 Bulk add groups" is now "🧰 Policy tools": one button next to Apply Changes opens a window with three tabs, Groups, Enable / Disable and Delete. Adding groups works as before.
+- Enable / Disable: choose many policies and turn them on or off at once. Policies already in that state are skipped, and the result is checked in Netskope at the end.
+- Delete: choose many policies and delete them with a second click. A copy of each policy is saved right before it is deleted, and ↩ Backups shows, copies or downloads it for 90 days.
+- Choose the policies by pasting names (an Excel column works), by ticking them in a searchable list, or with a filter by group, name and state. The three ways add up, and short hints explain each one.
+- ↩ Revert these undoes the last Enable / Disable or Delete run before you click Apply Changes, also after a reload. It asks for a second click and warns that it also undoes other pending changes of those policies.
+
+Version 1.38.3:
 - The ↗ buttons that open a DLP Rule, Fingerprint Rule or File Profile in a new tab show a loading wheel there while the item is searched and opened.
 
 Version 1.38.2:
@@ -31086,8 +31100,8 @@ Version 1.16:
         },
         {
             key:         'bulkGroupAdd',
-            label:       '👥 Bulk Add Groups',
-            description: 'On the Real-time Protection policy list, adds a "Bulk add groups" button: paste pairs of groups, and every policy that holds the first group gets the second one added and saved.',
+            label:       '🧰 Policy tools',
+            description: 'On the Real-time Protection policy list, adds a "Policy tools" button: add groups by pairs, enable or disable policies, and delete policies in bulk, with a check before and a summary after.',
         },
         {
             key:         'sslExport',
@@ -32323,16 +32337,26 @@ Version 1.16:
                 },
             },
             {
-                icon: '👥',
-                title: 'Bulk Add Groups',
+                icon: '🧰',
+                title: 'Policy tools',
                 buildContent(body) {
-                    lead(body, 'On the Real-time Protection policy list, add a group to every policy that already holds another group, for many pairs at once.');
+                    lead(body, 'On the Real-time Protection policy list, one button opens the bulk tools for policies: add groups, enable or disable, delete.');
 
                     body.appendChild(hrow([
                         chip('Apply Changes', '#005587'),
-                        chip('👥 Bulk add groups', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
+                        chip('🧰 Policy tools', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
                     ], { marginBottom: '6px' }));
-                    caption(body, 'The button sits next to Apply Changes on the policy list.');
+                    caption(body, 'The button sits next to Apply Changes on the policy list. It reads "(paused)" while a groups run waits for you.');
+
+                    const tabsMock = hrow([
+                        chip('👥 Groups', '#fff', { color: '#005587', border: '2px solid #005587' }),
+                        chip('⏯ Enable / Disable', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
+                        chip('🗑 Delete', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
+                    ], { margin: '12px 0 4px 0' });
+                    body.appendChild(tabsMock);
+                    caption(body, 'Three tabs. The window opens on the tab you used last.');
+
+                    body.appendChild(span('👥 Groups: add a group wherever another group is', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
 
                     const box = document.createElement('div');
                     Object.assign(box.style, {
@@ -32379,6 +32403,59 @@ Version 1.16:
                         'A policy that fails is not saved. The summary lists it with the reason and a link to open it.',
                         '"📋 Copy for ticket" copies a text to paste in the ticket: the policies changed and the groups added, then the ones not changed or failed and why, and the pairs not applied.',
                         'Click Apply Changes yourself when the run ends.',
+                    ]);
+
+                    body.appendChild(span('Choosing policies (Enable / Disable and Delete)', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
+                    const sel = document.createElement('div');
+                    Object.assign(sel.style, { border: '1px solid #e6e6e6', borderRadius: '6px', background: '#fbfbfb', padding: '8px 12px', fontFamily: 'Arial, sans-serif', maxWidth: '440px' });
+                    sel.appendChild(span('📋 Paste names   ☑ Pick from the list   🔎 Filter', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '6px' }));
+                    [['A1 Block risky apps', 'Web Policies', 'Enabled', '#26890d', true], ['A2 Allow Anaplan', 'Web Policies', 'Disabled', '#75787b', true], ['Old rule', 'Footer Policies', 'Pending delete', '#da291c', false]].forEach(([n, g, st, c, on]) => {
+                        const box = span(on ? '✓' : '', { width: '13px', height: '13px', borderRadius: '3px', display: 'inline-block', textAlign: 'center', lineHeight: '13px', fontSize: '10px', color: '#fff', background: on ? '#005587' : '#eee', border: on ? 'none' : '1px solid #ccc' });
+                        sel.appendChild(hrow([box, span(n, { fontSize: '12px', color: on ? '#333' : '#999', flex: '1' }), span(g, { fontSize: '11px', color: '#777' }),
+                            chip(st, c, { }) ], { margin: '0 0 3px 0', flexWrap: 'nowrap' }));
+                    });
+                    sel.appendChild(span('2 policies selected', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#005587', marginTop: '6px' }));
+                    body.appendChild(sel);
+                    bullets(body, [
+                        'Paste names: one per line, an Excel column works as is. Names must match exactly. Unknown names and names held by several policies are listed so you can tick the right one.',
+                        'Pick from the list: search by policy or group name, tick single policies, or Tick all shown.',
+                        'Filter: by a group the policy holds, by part of the name and by state, then Tick all results. You can untick single policies afterwards.',
+                        'The three ways add up. Policies you cannot edit, or already deleted and waiting for Apply Changes, cannot be ticked.',
+                    ]);
+
+                    body.appendChild(span('⏯ Enable / Disable', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
+                    body.appendChild(hrow([
+                        chip('Check', '#005587'),
+                        chip('⏯ Disable 12 policies', '#26890d'),
+                    ]));
+                    caption(body, 'Check reads the policies again and shows what changes. A policy already in the state you want is skipped, so nothing is switched the wrong way. The run checks the result in Netskope at the end.');
+
+                    body.appendChild(span('🗑 Delete', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
+                    body.appendChild(hrow([
+                        chip('🗑 Delete 12 policies', '#da291c'),
+                        span('→', { color: '#999' }),
+                        chip('Click again to delete 12 policies', '#da291c'),
+                    ]));
+                    caption(body, 'Deleting needs a second click. Right before each policy is deleted, a copy of it is saved.');
+                    body.appendChild(hrow([
+                        chip('↩ Backups', '#fff', { color: '#005587', border: '1px solid #005587' }),
+                        chip('👁 View', '#fff', { color: '#005587', border: '1px solid #005587' }),
+                        chip('📋 Copy', '#fff', { color: '#005587', border: '1px solid #005587' }),
+                        chip('⬇ Download JSON', '#fff', { color: '#005587', border: '1px solid #005587' }),
+                    ], { marginTop: '6px' }));
+                    caption(body, 'Backups at the bottom of the Delete tab: what each deleted policy had, kept for 90 days, to create it again by hand.');
+
+                    body.appendChild(span('↩ Revert these', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
+                    body.appendChild(hrow([
+                        chip('↩ Revert these', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                        span('→', { color: '#999' }),
+                        chip('Click again to revert 12 policies', '#fff', { color: '#333', border: '1px solid #a7a8aa' }),
+                    ]));
+                    bullets(body, [
+                        'After an Enable / Disable or Delete run, on the card and in the "Last run" line of the tab, even after a reload, until you start a new run.',
+                        'It only works before Apply Changes: policies already applied are listed as "Already applied, nothing to revert".',
+                        'Revert takes each policy back to its last applied state: it also undoes any other pending change of that policy and does not restore position changes.',
+                        'Every run has Pause, Stop, a page lock, "📋 Copy for ticket" and ends with Apply Changes for you to click.',
                     ]);
                 },
             },
@@ -39190,8 +39267,8 @@ Version 1.16:
     // that holds the first group, then opens each one, adds the second group and saves it.
     // ─────────────────────────────────────────────────────────────
 
-    const BG_HOST_ID     = 'nstk-bulk-groups-host';
-    const BG_BUTTON_ID   = 'nstk-bulk-groups-button';
+    const BG_HOST_ID     = 'nstk-policy-tools-host';
+    const BG_BUTTON_ID   = 'nstk-policy-tools-button';
     const BG_EXAMPLE     = 'SG-SCC Allow Anaplan SCCA, APP31194-SG-SCC Allow Anaplan SCCA\nSG-SCC Allow Anyscale SCCA - CA, APP31194-SG-SCC Allow Anyscale SCCA - CA';
     const BG_TAB_WARNING = 'Keep this Netskope tab visible and active until the run ends. If the tab is hidden the browser slows the page down: the run pauses by itself.';
     const BG_STATUS = {
@@ -39284,8 +39361,8 @@ Version 1.16:
         if (!apply) { btn?.remove(); return; }
         const run = bgLoadRun();
         const paused = run && run.state === 'paused';
-        const label = paused ? '👥 Bulk add groups (paused)' : '👥 Bulk add groups';
-        const title = paused ? `Run paused at ${run.index + 1} of ${run.jobs.length}` : 'Add a group to every policy that holds another group (NS Policies Toolkit)';
+        const label = paused ? '🧰 Policy tools (paused)' : '🧰 Policy tools';
+        const title = paused ? `Groups run paused at ${run.index + 1} of ${run.jobs.length}` : 'Bulk actions on policies: add groups, enable or disable, delete (NS Policies Toolkit)';
         if (btn && btn.previousElementSibling === apply) {
             if (btn.textContent !== label) btn.textContent = label;
             if (btn.title !== title) btn.title = title;
@@ -39299,7 +39376,7 @@ Version 1.16:
         b.textContent = label;
         b.title = title;
         Object.assign(b.style, { whiteSpace: 'nowrap' });
-        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); bgOpen(); });
+        b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); ptOpen(); });
         apply.insertAdjacentElement('afterend', b);
     }
 
@@ -39307,12 +39384,19 @@ Version 1.16:
         if (!getSetting('bulkGroupAdd') || bg.timer) return;
         bg.timer = setInterval(bgSyncButton, 1000);
         // A hidden tab is slowed down by the browser: pause rather than risk a policy half done
-        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') bgPause('the tab was not visible'); });
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'hidden') return;
+            bgPause('the tab was not visible');
+            ptPause('the tab was not visible');
+        });
         ['keydown', 'keypress', 'keyup'].forEach(type => window.addEventListener(type, bgBlockKeys, true));
         // A run that was going when the page reloaded never continues alone
         const run = bgLoadRun();
         if (run && run.state === 'running') { run.state = 'paused'; run.pausedReason = 'the page was reloaded'; bgSaveRun(run); }
         if (run && run.state === 'paused') bgRenderRunCard(run, null);
+        const ptr = ptLoadRun();
+        if (ptr && ptr.state === 'running') { ptr.state = 'paused'; ptr.pausedReason = 'the page was reloaded'; ptSaveRun(ptr); }
+        if (ptr && ptr.state === 'paused') ptRenderRunCard(ptr, null);
         bgSyncButton();
     }
 
@@ -39382,15 +39466,56 @@ Version 1.16:
             .footer .primary { color: #fff; background: #005587; border-color: #005587; }
             .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
             button:disabled { cursor: not-allowed; opacity: .5; }
+            .tabs { display: flex; gap: 4px; flex: 0 0 auto; padding: 8px 20px 0; border-bottom: 1px solid #e6e6e6; }
+            .tabs button { padding: 7px 14px; font-size: 13px; font-weight: 600; color: #53565a; background: #f7f7f7;
+                border: 1px solid #e6e6e6; border-bottom: 0; border-radius: 4px 4px 0 0; cursor: pointer; }
+            .tabs button:hover { background: #eef4f8; }
+            .tabs button[aria-selected="true"] { color: #005587; background: #fff; border-top: 3px solid #005587; margin-bottom: -1px; }
+            .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
+            .footer button:hover:not(:disabled) { filter: brightness(.92); }
+            .tabhint { flex: 0 0 auto; padding: 8px 20px 0; color: #63666a; font-size: 12px; font-style: italic; }
+            .pane { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+            .pane[hidden] { display: none; }
+            .sel { position: relative; }
+            .sel-block { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #e6e6e6; border-radius: 6px; background: #fbfbfb; }
+            .sel-block h3 { margin: 0 0 4px; font-size: 13px; color: #1a1a1a; }
+            .sel-block textarea { min-height: 70px; }
+            .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+            .row input[type="text"], .row input[type="search"], .row select { padding: 5px 8px; font-size: 12px; color: #282728;
+                background: #fff; border: 1px solid #a7a8aa; border-radius: 4px; }
+            .row input[type="search"] { flex: 1; min-width: 160px; }
+            .sbtn { padding: 5px 10px; font-size: 12px; font-weight: 600; color: #005587; background: #fff;
+                border: 1px solid #005587; border-radius: 4px; cursor: pointer; }
+            .sbtn:hover:not(:disabled) { background: #eef4f8; }
+            .plist { margin-top: 6px; max-height: 240px; overflow: auto; border: 1px solid #e6e6e6; border-radius: 4px; background: #fff; }
+            .prow { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border-top: 1px solid #f3f3f3; font-size: 12px; cursor: pointer; }
+            .prow:first-child { border-top: 0; }
+            .prow:hover { background: #f5f9fc; }
+            .prow[hidden] { display: none; }
+            .prow.locked { color: #9a9a9a; cursor: not-allowed; }
+            .prow .pname { flex: 1; word-break: break-word; }
+            .pill { font-size: 10px; font-weight: 700; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+            .pill.on { color: #fff; background: #26890d; } .pill.off { color: #fff; background: #75787b; }
+            .pill.del { color: #fff; background: #da291c; }
+            .selcount { margin: 4px 0 0; font-size: 13px; font-weight: 700; color: #005587; }
+            .pt-busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
+                background: rgba(255, 255, 255, .75); cursor: progress; font-size: 13px; color: #005587; z-index: 2; border-radius: 6px; }
         `);
         shadow.adoptedStyleSheets = [sheet];
         shadow.innerHTML = `
             <div class="backdrop">
                 <section class="bg-panel" role="dialog" aria-modal="true" aria-labelledby="bg-title">
                     <header class="header">
-                        <h2 id="bg-title">👥 Bulk add groups</h2>
-                        <button type="button" class="close" data-bg="close" aria-label="Close">×</button>
+                        <h2 id="bg-title">🧰 Policy tools</h2>
+                        <button type="button" class="close" data-bg="close" aria-label="Close" title="Close">×</button>
                     </header>
+                    <nav class="tabs" role="tablist">
+                        <button type="button" role="tab" data-pt-tab="groups">👥 Groups</button>
+                        <button type="button" role="tab" data-pt-tab="toggle">⏯ Enable / Disable</button>
+                        <button type="button" role="tab" data-pt-tab="delete">🗑 Delete</button>
+                    </nav>
+                    <div class="tabhint" data-pt="tabhint"></div>
+                    <div class="pane" data-pt-pane="groups">
                     <main class="body">
                         <label class="label" for="bg-pairs">Pairs of groups</label>
                         <p class="help">One pair per line: first the group that is already in the policy, then a comma, then the group to add.
@@ -39407,6 +39532,9 @@ Version 1.16:
                         <span class="spacer"></span>
                         <button type="button" class="success" data-bg="start" disabled>Start</button>
                     </footer>
+                    </div>
+                    <div class="pane" data-pt-pane="toggle" hidden></div>
+                    <div class="pane" data-pt-pane="delete" hidden></div>
                 </section>
             </div>`;
         shadow.querySelector('.example').textContent = BG_EXAMPLE;
@@ -39418,11 +39546,829 @@ Version 1.16:
         bgEl('pairs').addEventListener('input', () => { bg.rows = bg.jobs = null; bgEl('results').textContent = ''; bgUpdateButtons(); });
         bgEl('check').addEventListener('click', bgCheck);
         bgEl('start').addEventListener('click', bgStart);
+        shadow.querySelectorAll('[data-pt-tab]').forEach(b => b.addEventListener('click', () => ptShowTab(b.dataset.ptTab)));
         bgUpdateButtons();
     }
 
-    function bgOpen() {
+    /* ── Policy tools window: tabs ── */
+
+    const PT_TAB_KEY  = 'toolkit_policyToolsTab';
+    const PT_TABS     = ['groups', 'toggle', 'delete'];
+    const PT_TAB_HINT = {
+        groups: 'Adds a group wherever another group is.',
+        toggle: 'Turn many policies on or off at once.',
+        delete: 'Deletes many policies, a copy of each is kept.',
+    };
+    const ptEl = name => bg.shadow.querySelector(`[data-pt="${name}"]`);
+
+    function ptShowTab(name) {
+        if (!PT_TABS.includes(name)) name = 'groups';
+        GM_setValue(PT_TAB_KEY, name);
+        bg.shadow.querySelectorAll('[data-pt-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.ptTab === name)));
+        bg.shadow.querySelectorAll('[data-pt-pane]').forEach(p => { p.hidden = p.dataset.ptPane !== name; });
+        ptEl('tabhint').textContent = PT_TAB_HINT[name];
+        ptOnTab(name);
+    }
+
+    /* ── Policy tools: shared policy selection ── */
+
+    const pt = { policies: null, panes: {}, running: false, pauseRequested: null, stopRequested: false, runHost: null, runShadow: null };
+
+    // Flat list of every policy from the list call, with what the selection needs.
+    function ptPoliciesFrom(data) {
+        const out = [];
+        (Array.isArray(data) ? data : []).forEach(g => (g.policies || []).forEach(p => {
+            const rd = p.rule_data || {};
+            out.push({ id: String(p.rule_id), name: p.rule_name || String(p.rule_id), group: g.group_name || '',
+                enabled: String(p.enabled) === '1', pendingDelete: p.modify_type === 'Deleted', pending: String(p.pending) === '1',
+                locked: !!p.viewOnly || p.isInRoleScope === 0 || p.isInRoleScope === '0',
+                groups: Array.isArray(rd.userGroups) ? rd.userGroups : [], raw: p });
+        }));
+        return out;
+    }
+
+    async function ptLoadPolicies() {
+        const data = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        return ptPoliciesFrom(data);
+    }
+
+    const ptSelectable = p => !p.locked && !p.pendingDelete;
+
+    // Exact names, capitals included. A name held by several policies ticks none of them.
+    function ptMatchNames(text, policies) {
+        const found = [], notFound = [], ambiguous = [];
+        const names = [...new Set(String(text || '').split(/\r?\n/).map(l => l.split('\t')[0].trim()).filter(Boolean))];
+        names.forEach(n => {
+            const hits = policies.filter(p => p.name === n);
+            if (!hits.length) notFound.push(n);
+            else if (hits.length > 1) ambiguous.push(n);
+            else found.push(hits[0].id);
+        });
+        return { found, notFound, ambiguous };
+    }
+
+    // group: exact full path or exact last segment (like Bulk add groups); nameContains ignores capitals.
+    function ptFilter(policies, { group = '', nameContains = '', state = 'any' } = {}) {
+        const g = group.trim(), n = nameContains.trim().toLowerCase();
+        return policies.filter(p => ptSelectable(p)
+            && (!g || p.groups.some(x => x === g || smShortName(x) === g))
+            && (!n || p.name.toLowerCase().includes(n))
+            && (state === 'any' || (state === 'enabled') === p.enabled)).map(p => p.id);
+    }
+
+    function ptBusy(target, label) {
+        const cover = document.createElement('div');
+        cover.className = 'pt-busy';
+        cover.appendChild(Object.assign(document.createElement('span'), { className: 'spinner' }));
+        cover.appendChild(document.createTextNode(label || 'Loading…'));
+        target.appendChild(cover);
+        return () => cover.remove();
+    }
+
+    // Renders the selection block into a pane: paste, list, filter. Returns its handle.
+    function ptSelector(pane) {
+        const wrap = document.createElement('div');
+        wrap.className = 'sel';
+        wrap.innerHTML = `
+            <div class="sel-block">
+                <h3>📋 Paste names</h3>
+                <p class="help">Paste one name per line, an Excel column works as is. Names must match exactly, capitals included.</p>
+                <textarea data-pt="paste" spellcheck="false"></textarea>
+                <div class="row"><button type="button" class="sbtn" data-pt="paste-add">➕ Add to selection</button>
+                    <span class="note" data-pt="paste-note"></span></div>
+            </div>
+            <div class="sel-block">
+                <h3>☑ Pick from the list</h3>
+                <p class="help">Search narrows the list. Ticking here adds to what you pasted.</p>
+                <div class="row"><input type="search" data-pt="search" placeholder="Search policies or groups…">
+                    <button type="button" class="sbtn" data-pt="tick-shown">Tick all shown</button>
+                    <button type="button" class="sbtn" data-pt="untick-all">Untick all</button>
+                    <button type="button" class="sbtn" data-pt="reload" title="Read the policies from Netskope again">↻ Reload</button></div>
+                <div class="plist" data-pt="list"></div>
+            </div>
+            <div class="sel-block">
+                <h3>🔎 Filter</h3>
+                <p class="help">The filter ticks, then you can untick single policies in the list.</p>
+                <div class="row">
+                    <input type="text" data-pt="f-group" placeholder="Contains group">
+                    <input type="text" data-pt="f-name" placeholder="Name contains">
+                    <select data-pt="f-state"><option value="any">Any state</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select>
+                    <button type="button" class="sbtn" data-pt="f-tick">Tick all results</button>
+                    <span class="note" data-pt="f-note"></span></div>
+            </div>
+            <div class="selcount" data-pt="sel-count">0 policies selected</div>`;
+        pane.querySelector('[data-pt="sel-wrap"]').appendChild(wrap);
+        const q = n => wrap.querySelector(`[data-pt="${n}"]`);
+        const selected = new Set();
+        const fire = () => {
+            const n = selected.size;
+            q('sel-count').textContent = `${n} ${n === 1 ? 'policy' : 'policies'} selected`;
+            pane.dispatchEvent(new CustomEvent('pt-selection'));
+        };
+        const note = (el, text, cls) => { el.className = 'note' + (cls ? ' ' + cls : ''); el.textContent = text; };
+        function render() {
+            const list = q('list');
+            list.textContent = '';
+            (pt.policies || []).forEach(p => {
+                const row = document.createElement('label');
+                row.className = 'prow' + (ptSelectable(p) ? '' : ' locked');
+                row.dataset.ptRow = p.id;
+                const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: selected.has(p.id), disabled: !ptSelectable(p) });
+                if (p.locked) row.title = 'You cannot edit this policy';
+                else if (p.pendingDelete) row.title = 'Already deleted, waiting for Apply Changes';
+                box.addEventListener('change', () => { box.checked ? selected.add(p.id) : selected.delete(p.id); fire(); });
+                const pill = document.createElement('span');
+                pill.className = 'pill ' + (p.pendingDelete ? 'del' : p.enabled ? 'on' : 'off');
+                pill.textContent = p.pendingDelete ? 'Pending delete' : p.enabled ? 'Enabled' : 'Disabled';
+                row.append(box, Object.assign(document.createElement('span'), { className: 'pname', textContent: p.name }),
+                    Object.assign(document.createElement('span'), { className: 'muted', textContent: p.group }), pill);
+                list.appendChild(row);
+            });
+            if (!(pt.policies || []).length) list.appendChild(Object.assign(document.createElement('div'), { className: 'muted prow', textContent: 'No policies loaded yet.' }));
+            applySearch();
+        }
+        function applySearch() {
+            const term = q('search').value.trim().toLowerCase();
+            wrap.querySelectorAll('[data-pt-row]').forEach(row => {
+                const p = pt.policies.find(x => x.id === row.dataset.ptRow);
+                row.hidden = !!term && !(p.name.toLowerCase().includes(term) || p.group.toLowerCase().includes(term)
+                    || p.groups.some(g => g.toLowerCase().includes(term)));
+            });
+        }
+        function tick(ids) { ids.forEach(id => selected.add(id)); render(); fire(); }
+        async function reload() {
+            const stop = ptBusy(wrap, 'Loading the policies…');
+            q('reload').disabled = true;
+            try {
+                pt.policies = await ptLoadPolicies();
+                // Keep only what can still be selected
+                [...selected].forEach(id => { const p = pt.policies.find(x => x.id === id); if (!p || !ptSelectable(p)) selected.delete(id); });
+                render();
+                fire();
+            } catch (e) {
+                note(q('paste-note'), '⚠ ' + e.message, 'err');
+            } finally {
+                stop();
+                q('reload').disabled = false;
+            }
+        }
+        q('paste-add').addEventListener('click', () => {
+            if (!pt.policies) return;
+            const m = ptMatchNames(q('paste').value, pt.policies);
+            const ok = m.found.filter(id => ptSelectable(pt.policies.find(p => p.id === id)));
+            const blocked = m.found.length - ok.length;
+            tick(ok);
+            const parts = [`✅ ${ok.length} added`];
+            if (m.notFound.length) parts.push(`Not found: ${m.notFound.join(', ')}`);
+            if (m.ambiguous.length) parts.push(`Several policies have this name: ${m.ambiguous.join(', ')} (tick the right one in the list)`);
+            if (blocked) parts.push(`${blocked} cannot be changed (view only or already deleted)`);
+            note(q('paste-note'), parts.join('. ') + '.', m.notFound.length || m.ambiguous.length || blocked ? 'warn' : '');
+        });
+        q('search').addEventListener('input', applySearch);
+        q('tick-shown').addEventListener('click', () => tick([...wrap.querySelectorAll('[data-pt-row]')]
+            .filter(r => !r.hidden && !r.querySelector('input').disabled).map(r => r.dataset.ptRow)));
+        q('untick-all').addEventListener('click', () => { selected.clear(); render(); fire(); });
+        q('f-tick').addEventListener('click', () => {
+            if (!pt.policies) return;
+            const ids = ptFilter(pt.policies, { group: q('f-group').value, nameContains: q('f-name').value, state: q('f-state').value });
+            tick(ids);
+            note(q('f-note'), ids.length ? `✅ ${ids.length} ticked` : 'ℹ️ No policy matches', ids.length ? '' : 'warn');
+        });
+        q('reload').addEventListener('click', reload);
+        render();
+        return { selected: () => new Set(selected), policies: () => pt.policies || [], reload, render,
+            clear: () => { selected.clear(); render(); fire(); } };
+    }
+
+    // The Enable / Disable and Delete tabs are built the first time they are shown.
+    function ptBuildPane(name) {
+        const pane = bg.shadow.querySelector(`[data-pt-pane="${name}"]`);
+        pane.innerHTML = `<main class="body"><div data-pt="sel-wrap"></div><div data-pt="action"></div></main>
+            <footer class="footer" data-pt="footer"></footer>`;
+        const sel = ptSelector(pane);
+        pt.panes[name] = { pane, sel };
+        ptBuildAction(name, pane, sel);
+        return pt.panes[name];
+    }
+
+    function ptOnTab(name) {
+        if (name === 'groups') return;
+        const entry = pt.panes[name] && pt.panes[name].pane.isConnected ? pt.panes[name] : ptBuildPane(name);
+        if (!pt.policies) entry.sel.reload();
+        else entry.sel.render();
+        entry.renderLast();
+    }
+
+    /* ── Policy tools: Enable / Disable and Delete tabs ── */
+
+    const PT_RUN_KEY      = 'toolkit_policyToolsRun';
+    const PT_LAST_RUN_KEY = 'toolkit_policyToolsLastRun';
+    const PT_RUN_HOST_ID  = 'nstk-policy-tools-run';
+    const PT_VERB = {
+        enable:  { done: 'Enabled', ing: 'Enabling', title: 'enable policies' },
+        disable: { done: 'Disabled', ing: 'Disabling', title: 'disable policies' },
+        delete:  { done: 'Deleted', ing: 'Deleting', title: 'delete policies' },
+        revert:  { done: 'Reverted', ing: 'Reverting', title: 'revert policies' },
+    };
+    const ptLoadRun = () => { const r = GM_getValue(PT_RUN_KEY, null); return r && r.v === 1 ? r : null; };
+    const ptSaveRun = run => GM_setValue(PT_RUN_KEY, run);
+    const ptCount = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+    // What a run would do with the chosen policies, and what it leaves alone and why.
+    function ptPlan(action, ids, policies) {
+        const jobs = [], skipped = [];
+        ids.forEach(id => {
+            const p = policies.find(x => x.id === id);
+            const skip = reason => skipped.push({ id, name: p ? p.name : id, group: p ? p.group : '', reason });
+            if (!p) return skip('Not in the list any more');
+            if (p.locked) return skip('You cannot edit this policy');
+            if (p.pendingDelete) return skip('Already deleted, waiting for Apply Changes');
+            if (action === 'enable' && p.enabled) return skip('Already enabled');
+            if (action === 'disable' && !p.enabled) return skip('Already disabled');
+            jobs.push({ id, name: p.name, group: p.group });
+        });
+        return { jobs, skipped };
+    }
+
+    // The toggle call flips the state, so it is only sent when the state differs from the target.
+    async function ptCall(action, p) {
+        if (action === 'enable' || action === 'disable') return smPost('inline_policies/disable', { id: p.id, name: p.name });
+        if (action === 'delete') return smPost('inline_policies/delete', { id: p.id });
+        return smPost('inline_policies/revert', { id: p.id, name: p.name });
+    }
+
+    // Has the change already happened in Netskope? Used to verify and after a passing backend error.
+    function ptReached(action, p) {
+        if (action === 'enable') return !!p && p.enabled && !p.pendingDelete;
+        if (action === 'disable') return !!p && !p.enabled;
+        if (action === 'delete') return !!p && p.pendingDelete;
+        return !p || !p.pending;
+    }
+
+    async function ptDoJob(run, job, byId) {
+        const action = run.action;
+        const cur = byId.get(job.id);
+        const out = (outcome, reason) => ({ id: job.id, name: job.name, group: job.group, outcome, reason });
+        if (action !== 'revert') {
+            if (!cur) return out('skipped', 'Not in the list any more');
+            if (cur.locked) return out('skipped', 'You cannot edit this policy');
+            if (cur.pendingDelete) return out('skipped', 'Already deleted, waiting for Apply Changes');
+            if (ptReached(action, cur)) return out('skipped', 'State changed since Check, nothing to do');
+            if (action === 'delete') ptBackupSave(cur);
+        } else if (!cur || !cur.pending) {
+            return out('skipped', 'Already applied, nothing to revert');
+        }
+        for (let attempt = 0; ; attempt++) {
+            try {
+                await ptCall(action, cur);
+                return out('done', PT_VERB[action].done + '.');
+            } catch (e) {
+                // Netskope sometimes reports a passing backend error although the change went through
+                if (!/backend error|try again/i.test(e.message) || attempt >= 2) return out('failed', e.message);
+                // Only send again when a fresh read shows the change did not happen: the toggle must never flip blind
+                let now;
+                try { now = (await ptLoadPolicies()).find(x => x.id === job.id); }
+                catch (e2) { return out('failed', `Netskope answered "${e.message}" and the state could not be checked, so nothing was sent again. Look at this policy in the list.`); }
+                if (ptReached(action, now)) return out('done', PT_VERB[action].done + '.');
+            }
+        }
+    }
+
+    // One run at a time across Groups and the policy runs, and a paused run must be ended first.
+    function ptBlockReason() {
+        const g = bgLoadRun();
+        if (bg.running || (g && g.state === 'running')) return 'A groups run is going on.';
+        if (g && g.state === 'paused') return 'A groups run is paused: Continue or discard the paused run first (on its card).';
+        const r = ptLoadRun();
+        if (pt.running || (r && r.state === 'running')) return 'Another run is going on.';
+        if (r && r.state === 'paused') return 'Continue or stop the paused run first (on the Policy tools card).';
+        return '';
+    }
+
+    function ptStart(action, plan) {
+        if (ptBlockReason() || !plan.jobs.length) return;
+        GM_deleteValue(PT_LAST_RUN_KEY);
+        Object.values(pt.panes).forEach(entry => { if (entry.pane.isConnected) entry.renderLast(); });
+        ptSaveRun({ v: 1, action, jobs: plan.jobs, index: 0, state: 'running', startedAt: Date.now(),
+            results: plan.skipped.map(x => Object.assign({ outcome: 'skipped' }, x)),
+            tenant: location.hostname, by: GM_getValue('toolkit_username', '') });
+        if (bg.host) bg.host.dataset.open = 'false';
+        ptRunLoop();
+    }
+
+    async function ptRunLoop() {
+        const run = ptLoadRun();
+        if (!run || run.state !== 'running' || pt.running) return;
+        pt.running = true;
+        ptRenderRunCard(run, null, 'Reading the policies from Netskope…');
+        bgLock(true, 'Policy tools');
+        try {
+            const byId = new Map((await ptLoadPolicies()).map(p => [p.id, p]));
+            while (run.index < run.jobs.length) {
+                if (pt.pauseRequested || pt.stopRequested) break;
+                const job = run.jobs[run.index];
+                ptRenderRunCard(run, job);
+                const res = await ptDoJob(run, job, byId);
+                run.results.push(res);
+                run.index++;
+                ptSaveRun(run);
+                ptRunLog(`${job.name}: ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
+            }
+            if (pt.stopRequested) { run.state = 'finished'; run.stopped = true; }
+            else if (pt.pauseRequested && run.index < run.jobs.length) { run.state = 'paused'; run.pausedReason = pt.pauseRequested; }
+            else run.state = 'finished';
+            if (run.state === 'finished') await ptFinish(run);
+            ptSaveRun(run);
+            ptRenderRunCard(run, null);
+        } catch (e) {
+            run.state = 'paused';
+            run.pausedReason = e.message;
+            ptSaveRun(run);
+            ptRenderRunCard(run, null);
+        } finally {
+            bgLock(false);
+            pt.running = false;
+            pt.pauseRequested = null;
+            pt.stopRequested = false;
+        }
+    }
+
+    // One list read at the end checks every change, then the selections start fresh.
+    async function ptFinish(run) {
+        run.finishedAt = Date.now();
+        ptRenderRunCard(run, null, 'Checking the result in Netskope…');
+        try {
+            pt.policies = await ptLoadPolicies();
+            const byId = new Map(pt.policies.map(p => [p.id, p]));
+            run.results.forEach(r => {
+                if (r.outcome !== 'done') return;
+                const now = byId.get(r.id);
+                if (!ptReached(run.action, now)) { r.outcome = 'failed'; r.reason = 'Netskope did not change it'; }
+                else if (run.action === 'revert' && !now) r.reason = 'Reverted. It was never applied, so it is gone from the list.';
+            });
+        } catch (e) {
+            run.verifyError = e.message;
+        }
+        GM_setValue(PT_LAST_RUN_KEY, run);
+        Object.values(pt.panes).forEach(entry => { if (entry.pane.isConnected) { entry.sel.clear(); entry.resetPlan(); entry.renderLast(); } });
+    }
+
+    function ptPause(reason) {
+        if (!pt.running || pt.pauseRequested) return;
+        pt.pauseRequested = reason;
+        ptRunLog('Pausing at the next safe step…', 'warn');
+    }
+    function ptResume() {
+        const run = ptLoadRun();
+        if (!run || run.state !== 'paused' || pt.running) return;
+        run.state = 'running';
+        run.pausedReason = null;
+        ptSaveRun(run);
+        ptRunLoop();
+    }
+    async function ptStop() {
+        if (pt.running) { pt.stopRequested = true; ptRunLog('Stopping at the next safe step…', 'warn'); return; }
+        const run = ptLoadRun();
+        if (!run || run.state !== 'paused') return;
+        run.state = 'finished';
+        run.stopped = true;
+        await ptFinish(run);
+        ptSaveRun(run);
+        ptRenderRunCard(run, null);
+    }
+    // Text to paste in the ticket.
+    function ptSummaryText(run) {
+        const pad = n => String(n).padStart(2, '0');
+        const d = new Date(run.finishedAt || Date.now());
+        const head = [`Date: ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`];
+        if (run.tenant) head.push(`Tenant: ${run.tenant}`);
+        if (run.by) head.push(`By: ${run.by}`);
+        const lines = [`Netskope Real-time Protection: ${PT_VERB[run.action].title}`, head.join(' · ')];
+        const section = (title, items) => {
+            if (!items.length) return;
+            lines.push('', `${title} (${ptCount(items.length, 'policy', 'policies')}):`);
+            items.forEach(i => lines.push('- ' + i));
+        };
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        const label = r => r.group ? `${r.name} (${r.group})` : r.name;
+        section('Changed', of('done').map(label));
+        section('Not changed', of('skipped').map(r => `${label(r)}: ${r.reason}`));
+        section('Failed', of('failed').map(r => `${label(r)}: ${r.reason}`));
+        if (run.stopped) section('Not done, the run was stopped', run.jobs.slice(run.index).map(label));
+        lines.push('', 'Pending: Apply Changes in Netskope.');
+        return lines.join('\n');
+    }
+
+    const ptRunEl = name => pt.runShadow && pt.runShadow.querySelector(`[data-pt="${name}"]`);
+
+    function ptShowRunCard() {
+        if (pt.runHost && pt.runHost.isConnected) return;
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        host.id = PT_RUN_HOST_ID;
+        sheet.replaceSync(BG_RUN_CSS + `
+            .foot { flex-wrap: wrap; }
+            .foot .danger { color: #fff; background: #da291c; border-color: #da291c; }
+            .foot button:hover:not(:disabled) { filter: brightness(.92); }
+            .revert-note { margin-top: 8px; padding: 6px 8px; background: #fdecea; border: 1px solid #f5b5ae; border-radius: 4px; font-size: 11px; color: #7a1c13; }
+            .revert-note:empty { display: none; }
+            button:disabled { opacity: .5; cursor: not-allowed; }`);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <section class="card" role="status">
+                <div class="head"><b data-pt="title">🧰 Policy tools</b><button type="button" class="close" data-pt="run-close" aria-label="Close" title="Close" hidden>×</button></div>
+                <div class="main">
+                    <div class="progress" data-pt="progress"></div>
+                    <div class="current" data-pt="current"></div>
+                    <div class="bar"><div data-pt="bar"></div></div>
+                    <div class="warning" data-pt="run-warning"></div>
+                    <div class="log" data-pt="log"></div>
+                    <div class="summary" data-pt="summary"></div>
+                    <div class="revert-note" data-pt="revert-note"></div>
+                </div>
+                <div class="foot">
+                    <button type="button" data-pt="pause">Pause</button>
+                    <button type="button" class="primary" data-pt="continue" hidden>Continue</button>
+                    <button type="button" data-pt="stop">Stop</button>
+                    <button type="button" data-pt="copy-summary" hidden>📋 Copy for ticket</button>
+                    <button type="button" data-pt="revert" hidden>↩ Revert these</button>
+                </div>
+            </section>`;
+        document.documentElement.appendChild(host);
+        pt.runHost = host;
+        pt.runShadow = shadow;
+        ptRunEl('run-warning').textContent = '⚠ ' + BG_TAB_WARNING;
+        ptRunEl('run-close').addEventListener('click', () => { host.remove(); pt.runHost = pt.runShadow = null; });
+        ptRunEl('pause').addEventListener('click', () => ptPause('you paused it'));
+        ptRunEl('continue').addEventListener('click', ptResume);
+        ptRunEl('stop').addEventListener('click', ptStop);
+        ptRunEl('copy-summary').addEventListener('click', (e) => { const run = ptLoadRun(); if (run) smCopy(ptSummaryText(run), e.currentTarget); });
+        ptWireRevert();
+    }
+
+    function ptRunLog(msg, cls) {
+        const log = ptRunEl('log');
+        if (!log) return;
+        const line = document.createElement('div');
+        if (cls) line.className = cls;
+        line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function ptRenderRunCard(run, job, status) {
+        ptShowRunCard();
+        const total = run.jobs.length;
+        const finished = run.state === 'finished';
+        const paused = run.state === 'paused';
+        const verb = PT_VERB[run.action];
+        ptRunEl('title').textContent = `🧰 Policy tools: ${verb.title}`;
+        ptRunEl('progress').textContent = status ? status
+            : finished ? (run.stopped ? `Stopped at ${run.index} of ${total}` : `Finished: ${total} of ${total}`)
+            : paused ? `Run paused at ${run.index + 1} of ${total}` : `${verb.ing} ${Math.min(run.index + 1, total)} of ${total}…`;
+        ptRunEl('current').textContent = paused ? `Paused: ${run.pausedReason || 'you paused it'}.` : job ? job.name : '';
+        ptRunEl('pause').hidden = finished || paused;
+        ptRunEl('stop').hidden = finished;
+        ptRunEl('continue').hidden = !paused;
+        ptRunEl('bar').style.width = `${Math.round((run.index / Math.max(1, total)) * 100)}%`;
+        ptRunEl('run-warning').hidden = finished;
+        ptRunEl('copy-summary').hidden = !finished || !!status;
+        ptRunEl('run-close').hidden = !finished;
+        ptRenderRevert(run, !!status);
+        const box = ptRunEl('summary');
+        box.textContent = '';
+        if (!finished || status) return;
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        box.appendChild(Object.assign(document.createElement('div'), { textContent:
+            `Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}` }));
+        if (run.stopped) box.appendChild(Object.assign(document.createElement('div'), { textContent:
+            `Stopped: ${total - run.index} of ${total} policies were not done.` }));
+        for (const [kind, title] of [['skipped', 'Skipped'], ['failed', 'Failed']]) {
+            if (!of(kind).length) continue;
+            box.appendChild(Object.assign(document.createElement('b'), { textContent: title + ':' }));
+            of(kind).forEach(r => box.appendChild(Object.assign(document.createElement('div'), { className: 'row', textContent: `${r.name}: ${r.reason}` })));
+        }
+        if (of('failed').some(r => /session may have expired/.test(r.reason))) box.appendChild(Object.assign(document.createElement('div'),
+            { textContent: '⚠ Your Netskope session expired: reload the page, then run the failed ones again.' }));
+        if (run.verifyError) box.appendChild(Object.assign(document.createElement('div'),
+            { textContent: `⚠ Could not check the result: ${run.verifyError}` }));
+        box.appendChild(Object.assign(document.createElement('div'), { textContent: 'Click Apply Changes on the policy list to apply the changes.' }));
+    }
+
+    // Action area and footer of the Enable / Disable and Delete tabs.
+    function ptBuildAction(name, pane, sel) {
+        const entry = pt.panes[name];
+        const area = pane.querySelector('[data-pt="action"]');
+        const foot = pane.querySelector('[data-pt="footer"]');
+        const isDelete = name === 'delete';
+        area.innerHTML = (isDelete ? '' : `
+            <div class="sel-block"><h3>⏯ What to do</h3>
+                <div class="row">
+                    <label><input type="radio" name="pt-toggle-action" value="disable" checked> Disable</label>
+                    <label><input type="radio" name="pt-toggle-action" value="enable"> Enable</label>
+                </div>
+                <p class="help">Policies already in that state are skipped, so nothing is switched the wrong way.</p></div>`) + `
+            <div class="note" data-pt="plan-note"></div>
+            <div data-pt="plan"></div>`;
+        foot.innerHTML = `<button type="button" class="primary" data-pt="check">Check</button>
+            <span class="spacer"></span>
+            <button type="button" class="${isDelete ? 'danger' : 'success'}" data-pt="run" disabled title="Click Check first">${isDelete ? '🗑 Delete' : '⏯ Run'}</button>`;
+        const q = n => pane.querySelector(`[data-pt="${n}"]`);
+        const actionOf = () => isDelete ? 'delete' : pane.querySelector('input[name="pt-toggle-action"]:checked').value;
+        let plan = null;
+        let armed = null;
+        function resetPlan() {
+            plan = null;
+            clearTimeout(armed);
+            armed = null;
+            q('plan').textContent = '';
+            q('plan-note').textContent = '';
+            const run = q('run');
+            run.disabled = true;
+            run.title = 'Click Check first';
+            run.textContent = isDelete ? '🗑 Delete' : '⏯ Run';
+        }
+        entry.resetPlan = resetPlan;
+        function runLabel() {
+            const what = ptCount(plan.jobs.length, 'policy', 'policies');
+            return isDelete ? `🗑 Delete ${what}` : `⏯ ${actionOf() === 'enable' ? 'Enable' : 'Disable'} ${what}`;
+        }
+        function renderPlan() {
+            const action = actionOf();
+            const wrap = q('plan');
+            wrap.textContent = '';
+            if (isDelete && plan.jobs.length) wrap.appendChild(Object.assign(document.createElement('div'), { className: 'warning',
+                textContent: '⚠ Nothing is final until you click Apply Changes. Until then, Revert in the row menu of a policy (or ↩ Revert these at the end) undoes it, together with any other pending change of that policy. A copy of each policy is kept in ↩ Backups.' }));
+            const table = document.createElement('table');
+            table.className = 'table';
+            table.innerHTML = '<thead><tr><th>Policy</th><th>Policy group</th><th>What happens</th></tr></thead><tbody></tbody>';
+            const body = table.querySelector('tbody');
+            plan.jobs.forEach(j => {
+                const tr = body.insertRow();
+                tr.dataset.ptJob = j.id;
+                tr.insertCell().textContent = j.name;
+                tr.insertCell().textContent = j.group;
+                tr.insertCell().appendChild(Object.assign(document.createElement('span'), { className: 'chip ' + (isDelete ? 'notfound' : 'found'),
+                    textContent: `Will be ${PT_VERB[action].done.toLowerCase()}` }));
+            });
+            plan.skipped.forEach(x => {
+                const tr = body.insertRow();
+                tr.dataset.ptSkip = x.id;
+                tr.insertCell().textContent = x.name;
+                tr.insertCell().textContent = x.group;
+                tr.insertCell().appendChild(Object.assign(document.createElement('span'), { className: 'muted', textContent: `${x.reason}: skipped` }));
+            });
+            wrap.appendChild(table);
+            const n = plan.jobs.length;
+            wrap.appendChild(Object.assign(document.createElement('div'), { className: 'totals',
+                textContent: `${ptCount(n, 'policy', 'policies')} to ${action}.` + (plan.skipped.length ? ` ${plan.skipped.length} skipped.` : '') }));
+            const run = q('run');
+            const blocked = ptBlockReason();
+            run.disabled = !n || !!blocked;
+            run.title = !n ? 'Nothing to do: every chosen policy is skipped' : blocked;
+            if (n && blocked) { q('plan-note').className = 'note warn'; q('plan-note').textContent = '⏸ ' + blocked; }
+            run.textContent = n ? runLabel() : (isDelete ? '🗑 Delete' : '⏯ Run');
+        }
+        q('check').addEventListener('click', async () => {
+            const ids = [...sel.selected()];
+            if (!ids.length) { resetPlan(); q('plan-note').className = 'note warn'; q('plan-note').textContent = 'ℹ️ Choose at least one policy first.'; return; }
+            const btn = q('check');
+            btn.disabled = true;
+            btn.textContent = '⏳ Checking…';
+            const stop = ptBusy(pane.querySelector('.body'), 'Reading the policies from Netskope…');
+            try {
+                pt.policies = await ptLoadPolicies();
+                sel.render();
+                resetPlan();
+                plan = ptPlan(actionOf(), ids, pt.policies);
+                renderPlan();
+            } catch (e) {
+                q('plan-note').className = 'note err';
+                q('plan-note').textContent = '⚠ ' + e.message;
+            } finally {
+                stop();
+                btn.disabled = false;
+                btn.textContent = 'Check';
+            }
+        });
+        q('run').addEventListener('click', () => {
+            if (!plan || !plan.jobs.length || ptBlockReason()) return;
+            if (isDelete && !armed) {
+                q('run').textContent = `Click again to delete ${ptCount(plan.jobs.length, 'policy', 'policies')}`;
+                armed = setTimeout(() => { armed = null; if (plan) q('run').textContent = runLabel(); }, 5000);
+                return;
+            }
+            clearTimeout(armed);
+            armed = null;
+            const chosen = plan;
+            const action = actionOf();
+            resetPlan();
+            ptStart(action, chosen);
+        });
+        pane.addEventListener('pt-selection', resetPlan);
+        pane.querySelectorAll('input[name="pt-toggle-action"]').forEach(r => r.addEventListener('change', resetPlan));
+        if (isDelete) ptBuildBackups(pane);
+        entry.renderLast = ptLastRunBlock(pane);
+        entry.renderLast();
+    }
+
+    /* ── Policy tools: backups of deleted policies ── */
+
+    const PT_BACKUP_KEY  = 'toolkit_policyBackups';
+    const PT_BACKUP_DAYS = 90;
+    const ptBackupsLoad = () => {
+        const list = GM_getValue(PT_BACKUP_KEY, []);
+        return Array.isArray(list) ? list : [];
+    };
+
+    // Saved right before the delete call, so a policy is never gone without its copy.
+    function ptBackupSave(p) {
+        const limit = Date.now() - PT_BACKUP_DAYS * 86400000;
+        const list = ptBackupsLoad().filter(b => b && b.at >= limit);
+        list.unshift({ at: Date.now(), tenant: location.hostname, id: p.id, name: p.name, group: p.group,
+            data: JSON.parse(JSON.stringify(p.raw)) });
+        GM_setValue(PT_BACKUP_KEY, list);
+    }
+
+    function ptBackupText(b) {
+        const d = new Date(b.at);
+        const pad = n => String(n).padStart(2, '0');
+        const raw = b.data || {};
+        return [
+            `Policy: ${b.name}`,
+            `Policy group: ${b.group || ''}`,
+            `Tenant: ${b.tenant || ''}`,
+            `State before deleting: ${String(raw.enabled) === '0' ? 'Disabled' : 'Enabled'}`,
+            `Copy saved: ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+            '',
+            JSON.stringify(raw, null, 2),
+        ].join('\n');
+    }
+
+    function ptBuildBackups(pane) {
+        const block = document.createElement('div');
+        block.className = 'sel-block';
+        block.innerHTML = `
+            <div class="row" style="margin-top:0"><h3 style="margin:0;flex:1">↩ Backups</h3>
+                <button type="button" class="sbtn" data-pt="backups-toggle">Show backups</button></div>
+            <p class="help">A copy of every policy deleted here is kept for ${PT_BACKUP_DAYS} days, so you can see what it had and create it again by hand.</p>
+            <div data-pt="backups" hidden></div>`;
+        pane.querySelector('.body').appendChild(block);
+        const q = n => block.querySelector(`[data-pt="${n}"]`);
+        const toggle = q('backups-toggle');
+        function render() {
+            const box = q('backups');
+            box.textContent = '';
+            const list = ptBackupsLoad();
+            if (!list.length) { box.appendChild(Object.assign(document.createElement('div'), { className: 'muted', textContent: 'No backups yet.' })); return; }
+            list.forEach(b => {
+                const key = `${b.at}-${b.id}`;
+                const row = document.createElement('div');
+                row.className = 'prow';
+                row.style.flexWrap = 'wrap';
+                row.style.cursor = 'default';
+                row.dataset.ptBackup = key;
+                const d = new Date(b.at);
+                row.append(Object.assign(document.createElement('span'), { className: 'pname', textContent: b.name }),
+                    Object.assign(document.createElement('span'), { className: 'muted', textContent: `${d.toLocaleString()} · ${b.tenant}` }));
+                const btn = (what, label, title) => {
+                    const x = Object.assign(document.createElement('button'), { type: 'button', className: 'sbtn', textContent: label, title });
+                    x.dataset.ptB = what;
+                    row.appendChild(x);
+                    return x;
+                };
+                const pre = Object.assign(document.createElement('pre'), { hidden: true, textContent: ptBackupText(b) });
+                pre.dataset.ptB = 'text';
+                Object.assign(pre.style, { width: '100%', maxHeight: '220px', overflow: 'auto', margin: '6px 0 0', padding: '8px',
+                    background: '#f6f8fa', border: '1px solid #e1e4e8', borderRadius: '4px', font: '11px Consolas, monospace', whiteSpace: 'pre-wrap' });
+                const view = btn('view', '👁 View', 'Show what the policy had');
+                view.addEventListener('click', () => { pre.hidden = !pre.hidden; view.textContent = pre.hidden ? '👁 View' : '🙈 Hide'; });
+                btn('copy', '📋 Copy', 'Copy the policy as text').addEventListener('click', (e) => smCopy(ptBackupText(b), e.currentTarget));
+                const dl = btn('download', '⬇ Download JSON', 'Save the policy as a JSON file');
+                dl.addEventListener('click', () => {
+                    const url = URL.createObjectURL(new Blob([JSON.stringify(b, null, 2)], { type: 'application/json' }));
+                    const a = Object.assign(document.createElement('a'), { href: url, download: `policy-backup-${b.name.replace(/[^\w.-]+/g, '_')}.json` });
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    dl.textContent = '✅ Downloaded';
+                    setTimeout(() => { dl.textContent = '⬇ Download JSON'; }, 1500);
+                });
+                const rm = btn('remove', '🗑 Remove', 'Remove this backup');
+                let armed = null;
+                rm.addEventListener('click', () => {
+                    if (!armed) {
+                        rm.textContent = 'Click again to remove';
+                        armed = setTimeout(() => { armed = null; rm.textContent = '🗑 Remove'; }, 4000);
+                        return;
+                    }
+                    clearTimeout(armed);
+                    GM_setValue(PT_BACKUP_KEY, ptBackupsLoad().filter(x => `${x.at}-${x.id}` !== key));
+                    render();
+                });
+                row.appendChild(pre);
+                box.appendChild(row);
+            });
+        }
+        toggle.addEventListener('click', () => {
+            const box = q('backups');
+            box.hidden = !box.hidden;
+            toggle.textContent = box.hidden ? 'Show backups' : 'Hide backups';
+            if (!box.hidden) render();
+        });
+    }
+
+    /* ── Policy tools: ↩ Revert these (the last finished run, before Apply Changes) ── */
+
+    const ptLastRun = () => {
+        const r = GM_getValue(PT_LAST_RUN_KEY, null);
+        return r && r.v === 1 && r.action !== 'revert' && (r.results || []).some(x => x.outcome === 'done') ? r : null;
+    };
+    const PT_REVERT_WARNING = 'Revert takes each policy back to its last applied state: it also undoes any other pending change of the same policy (for example a group added by you or a teammate) and does not restore position changes.';
+
+    // Wires one "↩ Revert these" button: the first click checks and lists, the second click runs.
+    function ptRevertControl(btn, note) {
+        let armed = null, plan = null;
+        const reset = () => { clearTimeout(armed); armed = null; plan = null; btn.textContent = '↩ Revert these'; btn.disabled = false; };
+        btn.addEventListener('click', async () => {
+            const blocked = ptBlockReason();
+            if (blocked) { note.textContent = '⏸ ' + blocked; return; }
+            if (armed && plan) {
+                const chosen = plan;
+                reset();
+                note.textContent = '';
+                ptStart('revert', chosen);
+                return;
+            }
+            const last = ptLastRun();
+            if (!last) { note.textContent = 'ℹ️ Nothing to revert.'; return; }
+            btn.disabled = true;
+            btn.textContent = '⏳ Checking…';
+            try {
+                const byId = new Map((await ptLoadPolicies()).map(p => [p.id, p]));
+                const done = last.results.filter(r => r.outcome === 'done');
+                const still = done.filter(r => byId.get(r.id) && byId.get(r.id).pending);
+                const applied = done.filter(r => !still.includes(r));
+                const appliedText = applied.length ? ` Already applied, nothing to revert: ${applied.map(r => r.name).join(', ')}.` : '';
+                if (!still.length) {
+                    reset();
+                    note.textContent = `ℹ️ Already applied, nothing to revert: ${applied.map(r => r.name).join(', ')}.`;
+                    return;
+                }
+                plan = { jobs: still.map(r => ({ id: r.id, name: r.name, group: r.group })),
+                    skipped: applied.map(r => ({ id: r.id, name: r.name, group: r.group, reason: 'Already applied, nothing to revert' })) };
+                note.textContent = `⚠ ${PT_REVERT_WARNING} Will revert: ${still.map(r => r.name).join(', ')}.${appliedText}`;
+                btn.disabled = false;
+                btn.textContent = `Click again to revert ${ptCount(still.length, 'policy', 'policies')}`;
+                armed = setTimeout(() => { reset(); note.textContent = ''; }, 8000);
+            } catch (e) {
+                reset();
+                note.textContent = '⚠ ' + e.message;
+            }
+        });
+        return reset;
+    }
+
+    function ptWireRevert() {
+        pt.revertReset = ptRevertControl(ptRunEl('revert'), ptRunEl('revert-note'));
+    }
+
+    function ptRenderRevert(run, busy) {
+        const btn = ptRunEl('revert');
+        if (!btn) return;
+        const last = ptLastRun();
+        btn.hidden = busy || run.state !== 'finished' || !last || last.startedAt !== run.startedAt;
+        if (btn.hidden) { if (pt.revertReset) pt.revertReset(); ptRunEl('revert-note').textContent = ''; }
+    }
+
+    // The "Last run" block of a tab: shown while the last run can still be reverted.
+    function ptLastRunBlock(pane) {
+        const block = document.createElement('div');
+        block.className = 'sel-block';
+        block.dataset.pt = 'last-run';
+        block.hidden = true;
+        block.innerHTML = `<div class="row" style="margin-top:0"><span data-pt="last-text" style="flex:1;font-size:12px"></span>
+            <button type="button" class="sbtn" data-pt="revert" title="Undo the last run before Apply Changes">↩ Revert these</button></div>
+            <div class="note warn" data-pt="revert-note"></div>`;
+        pane.querySelector('.body').prepend(block);
+        const reset = ptRevertControl(block.querySelector('[data-pt="revert"]'), block.querySelector('[data-pt="revert-note"]'));
+        return () => {
+            const last = ptLastRun();
+            block.hidden = !last;
+            if (!last) { reset(); block.querySelector('[data-pt="revert-note"]').textContent = ''; return; }
+            const n = last.results.filter(r => r.outcome === 'done').length;
+            const d = new Date(last.finishedAt || Date.now());
+            block.querySelector('[data-pt="last-text"]').textContent =
+                `Last run: ${PT_VERB[last.action].title}, ${ptCount(n, 'policy', 'policies')} changed at ${d.toLocaleTimeString()}. Until Apply Changes you can undo it.`;
+        };
+    }
+
+    function ptOpen(tab) {
         if (!bg.host || !bg.host.isConnected) bgCreateHost();
+        const run = bgLoadRun();
+        ptShowTab(run && run.state === 'paused' ? 'groups' : (tab || GM_getValue(PT_TAB_KEY, 'groups')));
         bg.host.dataset.open = 'true';
     }
 
@@ -39440,8 +40386,11 @@ Version 1.16:
         bgEl('pairs').disabled = bg.busy;
         const pending = bgLoadRun();
         const waiting = !!(pending && pending.state === 'paused');
-        bgEl('start').disabled = bg.busy || bg.running || waiting || !n;
-        bgEl('start').title = waiting ? 'Continue or discard the paused run first.' : '';
+        const r = ptLoadRun();
+        const other = pt.running || (r && r.state === 'running') ? 'A Policy tools run is going on.'
+            : r && r.state === 'paused' ? 'Continue or stop the paused Policy tools run first (on its card).' : '';
+        bgEl('start').disabled = bg.busy || bg.running || waiting || !!other || !n;
+        bgEl('start').title = waiting ? 'Continue or discard the paused run first.' : other;
         bgEl('start').textContent = bg.jobs ? `Start (${n} ${n === 1 ? 'policy' : 'policies'})` : 'Start';
     }
 
@@ -39633,7 +40582,7 @@ Version 1.16:
 
     // While a run goes, a veil over the page stops your clicks and keys from changing the policy being edited.
     // The run's own clicks go straight to the elements, so they are not blocked. The run card stays usable.
-    function bgLock(on) {
+    function bgLock(on, what) {
         const old = document.getElementById(BG_LOCK_ID);
         if (!on) { old?.remove(); return; }
         if (old) return;
@@ -39649,7 +40598,8 @@ Version 1.16:
                 line-height: 1.5; text-align: center; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
         `);
         shadow.adoptedStyleSheets = [sheet];
-        shadow.innerHTML = '<div class="msg">🔒 Bulk add groups is running: the page is locked so a click or a key does not get in the way. Use Pause on the card to unlock it.</div>';
+        shadow.innerHTML = '<div class="msg"></div>';
+        shadow.querySelector('.msg').textContent = `🔒 ${what || 'Bulk add groups'} is running: the page is locked so a click or a key does not get in the way. Use Pause on the card to unlock it.`;
         // A click on the veil must not reach the page either: Netskope closes an open dropdown on any outside click
         ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'wheel'].forEach(type =>
             host.addEventListener(type, (e) => { e.preventDefault(); e.stopPropagation(); }, { passive: false }));
@@ -39659,12 +40609,15 @@ Version 1.16:
     function bgBlockKeys(e) {
         if (!e.isTrusted || !document.getElementById(BG_LOCK_ID)) return;
         if (bg.runHost && e.composedPath().includes(bg.runHost)) return;
+        if (pt.runHost && e.composedPath().includes(pt.runHost)) return;
         e.preventDefault();
         e.stopImmediatePropagation();
     }
 
     function bgStart() {
         if (!bg.jobs || !bg.jobs.length || bg.running) return;
+        const r = ptLoadRun();
+        if (pt.running || (r && (r.state === 'running' || r.state === 'paused'))) return;
         const leftOut = bg.rows.filter(r => r.status !== 'ok').map(r => `${r.a}${r.b ? ', ' + r.b : ''}: ${BG_STATUS[r.status][0]}`);
         // Policies that already had a group at the check, for the ticket text
         const alreadyThere = [];
@@ -39787,13 +40740,7 @@ Version 1.16:
 
     /* ── Run card ── */
 
-    function bgShowRunCard() {
-        if (bg.runHost && bg.runHost.isConnected) return;
-        const host = document.createElement('div');
-        const shadow = host.attachShadow({ mode: 'open' });
-        const sheet = new CSSStyleSheet();
-        host.id = BG_RUN_HOST_ID;
-        sheet.replaceSync(`
+    const BG_RUN_CSS = `
             :host { all: initial; position: fixed !important; right: 20px !important; bottom: 20px !important;
                 z-index: 2147483647 !important; display: block !important; font-family: Arial, sans-serif; }
             .card { width: 380px; max-height: 70vh; display: flex; flex-direction: column; box-sizing: border-box;
@@ -39821,7 +40768,15 @@ Version 1.16:
                 color: #282728; background: #fff; border: 1px solid #a7a8aa; }
             .foot .primary { color: #fff; background: #005587; border-color: #005587; }
             [hidden] { display: none !important; }
-        `);
+    `;
+
+    function bgShowRunCard() {
+        if (bg.runHost && bg.runHost.isConnected) return;
+        const host = document.createElement('div');
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        host.id = BG_RUN_HOST_ID;
+        sheet.replaceSync(BG_RUN_CSS);
         shadow.adoptedStyleSheets = [sheet];
         shadow.innerHTML = `
             <section class="card" role="status">
