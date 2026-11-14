@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.31.1
+// @version      2.32.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.31.1';
-    const CHANGELOG = `Version 2.31.1:
+   const SCRIPT_VERSION = '2.32.0';
+    const CHANGELOG = `Version 2.32.0:
+- NS Policies Toolkit: Policy tools: new "➕ Add to Source" tab. Paste users (user@domain.es) and groups, choose one or many policies, Check, and they are all added to the Source of each policy. Policies that already have them are skipped, and a policy that applied to All Users is marked before it is changed.
+- NS Policies Toolkit: Policy tools: the "Groups" tab is now called "👥 Group pairs", next to Add to Source.
+
+Version 2.31.1:
 - NS Policies Toolkit: Steering Exception Tools: the Domains and Categories tabs look like the Policy tools tabs, and the footer now makes clear that Check comes first: Check and Remove or Add carry their step numbers, the next step shows in blue with 👉, the button to click glows, and a Remove or Add button that is still off says to click Check first.
 
 Version 2.31.0:
@@ -30540,8 +30544,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.40.1';
-    const CHANGELOG = `Version 1.40.1:
+    const SCRIPT_VERSION = '1.41.0';
+    const CHANGELOG = `Version 1.41.0:
+- Policy tools: new "➕ Add to Source" tab. Paste users (user@domain.es) and groups, choose one or many policies, Check, and they are all added to the Source of each policy. Policies that already have them are skipped, and a policy that applied to All Users is marked before it is changed.
+- Policy tools: the "Groups" tab is now called "👥 Group pairs", next to Add to Source.
+
+Version 1.40.1:
 - Steering Exception Tools: the Domains and Categories tabs look like the Policy tools tabs, and the footer now makes clear that Check comes first: Check and Remove or Add carry their step numbers, the next step shows in blue with 👉, the button to click glows, and a Remove or Add button that is still off says to click Check first.
 
 Version 1.40.0:
@@ -32371,12 +32379,13 @@ Version 1.16:
                     caption(body, 'The button sits next to Apply Changes on the policy list. It reads "(paused)" while a groups run waits for you.');
 
                     const tabsMock = hrow([
-                        chip('👥 Groups', '#fff', { color: '#005587', border: '2px solid #005587' }),
+                        chip('👥 Group pairs', '#fff', { color: '#005587', border: '2px solid #005587' }),
+                        chip('➕ Add to Source', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
                         chip('⏯ Enable / Disable', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
                         chip('🗑 Delete', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
                     ], { margin: '12px 0 4px 0' });
                     body.appendChild(tabsMock);
-                    caption(body, 'Three tabs. The window opens on the tab you used last.');
+                    caption(body, 'Four tabs. The window opens on the tab you used last.');
 
                     const stepRow = hrow([
                         span('1', { width: '18px', height: '18px', borderRadius: '50%', background: '#005587', color: '#fff', fontSize: '11px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }),
@@ -32388,7 +32397,7 @@ Version 1.16:
                     body.appendChild(stepRow);
                     caption(body, 'Every tab numbers its steps. The footer says what to do next, and the button for the next step glows.');
 
-                    body.appendChild(span('👥 Groups: add a group wherever another group is', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
+                    body.appendChild(span('👥 Group pairs: add a group wherever another group is', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
 
                     const box = document.createElement('div');
                     Object.assign(box.style, {
@@ -32437,7 +32446,25 @@ Version 1.16:
                         'Click Apply Changes yourself when the run ends.',
                     ]);
 
-                    body.appendChild(span('Choosing policies (Enable / Disable and Delete)', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
+                    body.appendChild(span('➕ Add to Source: add users and groups to the policies you choose', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
+                    const srcBox = document.createElement('div');
+                    Object.assign(srcBox.style, { background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333', margin: '0 0 6px 0', whiteSpace: 'pre-wrap', maxWidth: '360px' });
+                    srcBox.textContent = 'SG-SCC Allow Anaplan SCCA\nuser@domain.es';
+                    body.appendChild(srcBox);
+                    body.appendChild(hrow([
+                        chip('Found', '#26890d'), chip('Not found', '#da291c'),
+                        chip('⚠ All Users: will apply only to the added users and groups', '#e08a00'),
+                    ]));
+                    body.appendChild(hrow([chip('Check', '#005587'), chip('➕ Add to 3 policies', '#26890d', { border: '3px solid #9fc9e3' })], { marginTop: '6px' }));
+                    bullets(body, [
+                        'One per line: an entry with @ is a user, anything else a group by its name or full path. Then choose the policies the same way as in Enable / Disable.',
+                        'Check looks every value up in Netskope and shows, per policy, what will be added. Policies that already have every value are skipped, and values not found are left out and listed.',
+                        'A policy that applied to All Users gets the values too, so it then applies only to them: Check marks it in orange and the ticket text says so.',
+                        'It works like Group pairs: each policy is opened, the values are added to Source and it is saved. Exclusions are never touched. Click Apply Changes at the end, no reload needed.',
+                    ]);
+
+                    body.appendChild(span('Choosing policies (Add to Source, Enable / Disable and Delete)', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
                     const sel = document.createElement('div');
                     Object.assign(sel.style, { border: '1px solid #e6e6e6', borderRadius: '6px', background: '#fbfbfb', padding: '8px 12px', fontFamily: 'Arial, sans-serif', maxWidth: '440px' });
                     sel.appendChild(span('📋 Paste names   ☑ Pick from the list   🔎 Filter', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', marginBottom: '6px' }));
@@ -39574,7 +39601,8 @@ Version 1.16:
                         <button type="button" class="close" data-bg="close" aria-label="Close" title="Close">×</button>
                     </header>
                     <nav class="tabs" role="tablist">
-                        <button type="button" role="tab" data-pt-tab="groups">👥 Groups</button>
+                        <button type="button" role="tab" data-pt-tab="groups">👥 Group pairs</button>
+                        <button type="button" role="tab" data-pt-tab="source">➕ Add to Source</button>
                         <button type="button" role="tab" data-pt-tab="toggle">⏯ Enable / Disable</button>
                         <button type="button" role="tab" data-pt-tab="delete">🗑 Delete</button>
                     </nav>
@@ -39597,6 +39625,7 @@ Version 1.16:
                         <span class="step">3</span><button type="button" class="success" data-bg="start" disabled>Start</button>
                     </footer>
                     </div>
+                    <div class="pane" data-pt-pane="source" hidden></div>
                     <div class="pane" data-pt-pane="toggle" hidden></div>
                     <div class="pane" data-pt-pane="delete" hidden></div>
                 </section>
@@ -39617,9 +39646,10 @@ Version 1.16:
     /* ── Policy tools window: tabs ── */
 
     const PT_TAB_KEY  = 'toolkit_policyToolsTab';
-    const PT_TABS     = ['groups', 'toggle', 'delete'];
+    const PT_TABS     = ['groups', 'source', 'toggle', 'delete'];
     const PT_TAB_HINT = {
         groups: 'Adds a group wherever another group is.',
+        source: 'Adds users and groups to the Source of the policies you choose.',
         toggle: 'Turn many policies on or off at once.',
         delete: 'Deletes many policies, a copy of each is kept.',
     };
@@ -39807,15 +39837,223 @@ Version 1.16:
     // The Enable / Disable and Delete tabs are built the first time they are shown.
     function ptBuildPane(name) {
         const pane = bg.shadow.querySelector(`[data-pt-pane="${name}"]`);
-        pane.innerHTML = `<main class="body"><div class="stephead"><span class="step">1</span>Choose the policies
+        const isSource = name === 'source';
+        pane.innerHTML = `<main class="body">${isSource ? `
+            <div class="sel-block"><h3><span class="step">1</span>Users and groups to add</h3>
+                <p class="help">One per line. An entry with @ is a user (user@domain.es), anything else a group, by its name or full path. Names must match exactly, capitals included.</p>
+                <textarea data-pt="src-values" spellcheck="false" placeholder="SG-SCC Allow Anaplan SCCA&#10;user@domain.es"></textarea></div>` : ''}
+            <div class="stephead"><span class="step">${isSource ? 2 : 1}</span>Choose the policies
                 <span class="hint">Use any of the three ways below, they add up.</span></div>
             <div data-pt="sel-wrap"></div><div data-pt="action"></div></main>
             <footer class="footer" data-pt="footer"></footer>`;
         const sel = ptSelector(pane);
         pt.panes[name] = { pane, sel };
-        ptBuildAction(name, pane, sel);
+        if (isSource) ptBuildSource(pane, sel);
+        else ptBuildAction(name, pane, sel);
         return pt.panes[name];
     }
+
+    /* ── Policy tools: ➕ Add to Source ── */
+
+    function ptBuildSource(pane, sel) {
+        const entry = pt.panes.source;
+        const q = n => pane.querySelector(`[data-pt="${n}"]`);
+        q('action').innerHTML = `<div class="note" data-pt="plan-note"></div><div class="bar" data-pt="src-progress" hidden><div data-pt="src-bar"></div></div><div data-pt="plan"></div>`;
+        q('footer').innerHTML = `<span class="step">3</span><button type="button" class="primary" data-pt="check">Check</button>
+            <span class="hint" data-pt="next-hint" role="status" aria-live="polite"></span>
+            <span class="step">4</span><button type="button" class="success" data-pt="run" disabled title="Click Check first">➕ Add</button>`;
+        let plan = null;
+        function hint() {
+            const blocked = ptBlockReason();
+            const values = q('src-values').value.trim();
+            const n = plan ? plan.jobs.length : 0;
+            const text = !values ? 'Paste at least one user or group'
+                : !sel.selected().size ? 'Choose at least one policy above'
+                : !plan ? 'Click Check to see what will be added'
+                : !plan.found ? 'Nothing can be added: none of the users or groups was found'
+                : !n ? 'Nothing to add: every chosen policy already has them'
+                : blocked ? '⏸ ' + blocked
+                : `Review the list, then click ➕ Add to ${ptCount(n, 'policy', 'policies')}`;
+            q('next-hint').textContent = text;
+            q('check').classList.toggle('next', !!values && !!sel.selected().size && !plan);
+            q('run').classList.toggle('next', !!n && !blocked);
+        }
+        function resetPlan() {
+            plan = null;
+            q('plan').textContent = '';
+            q('plan-note').textContent = '';
+            const run = q('run');
+            run.disabled = true;
+            run.title = 'Click Check first';
+            run.textContent = '➕ Add';
+            hint();
+        }
+        entry.resetPlan = resetPlan;
+        entry.renderLast = () => {};
+        entry.setPlan = (p) => { plan = p; hint(); };
+        entry.hint = hint;
+        q('src-values').addEventListener('input', resetPlan);
+        pane.addEventListener('pt-selection', resetPlan);
+        q('check').addEventListener('click', () => ptSourceCheck(entry));
+        q('run').addEventListener('click', () => ptSourceStart(entry));
+        resetPlan();
+    }
+
+    // One per line, duplicates once. An entry with @ is a user, anything else a group.
+    function ptParseValues(text) {
+        const seen = new Set(), out = [];
+        String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(v => {
+            const key = v.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            out.push({ value: v, mode: v.includes('@') ? 'user' : 'group' });
+        });
+        return out;
+    }
+
+    const PT_SRC_STATUS = {
+        ok:        ['Found', 'found'],
+        notFound:  ['Not found', 'notfound'],
+        ambiguous: ['Several match: write the full path', 'ambiguous'],
+        tooMany:   ['Too many results: write the full path', 'ambiguous'],
+        error:     ['Could not check', 'error'],
+    };
+
+    function ptPolicyHas(p, mode, full) {
+        if (mode === 'group') return bgHasGroup(p.groups, full);
+        return ((p.raw.rule_data || {}).users || []).some(u => smKey(u) === smKey(full));
+    }
+
+    async function ptSourceCheck(entry) {
+        const pane = entry.pane;
+        const q = n => pane.querySelector(`[data-pt="${n}"]`);
+        const values = ptParseValues(q('src-values').value);
+        const ids = [...entry.sel.selected()];
+        if (!values.length || !ids.length) { entry.resetPlan(); return; }
+        const btn = q('check');
+        btn.disabled = true;
+        btn.textContent = '⏳ Checking…';
+        const stop = ptBusy(pane.querySelector('.body'), 'Checking in Netskope…');
+        const note = q('plan-note');
+        const bar = q('src-progress');
+        try {
+            note.className = 'note';
+            note.textContent = 'Reading the policies…';
+            pt.policies = await ptLoadPolicies();
+            entry.sel.render();
+            entry.resetPlan();
+            bar.hidden = false;
+            const rows = [];
+            for (let i = 0; i < values.length; i++) {
+                const { value, mode } = values[i];
+                note.textContent = `Looking up the users and groups: ${i + 1} of ${values.length} (${value})…`;
+                q('src-bar').style.width = `${Math.round((i / values.length) * 100)}%`;
+                const row = { value, mode, status: 'error', full: null };
+                try {
+                    const prefix = mode === 'group' ? smShortName(value) : value;
+                    const results = await smSearch(mode, prefix);
+                    const exact = [...new Set(results.filter(n => mode === 'user' ? smKey(n) === smKey(value)
+                        : (n === value || (!value.includes('/') && smShortName(n) === value))))];
+                    if (exact.length === 1) { row.status = 'ok'; row.full = exact[0]; }
+                    else if (exact.length > 1) row.status = 'ambiguous';
+                    else row.status = results.length >= 100 ? 'tooMany' : 'notFound';
+                } catch (e) {
+                    row.reason = e.message;
+                }
+                rows.push(row);
+            }
+            const found = rows.filter(r => r.status === 'ok');
+            const jobs = [], skipped = [];
+            ids.forEach(id => {
+                const p = pt.policies.find(x => x.id === id);
+                if (!p) return skipped.push({ id, name: id, group: '', reason: 'Not in the list any more' });
+                if (p.locked) return skipped.push({ id, name: p.name, group: p.group, reason: 'You cannot edit this policy' });
+                if (p.pendingDelete) return skipped.push({ id, name: p.name, group: p.group, reason: 'Already deleted, waiting for Apply Changes' });
+                if (!found.length) return;
+                const adds = found.filter(f => !ptPolicyHas(p, f.mode, f.full)).map(f => ({ mode: f.mode, value: f.full }));
+                if (!adds.length) return skipped.push({ id, name: p.name, group: p.group, reason: 'Already has every value' });
+                const rd = p.raw.rule_data || {};
+                jobs.push({ id, type: rd.policy_type || p.raw.policy_type || '', name: p.name, group: p.group, kind: 'source', adds,
+                    allUsers: !p.groups.length && !(rd.users || []).length });
+            });
+            const plan = { rows, jobs, skipped, found: found.length,
+                notAdded: rows.filter(r => r.status !== 'ok').map(r => ({ value: r.value, reason: r.reason || PT_SRC_STATUS[r.status][0] })) };
+            entry.plan = plan;
+            ptSourceRender(entry, plan);
+            note.textContent = '';
+        } catch (e) {
+            note.className = 'note err';
+            note.textContent = '⚠ ' + e.message;
+        } finally {
+            stop();
+            bar.hidden = true;
+            btn.disabled = false;
+            btn.textContent = 'Check';
+        }
+    }
+
+    function ptSourceRender(entry, plan) {
+        const q = n => entry.pane.querySelector(`[data-pt="${n}"]`);
+        const wrap = q('plan');
+        wrap.textContent = '';
+        const t1 = document.createElement('table');
+        t1.className = 'table';
+        t1.innerHTML = '<thead><tr><th>User or group</th><th>Type</th><th>In Netskope</th></tr></thead><tbody></tbody>';
+        plan.rows.forEach(r => {
+            const tr = t1.tBodies[0].insertRow();
+            tr.dataset.ptValue = r.value;
+            tr.dataset.status = r.status;
+            const c = tr.insertCell();
+            c.textContent = r.value;
+            if (r.full && r.full !== r.value) c.appendChild(Object.assign(document.createElement('div'), { className: 'muted', textContent: r.full }));
+            tr.insertCell().textContent = r.mode === 'user' ? 'User' : 'Group';
+            const [label, cls] = PT_SRC_STATUS[r.status];
+            tr.insertCell().appendChild(Object.assign(document.createElement('span'), { className: 'chip ' + cls, textContent: label }));
+        });
+        wrap.appendChild(t1);
+        const t2 = document.createElement('table');
+        t2.className = 'table';
+        t2.innerHTML = '<thead><tr><th>Policy</th><th>Policy group</th><th>What happens</th></tr></thead><tbody></tbody>';
+        plan.jobs.forEach(j => {
+            const tr = t2.tBodies[0].insertRow();
+            tr.dataset.ptJob = j.id;
+            tr.insertCell().textContent = j.name;
+            tr.insertCell().textContent = j.group;
+            const c = tr.insertCell();
+            c.appendChild(Object.assign(document.createElement('div'), { textContent: 'Adds ' + j.adds.map(a => a.mode === 'group' ? smShortName(a.value) : a.value).join(', ') }));
+            if (j.allUsers) c.appendChild(Object.assign(document.createElement('div'), { className: 'chip ambiguous',
+                textContent: '⚠ All Users: will apply only to the added users and groups' }));
+        });
+        plan.skipped.forEach(x => {
+            const tr = t2.tBodies[0].insertRow();
+            tr.dataset.ptSkip = x.id;
+            tr.insertCell().textContent = x.name;
+            tr.insertCell().textContent = x.group;
+            tr.insertCell().appendChild(Object.assign(document.createElement('span'), { className: 'muted', textContent: `${x.reason}: skipped` }));
+        });
+        if (plan.jobs.length || plan.skipped.length) wrap.appendChild(t2);
+        const n = plan.jobs.length;
+        wrap.appendChild(Object.assign(document.createElement('div'), { className: 'totals',
+            textContent: `${ptCount(n, 'policy', 'policies')} to change.` + (plan.notAdded.length ? ` ${ptCount(plan.notAdded.length, 'value is', 'values are')} left out.` : '') }));
+        const run = q('run');
+        const blocked = ptBlockReason();
+        run.disabled = !n || !!blocked;
+        run.title = !n ? 'Nothing to add' : blocked;
+        run.textContent = n ? `➕ Add to ${ptCount(n, 'policy', 'policies')}` : '➕ Add';
+        entry.setPlan(plan);
+    }
+
+    function ptSourceStart(entry) {
+        const plan = entry.plan;
+        if (!plan || !plan.jobs.length || ptBlockReason()) return;
+        bgSaveRun({ v: 1, kind: 'source', jobs: plan.jobs, index: 0, results: [], leftOut: [], notAdded: plan.notAdded,
+            preSkipped: plan.skipped, state: 'running', startedAt: Date.now(), tenant: location.hostname, by: GM_getValue('toolkit_username', '') });
+        entry.sel.clear();
+        q_reset(entry);
+        bg.host.dataset.open = 'false';
+        bgRunLoop();
+    }
+    function q_reset(entry) { entry.plan = null; entry.resetPlan(); }
 
     function ptOnTab(name) {
         if (name === 'groups') return;
@@ -40646,10 +40884,15 @@ Version 1.16:
             if (!lp || lp.id !== job.id) return false;
             const h1 = document.querySelector('.ns-policy-container .ns-policy-title h1');
             const found = smFindPicker();
-            return !!(h1 && h1.textContent.trim() === 'Edit ' + lp.name && found && smTagsOf(found.select).length);
+            if (!(h1 && h1.textContent.trim() === 'Edit ' + lp.name && found)) return false;
+            if (smTagsOf(found.select).length) return true;
+            // An All Users policy has no tags: give the form a moment, then go on
+            if (job.allUsers) { job._seen = job._seen || Date.now(); return Date.now() - job._seen > 1500; }
+            return false;
         }, BG_WAIT);
         if (!loaded) { await bgLeave(); return { outcome: 'failed', reason: 'The policy did not load in time.' }; }
 
+        if (job.kind === 'source') return bgRunSourceJob(job);
         let groups = await bgReadGroups();
         if (!job.a.some(a => bgHasGroup(groups, a))) {
             await bgLeave();
@@ -40688,6 +40931,44 @@ Version 1.16:
             return null;
         }, BG_WAIT);
         if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.', added: missing.map(smShortName) };
+        await bgLeave();
+        return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
+    }
+
+    // Add to Source: add every value the policy does not have yet, check them all, then Save.
+    async function bgRunSourceJob(job) {
+        const has = (tags, a) => tags.some(t => t.type === a.mode && (a.mode === 'group' ? bgHasGroup([t.name], a.value) : smKey(t.name) === smKey(a.value)));
+        let tags = await smReadSource();
+        const missing = job.adds.filter(a => !has(tags, a));
+        const label = a => a.mode === 'group' ? smShortName(a.value) : a.value;
+        if (!missing.length) {
+            await bgLeave();
+            return { outcome: 'skipped', reason: 'Already has every value.', already: job.adds.map(label) };
+        }
+        for (const a of missing) {
+            const r = await smAddValue(a.mode === 'user' ? 'user' : 'group', a.value, BG_ADD_CFG);
+            if (r !== 'added' && r !== 'already') {
+                await bgLeave();
+                return { outcome: 'failed', reason: `${label(a)}: ${SM_REASON[r] || r}.` };
+            }
+        }
+        tags = await smReadSource();
+        const right = sm.lastPolicy && sm.lastPolicy.id === job.id && new RegExp(`[?&]id=%?2?2?${job.id}(%22)?(&|$)`).test(location.hash);
+        if (!right || !job.adds.every(a => has(tags, a))) {
+            await bgLeave();
+            return { outcome: 'failed', reason: 'The values could not be checked after adding them. Nothing was saved.' };
+        }
+        if (bg.pauseRequested || bg.stopRequested) { await bgLeave(); return { outcome: 'paused' }; }
+        sm.lastSave = null;
+        if (!(await bgClickSave())) { await bgLeave(); return { outcome: 'failed', reason: 'Save is not available: the policy has an error.' }; }
+        const end = await bgWaitFor(() => {
+            const err = document.querySelector('.ns-policy-container .form-error-message');
+            if (err && err.getClientRects().length) return { error: err.textContent.trim() };
+            if (sm.lastSave && sm.lastSave.status !== 'success') return { error: sm.lastSave.msg || 'Netskope did not save it.' };
+            if (sm.lastSave && bgIsList()) return { ok: true };
+            return null;
+        }, BG_WAIT);
+        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(label).join(', ') + '.', added: missing.map(label) };
         await bgLeave();
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
@@ -40748,7 +41029,7 @@ Version 1.16:
         if (!run || run.state !== 'running' || bg.running) return;
         bg.running = true;
         bgShowRunCard(run);
-        bgLock(true);
+        bgLock(true, run.kind === 'source' ? 'Add to Source' : undefined);
         try {
             while (run.index < run.jobs.length) {
                 if (bg.pauseRequested || bg.stopRequested) break;
@@ -40759,7 +41040,7 @@ Version 1.16:
                 catch (e) { res = { outcome: 'failed', reason: e.message }; await bgLeave(); }
                 if (res.outcome === 'paused') continue;
                 run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason,
-                    a: job.a, added: res.added || [], already: res.already || [] });
+                    a: job.a, added: res.added || [], already: res.already || [], allUsers: !!job.allUsers });
                 run.index++;
                 bgSaveRun(run);
                 bgRunLog(`${job.name}: ${res.outcome}. ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
@@ -40814,6 +41095,24 @@ Version 1.16:
         bgSyncButton();
     }
 
+    function bgSourceSummaryText(run, head) {
+        const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+        const lines = ['Netskope Real-time Protection: add to Source', head.join(' · ')];
+        const section = (title, items, one = 'policy', many = 'policies') => {
+            if (!items.length) return;
+            lines.push('', `${title} (${count(items.length, one, many)}):`);
+            items.forEach(i => lines.push('- ' + i));
+        };
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        section('Changed', of('done').map(r => `${r.name}: added ${(r.added || []).join(', ')}` + (r.allUsers ? ' (was All Users, now only these)' : '')));
+        section('Not changed', (run.preSkipped || []).map(x => `${x.name}: ${x.reason}`).concat(of('skipped').map(r => `${r.name}: ${r.reason.replace(/\.$/, '')}`)));
+        section('Failed, not saved', of('failed').map(r => `${r.name}: ${r.reason}`));
+        if (run.stopped) section('Not done, the run was stopped', run.jobs.slice(run.results.length).map(j => j.name));
+        section('Not added', (run.notAdded || []).map(x => `${x.value}: ${x.reason}`), 'value', 'values');
+        lines.push('', 'Pending: Apply Changes in Netskope.');
+        return lines.join('\n');
+    }
+
     // Text to paste in the ticket: what changed, grouped by policy, then what did not and why.
     function bgSummaryText(run) {
         const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -40822,6 +41121,7 @@ Version 1.16:
         const head = [`Date: ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`];
         if (run.tenant) head.push(`Tenant: ${run.tenant}`);
         if (run.by) head.push(`By: ${run.by}`);
+        if (run.kind === 'source') return bgSourceSummaryText(run, head);
         const lines = ['Netskope Real-time Protection: bulk add groups', head.join(' · ')];
         const section = (title, items) => {
             if (!items.length) return;
@@ -40892,7 +41192,7 @@ Version 1.16:
         shadow.adoptedStyleSheets = [sheet];
         shadow.innerHTML = `
             <section class="card" role="status">
-                <div class="head"><b>👥 Bulk add groups</b><button type="button" class="close" data-bg="run-close" aria-label="Close" hidden>×</button></div>
+                <div class="head"><b data-bg="run-title">👥 Bulk add groups</b><button type="button" class="close" data-bg="run-close" aria-label="Close" hidden>×</button></div>
                 <div class="main">
                     <div class="progress" data-bg="progress"></div>
                     <div class="current" data-bg="current"></div>
@@ -40933,6 +41233,7 @@ Version 1.16:
 
     function bgRenderRunCard(run, job) {
         bgShowRunCard();
+        bgRunEl('run-title').textContent = run.kind === 'source' ? '➕ Add to Source' : '👥 Group pairs';
         const total = run.jobs.length;
         const finished = run.state === 'finished';
         const paused = run.state === 'paused';
