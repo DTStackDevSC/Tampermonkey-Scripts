@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.30.0
+// @version      2.31.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.30.0';
-    const CHANGELOG = `Version 2.30.0:
+   const SCRIPT_VERSION = '2.31.0';
+    const CHANGELOG = `Version 2.31.0:
+- NS Policies Toolkit: Policy tools: every tab now numbers its steps, says in the footer what to do next, and makes the button for the next step glow, like the steering exception tools.
+- NS Policies Toolkit: Policy tools: after Enable / Disable, Delete or Revert, the card tells you to reload the page so Netskope turns Apply Changes on, with a "🔄 Reload page" button. After the reload the card shows the summary again, with Copy for ticket and Revert these.
+
+Version 2.30.0:
 - NS Policies Toolkit: "👥 Bulk add groups" is now "🧰 Policy tools": one button next to Apply Changes opens a window with three tabs, Groups, Enable / Disable and Delete. Adding groups works as before.
 - NS Policies Toolkit: Enable / Disable: choose many policies and turn them on or off at once. Policies already in that state are skipped, and the result is checked in Netskope at the end.
 - NS Policies Toolkit: Delete: choose many policies and delete them with a second click. A copy of each policy is saved right before it is deleted, and ↩ Backups shows, copies or downloads it for 90 days.
@@ -30533,8 +30537,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.39.0';
-    const CHANGELOG = `Version 1.39.0:
+    const SCRIPT_VERSION = '1.40.0';
+    const CHANGELOG = `Version 1.40.0:
+- Policy tools: every tab now numbers its steps, says in the footer what to do next, and makes the button for the next step glow, like the steering exception tools.
+- Policy tools: after Enable / Disable, Delete or Revert, the card tells you to reload the page so Netskope turns Apply Changes on, with a "🔄 Reload page" button. After the reload the card shows the summary again, with Copy for ticket and Revert these.
+
+Version 1.39.0:
 - "👥 Bulk add groups" is now "🧰 Policy tools": one button next to Apply Changes opens a window with three tabs, Groups, Enable / Disable and Delete. Adding groups works as before.
 - Enable / Disable: choose many policies and turn them on or off at once. Policies already in that state are skipped, and the result is checked in Netskope at the end.
 - Delete: choose many policies and delete them with a second click. A copy of each policy is saved right before it is deleted, and ↩ Backups shows, copies or downloads it for 90 days.
@@ -32356,6 +32364,16 @@ Version 1.16:
                     body.appendChild(tabsMock);
                     caption(body, 'Three tabs. The window opens on the tab you used last.');
 
+                    const stepRow = hrow([
+                        span('1', { width: '18px', height: '18px', borderRadius: '50%', background: '#005587', color: '#fff', fontSize: '11px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }),
+                        span('Choose the policies', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
+                        span('→', { color: '#999' }),
+                        chip('Check', '#005587', { border: '3px solid #9fc9e3' }),
+                        span('Click Check to see what will change', { fontSize: '12px', color: '#63666a', fontStyle: 'italic' }),
+                    ], { margin: '10px 0 4px 0' });
+                    body.appendChild(stepRow);
+                    caption(body, 'Every tab numbers its steps. The footer says what to do next, and the button for the next step glows.');
+
                     body.appendChild(span('👥 Groups: add a group wherever another group is', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '14px 0 6px 0' }));
 
                     const box = document.createElement('div');
@@ -32455,8 +32473,14 @@ Version 1.16:
                         'After an Enable / Disable or Delete run, on the card and in the "Last run" line of the tab, even after a reload, until you start a new run.',
                         'It only works before Apply Changes: policies already applied are listed as "Already applied, nothing to revert".',
                         'Revert takes each policy back to its last applied state: it also undoes any other pending change of that policy and does not restore position changes.',
-                        'Every run has Pause, Stop, a page lock, "📋 Copy for ticket" and ends with Apply Changes for you to click.',
+                        'Every run has Pause, Stop, a page lock and "📋 Copy for ticket".',
                     ]);
+                    body.appendChild(hrow([
+                        chip('🔄 Reload page', '#005587', { border: '3px solid #9fc9e3' }),
+                        span('→', { color: '#999' }),
+                        chip('Apply Changes', '#005587'),
+                    ], { marginTop: '8px' }));
+                    caption(body, 'At the end of an Enable / Disable, Delete or Revert run, Netskope only turns Apply Changes on after a reload. Click 🔄 Reload page on the card: the card comes back with the summary, Copy for ticket and Revert these, and then you click Apply Changes.');
                 },
             },
             {
@@ -39397,6 +39421,13 @@ Version 1.16:
         const ptr = ptLoadRun();
         if (ptr && ptr.state === 'running') { ptr.state = 'paused'; ptr.pausedReason = 'the page was reloaded'; ptSaveRun(ptr); }
         if (ptr && ptr.state === 'paused') ptRenderRunCard(ptr, null);
+        // Reloaded from the card to turn Apply Changes on: show the summary again, once
+        if (ptr && ptr.state === 'finished' && GM_getValue(PT_SHOW_RUN_KEY, null) === ptr.startedAt) {
+            GM_deleteValue(PT_SHOW_RUN_KEY);
+            ptr.reloaded = true;
+            ptSaveRun(ptr);
+            ptRenderRunCard(ptr, null);
+        }
         bgSyncButton();
     }
 
@@ -39473,6 +39504,13 @@ Version 1.16:
             .tabs button[aria-selected="true"] { color: #005587; background: #fff; border-top: 3px solid #005587; margin-bottom: -1px; }
             .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
             .footer button:hover:not(:disabled) { filter: brightness(.92); }
+            .step { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 18px; height: 18px;
+                margin-right: 6px; border-radius: 50%; background: #005587; color: #fff; font-size: 11px; font-weight: 700; font-style: normal; }
+            .stephead { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #1a1a1a; }
+            .stephead .hint, .footer .hint { font-weight: 400; }
+            .hint { color: #63666a; font-size: 12px; font-style: italic; }
+            .footer .hint { flex: 1; text-align: right; }
+            .footer button.next { box-shadow: 0 0 0 3px #9fc9e3; }
             .tabhint { flex: 0 0 auto; padding: 8px 20px 0; color: #63666a; font-size: 12px; font-style: italic; }
             .pane { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
             .pane[hidden] { display: none; }
@@ -39517,7 +39555,7 @@ Version 1.16:
                     <div class="tabhint" data-pt="tabhint"></div>
                     <div class="pane" data-pt-pane="groups">
                     <main class="body">
-                        <label class="label" for="bg-pairs">Pairs of groups</label>
+                        <label class="label" for="bg-pairs"><span class="step">1</span>Pairs of groups</label>
                         <p class="help">One pair per line: first the group that is already in the policy, then a comma, then the group to add.
                             Write the names exactly as in Netskope: capitals, spaces and dashes count. Two columns copied from Excel also work.</p>
                         <div class="example"></div>
@@ -39528,9 +39566,9 @@ Version 1.16:
                         <div data-bg="results"></div>
                     </main>
                     <footer class="footer">
-                        <button type="button" class="primary" data-bg="check">Check</button>
-                        <span class="spacer"></span>
-                        <button type="button" class="success" data-bg="start" disabled>Start</button>
+                        <span class="step">2</span><button type="button" class="primary" data-bg="check">Check</button>
+                        <span class="hint" data-bg="next-hint" role="status" aria-live="polite"></span>
+                        <span class="step">3</span><button type="button" class="success" data-bg="start" disabled>Start</button>
                     </footer>
                     </div>
                     <div class="pane" data-pt-pane="toggle" hidden></div>
@@ -39743,7 +39781,9 @@ Version 1.16:
     // The Enable / Disable and Delete tabs are built the first time they are shown.
     function ptBuildPane(name) {
         const pane = bg.shadow.querySelector(`[data-pt-pane="${name}"]`);
-        pane.innerHTML = `<main class="body"><div data-pt="sel-wrap"></div><div data-pt="action"></div></main>
+        pane.innerHTML = `<main class="body"><div class="stephead"><span class="step">1</span>Choose the policies
+                <span class="hint">Use any of the three ways below, they add up.</span></div>
+            <div data-pt="sel-wrap"></div><div data-pt="action"></div></main>
             <footer class="footer" data-pt="footer"></footer>`;
         const sel = ptSelector(pane);
         pt.panes[name] = { pane, sel };
@@ -39764,6 +39804,7 @@ Version 1.16:
     const PT_RUN_KEY      = 'toolkit_policyToolsRun';
     const PT_LAST_RUN_KEY = 'toolkit_policyToolsLastRun';
     const PT_RUN_HOST_ID  = 'nstk-policy-tools-run';
+    const PT_SHOW_RUN_KEY = 'toolkit_policyToolsShowRun';
     const PT_VERB = {
         enable:  { done: 'Enabled', ing: 'Enabling', title: 'enable policies' },
         disable: { done: 'Disabled', ing: 'Disabling', title: 'disable policies' },
@@ -39973,6 +40014,10 @@ Version 1.16:
             .foot button:hover:not(:disabled) { filter: brightness(.92); }
             .revert-note { margin-top: 8px; padding: 6px 8px; background: #fdecea; border: 1px solid #f5b5ae; border-radius: 4px; font-size: 11px; color: #7a1c13; }
             .revert-note:empty { display: none; }
+            .nextline { margin-top: 8px; padding: 6px 8px; background: #e3f0f8; border: 1px solid #9fc9e3; border-radius: 4px;
+                font-size: 12px; font-weight: 700; color: #005587; }
+            .nextline:empty { display: none; }
+            .foot button.next { box-shadow: 0 0 0 3px #9fc9e3; }
             button:disabled { opacity: .5; cursor: not-allowed; }`);
         shadow.adoptedStyleSheets = [sheet];
         shadow.innerHTML = `
@@ -39986,8 +40031,10 @@ Version 1.16:
                     <div class="log" data-pt="log"></div>
                     <div class="summary" data-pt="summary"></div>
                     <div class="revert-note" data-pt="revert-note"></div>
+                    <div class="nextline" data-pt="next" role="status"></div>
                 </div>
                 <div class="foot">
+                    <button type="button" class="primary next" data-pt="reload" hidden title="Netskope turns Apply Changes on after a reload">🔄 Reload page</button>
                     <button type="button" data-pt="pause">Pause</button>
                     <button type="button" class="primary" data-pt="continue" hidden>Continue</button>
                     <button type="button" data-pt="stop">Stop</button>
@@ -40004,6 +40051,13 @@ Version 1.16:
         ptRunEl('continue').addEventListener('click', ptResume);
         ptRunEl('stop').addEventListener('click', ptStop);
         ptRunEl('copy-summary').addEventListener('click', (e) => { const run = ptLoadRun(); if (run) smCopy(ptSummaryText(run), e.currentTarget); });
+        ptRunEl('reload').addEventListener('click', (e) => {
+            const run = ptLoadRun();
+            if (run) GM_setValue(PT_SHOW_RUN_KEY, run.startedAt);
+            e.currentTarget.disabled = true;
+            e.currentTarget.textContent = '⏳ Reloading…';
+            location.reload();
+        });
         ptWireRevert();
     }
 
@@ -40036,6 +40090,11 @@ Version 1.16:
         ptRunEl('copy-summary').hidden = !finished || !!status;
         ptRunEl('run-close').hidden = !finished;
         ptRenderRevert(run, !!status);
+        // Our calls bypass the page, so Netskope only turns Apply Changes on after a reload
+        const done = finished && !status;
+        ptRunEl('reload').hidden = !done || !!run.reloaded;
+        ptRunEl('next').textContent = !done ? '' : run.reloaded ? '👉 Now click Apply Changes on the policy list.'
+            : '👉 Next: Reload the page, then click Apply Changes. Netskope only turns Apply Changes on after a reload.';
         const box = ptRunEl('summary');
         box.textContent = '';
         if (!finished || status) return;
@@ -40053,7 +40112,6 @@ Version 1.16:
             { textContent: '⚠ Your Netskope session expired: reload the page, then run the failed ones again.' }));
         if (run.verifyError) box.appendChild(Object.assign(document.createElement('div'),
             { textContent: `⚠ Could not check the result: ${run.verifyError}` }));
-        box.appendChild(Object.assign(document.createElement('div'), { textContent: 'Click Apply Changes on the policy list to apply the changes.' }));
     }
 
     // Action area and footer of the Enable / Disable and Delete tabs.
@@ -40063,7 +40121,7 @@ Version 1.16:
         const foot = pane.querySelector('[data-pt="footer"]');
         const isDelete = name === 'delete';
         area.innerHTML = (isDelete ? '' : `
-            <div class="sel-block"><h3>⏯ What to do</h3>
+            <div class="sel-block"><h3><span class="step">2</span>⏯ What to do</h3>
                 <div class="row">
                     <label><input type="radio" name="pt-toggle-action" value="disable" checked> Disable</label>
                     <label><input type="radio" name="pt-toggle-action" value="enable"> Enable</label>
@@ -40071,9 +40129,10 @@ Version 1.16:
                 <p class="help">Policies already in that state are skipped, so nothing is switched the wrong way.</p></div>`) + `
             <div class="note" data-pt="plan-note"></div>
             <div data-pt="plan"></div>`;
-        foot.innerHTML = `<button type="button" class="primary" data-pt="check">Check</button>
-            <span class="spacer"></span>
-            <button type="button" class="${isDelete ? 'danger' : 'success'}" data-pt="run" disabled title="Click Check first">${isDelete ? '🗑 Delete' : '⏯ Run'}</button>`;
+        const stepCheck = isDelete ? 2 : 3;
+        foot.innerHTML = `<span class="step">${stepCheck}</span><button type="button" class="primary" data-pt="check">Check</button>
+            <span class="hint" data-pt="next-hint" role="status" aria-live="polite"></span>
+            <span class="step">${stepCheck + 1}</span><button type="button" class="${isDelete ? 'danger' : 'success'}" data-pt="run" disabled title="Click Check first">${isDelete ? '🗑 Delete' : '⏯ Run'}</button>`;
         const q = n => pane.querySelector(`[data-pt="${n}"]`);
         const actionOf = () => isDelete ? 'delete' : pane.querySelector('input[name="pt-toggle-action"]:checked').value;
         let plan = null;
@@ -40088,8 +40147,24 @@ Version 1.16:
             run.disabled = true;
             run.title = 'Click Check first';
             run.textContent = isDelete ? '🗑 Delete' : '⏯ Run';
+            hint();
         }
         entry.resetPlan = resetPlan;
+        // Next step, like the steering tools: a line in the footer and the button to click glows
+        function hint() {
+            const blocked = ptBlockReason();
+            const n = plan ? plan.jobs.length : 0;
+            const text = !sel.selected().size ? 'Choose at least one policy above'
+                : !plan ? 'Click Check to see what will change'
+                : !n ? 'Nothing to change: every chosen policy is skipped'
+                : blocked ? '⏸ ' + blocked
+                : armed ? 'Click again to confirm the delete'
+                : `Review the list, then click ${runLabel()}${isDelete ? ' twice' : ''}`;
+            q('next-hint').textContent = text;
+            q('check').classList.toggle('next', !!sel.selected().size && !plan);
+            q('run').classList.toggle('next', !!plan && !!n && !blocked);
+        }
+        entry.hint = hint;
         function runLabel() {
             const what = ptCount(plan.jobs.length, 'policy', 'policies');
             return isDelete ? `🗑 Delete ${what}` : `⏯ ${actionOf() === 'enable' ? 'Enable' : 'Disable'} ${what}`;
@@ -40129,6 +40204,7 @@ Version 1.16:
             run.title = !n ? 'Nothing to do: every chosen policy is skipped' : blocked;
             if (n && blocked) { q('plan-note').className = 'note warn'; q('plan-note').textContent = '⏸ ' + blocked; }
             run.textContent = n ? runLabel() : (isDelete ? '🗑 Delete' : '⏯ Run');
+            hint();
         }
         q('check').addEventListener('click', async () => {
             const ids = [...sel.selected()];
@@ -40156,7 +40232,8 @@ Version 1.16:
             if (!plan || !plan.jobs.length || ptBlockReason()) return;
             if (isDelete && !armed) {
                 q('run').textContent = `Click again to delete ${ptCount(plan.jobs.length, 'policy', 'policies')}`;
-                armed = setTimeout(() => { armed = null; if (plan) q('run').textContent = runLabel(); }, 5000);
+                armed = setTimeout(() => { armed = null; if (plan) q('run').textContent = runLabel(); hint(); }, 5000);
+                hint();
                 return;
             }
             clearTimeout(armed);
@@ -40392,6 +40469,15 @@ Version 1.16:
         bgEl('start').disabled = bg.busy || bg.running || waiting || !!other || !n;
         bgEl('start').title = waiting ? 'Continue or discard the paused run first.' : other;
         bgEl('start').textContent = bg.jobs ? `Start (${n} ${n === 1 ? 'policy' : 'policies'})` : 'Start';
+        // Next step, like the steering tools: a line in the footer and the button to click glows
+        const hint = bg.busy ? '' : waiting ? 'Continue or discard the paused run first (on its card).' : other ? other
+            : !bgEl('pairs').value.trim() ? 'Paste at least one pair of groups'
+            : !bg.jobs ? 'Click Check to see which policies change'
+            : !n ? 'Nothing to change: fix the lines with a problem and Check again'
+            : `Review the list, then click Start (${n} ${n === 1 ? 'policy' : 'policies'})`;
+        bgEl('next-hint').textContent = hint;
+        bgEl('check').classList.toggle('next', !bg.busy && !!bgEl('pairs').value.trim() && !bg.jobs && !waiting && !other);
+        bgEl('start').classList.toggle('next', !bgEl('start').disabled);
     }
 
     async function bgCheck() {
