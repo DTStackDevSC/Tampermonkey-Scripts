@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.31.0
+// @version      2.31.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.31.0';
-    const CHANGELOG = `Version 2.31.0:
+   const SCRIPT_VERSION = '2.31.1';
+    const CHANGELOG = `Version 2.31.1:
+- NS Policies Toolkit: Steering Exception Tools: the Domains and Categories tabs look like the Policy tools tabs, and the footer now makes clear that Check comes first: Check and Remove or Add carry their step numbers, the next step shows in blue with 👉, the button to click glows, and a Remove or Add button that is still off says to click Check first.
+
+Version 2.31.0:
 - NS Policies Toolkit: Policy tools: every tab now numbers its steps, says in the footer what to do next, and makes the button for the next step glow, like the steering exception tools.
 - NS Policies Toolkit: Policy tools: after Enable / Disable, Delete or Revert, the card tells you to reload the page so Netskope turns Apply Changes on, with a "🔄 Reload page" button. After the reload the card shows the summary again, with Copy for ticket and Revert these.
 
@@ -30537,8 +30540,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.40.0';
-    const CHANGELOG = `Version 1.40.0:
+    const SCRIPT_VERSION = '1.40.1';
+    const CHANGELOG = `Version 1.40.1:
+- Steering Exception Tools: the Domains and Categories tabs look like the Policy tools tabs, and the footer now makes clear that Check comes first: Check and Remove or Add carry their step numbers, the next step shows in blue with 👉, the button to click glows, and a Remove or Add button that is still off says to click Check first.
+
+Version 1.40.0:
 - Policy tools: every tab now numbers its steps, says in the footer what to do next, and makes the button for the next step glow, like the steering exception tools.
 - Policy tools: after Enable / Disable, Delete or Revert, the card tells you to reload the page so Netskope turns Apply Changes on, with a "🔄 Reload page" button. After the reload the card shows the summary again, with Copy for ticket and Revert these.
 
@@ -32118,9 +32124,9 @@ Version 1.16:
 
                     // Tabs and the category picker
                     const tabs = hrow([
-                        span('Domains', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px' }),
-                        span('Categories', { fontSize: '12px', fontWeight: 'bold', color: '#005587', padding: '4px 10px', borderBottom: '3px solid #005587' }),
-                    ], { gap: '2px', margin: '12px 0 6px 0', borderBottom: '1px solid #e6e6e6' });
+                        span('Domains', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px', background: '#f7f7f7', border: '1px solid #e6e6e6', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
+                        span('Categories', { fontSize: '12px', fontWeight: 'bold', color: '#005587', padding: '4px 10px', background: '#fff', border: '1px solid #e6e6e6', borderTop: '3px solid #005587', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
+                    ], { gap: '4px', margin: '12px 0 6px 0', borderBottom: '1px solid #e6e6e6' });
                     body.appendChild(tabs);
                     const picker = document.createElement('div');
                     Object.assign(picker.style, { border: '1px solid #d0d0f0', borderRadius: '6px', padding: '8px 10px', background: '#fff', maxWidth: '360px' });
@@ -32138,6 +32144,14 @@ Version 1.16:
                     });
                     body.appendChild(picker);
                     caption(body, 'The Categories tab lists every predefined and custom category of the tenant, read when you open it. Search, tick the ones you want, and remove a pick with ✕ on its chip.');
+
+                    const stepBadge = n => span(n, { width: '18px', height: '18px', borderRadius: '50%', background: '#005587', color: '#fff', fontSize: '11px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' });
+                    body.appendChild(hrow([
+                        span('👉 Click Check to see what will change', { fontSize: '12px', color: '#005587', fontWeight: 'bold' }),
+                        stepBadge('3'), chip('Check', '#005587', { border: '3px solid #9fc9e3' }),
+                        stepBadge('4'), chip('Remove selected', '#da291c', { color: '#fff' }),
+                    ], { margin: '12px 0 4px 0' }));
+                    caption(body, 'Check always comes first: Remove or Add stays off until Check has shown what will change, and says so when you point at it. The footer tells you the next step and the button to click glows. In Bulk add the steps are 4 and 5, after the notes.');
                     bullets(body, [
                         'The tab you used last opens next time. Switching tab clears the Check result but keeps the configurations and notes.',
                         'Categories work like domains: Check shows where each one is, a category a configuration already has is skipped, and every change is backed up so it can be undone.',
@@ -37093,11 +37107,12 @@ Version 1.16:
             .footer .danger { color: #fff; background: #da291c; border-color: #da291c; }
             .footer .success { color: #fff; background: #26890d; border-color: #26890d; }
             .panel.add { border-top-color: #26890d; }
-            .tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid #e6e6e6; flex: 0 0 auto; }
-            .tabs button { padding: 9px 14px; border: 0; border-bottom: 3px solid transparent; background: transparent;
-                color: #53565a; font: 600 13px Arial, sans-serif; cursor: pointer; margin-bottom: -1px; }
-            .tabs button.active { color: #005587; border-bottom-color: #005587; }
-            .panel.add .tabs button.active { color: #26890d; border-bottom-color: #26890d; }
+            .tabs { display: flex; gap: 4px; padding: 8px 20px 0; border-bottom: 1px solid #e6e6e6; flex: 0 0 auto; }
+            .tabs button { padding: 7px 14px; color: #53565a; background: #f7f7f7; border: 1px solid #e6e6e6; border-bottom: 0;
+                border-radius: 4px 4px 0 0; font: 600 13px Arial, sans-serif; cursor: pointer; }
+            .tabs button:hover:not(:disabled) { background: #eef4f8; }
+            .tabs button.active { color: #005587; background: #fff; border-top: 3px solid #005587; margin-bottom: -1px; }
+            .panel.add .tabs button.active { color: #26890d; border-top-color: #26890d; }
             .step { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px;
                 margin-right: 6px; border-radius: 50%; background: #005587; color: #fff; font-size: 11px; font-weight: 700; }
             .panel.add .step { background: #26890d; }
@@ -37109,7 +37124,10 @@ Version 1.16:
                 background: #e3f0f8; color: #005587; font-size: 12px; font-weight: 600; }
             .cchip button { border: 0; background: transparent; color: #005587; cursor: pointer; font-size: 12px; padding: 0 3px; }
             .tag.custom { color: #6b4400; background: #fff1d6; }
-            .footer .primary.next { box-shadow: 0 0 0 3px #9fc9e3; }
+            .footer .primary.next, .footer button.next { box-shadow: 0 0 0 3px #9fc9e3; }
+            .panel.add .footer .success.next { box-shadow: 0 0 0 3px #a8d99b; }
+            #se-next-hint { color: #005587; font-style: normal; font-weight: 600; }
+            .footer .step { margin: 0 -2px 0 4px; }
             .filter-case { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; cursor: pointer; }
             .notes-row { margin-top: 14px; }
             .notes-row textarea { min-height: 54px; font-family: Arial, sans-serif; }
@@ -37186,8 +37204,8 @@ Version 1.16:
                         <div class="spacer"></div>
                         <span class="hint" id="se-next-hint" role="status" aria-live="polite"></span>
                         <button type="button" data-action="close">Close</button>
-                        <button type="button" class="primary" data-action="check" id="se-check-btn">Check</button>
-                        <button type="button" class="danger" data-action="remove" id="se-remove-btn" disabled>Remove selected</button>
+                        <span class="step" id="se-step-check">3</span><button type="button" class="primary" data-action="check" id="se-check-btn">Check</button>
+                        <span class="step" id="se-step-run">4</span><button type="button" class="danger" data-action="remove" id="se-remove-btn" disabled>Remove selected</button>
                     </footer>
                 </section>
             </div>
@@ -37368,7 +37386,7 @@ Version 1.16:
 
     function seUpdateHint() {
         const missing = se.busy ? '' : seMissingStep();
-        seEl('se-next-hint').textContent = missing;
+        seEl('se-next-hint').textContent = missing ? '👉 ' + missing : '';
         seEl('se-check-btn').classList.toggle('next', missing === 'Click Check to see what will change');
         se.shadow.querySelectorAll('.tabs button').forEach(b => { b.disabled = se.busy; });
     }
@@ -37380,20 +37398,28 @@ Version 1.16:
         seEl('se-notes').disabled = se.busy || seEl('se-no-notes').checked;
         seEl('se-no-notes').disabled = se.busy;
         seEl('se-find-entry').disabled = se.busy || seEl('se-no-notes').checked;
-        if (se.mode === 'add') {
+        // Check comes first: number the last two steps, say so on both buttons and make the ready one glow
+        const add = se.mode === 'add';
+        seEl('se-step-check').textContent = add ? '4' : '3';
+        seEl('se-step-run').textContent = add ? '5' : '4';
+        seEl('se-check-btn').title = `Shows what will change, before you can ${add ? 'add' : 'remove'} anything`;
+        const checkFirst = `Click Check first: it shows what will change before you can ${add ? 'add' : 'remove'} anything`;
+        if (add) {
             const count = se.plan ? se.plan.filter(c => c.selected && c.toAdd.length).length : 0;
             btn.className = 'success';
             btn.disabled = se.busy || !count || seNotesMissing();
             btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : se.type === 'category' ? 'Add categories' : 'Add domains';
-            btn.title = seNotesMissing() ? 'Fill in the notes, or tick "No notes needed"' : '';
+            btn.title = !se.plan ? checkFirst : seNotesMissing() ? 'Fill in the notes, or tick "No notes needed"' : !count ? 'Nothing to add' : '';
+            btn.classList.toggle('next', !btn.disabled);
             seEl('se-check-btn').disabled = se.busy;
             seEl('se-backups-btn').disabled = se.busy;
             return;
         }
         const count = se.plan ? se.plan.reduce((n, c) => n + c.actions.filter(a => a.selected).length, 0) : 0;
         btn.className = 'danger';
-        btn.title = '';
         btn.disabled = se.busy || !count;
+        btn.title = !se.plan ? checkFirst : !count ? 'Nothing selected to remove' : '';
+        btn.classList.toggle('next', !btn.disabled);
         btn.textContent = count ? `Remove from ${count} entr${count === 1 ? 'y' : 'ies'}` : 'Remove selected';
         seEl('se-check-btn').disabled = se.busy;
         seEl('se-backups-btn').disabled = se.busy;
