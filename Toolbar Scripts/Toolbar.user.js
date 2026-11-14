@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.29.3
+// @version      2.29.4
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.29.3';
-    const CHANGELOG = `Version 2.29.3:
+   const SCRIPT_VERSION = '2.29.4';
+    const CHANGELOG = `Version 2.29.4:
+- Toolbar: a ticket opened from a ServiceNow dashboard now shows one 🔧 with every tool of the ticket (Mini Summary, Change Tracker, Ticket Assignment, Domain Tools, Destination Profile Editor and the others). Before, a second 🔧 with only the general tools covered it.
+- Toolbar: going back to the dashboard shows only the general tools again, even after reloading the page while a ticket was open.
+- Row Highlighter: rows are now colored on the first load of a dashboard too, and the browser console no longer fills up with its messages.
+
+Version 2.29.3:
 - Change Tracker: Enter on a name that is not in the list now adds it as a new entry, like clicking ➕ Add.
 - Change Tracker: Leaving a name field and clicking back into it without typing keeps offering ➕ Add for the name you typed.
 - Change Tracker: ➕ Add now explains that it only adds the name to the list and does not change anything on the Netskope tenant.
@@ -929,9 +934,20 @@ Version 1.0.0:
         return false;
     }
 
+    // ServiceNow Next Experience shell (/now/...): a classic ticket, list or task opens inside
+    // iframe#gsft_main, where the suite runs again with the ticket at hand. So the shell itself keeps
+    // only the page wide tools, and hides its own toolbar while the iframe shows one (snShellWatch).
+    const SN_SHELL = (() => {
+        try { return window === window.top && /\.service-now\.com$/.test(location.hostname) && location.pathname.startsWith('/now/'); }
+        catch (e) { return false; }
+    })();
+
     // Tampermonkey style @match test against this page, so every tool keeps the pages it had.
+    // In the shell, the rules written for shell routes are skipped: the iframe's copy of the tool
+    // runs on the ticket instead, and the shell's copy would keep the ticket it loaded with.
     function dtPageMatches(patterns) {
         const url = location.href;
+        if (SN_SHELL) patterns = patterns.filter(p => !p.includes('.service-now.com/now/'));
         return patterns.some(p => new RegExp('^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(url));
     }
     function dtToolRunsHere(id) {
@@ -3108,6 +3124,43 @@ Version 1.0.0:
      *  TOOLBAR CORE: bootstrap and event wiring
      * ==========================================================*/
 
+    // Shell only: while the ticket, list or task in iframe#gsft_main shows its own toolbar, hide the
+    // shell's one, which sits on the same spot and only has the page wide tools. Shown again on
+    // pages without that iframe, such as dashboards.
+    function snShellFrameHasToolbar() {
+        for (const el of document.querySelectorAll('*')) {
+            if (!el.tagName.toLowerCase().startsWith('macroponent-') || !el.shadowRoot) continue;
+            const frame = el.shadowRoot.querySelector('#gsft_main');
+            if (!frame) continue;
+            const r = frame.getBoundingClientRect();
+            if (r.width < 50 || r.height < 50) continue;
+            try {
+                if (frame.contentDocument && frame.contentDocument.getElementById('custom-toolbar-container')) return true;
+            } catch (e) { /* not same origin */ }
+        }
+        return false;
+    }
+    function snShellWatch() {
+        if (!SN_SHELL) return;
+        let hidden = false;
+        const check = () => {
+            const tb = document.getElementById('custom-toolbar-container');
+            if (!tb) return;
+            const hide = snShellFrameHasToolbar();
+            if (hide === hidden) return;
+            hidden = hide;
+            if (hide) {
+                const menu = document.getElementById('custom-toolbar-menu');
+                if (menu) menu.classList.remove('active');
+                tb.style.setProperty('display', 'none', 'important');
+            } else {
+                tb.style.removeProperty('display');
+            }
+        };
+        check();
+        setInterval(check, 1000);
+    }
+
     function initToolbar() {
         if (document.getElementById('custom-toolbar-container')) {
             return;
@@ -3143,6 +3196,7 @@ Version 1.0.0:
         }
 
         setupEventListeners();
+        snShellWatch();
 
         setTimeout(() => {
             document.dispatchEvent(new CustomEvent('toolbarReady'));
@@ -15736,14 +15790,21 @@ Version 1.4.1:
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
     if (!isToolEnabled('rowHighlighter') || !dtToolRunsHere('rowHighlighter')) return function register() {};
 
-    console.log('🎨 ServiceNow Row Highlighter loading...');
+    // Progress messages only when asked for: GM value servicenow_highlighter_debug = true.
+    const rhLog = GM_getValue('servicenow_highlighter_debug', false) ? console.log.bind(console) : () => {};
+
+    rhLog('🎨 ServiceNow Row Highlighter loading...');
 
     /* ==========================================================
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.2';
-    const CHANGELOG = `Version 2.4.2:
+    const SCRIPT_VERSION = '2.4.3';
+    const CHANGELOG = `Version 2.4.3:
+- Rows are now colored on the first load of a dashboard too, without having to open a ticket and come back.
+- The browser console no longer fills up with progress messages every two seconds.
+
+Version 2.4.2:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 2.4.1:
@@ -16002,7 +16063,7 @@ Version 2.3.1:
     function saveUsername(username) {
         GM_setValue(STORAGE_KEY, username);
         targetUsername = username;
-        console.log(`✅ Username saved: ${username}`);
+        rhLog(`✅ Username saved: ${username}`);
     }
 
     function getStoredTheme() {
@@ -16012,7 +16073,7 @@ Version 2.3.1:
     function saveTheme(theme) {
         GM_setValue(THEME_STORAGE_KEY, theme);
         currentTheme = theme;
-        console.log(`✅ Theme saved: ${theme}`);
+        rhLog(`✅ Theme saved: ${theme}`);
     }
 
     function toggleTheme() {
@@ -16641,7 +16702,7 @@ Version 2.3.1:
                 // Show alert after a brief delay to ensure modal is closed
                 setTimeout(() => {
                     alert('✅ Settings saved successfully!\n\nThe page will reload to apply the changes.');
-                    console.log('✅ Settings saved, reloading page...');
+                    rhLog('✅ Settings saved, reloading page...');
                     location.reload();
                 }, 100);
             } else {
@@ -17355,7 +17416,7 @@ Version 2.3.1:
             }
         `;
         document.head.appendChild(style);
-        console.log(`✅ CSS updated for ${currentTheme} theme`);
+        rhLog(`✅ CSS updated for ${currentTheme} theme`);
     }
 
     /* ==========================================================
@@ -17602,7 +17663,7 @@ Version 2.3.1:
 
     function highlightRowsWithClasses() {
         if (!targetUsername) {
-            console.log('⏳ No target username set yet');
+            rhLog('⏳ No target username set yet');
             applySLAHeatmap();
             return false;
         }
@@ -17611,7 +17672,7 @@ Version 2.3.1:
         const colors = THEMES[currentTheme];
         let processedCount = 0;
 
-        console.log('🔍 SHADOW DOM SEARCH: Looking for tables...');
+        rhLog('🔍 SHADOW DOM SEARCH: Looking for tables...');
 
         // Re-attach pagination listeners every time we highlight (to catch dynamically loaded pagination)
         setTimeout(() => {
@@ -17619,18 +17680,21 @@ Version 2.3.1:
         }, 100);
 
         // Try old UI first (backward compatibility)
+        // Only a classic list with an Updated By column counts: another classic list somewhere on the
+        // page (for example in a hidden frame) must not stop the search for the new style lists below.
         let tbody = null;
         for (const doc of getAccessibleDocuments()) {
-            tbody = doc.querySelector('tbody.list2_body');
+            tbody = Array.from(doc.querySelectorAll('tbody.list2_body'))
+                .find(tb => tb.querySelector('td.vt[headers*="sys_updated_by"]')) || null;
             if (tbody) break;
         }
         if (tbody) {
             const rows = tbody.querySelectorAll('tr.list_row');
             if (rows.length > 0) {
-                console.log(`🎨 Found ${rows.length} rows in old UI format`);
+                rhLog(`🎨 Found ${rows.length} rows in old UI format`);
 
                 const hasUpdatedByCol = !!tbody.querySelector('td.vt[headers*="sys_updated_by"]');
-                console.log(`    Updated By column present: ${hasUpdatedByCol}`);
+                rhLog(`    Updated By column present: ${hasUpdatedByCol}`);
 
                 if (hasUpdatedByCol) {
                     rows.forEach((row) => {
@@ -17684,17 +17748,17 @@ Version 2.3.1:
         }
 
         // Search every table.now-list-table reachable from light DOM or any shadow root
-        console.log('🔍 Searching for ticket tables...');
+        rhLog('🔍 Searching for ticket tables...');
         const tables = findListTables();
-        console.log(`  Found ${tables.length} table(s)`);
+        rhLog(`  Found ${tables.length} table(s)`);
 
         tables.forEach((table, index) => {
             const rows = table.querySelectorAll('tr.now-list-table-row');
-            console.log(`  Table #${index + 1}: ${rows.length} rows`);
+            rhLog(`  Table #${index + 1}: ${rows.length} rows`);
 
             const hasUpdatedByCol = !!table.querySelector('[data-column-key="sys_updated_by"]');
             if (!hasUpdatedByCol) {
-                console.log(`    ⏭️ No 'Updated By' column - skipping row highlighting`);
+                rhLog(`    ⏭️ No 'Updated By' column - skipping row highlighting`);
                 return;
             }
 
@@ -17729,7 +17793,7 @@ Version 2.3.1:
                     });
 
                     processedCount++;
-                    console.log(`      ✅ GREEN: ${updatedByValue}`);
+                    rhLog(`      ✅ GREEN: ${updatedByValue}`);
                 } else if (updatedByValue !== '' && updatedByValue !== 'Updated By') {
                     row.classList.add('highlight-red');
                     row.style.setProperty('background-color', colors.red.background, 'important');
@@ -17747,7 +17811,7 @@ Version 2.3.1:
                     });
 
                     processedCount++;
-                    console.log(`      ❌ RED: ${updatedByValue}`);
+                    rhLog(`      ❌ RED: ${updatedByValue}`);
                 }
             });
         });
@@ -17756,9 +17820,9 @@ Version 2.3.1:
         attachShadowObserver();
 
         if (processedCount > 0) {
-            console.log(`✅ Highlighted ${processedCount} rows`);
+            rhLog(`✅ Highlighted ${processedCount} rows`);
         } else {
-            console.log('⏳ No rows found to highlight');
+            rhLog('⏳ No rows found to highlight');
         }
 
         applySLAHeatmap();
@@ -17839,7 +17903,7 @@ Version 2.3.1:
 
     document.addEventListener('toolbarToolClicked', function(e) {
         if (e.detail.id === 'rowHighlighter') {
-            console.log('🎨 Row Highlighter clicked!');
+            rhLog('🎨 Row Highlighter clicked!');
             showConfigModal();
         }
     });
@@ -17855,7 +17919,7 @@ Version 2.3.1:
             el.tagName && el.tagName.toLowerCase() === 'now-pagination-control'
         );
 
-        console.log(`🔍 Found ${paginationControls.length} pagination controls`);
+        rhLog(`🔍 Found ${paginationControls.length} pagination controls`);
 
         let buttonCount = 0;
         paginationControls.forEach(control => {
@@ -17898,7 +17962,7 @@ Version 2.3.1:
         });
 
         if (buttonCount > 0) {
-            console.log(`✅ Attached listeners to ${buttonCount} pagination buttons`);
+            rhLog(`✅ Attached listeners to ${buttonCount} pagination buttons`);
         }
     }
 
@@ -17909,11 +17973,11 @@ Version 2.3.1:
         }
 
         if (isInitialized) {
-            console.log('Row Highlighter already initialized');
+            rhLog('Row Highlighter already initialized');
             return;
         }
 
-        console.log(`Initializing Row Highlighter v${SCRIPT_VERSION}...`);
+        rhLog(`Initializing Row Highlighter v${SCRIPT_VERSION}...`);
         isInitialized = true;
 
         // Load stored settings
@@ -17927,16 +17991,16 @@ Version 2.3.1:
             setTimeout(() => showSLAFormatPicker(), 1500);
         }
 
-        console.log(`Using theme: ${currentTheme}`);
+        rhLog(`Using theme: ${currentTheme}`);
         if (targetUsername) {
-            console.log(`Using stored username: ${targetUsername}`);
+            rhLog(`Using stored username: ${targetUsername}`);
         } else {
-            console.log('⚠️ No username configured - showing first-run prompt');
+            rhLog('⚠️ No username configured - showing first-run prompt');
         }
 
         // Version check logging
         const showChangelog = isNewVersion() && !hasSeenChangelog();
-        console.log('Version check:', {
+        rhLog('Version check:', {
             currentVersion: SCRIPT_VERSION,
             storedVersion: getStoredVersion(),
             isNewVersion: isNewVersion(),
@@ -17947,7 +18011,7 @@ Version 2.3.1:
         // Add CSS and modal
         updateCustomCSS();
         initializeModal();
-        console.log('✅ Row Highlighter modal ready!');
+        rhLog('✅ Row Highlighter modal ready!');
 
         // Show first-run prompt if no username is stored
         if (!targetUsername) {
@@ -17958,22 +18022,22 @@ Version 2.3.1:
         } else {
             // Start highlighting if username is set
             setTimeout(() => {
-                console.log('🔍 First highlight attempt...');
+                rhLog('🔍 First highlight attempt...');
                 highlightRowsWithClasses();
             }, 2000);
 
             setTimeout(() => {
-                console.log('🔍 Second highlight attempt (3s)...');
+                rhLog('🔍 Second highlight attempt (3s)...');
                 highlightRowsWithClasses();
             }, 3000);
 
             setTimeout(() => {
-                console.log('🔍 Third highlight attempt (5s)...');
+                rhLog('🔍 Third highlight attempt (5s)...');
                 highlightRowsWithClasses();
             }, 5000);
 
             setTimeout(() => {
-                console.log('🔍 Fourth highlight attempt (8s)...');
+                rhLog('🔍 Fourth highlight attempt (8s)...');
                 highlightRowsWithClasses();
             }, 8000);
         }
@@ -17999,7 +18063,7 @@ Version 2.3.1:
                 });
 
                 if (hasRelevantChanges) {
-                    console.log('🔍 Table content detected by MutationObserver, highlighting...');
+                    rhLog('🔍 Table content detected by MutationObserver, highlighting...');
                     highlightRowsWithClasses();
                 }
             }
@@ -18021,14 +18085,14 @@ Version 2.3.1:
                 const rowCount = document.querySelectorAll('tr.now-list-table-row').length;
 
                 if (attempts % 5 === 0) {
-                    console.log(`🔍 Polling attempt ${attempts}/${maxAttempts} - Tables: ${tableCount}, Rows: ${rowCount}`);
+                    rhLog(`🔍 Polling attempt ${attempts}/${maxAttempts} - Tables: ${tableCount}, Rows: ${rowCount}`);
                 }
 
                 highlightRowsWithClasses();
 
                 if (attempts >= maxAttempts) {
                     clearInterval(retryInterval);
-                    console.log(`⚠️ Startup polling complete — shadow observer active for ongoing coverage`);
+                    rhLog(`⚠️ Startup polling complete — shadow observer active for ongoing coverage`);
                 }
             }, 2000);
         }
@@ -18036,14 +18100,14 @@ Version 2.3.1:
         // Listen for ServiceNow events
         if (window.CustomEvent && window.CustomEvent.observe) {
             window.CustomEvent.observe('list.loaded', function() {
-                console.log('ServiceNow list.loaded event fired');
+                rhLog('ServiceNow list.loaded event fired');
                 if (targetUsername) {
                     setTimeout(highlightRowsWithClasses, 500);
                 }
             });
 
             window.CustomEvent.observe('partial.page.reload', function() {
-                console.log('ServiceNow partial.page.reload event fired');
+                rhLog('ServiceNow partial.page.reload event fired');
                 if (targetUsername) {
                     setTimeout(highlightRowsWithClasses, 500);
                 }
@@ -18051,7 +18115,7 @@ Version 2.3.1:
         }
 
         window.addEventListener('load', function() {
-            console.log('🔍 Window load event fired, attempting highlight...');
+            rhLog('🔍 Window load event fired, attempting highlight...');
             if (targetUsername) {
                 setTimeout(highlightRowsWithClasses, 1000);
             }
@@ -18081,7 +18145,7 @@ Version 2.3.1:
                     element.getAttribute('aria-label')?.toLowerCase().includes('first') ||
                     element.getAttribute('aria-label')?.toLowerCase().includes('last')) {
                     isPaginationClick = true;
-                    console.log(`🎯 Pagination click detected at depth ${depth}: ${element.tagName}`);
+                    rhLog(`🎯 Pagination click detected at depth ${depth}: ${element.tagName}`);
                     break;
                 }
 
@@ -18179,13 +18243,13 @@ Version 2.3.1:
         setTimeout(attachTabListeners, 8000);
 
         window.manualHighlightRows = function() {
-            console.log('🔍 Manual highlight triggered via console');
+            rhLog('🔍 Manual highlight triggered via console');
             return highlightRowsWithClasses();
         };
-        console.log('💡 TIP: If auto-highlighting fails, type "manualHighlightRows()" in console to trigger manually');
+        rhLog('💡 TIP: If auto-highlighting fails, type "manualHighlightRows()" in console to trigger manually');
     }
 
-    console.log(`✅ Row Highlighter v${SCRIPT_VERSION} script loaded!`);
+    rhLog(`✅ Row Highlighter v${SCRIPT_VERSION} script loaded!`);
 
         return function register() {
             initialize();
