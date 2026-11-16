@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.34.0
+// @version      2.35.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.34.0';
-    const CHANGELOG = `Version 2.34.0:
+   const SCRIPT_VERSION = '2.35.0';
+    const CHANGELOG = `Version 2.35.0:
+- NS Policies Toolkit: Chirp Copy Buttons: directory groups now have a second button, 🏷, that copies only the group name without the path. 📋 still copies the full path. Point at each button to see what it copies.
+
+Version 2.34.0:
 - NS Policies Toolkit: Policy tools: new "➖ Remove from Source" tab. Paste users and groups, Check finds every policy that has them, untick the ones to keep, and they are removed from the Source of the rest. Policies that would end with no users or groups are marked in red, and a window asks you to confirm before they start applying to All Users. A copy of each policy is kept and "↩ Revert these" can undo the run before Apply Changes.
 
 Version 2.33.0:
@@ -30553,8 +30556,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.43.0';
-    const CHANGELOG = `Version 1.43.0:
+    const SCRIPT_VERSION = '1.44.0';
+    const CHANGELOG = `Version 1.44.0:
+- Chirp Copy Buttons: directory groups now have a second button, 🏷, that copies only the group name without the path. 📋 still copies the full path. Point at each button to see what it copies.
+
+Version 1.43.0:
 - Policy tools: new "➖ Remove from Source" tab. Paste users and groups, Check finds every policy that has them, untick the ones to keep, and they are removed from the Source of the rest. Policies that would end with no users or groups are marked in red, and a window asks you to confirm before they start applying to All Users. A copy of each policy is kept and "↩ Revert these" can undo the run before Apply Changes.
 
 Version 1.42.0:
@@ -31075,7 +31081,7 @@ Version 1.16:
         {
             key:         'copyButtons',
             label:       '📋 Chirp Copy Buttons',
-            description: 'Adds a copy button to every blue tag in policy pickers so you can quickly copy the profile name.',
+            description: 'Adds a copy button to every blue tag in policy pickers so you can quickly copy the profile name. Directory groups also get a button that copies the name without the path.',
         },
         {
             key:         'openButtons',
@@ -31793,6 +31799,31 @@ Version 1.16:
                     tagWrap.appendChild(tag);
                     body.appendChild(tagWrap);
                     caption(body, 'The 📋 button sits in front of the name in each blue picker tag, so it stays visible even when a long name is cut short.');
+
+                    const grpWrap = document.createElement('div');
+                    grpWrap.style.margin = '10px 0';
+                    const grp = tag.cloneNode(true);
+                    grp.lastChild.textContent = 'example.com/DTTL/Security Groups/SG-SCC Allow Anaplan';
+                    const nameIcon = copyIcon.cloneNode(true);
+                    nameIcon.textContent = '🏷';
+                    grp.insertBefore(nameIcon, grp.lastChild);
+                    grpWrap.appendChild(grp);
+                    body.appendChild(grpWrap);
+                    const pairs = [
+                        ['📋', 'Copies the full path: example.com/DTTL/Security Groups/SG-SCC Allow Anaplan'],
+                        ['🏷', 'Copies only the group name: SG-SCC Allow Anaplan'],
+                    ];
+                    const grid = document.createElement('div');
+                    Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
+                    pairs.forEach(([k, v]) => {
+                        grid.appendChild(Object.assign(document.createElement('span'), { textContent: k }));
+                        const d = document.createElement('span');
+                        d.textContent = v;
+                        Object.assign(d.style, { fontSize: '12px', color: '#555', fontFamily: 'Arial, sans-serif' });
+                        grid.appendChild(d);
+                    });
+                    body.appendChild(grid);
+                    caption(body, 'Directory groups get two buttons. Point at a button to see exactly what it copies.');
 
                     bullets(body, [
                         'The full name is copied even when the tag only shows part of it.',
@@ -32709,7 +32740,7 @@ Version 1.16:
 
                     const togglesWrap = document.createElement('div');
                     togglesWrap.style.marginTop = '10px';
-                    togglesWrap.appendChild(toggle('📋 Chirp Copy Buttons',          true, 'Copy buttons on all blue picker tags.'));
+                    togglesWrap.appendChild(toggle('📋 Chirp Copy Buttons',          true, 'Copy buttons on all blue picker tags, and a name only button for directory groups.'));
                     togglesWrap.appendChild(toggle('↗ DLP Profile Open Buttons', true, 'Open-in-new-tab on DLP Profile = tags.'));
                     togglesWrap.appendChild(toggle('↗ Profile Reference Open Buttons', true, 'Open what a DLP Profile or DLP Rule uses: rules, classifiers, file profiles and entities.'));
                     togglesWrap.appendChild(toggle('✉ SMTP Header Auto-Fill',    true, 'Fill with Block Headers button next to Add SMTP Header.'));
@@ -32965,6 +32996,61 @@ Version 1.16:
     // FEATURE 1 — CHIRP COPY BUTTONS
     // ─────────────────────────────────────────────────────────────
 
+    // One small copy button: 📋 shows ✓ or ✗ for a moment after the click
+    function makeCopyButton(icon, title, text, extraClass) {
+        const btn = document.createElement('button');
+        btn.className = 'dlp-copy-btn' + (extraClass ? ' ' + extraClass : '');
+        btn.type = 'button';
+        btn.textContent = icon;
+        btn.title = title;
+        btn.style.cssText = `
+            margin-right: 4px; padding: 1px 4px;
+            border: 1px solid #ccc; border-radius: 3px;
+            background: #f5f5f5; color: #333; cursor: pointer;
+            font-size: 11px; display: inline-block;
+            vertical-align: middle; line-height: 1;
+            flex-shrink: 0; font-weight: bold;
+        `;
+        let busy = false;
+        btn.addEventListener('mouseenter', () => { if (!busy) btn.style.background = '#e0e0e0'; });
+        btn.addEventListener('mouseleave', () => { if (!busy) btn.style.background = '#f5f5f5'; });
+        btn.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const finish = (ok) => {
+                busy = true;
+                btn.textContent = ok ? '✓' : '✗';
+                btn.title = ok ? 'Copied: ' + text : 'Could not copy';
+                btn.style.background = ok ? '#4CAF50' : '#e53935';
+                btn.style.color = 'white';
+                setTimeout(() => {
+                    busy = false;
+                    btn.textContent = icon;
+                    btn.title = title;
+                    btn.style.background = '#f5f5f5';
+                    btn.style.color = '#333';
+                }, 1500);
+            };
+            navigator.clipboard.writeText(text).then(() => finish(true)).catch(() => {
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.cssText = 'position:fixed;left:-999999px';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    finish(true);
+                } catch {
+                    finish(false);
+                    alert('Failed to copy: ' + text);
+                }
+            });
+        });
+        return btn;
+    }
+
     function addCopyButtons() {
         if (!getSetting('copyButtons')) return;
 
@@ -32979,57 +33065,20 @@ Version 1.16:
             if (!profileName) return;
             profileName = profileName.replace(/\s*\((custom|predefined)\)\s*$/i, '').trim();
 
-            const copyBtn = document.createElement('button');
-            copyBtn.className = 'dlp-copy-btn';
-            copyBtn.innerHTML = '📋';
-            copyBtn.title = 'Copy profile name';
-            copyBtn.style.cssText = `
-                margin-right: 4px; padding: 1px 4px;
-                border: 1px solid #ccc; border-radius: 3px;
-                background: #f5f5f5; cursor: pointer;
-                font-size: 11px; display: inline-block;
-                vertical-align: middle; line-height: 1;
-                flex-shrink: 0;
-            `;
+            // A directory group (group icon, or a path in the Source picker) also gets a button for its name alone
+            const isGroup = !!tag.querySelector('i[class*="netskope-icon-user-group"]') ||
+                (profileName.includes('/') && !!tag.closest('ns-user-criteria-picker, .user-criteria'));
+            const shortName = isGroup ? profileName.split('/').pop().trim() : '';
+            const withShort = !!shortName && shortName !== profileName;
 
-            copyBtn.addEventListener('mouseenter', () => { copyBtn.style.background = '#e0e0e0'; });
-            copyBtn.addEventListener('mouseleave', () => { if (copyBtn.innerHTML === '📋') copyBtn.style.background = '#f5f5f5'; });
-
-            copyBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-
-                const finish = (ok) => {
-                    copyBtn.innerHTML = ok ? '✓' : '✗';
-                    copyBtn.style.background = ok ? '#4CAF50' : '#e53935';
-                    copyBtn.style.color = 'white';
-                    setTimeout(() => {
-                        copyBtn.innerHTML = '📋';
-                        copyBtn.style.background = '#f5f5f5';
-                        copyBtn.style.color = 'inherit';
-                    }, 1500);
-                };
-
-                navigator.clipboard.writeText(profileName).then(() => finish(true)).catch(() => {
-                    try {
-                        const ta = document.createElement('textarea');
-                        ta.value = profileName;
-                        ta.style.cssText = 'position:fixed;left:-999999px';
-                        document.body.appendChild(ta);
-                        ta.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(ta);
-                        finish(true);
-                    } catch {
-                        finish(false);
-                        alert('Failed to copy: ' + profileName);
-                    }
-                });
-            });
-
+            const copyBtn = makeCopyButton('📋', withShort ? `Copy the full path: ${profileName}` : 'Copy profile name', profileName);
             // In front of the name, outside it: long names are cut with "…"
             // and anything inside or after the name would be cut with them.
             labelSpan.insertAdjacentElement('beforebegin', copyBtn);
+            if (withShort) {
+                const nameBtn = makeCopyButton('🏷', `Copy only the group name, without the path: ${shortName}`, shortName, 'dlp-copy-name-btn');
+                labelSpan.insertAdjacentElement('beforebegin', nameBtn);
+            }
         });
     }
 
