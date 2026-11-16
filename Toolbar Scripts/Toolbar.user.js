@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.32.1
+// @version      2.33.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.32.1';
-    const CHANGELOG = `Version 2.32.1:
+   const SCRIPT_VERSION = '2.33.0';
+    const CHANGELOG = `Version 2.33.0:
+- NS Policies Toolkit: Policy tools: Group pairs has a "🧹 Clear" button next to the field title. It empties the pairs and the last Check so you can paste a new batch.
+
+Version 2.32.1:
 - NS Policies Toolkit: Policy tools: Check and the policy lists no longer miss policies after you searched the Netskope policy list or opened a policy by hand. Before, the next Check only saw the policies of that search, so the run went to the policy you had opened or to policies of the earlier batch.
 
 Version 2.32.0:
@@ -30547,8 +30550,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.41.1';
-    const CHANGELOG = `Version 1.41.1:
+    const SCRIPT_VERSION = '1.42.0';
+    const CHANGELOG = `Version 1.42.0:
+- Policy tools: Group pairs has a "🧹 Clear" button next to the field title. It empties the pairs and the last Check so you can paste a new batch.
+
+Version 1.41.1:
 - Policy tools: Check and the policy lists no longer miss policies after you searched the Netskope policy list or opened a policy by hand. Before, the next Check only saw the policies of that search, so the run went to the policy you had opened or to policies of the earlier batch.
 
 Version 1.41.0:
@@ -32413,6 +32419,10 @@ Version 1.16:
                     box.textContent = BG_EXAMPLE;
                     body.appendChild(box);
                     caption(body, 'One pair per line: the group already in the policy, a comma, the group to add. Two columns copied from Excel also work.');
+                    body.appendChild(hrow([
+                        chip('🧹 Clear', '#fff', { color: '#53565a', border: '1px solid #c8c9c7' }),
+                        span('Next to the field title: empties the pairs and the last Check, so you can paste a new batch.', { fontSize: '12px', color: '#555' }),
+                    ], { margin: '8px 0 4px 0' }));
 
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', margin: '12px 0 4px 0', fontFamily: 'Arial, sans-serif' });
@@ -39527,6 +39537,11 @@ Version 1.16:
                 font-size: 24px; line-height: 1; cursor: pointer; }
             .body { overflow: auto; padding: 16px 20px; box-sizing: border-box; }
             .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+            .label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+            button.clear { margin-bottom: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: #53565a; background: #fff;
+                border: 1px solid #c8c9c7; border-radius: 4px; cursor: pointer; font-family: inherit; }
+            button.clear:hover:not(:disabled) { background: #eef4f8; border-color: #005587; color: #005587; }
+            button.clear.done { color: #26890d; border-color: #26890d; }
             .help { margin: 0 0 8px; color: #63666a; font-size: 12px; line-height: 1.5; }
             .example { margin: 0 0 10px; padding: 8px 10px; background: #f6f8fa; border: 1px solid #e1e4e8;
                 border-radius: 4px; font: 12px Consolas, "Courier New", monospace; white-space: pre-wrap; color: #282728; }
@@ -39618,7 +39633,8 @@ Version 1.16:
                     <div class="tabhint" data-pt="tabhint"></div>
                     <div class="pane" data-pt-pane="groups">
                     <main class="body">
-                        <label class="label" for="bg-pairs"><span class="step">1</span>Pairs of groups</label>
+                        <div class="label-row"><label class="label" for="bg-pairs"><span class="step">1</span>Pairs of groups</label>
+                            <button type="button" class="clear" data-bg="clear" disabled title="The field is already empty">🧹 Clear</button></div>
                         <p class="help">One pair per line: first the group that is already in the policy, then a comma, then the group to add.
                             Write the names exactly as in Netskope: capitals, spaces and dashes count. Two columns copied from Excel also work.</p>
                         <div class="example"></div>
@@ -39646,6 +39662,22 @@ Version 1.16:
         bgEl('warning').textContent = '⚠ ' + BG_TAB_WARNING + ' Click Apply Changes yourself when it ends.';
         bgEl('close').addEventListener('click', () => { host.dataset.open = 'false'; });
         bgEl('pairs').addEventListener('input', () => { bg.rows = bg.jobs = null; bgEl('results').textContent = ''; bgUpdateButtons(); });
+        // Empties the pairs field and the last Check, then confirms in place
+        let clearTimer = null;
+        bgEl('clear').addEventListener('click', () => {
+            const btn = bgEl('clear');
+            if (bg.busy || !bgEl('pairs').value) return;
+            bgEl('pairs').value = '';
+            bg.rows = bg.jobs = null;
+            bgEl('results').textContent = '';
+            bgNote('');
+            bgUpdateButtons();
+            btn.textContent = '✓ Cleared';
+            btn.classList.add('done');
+            clearTimeout(clearTimer);
+            clearTimer = setTimeout(() => { btn.textContent = '🧹 Clear'; btn.classList.remove('done'); }, 1500);
+            bgEl('pairs').focus();
+        });
         bgEl('check').addEventListener('click', bgCheck);
         bgEl('start').addEventListener('click', bgStart);
         shadow.querySelectorAll('[data-pt-tab]').forEach(b => b.addEventListener('click', () => ptShowTab(b.dataset.ptTab)));
@@ -40734,6 +40766,9 @@ Version 1.16:
         const n = bg.jobs ? bg.jobs.length : 0;
         bgEl('check').disabled = bg.busy;
         bgEl('pairs').disabled = bg.busy;
+        const clear = bgEl('clear');
+        clear.disabled = bg.busy || !bgEl('pairs').value;
+        clear.title = bg.busy ? 'Wait for the Check to end' : clear.disabled ? 'The field is already empty' : 'Empty the pairs field and the last Check';
         const pending = bgLoadRun();
         const waiting = !!(pending && pending.state === 'paused');
         const r = ptLoadRun();
