@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.35.0
+// @version      2.36.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.35.0';
-    const CHANGELOG = `Version 2.35.0:
+   const SCRIPT_VERSION = '2.36.0';
+    const CHANGELOG = `Version 2.36.0:
+- NS Policies Toolkit: Policy tools: Group pairs, Add to Source and Remove from Source have an optional "📝 Log entry". Fill in the RITM, date, name and description once, and the run adds that line under the description of every policy it changes, with the same format as "+ Add Log Entry".
+
+Version 2.35.0:
 - NS Policies Toolkit: Chirp Copy Buttons: directory groups now have a second button, 🏷, that copies only the group name without the path. 📋 still copies the full path. Point at each button to see what it copies.
 
 Version 2.34.0:
@@ -30556,8 +30559,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.44.0';
-    const CHANGELOG = `Version 1.44.0:
+    const SCRIPT_VERSION = '1.45.0';
+    const CHANGELOG = `Version 1.45.0:
+- Policy tools: Group pairs, Add to Source and Remove from Source have an optional "📝 Log entry". Fill in the RITM, date, name and description once, and the run adds that line under the description of every policy it changes, with the same format as "+ Add Log Entry".
+
+Version 1.44.0:
 - Chirp Copy Buttons: directory groups now have a second button, 🏷, that copies only the group name without the path. 📋 still copies the full path. Point at each button to see what it copies.
 
 Version 1.43.0:
@@ -32547,6 +32553,21 @@ Version 1.16:
                         'Without any All Users policy, Remove asks for a second click instead.',
                         'Each policy is opened, the values are removed from Source, checked and saved. Exclusions are never touched. A policy that would end empty without your confirm (it changed after Check) is skipped.',
                         'A copy of each policy is kept with the Delete backups, and "↩ Revert these" in the tab undoes the run before Apply Changes.',
+                    ]);
+
+                    body.appendChild(span('📝 Log entry in the description (Group pairs, Add to Source, Remove from Source)', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
+                    const logMock = document.createElement('div');
+                    Object.assign(logMock.style, { border: '1px solid #9fc9e3', background: '#f4f9fc', borderRadius: '6px', padding: '8px 12px', maxWidth: '440px', fontFamily: 'Arial, sans-serif' });
+                    logMock.appendChild(hrow([span('☑', { fontSize: '13px', color: '#005587' }), span('📝 Log entry (optional): add this entry to the description of every policy changed', { fontSize: '11px', color: '#333', fontWeight: 'bold' })], { margin: '0 0 6px 0' }));
+                    logMock.appendChild(hrow(['RITM0001234', '2026-11-16', 'Jane Doe', 'Cleanup of old groups'].map(v => span(v, { fontSize: '11px', color: '#282728', background: '#fff', border: '1px solid #a7a8aa', borderRadius: '4px', padding: '3px 6px' })), { margin: '0 0 6px 0' }));
+                    logMock.appendChild(span('RITM0001234 | 2026-11-16 | Jane Doe | Cleanup of old groups', { display: 'inline-block', fontFamily: 'Consolas, monospace', fontSize: '11px', background: '#fff', border: '1px solid #e1e4e8', borderRadius: '3px', padding: '2px 6px' }));
+                    body.appendChild(logMock);
+                    caption(body, 'Same line as "+ Add Log Entry": RITM | Date | Name | Description. The preview shows exactly what is added.');
+                    bullets(body, [
+                        'Off by default. Turn it on in any of the three tabs: the fields are shared, so you fill them once per ticket.',
+                        'While it is on, the start button waits until the RITM and the description are filled in; the empty field turns red.',
+                        'Each policy the run changes gets the line under its description, right before Save. A policy that already has the same line does not get it twice; skipped and failed policies get nothing.',
+                        'The ticket summary repeats the line and lists any policy whose form had no description field.',
                     ]);
 
                     body.appendChild(span('Choosing policies (Add to Source, Enable / Disable and Delete)', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
@@ -39636,6 +39657,16 @@ Version 1.16:
                 font-size: 24px; line-height: 1; cursor: pointer; }
             .body { overflow: auto; padding: 16px 20px; box-sizing: border-box; }
             .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+            .log-block.on { border-color: #9fc9e3; background: #f4f9fc; }
+            .log-switch { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; cursor: pointer; }
+            .log-switch input { margin-top: 2px; cursor: pointer; }
+            .log-grid { display: grid; grid-template-columns: 1.2fr 1fr 1.2fr; gap: 8px; margin-top: 8px; }
+            .log-block label:not(.log-switch) { display: flex; flex-direction: column; gap: 3px; font-size: 11px; font-weight: 700; color: #53565a; }
+            .log-desc { margin-top: 8px; }
+            .log-block input[type="text"] { padding: 5px 8px; font-size: 12px; color: #282728; background: #fff; border: 1px solid #a7a8aa; border-radius: 4px; }
+            .log-block input.bad { border-color: #da291c; box-shadow: 0 0 0 1px #da291c; }
+            .log-preview { margin-top: 8px; font-size: 11px; }
+            .log-preview code { padding: 2px 6px; background: #fff; border: 1px solid #e1e4e8; border-radius: 3px; font: 11px Consolas, monospace; word-break: break-all; }
             .rm-warn { margin: 10px 0; padding: 8px 12px; color: #8a1c12; background: #fdecea; border: 1px solid #f5c2bd;
                 border-radius: 4px; font-size: 13px; font-weight: 700; }
             .cf-back { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
@@ -39777,6 +39808,7 @@ Version 1.16:
         bg.host = host;
         bg.shadow = shadow;
         bgEl('warning').textContent = '⚠ ' + BG_TAB_WARNING + ' Click Apply Changes yourself when it ends.';
+        bgEl('results').before(ptLogBlock());
         bgEl('close').addEventListener('click', () => { host.dataset.open = 'false'; });
         bgEl('pairs').addEventListener('input', () => { bg.rows = bg.jobs = null; bgEl('results').textContent = ''; bgUpdateButtons(); });
         // Empties the pairs field and the last Check, then confirms in place
@@ -39826,6 +39858,73 @@ Version 1.16:
     /* ── Policy tools: shared policy selection ── */
 
     const pt = { policies: null, panes: {}, running: false, pauseRequested: null, stopRequested: false, runHost: null, runShadow: null };
+
+    /* ── Policy tools: 📝 log entry in the description (Group pairs, Add to Source, Remove from Source) ── */
+
+    // Shared by the three tabs, kept until the page closes. Same line as "+ Add Log Entry": RITM | Date | Name | Description
+    const ptLog = { on: false, ritm: '', date: '', user: '', desc: '' };
+    const ptLogLine = () => `${ptLog.ritm.trim()} | ${ptLog.date.trim()} | ${ptLog.user.trim() || 'Unknown'} | ${ptLog.desc.trim()}`;
+    function ptLogProblem() {
+        if (!ptLog.on) return '';
+        if (!ptLog.ritm.trim()) return 'Fill in the RITM of the log entry';
+        if (!ISO_DATE_RE.test(ptLog.date.trim())) return 'Write the log entry date as YYYY-MM-DD';
+        if (!ptLog.desc.trim()) return 'Fill in the description of the log entry';
+        return '';
+    }
+    // The line a run writes, or null when the log entry is off. Saves a changed name like the Add Log Entry window.
+    function ptLogForRun() {
+        if (!ptLog.on) return null;
+        const user = ptLog.user.trim();
+        if (user && user !== GM_getValue('toolkit_username', '')) GM_setValue('toolkit_username', user);
+        return ptLogLine();
+    }
+
+    function ptLogBlock() {
+        if (!ptLog.date) ptLog.date = getTodayDate();
+        if (!ptLog.user) ptLog.user = GM_getValue('toolkit_username', '');
+        const block = document.createElement('div');
+        block.className = 'sel-block log-block';
+        block.dataset.log = 'block';
+        block.innerHTML = `<label class="log-switch" title="Writes one line in the description of every policy this run changes">
+                <input type="checkbox" data-log="on"><span><b>📝 Log entry (optional):</b> add this entry to the description of every policy changed</span></label>
+            <div data-log="fields" hidden>
+                <div class="log-grid">
+                    <label>RITM<input type="text" data-log="ritm" placeholder="e.g. RITM1234567" spellcheck="false"></label>
+                    <label>Date<input type="text" data-log="date" placeholder="YYYY-MM-DD" spellcheck="false"></label>
+                    <label>Name<input type="text" data-log="user" placeholder="Your name"></label>
+                </div>
+                <label class="log-desc">Description<input type="text" data-log="desc" placeholder="What was changed or why?"></label>
+                <div class="log-preview"><span class="muted">Line added under the description:</span> <code data-log="preview"></code></div>
+            </div>`;
+        block.querySelector('[data-log="on"]').addEventListener('change', (e) => { ptLog.on = e.target.checked; ptLogRefresh(); });
+        ['ritm', 'date', 'user', 'desc'].forEach(k => block.querySelector(`[data-log="${k}"]`).addEventListener('input', (e) => {
+            ptLog[k] = e.target.value;
+            ptLogRefresh();
+        }));
+        setTimeout(ptLogRefresh, 0);
+        return block;
+    }
+
+    // Keeps every copy of the block in step, then the three tabs re-check their start button.
+    function ptLogRefresh() {
+        if (!bg.shadow) return;
+        const active = bg.shadow.activeElement;
+        const missing = { ritm: !ptLog.ritm.trim(), date: !ISO_DATE_RE.test(ptLog.date.trim()), desc: !ptLog.desc.trim(), user: false };
+        bg.shadow.querySelectorAll('[data-log="block"]').forEach(block => {
+            const q = n => block.querySelector(`[data-log="${n}"]`);
+            q('on').checked = ptLog.on;
+            q('fields').hidden = !ptLog.on;
+            block.classList.toggle('on', ptLog.on);
+            ['ritm', 'date', 'user', 'desc'].forEach(k => {
+                const el = q(k);
+                if (el !== active && el.value !== ptLog[k]) el.value = ptLog[k];
+                el.classList.toggle('bad', ptLog.on && missing[k]);
+            });
+            q('preview').textContent = ptLogLine();
+        });
+        if (bg.shadow.querySelector('[data-bg="start"]')) bgUpdateButtons();
+        ['source', 'remove'].forEach(n => { const e = pt.panes[n]; if (e && e.hint && e.pane.isConnected) e.hint(); });
+    }
 
     // Flat list of every policy from the list call, with what the selection needs.
     function ptPoliciesFrom(data) {
@@ -40008,6 +40107,7 @@ Version 1.16:
             <footer class="footer" data-pt="footer"></footer>`;
         const sel = ptSelector(pane);
         pt.panes[name] = { pane, sel };
+        if (isSource) pane.querySelector('[data-pt="action"]').before(ptLogBlock());
         if (isSource) ptBuildSource(pane, sel);
         else ptBuildAction(name, pane, sel);
         return pt.panes[name];
@@ -40033,10 +40133,15 @@ Version 1.16:
                 : !plan.found ? 'Nothing can be added: none of the users or groups was found'
                 : !n ? 'Nothing to add: every chosen policy already has them'
                 : blocked ? '⏸ ' + blocked
+                : ptLogProblem() ? '📝 ' + ptLogProblem()
                 : `Review the list, then click ➕ Add to ${ptCount(n, 'policy', 'policies')}`;
             q('next-hint').textContent = text;
             q('check').classList.toggle('next', !!values && !!sel.selected().size && !plan);
-            q('run').classList.toggle('next', !!n && !blocked);
+            if (n) {
+                q('run').disabled = !!blocked || !!ptLogProblem();
+                q('run').title = blocked || ptLogProblem();
+            }
+            q('run').classList.toggle('next', !!n && !blocked && !ptLogProblem());
         }
         function resetPlan() {
             plan = null;
@@ -40205,8 +40310,8 @@ Version 1.16:
 
     function ptSourceStart(entry) {
         const plan = entry.plan;
-        if (!plan || !plan.jobs.length || ptBlockReason()) return;
-        bgSaveRun({ v: 1, kind: 'source', jobs: plan.jobs, index: 0, results: [], leftOut: [], notAdded: plan.notAdded,
+        if (!plan || !plan.jobs.length || ptBlockReason() || ptLogProblem()) return;
+        bgSaveRun({ v: 1, kind: 'source', jobs: plan.jobs, index: 0, results: [], leftOut: [], notAdded: plan.notAdded, log: ptLogForRun(),
             preSkipped: plan.skipped, state: 'running', startedAt: Date.now(), tenant: location.hostname, by: GM_getValue('toolkit_username', '') });
         entry.sel.clear();
         q_reset(entry);
@@ -40261,11 +40366,12 @@ Version 1.16:
             <div class="sel-block"><h3><span class="step">1</span>Users and groups to remove</h3>
                 <p class="help">One per line. An entry with @ is a user (user@domain.es), anything else a group, by its name or full path. Names must match exactly, capitals included. Exclusions are never touched.</p>
                 <textarea data-pt="rm-values" spellcheck="false" placeholder="SG-SCC Allow Anaplan SCCA&#10;user@domain.es"></textarea></div>
-            <div class="note" data-pt="plan-note"></div><div data-pt="plan"></div></main>
+            <div data-pt="log-slot"></div><div class="note" data-pt="plan-note"></div><div data-pt="plan"></div></main>
             <footer class="footer"><span class="step">2</span><button type="button" class="primary" data-pt="check">Check</button>
                 <span class="hint" data-pt="next-hint" role="status" aria-live="polite"></span>
                 <span class="step">4</span><button type="button" class="danger" data-pt="run" disabled title="Click Check first">➖ Remove</button></footer>`;
         const q = n => pane.querySelector(`[data-pt="${n}"]`);
+        q('log-slot').replaceWith(ptLogBlock());
         const entry = { pane, plan: null, ticked: new Set(), armed: null,
             sel: { selected: () => new Set(), clear() {}, render() {}, reload() {} } };
         pt.panes.remove = entry;
@@ -40284,11 +40390,12 @@ Version 1.16:
                 : !entry.plan.jobs.length ? 'Nothing to remove: none of the values is in a policy you can change'
                 : !n ? 'Tick at least one policy'
                 : blocked ? '⏸ ' + blocked
+                : ptLogProblem() ? '📝 ' + ptLogProblem()
                 : entry.armed ? 'Click the red button again to start'
                 : `Review the list, then click ➖ Remove from ${ptCount(n, 'policy', 'policies')}`;
             const run = q('run');
-            run.disabled = !n || !!blocked;
-            run.title = !entry.plan ? 'Click Check first' : !n ? 'Tick at least one policy' : blocked;
+            run.disabled = !n || !!blocked || !!ptLogProblem();
+            run.title = !entry.plan ? 'Click Check first' : !n ? 'Tick at least one policy' : blocked || ptLogProblem();
             if (!entry.armed) run.textContent = n ? `➖ Remove from ${ptCount(n, 'policy', 'policies')}` : '➖ Remove';
             q('check').classList.toggle('next', !!values && !entry.plan);
             run.classList.toggle('next', !run.disabled);
@@ -40456,7 +40563,7 @@ Version 1.16:
     async function ptRemoveRun(entry) {
         const q = n => entry.pane.querySelector(`[data-pt="${n}"]`);
         const jobs = entry.plan ? entry.plan.jobs.filter(j => entry.ticked.has(j.id)) : [];
-        if (!jobs.length || ptBlockReason() || entry.confirming) return;
+        if (!jobs.length || ptBlockReason() || ptLogProblem() || entry.confirming) return;
         const allUsers = jobs.filter(j => j.allUsers);
         if (allUsers.length) {
             entry.confirming = true;
@@ -40480,7 +40587,7 @@ Version 1.16:
         GM_deleteValue(PT_LAST_RUN_KEY);
         // A copy of each policy as it was, kept with the Delete backups
         jobs.forEach(j => { const p = (pt.policies || []).find(x => x.id === j.id); if (p) ptBackupSave(p, 'Before Remove from Source'); });
-        bgSaveRun({ v: 1, kind: 'remove', jobs, index: 0, results: [], leftOut: [], notRemoved: plan.notRemoved,
+        bgSaveRun({ v: 1, kind: 'remove', jobs, index: 0, results: [], leftOut: [], notRemoved: plan.notRemoved, log: ptLogForRun(),
             preSkipped: plan.skipped.concat(plan.jobs.filter(j => !entry.ticked.has(j.id)).map(j => ({ id: j.id, name: j.name, group: j.group, reason: 'Unticked by you' }))),
             confirmedAllUsers: confirmed, state: 'running', startedAt: Date.now(), tenant: location.hostname, by: GM_getValue('toolkit_username', '') });
         entry.pane.querySelector('[data-pt="rm-values"]').value = '';
@@ -41169,14 +41276,16 @@ Version 1.16:
         const r = ptLoadRun();
         const other = pt.running || (r && r.state === 'running') ? 'A Policy tools run is going on.'
             : r && r.state === 'paused' ? 'Continue or stop the paused Policy tools run first (on its card).' : '';
-        bgEl('start').disabled = bg.busy || bg.running || waiting || !!other || !n;
-        bgEl('start').title = waiting ? 'Continue or discard the paused run first.' : other;
+        const logProblem = ptLogProblem();
+        bgEl('start').disabled = bg.busy || bg.running || waiting || !!other || !n || !!logProblem;
+        bgEl('start').title = waiting ? 'Continue or discard the paused run first.' : other || logProblem;
         bgEl('start').textContent = bg.jobs ? `Start (${n} ${n === 1 ? 'policy' : 'policies'})` : 'Start';
         // Next step, like the steering tools: a line in the footer and the button to click glows
         const hint = bg.busy ? '' : waiting ? 'Continue or discard the paused run first (on its card).' : other ? other
             : !bgEl('pairs').value.trim() ? 'Paste at least one pair of groups'
             : !bg.jobs ? 'Click Check to see which policies change'
             : !n ? 'Nothing to change: fix the lines with a problem and Check again'
+            : logProblem ? '📝 ' + logProblem
             : `Review the list, then click Start (${n} ${n === 1 ? 'policy' : 'policies'})`;
         bgEl('next-hint').textContent = hint;
         bgEl('check').classList.toggle('next', !bg.busy && !!bgEl('pairs').value.trim() && !bg.jobs && !waiting && !other);
@@ -41300,6 +41409,26 @@ Version 1.16:
         await bgWaitFor(() => bgIsList(), 5000);
     }
 
+    // Appends the run's log line to the description of the open policy, once, like "+ Add Log Entry" does.
+    function bgWriteLog(line) {
+        const ta = document.querySelector('.ns-policy-container textarea.policy-description-container, ' +
+            '.ns-policy-container textarea[data-testid="wizard-description"], .ns-policy-container textarea[aria-label*="description" i]');
+        if (!ta) return 'missing';
+        const has = () => (ta.value || '').split('\n').some(l => l.trim() === line);
+        if (has()) return 'already';
+        const cur = (ta.value || '').replace(/\n+$/, '');
+        setAngularValue(ta, cur ? cur + '\n' + line : line);
+        return has() ? 'added' : 'failed';
+    }
+    // Before Save: a log entry that cannot be written stops the policy, nothing is saved.
+    async function bgLogBeforeSave(run) {
+        if (!run || !run.log) return null;
+        const r = bgWriteLog(run.log);
+        await smWait(100);
+        return r;
+    }
+    const BG_LOG_FAILED = { outcome: 'failed', reason: 'The log entry could not be written in the description. Nothing was saved.' };
+
     async function bgClickSave() {
         const save = document.querySelector('.ns-policy-container .ns-policy-title .ns-right button.ns-btn.ns-btn-primary');
         if (!save || save.disabled) return false;
@@ -41331,7 +41460,7 @@ Version 1.16:
         }, BG_WAIT);
         if (!loaded) { await bgLeave(); return { outcome: 'failed', reason: 'The policy did not load in time.' }; }
 
-        if (job.kind === 'source') return bgRunSourceJob(job);
+        if (job.kind === 'source') return bgRunSourceJob(job, run || {});
         if (job.kind === 'remove') return bgRunRemoveJob(job, run || {});
         let groups = await bgReadGroups();
         if (!job.a.some(a => bgHasGroup(groups, a))) {
@@ -41357,6 +41486,8 @@ Version 1.16:
             return { outcome: 'failed', reason: 'The groups could not be checked after adding them. Nothing was saved.' };
         }
 
+        const log = await bgLogBeforeSave(run);
+        if (log === 'failed') { await bgLeave(); return BG_LOG_FAILED; }
         // Last safe point: once Save is clicked the job waits for its answer before pausing
         if (bg.pauseRequested || bg.stopRequested) { await bgLeave(); return { outcome: 'paused' }; }
         sm.lastSave = null;
@@ -41370,7 +41501,7 @@ Version 1.16:
             if (sm.lastSave && bgIsList()) return { ok: true };
             return null;
         }, BG_WAIT);
-        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.', added: missing.map(smShortName) };
+        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.', added: missing.map(smShortName), log };
         await bgLeave();
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
@@ -41408,6 +41539,8 @@ Version 1.16:
             await bgLeave();
             return { outcome: 'failed', reason: 'The Source could not be checked after removing. Nothing was saved.' };
         }
+        const log = await bgLogBeforeSave(run);
+        if (log === 'failed') { await bgLeave(); return BG_LOG_FAILED; }
         if (bg.pauseRequested || bg.stopRequested) { await bgLeave(); return { outcome: 'paused' }; }
         sm.lastSave = null;
         if (!(await bgClickSave())) { await bgLeave(); return { outcome: 'failed', reason: 'Save is not available: the policy has an error.' }; }
@@ -41419,13 +41552,13 @@ Version 1.16:
             return null;
         }, BG_WAIT);
         const removed = present.map(({ r }) => label(r));
-        if (end && end.ok) return { outcome: 'done', reason: 'Removed ' + removed.join(', ') + (left <= 0 ? '. Now applies to All Users.' : '.'), removed, nowAllUsers: left <= 0 };
+        if (end && end.ok) return { outcome: 'done', reason: 'Removed ' + removed.join(', ') + (left <= 0 ? '. Now applies to All Users.' : '.'), removed, nowAllUsers: left <= 0, log };
         await bgLeave();
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
 
     // Add to Source: add every value the policy does not have yet, check them all, then Save.
-    async function bgRunSourceJob(job) {
+    async function bgRunSourceJob(job, run) {
         const has = (tags, a) => tags.some(t => t.type === a.mode && (a.mode === 'group' ? bgHasGroup([t.name], a.value) : smKey(t.name) === smKey(a.value)));
         let tags = await smReadSource();
         const missing = job.adds.filter(a => !has(tags, a));
@@ -41447,6 +41580,8 @@ Version 1.16:
             await bgLeave();
             return { outcome: 'failed', reason: 'The values could not be checked after adding them. Nothing was saved.' };
         }
+        const log = await bgLogBeforeSave(run);
+        if (log === 'failed') { await bgLeave(); return BG_LOG_FAILED; }
         if (bg.pauseRequested || bg.stopRequested) { await bgLeave(); return { outcome: 'paused' }; }
         sm.lastSave = null;
         if (!(await bgClickSave())) { await bgLeave(); return { outcome: 'failed', reason: 'Save is not available: the policy has an error.' }; }
@@ -41457,7 +41592,7 @@ Version 1.16:
             if (sm.lastSave && bgIsList()) return { ok: true };
             return null;
         }, BG_WAIT);
-        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(label).join(', ') + '.', added: missing.map(label) };
+        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(label).join(', ') + '.', added: missing.map(label), log };
         await bgLeave();
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
@@ -41497,7 +41632,7 @@ Version 1.16:
     }
 
     function bgStart() {
-        if (!bg.jobs || !bg.jobs.length || bg.running) return;
+        if (!bg.jobs || !bg.jobs.length || bg.running || ptLogProblem()) return;
         const r = ptLoadRun();
         if (pt.running || (r && (r.state === 'running' || r.state === 'paused'))) return;
         const leftOut = bg.rows.filter(r => r.status !== 'ok').map(r => `${r.a}${r.b ? ', ' + r.b : ''}: ${BG_STATUS[r.status][0]}`);
@@ -41507,7 +41642,7 @@ Version 1.16:
             const item = alreadyThere.find(x => x.name === name) || (alreadyThere.push({ name, groups: [] }), alreadyThere[alreadyThere.length - 1]);
             if (!item.groups.includes(r.b)) item.groups.push(r.b);
         }));
-        bgSaveRun({ v: 1, jobs: bg.jobs, index: 0, results: [], leftOut, alreadyThere, state: 'running', startedAt: Date.now(),
+        bgSaveRun({ v: 1, jobs: bg.jobs, index: 0, results: [], leftOut, alreadyThere, state: 'running', startedAt: Date.now(), log: ptLogForRun(),
             tenant: location.hostname, by: GM_getValue('toolkit_username', '') });
         bg.host.dataset.open = 'false';
         bgRunLoop();
@@ -41530,7 +41665,7 @@ Version 1.16:
                 if (res.outcome === 'paused') continue;
                 run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason,
                     a: job.a, added: res.added || [], already: res.already || [], allUsers: !!job.allUsers,
-                    group: job.group || '', removed: res.removed || [], nowAllUsers: !!res.nowAllUsers });
+                    group: job.group || '', removed: res.removed || [], nowAllUsers: !!res.nowAllUsers, log: res.log || null });
                 run.index++;
                 bgSaveRun(run);
                 bgRunLog(`${job.name}: ${res.outcome}. ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
@@ -41605,8 +41740,21 @@ Version 1.16:
         section('Failed, not saved', of('failed').map(r => `${r.name}: ${r.reason}`));
         if (run.stopped) section('Not done, the run was stopped', run.jobs.slice(run.results.length).map(j => j.name));
         section('Not added', (run.notAdded || []).map(x => `${x.value}: ${x.reason}`), 'value', 'values');
+        bgLogSummary(run, lines);
         lines.push('', 'Pending: Apply Changes in Netskope.');
         return lines.join('\n');
+    }
+
+    // The log entry part of a ticket summary: the line, and the policies whose form had no description.
+    function bgLogSummary(run, lines) {
+        if (!run.log) return;
+        const done = run.results.filter(r => r.outcome === 'done');
+        lines.push('', 'Log entry added to the description:', run.log);
+        const missing = done.filter(r => r.log === 'missing').map(r => r.name);
+        if (missing.length) {
+            lines.push('', `No description field, no log entry (${missing.length} ${missing.length === 1 ? 'policy' : 'policies'}):`);
+            missing.forEach(n => lines.push('- ' + n));
+        }
     }
 
     function bgRemoveSummaryText(run, head) {
@@ -41623,6 +41771,7 @@ Version 1.16:
         section('Failed, not saved', of('failed').map(r => `${r.name}: ${r.reason}`));
         if (run.stopped) section('Not done, the run was stopped', run.jobs.slice(run.results.length).map(j => j.name));
         section('Not removed', (run.notRemoved || []).map(x => `${x.value}: ${x.reason}`), 'value', 'values');
+        bgLogSummary(run, lines);
         lines.push('', 'Pending: Apply Changes in Netskope.');
         return lines.join('\n');
     }
@@ -41661,6 +41810,7 @@ Version 1.16:
             lines.push('', `Pairs not applied (${count(leftOut.length, 'pair', 'pairs')}):`);
             leftOut.forEach(l => lines.push('- ' + l));
         }
+        bgLogSummary(run, lines);
         lines.push('', 'Pending: Apply Changes in Netskope.');
         return lines.join('\n');
     }
@@ -41769,6 +41919,12 @@ Version 1.16:
         const of = kind => run.results.filter(r => r.outcome === kind);
         box.appendChild(Object.assign(document.createElement('div'), { textContent:
             `Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}` }));
+        if (run.log) {
+            const logged = of('done').filter(r => r.log === 'added' || r.log === 'already').length;
+            const noField = of('done').filter(r => r.log === 'missing').length;
+            box.appendChild(Object.assign(document.createElement('div'), { textContent: `📝 Log entry in the description of ${logged} ${logged === 1 ? 'policy' : 'policies'}.` +
+                (noField ? ` ${noField} had no description field.` : '') }));
+        }
         const nowAll = of('done').filter(r => r.nowAllUsers).length;
         if (nowAll) box.appendChild(Object.assign(document.createElement('b'), { textContent:
             `⚠ ${nowAll} ${nowAll === 1 ? 'policy now applies' : 'policies now apply'} to All Users.` }));
