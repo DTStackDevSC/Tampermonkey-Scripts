@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.33.0
+// @version      2.34.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.33.0';
-    const CHANGELOG = `Version 2.33.0:
+   const SCRIPT_VERSION = '2.34.0';
+    const CHANGELOG = `Version 2.34.0:
+- NS Policies Toolkit: Policy tools: new "➖ Remove from Source" tab. Paste users and groups, Check finds every policy that has them, untick the ones to keep, and they are removed from the Source of the rest. Policies that would end with no users or groups are marked in red, and a window asks you to confirm before they start applying to All Users. A copy of each policy is kept and "↩ Revert these" can undo the run before Apply Changes.
+
+Version 2.33.0:
 - NS Policies Toolkit: Policy tools: Group pairs has a "🧹 Clear" button next to the field title. It empties the pairs and the last Check so you can paste a new batch.
 
 Version 2.32.1:
@@ -30550,8 +30553,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.42.0';
-    const CHANGELOG = `Version 1.42.0:
+    const SCRIPT_VERSION = '1.43.0';
+    const CHANGELOG = `Version 1.43.0:
+- Policy tools: new "➖ Remove from Source" tab. Paste users and groups, Check finds every policy that has them, untick the ones to keep, and they are removed from the Source of the rest. Policies that would end with no users or groups are marked in red, and a window asks you to confirm before they start applying to All Users. A copy of each policy is kept and "↩ Revert these" can undo the run before Apply Changes.
+
+Version 1.42.0:
 - Policy tools: Group pairs has a "🧹 Clear" button next to the field title. It empties the pairs and the last Check so you can paste a new batch.
 
 Version 1.41.1:
@@ -31135,7 +31141,7 @@ Version 1.16:
         {
             key:         'bulkGroupAdd',
             label:       '🧰 Policy tools',
-            description: 'On the Real-time Protection policy list, adds a "Policy tools" button: add groups by pairs, enable or disable policies, and delete policies in bulk, with a check before and a summary after.',
+            description: 'On the Real-time Protection policy list, adds a "Policy tools" button: add groups by pairs, add or remove users and groups in Source, enable or disable policies, and delete policies in bulk, with a check before and a summary after.',
         },
         {
             key:         'sslExport',
@@ -32393,6 +32399,7 @@ Version 1.16:
                     const tabsMock = hrow([
                         chip('👥 Group pairs', '#fff', { color: '#005587', border: '2px solid #005587' }),
                         chip('➕ Add to Source', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
+                        chip('➖ Remove from Source', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
                         chip('⏯ Enable / Disable', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
                         chip('🗑 Delete', '#f7f7f7', { color: '#53565a', border: '1px solid #e6e6e6' }),
                     ], { margin: '12px 0 4px 0' });
@@ -32478,6 +32485,37 @@ Version 1.16:
                         'Check looks every value up in Netskope and shows, per policy, what will be added. Policies that already have every value are skipped, and values not found are left out and listed.',
                         'A policy that applied to All Users gets the values too, so it then applies only to them: Check marks it in orange and the ticket text says so.',
                         'It works like Group pairs: each policy is opened, the values are added to Source and it is saved. Exclusions are never touched. Click Apply Changes at the end, no reload needed.',
+                    ]);
+
+                    body.appendChild(span('➖ Remove from Source: take users and groups out of the policies that have them', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
+                    const rmList = document.createElement('div');
+                    Object.assign(rmList.style, { border: '1px solid #e0e0e0', borderRadius: '6px', overflow: 'hidden', maxWidth: '440px', fontFamily: 'Arial, sans-serif' });
+                    const rmWarn = span('⚠ 1 policy will have no users or groups left and will apply to All Users.', { display: 'block', padding: '6px 10px',
+                        fontSize: '11px', fontWeight: 'bold', color: '#8a1c12', background: '#fdecea', borderBottom: '1px solid #f5c2bd' });
+                    rmList.appendChild(rmWarn);
+                    [['☑', 'Block risky apps EMEA', 'Removes SG-OLD', false], ['☑', 'Allow Anaplan', 'Removes SG-OLD', true], ['☐', 'Web access US', 'Removes user@domain.es', false]].forEach(([box, name, what, all]) => {
+                        const r = hrow([span(box, { fontSize: '13px', color: '#005587' }), span(name, { fontSize: '12px', color: '#333', minWidth: '140px' }),
+                            span(what, { fontSize: '11px', color: '#555' })].concat(all ? [chip('⚠ Will apply to All Users', '#da291c')] : []), { margin: '0', padding: '5px 10px', borderBottom: '1px solid #f0f0f0' });
+                        rmList.appendChild(r);
+                    });
+                    body.appendChild(rmList);
+                    body.appendChild(hrow([chip('☑ Tick all', '#fff', { color: '#005587', border: '1px solid #005587' }), chip('☐ Untick all', '#fff', { color: '#005587', border: '1px solid #005587' }),
+                        chip('➖ Remove from 2 policies', '#da291c', { border: '3px solid #9fc9e3' })], { marginTop: '6px' }));
+                    caption(body, 'After Check: every policy that has the values, all ticked. Untick the ones to keep as they are.');
+                    const rmCf = document.createElement('div');
+                    Object.assign(rmCf.style, { maxWidth: '320px', margin: '10px 0 4px 0', padding: '10px 12px', background: '#fff', borderTop: '4px solid #da291c',
+                        borderRadius: '6px', boxShadow: '0 4px 14px rgba(0,0,0,.2)', fontFamily: 'Arial, sans-serif' });
+                    rmCf.appendChild(span('⚠ 1 policy will apply to All Users', { display: 'block', fontSize: '13px', fontWeight: 'bold', color: '#da291c', marginBottom: '4px' }));
+                    rmCf.appendChild(span('Allow Anaplan (Web Policies)', { display: 'block', fontSize: '11px', color: '#555', marginBottom: '4px' }));
+                    rmCf.appendChild(span('Are you sure you want to continue?', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#333', marginBottom: '6px' }));
+                    rmCf.appendChild(hrow([chip('Cancel', '#fff', { color: '#005587', border: '1px solid #005587' }), chip('Remove anyway', '#da291c')], { margin: '0', justifyContent: 'flex-end' }));
+                    body.appendChild(rmCf);
+                    caption(body, 'When a ticked policy would end with no users or groups, this window asks before anything starts. Cancel is the default.');
+                    bullets(body, [
+                        'One per line, like Add to Source. Values are found in the policies themselves, so a group already deleted from the directory can still be removed. A short group name used with two different paths is left out: write the full path.',
+                        'Without any All Users policy, Remove asks for a second click instead.',
+                        'Each policy is opened, the values are removed from Source, checked and saved. Exclusions are never touched. A policy that would end empty without your confirm (it changed after Check) is skipped.',
+                        'A copy of each policy is kept with the Delete backups, and "↩ Revert these" in the tab undoes the run before Apply Changes.',
                     ]);
 
                     body.appendChild(span('Choosing policies (Add to Source, Enable / Disable and Delete)', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '16px 0 6px 0' }));
@@ -39134,6 +39172,18 @@ Version 1.16:
         return smTagsOf(select).some(t => t.type === type && smKey(t.name) === smKey(value)) ? 'failed' : 'removed';
     }
 
+    // Removes one exact tag (type and name) from the open policy's Source. Exclusions are a different picker.
+    async function smRemoveTag(type, name) {
+        let { select } = smPickerOrStop();
+        if (!(await smOpenDropdown(select))) return 'failed';
+        const tag = smTagsOf(select).find(t => t.type === type && t.name === name);
+        if (!tag) return 'removed';
+        tag.el.querySelector('.ng-value-icon')?.click();
+        await smWait(300);
+        select = smPickerOrStop().select;
+        return smTagsOf(select).some(t => t.type === type && t.name === name) ? 'failed' : 'removed';
+    }
+
     // Each row removes its single match in the policy, or the path picked when several match.
     function smRemoveItems() {
         return (sm.rows || [])
@@ -39537,6 +39587,22 @@ Version 1.16:
                 font-size: 24px; line-height: 1; cursor: pointer; }
             .body { overflow: auto; padding: 16px 20px; box-sizing: border-box; }
             .label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 700; }
+            .rm-warn { margin: 10px 0; padding: 8px 12px; color: #8a1c12; background: #fdecea; border: 1px solid #f5c2bd;
+                border-radius: 4px; font-size: 13px; font-weight: 700; }
+            .cf-back { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+                background: rgba(0, 0, 0, .45); font-family: Arial, sans-serif; }
+            .cf-box { width: 480px; max-width: calc(100vw - 32px); max-height: 80vh; overflow: auto; padding: 18px 20px;
+                color: #282728; background: #fff; border-top: 5px solid #da291c; border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+            .cf-head { margin-bottom: 8px; color: #da291c; font-size: 16px; font-weight: 700; }
+            .cf-box p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
+            .cf-box ul { margin: 6px 0; padding-left: 20px; max-height: 180px; overflow: auto; font-size: 13px; }
+            .cf-also { color: #63666a; } .cf-q { font-weight: 700; }
+            .cf-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+            .cf-btns button { padding: 8px 16px; border-radius: 4px; font-weight: 600; font-size: 13px; cursor: pointer; }
+            .cf-cancel { color: #005587; background: #fff; border: 1px solid #005587; }
+            .cf-go { color: #fff; background: #da291c; border: 1px solid #da291c; }
+            .cf-btns button:hover:not(:disabled) { filter: brightness(.92); }
+            .cf-btns button:disabled { cursor: not-allowed; opacity: .5; }
             .label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
             button.clear { margin-bottom: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: #53565a; background: #fff;
                 border: 1px solid #c8c9c7; border-radius: 4px; cursor: pointer; font-family: inherit; }
@@ -39627,6 +39693,7 @@ Version 1.16:
                     <nav class="tabs" role="tablist">
                         <button type="button" role="tab" data-pt-tab="groups">👥 Group pairs</button>
                         <button type="button" role="tab" data-pt-tab="source">➕ Add to Source</button>
+                        <button type="button" role="tab" data-pt-tab="remove">➖ Remove from Source</button>
                         <button type="button" role="tab" data-pt-tab="toggle">⏯ Enable / Disable</button>
                         <button type="button" role="tab" data-pt-tab="delete">🗑 Delete</button>
                     </nav>
@@ -39651,6 +39718,7 @@ Version 1.16:
                     </footer>
                     </div>
                     <div class="pane" data-pt-pane="source" hidden></div>
+                    <div class="pane" data-pt-pane="remove" hidden></div>
                     <div class="pane" data-pt-pane="toggle" hidden></div>
                     <div class="pane" data-pt-pane="delete" hidden></div>
                 </section>
@@ -39687,10 +39755,11 @@ Version 1.16:
     /* ── Policy tools window: tabs ── */
 
     const PT_TAB_KEY  = 'toolkit_policyToolsTab';
-    const PT_TABS     = ['groups', 'source', 'toggle', 'delete'];
+    const PT_TABS     = ['groups', 'source', 'remove', 'toggle', 'delete'];
     const PT_TAB_HINT = {
         groups: 'Adds a group wherever another group is.',
         source: 'Adds users and groups to the Source of the policies you choose.',
+        remove: 'Removes users and groups from the Source of the policies that have them.',
         toggle: 'Turn many policies on or off at once.',
         delete: 'Deletes many policies, a copy of each is kept.',
     };
@@ -39878,6 +39947,7 @@ Version 1.16:
     // The Enable / Disable and Delete tabs are built the first time they are shown.
     function ptBuildPane(name) {
         const pane = bg.shadow.querySelector(`[data-pt-pane="${name}"]`);
+        if (name === 'remove') return ptBuildRemove(pane);
         const isSource = name === 'source';
         pane.innerHTML = `<main class="body">${isSource ? `
             <div class="sel-block"><h3><span class="step">1</span>Users and groups to add</h3>
@@ -40096,6 +40166,280 @@ Version 1.16:
     }
     function q_reset(entry) { entry.plan = null; entry.resetPlan(); }
 
+    /* ── Policy tools: ➖ Remove from Source ── */
+
+    // The rule_data key of OUs is not confirmed on a real tenant: the run reads the real Source again anyway.
+    const ptOusOf = rd => ['ous', 'orgUnits', 'organizationUnits'].map(k => rd[k]).find(Array.isArray) || [];
+
+    // Matches the pasted values against the Source of every policy: no directory search, so a group deleted
+    // from the directory but still in a policy is found too. Exclusions are not part of these fields.
+    function ptRemoveMatch(values, policies) {
+        const usersOf = p => ((p.raw.rule_data || {}).users || []);
+        const rows = values.map(({ value, mode }) => {
+            const row = { value, mode, status: 'notFound', full: null };
+            if (mode === 'user') {
+                const hit = policies.map(p => usersOf(p).find(u => smKey(u) === smKey(value))).find(Boolean);
+                if (hit) { row.status = 'ok'; row.full = hit; }
+                return row;
+            }
+            const paths = new Set();
+            policies.forEach(p => p.groups.forEach(g => {
+                if (g === value || (!value.includes('/') && smShortName(g) === value)) paths.add(g);
+            }));
+            if (paths.size === 1) { row.status = 'ok'; row.full = [...paths][0]; }
+            else if (paths.size > 1) row.status = 'ambiguous';
+            return row;
+        });
+        const found = rows.filter(r => r.status === 'ok');
+        const jobs = [], skipped = [];
+        policies.forEach(p => {
+            const rd = p.raw.rule_data || {};
+            const users = usersOf(p);
+            const removes = found.filter(f => f.mode === 'user' ? users.some(u => smKey(u) === smKey(f.full)) : p.groups.includes(f.full))
+                .map(f => ({ mode: f.mode, value: f.full }));
+            if (!removes.length) return;
+            if (p.locked) return skipped.push({ id: p.id, name: p.name, group: p.group, reason: 'You cannot edit this policy' });
+            if (p.pendingDelete) return skipped.push({ id: p.id, name: p.name, group: p.group, reason: 'Already deleted, waiting for Apply Changes' });
+            const left = users.length + p.groups.length + ptOusOf(rd).length - removes.length;
+            jobs.push({ id: p.id, type: rd.policy_type || p.raw.policy_type || '', name: p.name, group: p.group, kind: 'remove',
+                removes, allUsers: left <= 0 });
+        });
+        return { rows, jobs, skipped, notRemoved: rows.filter(r => r.status !== 'ok').map(r => ({ value: r.value, reason: r.status === 'notFound' ? 'Not in any policy' : PT_SRC_STATUS[r.status][0] })) };
+    }
+
+    function ptBuildRemove(pane) {
+        pane.innerHTML = `<main class="body">
+            <div class="sel-block"><h3><span class="step">1</span>Users and groups to remove</h3>
+                <p class="help">One per line. An entry with @ is a user (user@domain.es), anything else a group, by its name or full path. Names must match exactly, capitals included. Exclusions are never touched.</p>
+                <textarea data-pt="rm-values" spellcheck="false" placeholder="SG-SCC Allow Anaplan SCCA&#10;user@domain.es"></textarea></div>
+            <div class="note" data-pt="plan-note"></div><div data-pt="plan"></div></main>
+            <footer class="footer"><span class="step">2</span><button type="button" class="primary" data-pt="check">Check</button>
+                <span class="hint" data-pt="next-hint" role="status" aria-live="polite"></span>
+                <span class="step">4</span><button type="button" class="danger" data-pt="run" disabled title="Click Check first">➖ Remove</button></footer>`;
+        const q = n => pane.querySelector(`[data-pt="${n}"]`);
+        const entry = { pane, plan: null, ticked: new Set(), armed: null,
+            sel: { selected: () => new Set(), clear() {}, render() {}, reload() {} } };
+        pt.panes.remove = entry;
+        entry.renderLast = ptLastRunBlock(pane);
+        const chosen = () => entry.plan ? entry.plan.jobs.filter(j => entry.ticked.has(j.id)) : [];
+        function disarm() {
+            clearTimeout(entry.armed);
+            entry.armed = null;
+        }
+        function hint() {
+            const blocked = ptBlockReason();
+            const n = chosen().length;
+            const values = q('rm-values').value.trim();
+            q('next-hint').textContent = !values ? 'Paste at least one user or group'
+                : !entry.plan ? 'Click Check to find the policies that have them'
+                : !entry.plan.jobs.length ? 'Nothing to remove: none of the values is in a policy you can change'
+                : !n ? 'Tick at least one policy'
+                : blocked ? '⏸ ' + blocked
+                : entry.armed ? 'Click the red button again to start'
+                : `Review the list, then click ➖ Remove from ${ptCount(n, 'policy', 'policies')}`;
+            const run = q('run');
+            run.disabled = !n || !!blocked;
+            run.title = !entry.plan ? 'Click Check first' : !n ? 'Tick at least one policy' : blocked;
+            if (!entry.armed) run.textContent = n ? `➖ Remove from ${ptCount(n, 'policy', 'policies')}` : '➖ Remove';
+            q('check').classList.toggle('next', !!values && !entry.plan);
+            run.classList.toggle('next', !run.disabled);
+        }
+        function resetPlan() {
+            disarm();
+            entry.plan = null;
+            entry.ticked.clear();
+            q('plan').textContent = '';
+            q('plan-note').textContent = '';
+            q('plan-note').className = 'note';
+            hint();
+        }
+        entry.resetPlan = resetPlan;
+        entry.hint = hint;
+        entry.tick = (ids, on) => {
+            disarm();
+            ids.forEach(id => on ? entry.ticked.add(id) : entry.ticked.delete(id));
+            q('plan').querySelectorAll('[data-pt-job] input').forEach(b => { b.checked = entry.ticked.has(b.closest('tr').dataset.ptJob); });
+            ptRemoveTotals(entry);
+            hint();
+        };
+        q('rm-values').addEventListener('input', resetPlan);
+        q('check').addEventListener('click', () => ptRemoveCheck(entry));
+        q('run').addEventListener('click', () => ptRemoveRun(entry));
+        resetPlan();
+        return entry;
+    }
+
+    async function ptRemoveCheck(entry) {
+        const q = n => entry.pane.querySelector(`[data-pt="${n}"]`);
+        const values = ptParseValues(q('rm-values').value);
+        if (!values.length) { entry.resetPlan(); return; }
+        const btn = q('check');
+        btn.disabled = true;
+        btn.textContent = '⏳ Checking…';
+        const stop = ptBusy(entry.pane.querySelector('.body'), 'Finding the policies in Netskope…');
+        const note = q('plan-note');
+        try {
+            entry.resetPlan();
+            note.textContent = 'Reading the policies…';
+            pt.policies = await ptLoadPolicies();
+            const plan = ptRemoveMatch(values, pt.policies);
+            entry.plan = plan;
+            plan.jobs.forEach(j => entry.ticked.add(j.id));
+            note.textContent = '';
+            ptRemoveRender(entry, plan);
+        } catch (e) {
+            note.className = 'note err';
+            note.textContent = '⚠ ' + e.message;
+        } finally {
+            stop();
+            btn.disabled = false;
+            btn.textContent = 'Check';
+            entry.hint();
+        }
+    }
+
+    function ptRemoveTotals(entry) {
+        const box = entry.pane.querySelector('[data-pt="rm-totals"]');
+        if (!box) return;
+        const n = entry.plan.jobs.filter(j => entry.ticked.has(j.id)).length;
+        const all = entry.plan.jobs.filter(j => j.allUsers && entry.ticked.has(j.id)).length;
+        box.textContent = `${ptCount(n, 'policy', 'policies')} ticked of ${entry.plan.jobs.length}.` +
+            (all ? ` ${all} will apply to All Users.` : '') +
+            (entry.plan.notRemoved.length ? ` ${ptCount(entry.plan.notRemoved.length, 'value is', 'values are')} left out.` : '');
+    }
+
+    function ptRemoveRender(entry, plan) {
+        const wrap = entry.pane.querySelector('[data-pt="plan"]');
+        wrap.textContent = '';
+        const el = (tag, props) => Object.assign(document.createElement(tag), props || {});
+        const t1 = el('table', { className: 'table' });
+        t1.innerHTML = '<thead><tr><th>User or group</th><th>Type</th><th>In the policies</th></tr></thead><tbody></tbody>';
+        plan.rows.forEach(r => {
+            const tr = t1.tBodies[0].insertRow();
+            tr.dataset.ptValue = r.value;
+            tr.dataset.status = r.status;
+            const c = tr.insertCell();
+            c.textContent = r.value;
+            if (r.full && r.full !== r.value) c.appendChild(el('div', { className: 'muted', textContent: r.full }));
+            tr.insertCell().textContent = r.mode === 'user' ? 'User' : 'Group';
+            const [label, cls] = r.status === 'notFound' ? ['Not in any policy', 'notfound'] : PT_SRC_STATUS[r.status];
+            tr.insertCell().appendChild(el('span', { className: 'chip ' + cls, textContent: label }));
+        });
+        wrap.appendChild(t1);
+        const allUsers = plan.jobs.filter(j => j.allUsers).length;
+        if (allUsers) wrap.appendChild(el('div', { className: 'rm-warn', textContent:
+            `⚠ ${ptCount(allUsers, 'policy', 'policies')} will have no users or groups left and will apply to All Users.` }));
+        if (plan.jobs.length || plan.skipped.length) {
+            const head = el('div', { className: 'stephead' });
+            head.innerHTML = '<span class="step">3</span>Review the policies <span class="hint">Untick the ones to keep as they are.</span>';
+            const all = el('button', { type: 'button', className: 'sbtn', textContent: '☑ Tick all', title: 'Tick every policy in the list' });
+            const none = el('button', { type: 'button', className: 'sbtn', textContent: '☐ Untick all', title: 'Untick every policy in the list' });
+            all.dataset.pt = 'rm-all';
+            none.dataset.pt = 'rm-none';
+            all.addEventListener('click', () => entry.tick(plan.jobs.map(j => j.id), true));
+            none.addEventListener('click', () => entry.tick(plan.jobs.map(j => j.id), false));
+            head.append(all, none);
+            wrap.appendChild(head);
+            const t2 = el('table', { className: 'table' });
+            t2.innerHTML = '<thead><tr><th></th><th>Policy</th><th>Policy group</th><th>What happens</th></tr></thead><tbody></tbody>';
+            plan.jobs.forEach(j => {
+                const tr = t2.tBodies[0].insertRow();
+                tr.dataset.ptJob = j.id;
+                const box = el('input', { type: 'checkbox', checked: entry.ticked.has(j.id), title: 'Untick to keep this policy as it is' });
+                box.addEventListener('change', () => entry.tick([j.id], box.checked));
+                tr.insertCell().appendChild(box);
+                tr.insertCell().textContent = j.name;
+                tr.insertCell().textContent = j.group;
+                const c = tr.insertCell();
+                c.appendChild(el('div', { textContent: 'Removes ' + j.removes.map(a => a.mode === 'group' ? smShortName(a.value) : a.value).join(', ') }));
+                if (j.allUsers) c.appendChild(el('div', { className: 'chip notfound', textContent: '⚠ Will apply to All Users' }));
+            });
+            plan.skipped.forEach(x => {
+                const tr = t2.tBodies[0].insertRow();
+                tr.dataset.ptSkip = x.id;
+                tr.insertCell();
+                tr.insertCell().textContent = x.name;
+                tr.insertCell().textContent = x.group;
+                tr.insertCell().appendChild(el('span', { className: 'muted', textContent: `${x.reason}: skipped` }));
+            });
+            wrap.appendChild(t2);
+        }
+        const totals = el('div', { className: 'totals' });
+        totals.dataset.pt = 'rm-totals';
+        wrap.appendChild(totals);
+        if (!plan.jobs.length) totals.textContent = 'No policy to change.';
+        else ptRemoveTotals(entry);
+    }
+
+    // The overlay over the Policy tools window: the policies that will apply to All Users, Cancel or Remove anyway.
+    function ptRemoveConfirm(entry, jobs, others) {
+        return new Promise(resolve => {
+            const back = document.createElement('div');
+            back.className = 'cf-back';
+            back.dataset.pt = 'confirm';
+            back.innerHTML = `<div class="cf-box" role="alertdialog" aria-modal="true" aria-labelledby="pt-cf-head">
+                <div class="cf-head" id="pt-cf-head"></div>
+                <p>After the removal these policies have no users or groups left in Source. Netskope then applies them to <b>everyone</b>.</p>
+                <ul data-pt="cf-list"></ul><p class="cf-also" data-pt="cf-also"></p>
+                <p class="cf-q">Are you sure you want to continue?</p>
+                <div class="cf-btns"><button type="button" class="cf-cancel" data-pt="cf-cancel">Cancel</button>
+                    <button type="button" class="cf-go" data-pt="cf-go" disabled title="Wait a moment">Remove anyway</button></div></div>`;
+            const q = n => back.querySelector(`[data-pt="${n}"]`);
+            back.querySelector('.cf-head').textContent = `⚠ ${ptCount(jobs.length, 'policy', 'policies')} will apply to All Users`;
+            jobs.forEach(j => q('cf-list').appendChild(Object.assign(document.createElement('li'), { textContent: j.group ? `${j.name} (${j.group})` : j.name })));
+            q('cf-also').textContent = others ? `The other ${ptCount(others, 'policy keeps', 'policies keep')} at least one user or group.` : '';
+            const finish = (ok) => {
+                document.removeEventListener('keydown', onKey, true);
+                back.remove();
+                resolve(ok);
+            };
+            const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } };
+            document.addEventListener('keydown', onKey, true);
+            back.addEventListener('click', (e) => { if (e.target === back) finish(false); });
+            q('cf-cancel').addEventListener('click', () => finish(false));
+            q('cf-go').addEventListener('click', (e) => { if (e.isTrusted && !q('cf-go').disabled) finish(true); });
+            setTimeout(() => { q('cf-go').disabled = false; q('cf-go').title = 'Remove the values, these policies will apply to All Users'; }, 600);
+            bg.shadow.appendChild(back);
+            q('cf-cancel').focus();
+        });
+    }
+
+    async function ptRemoveRun(entry) {
+        const q = n => entry.pane.querySelector(`[data-pt="${n}"]`);
+        const jobs = entry.plan ? entry.plan.jobs.filter(j => entry.ticked.has(j.id)) : [];
+        if (!jobs.length || ptBlockReason() || entry.confirming) return;
+        const allUsers = jobs.filter(j => j.allUsers);
+        if (allUsers.length) {
+            entry.confirming = true;
+            const ok = await ptRemoveConfirm(entry, allUsers, jobs.length - allUsers.length).finally(() => { entry.confirming = false; });
+            if (!ok) { q('plan-note').className = 'note'; q('plan-note').textContent = 'ℹ️ Cancelled: nothing was removed.'; return; }
+            return ptRemoveStart(entry, jobs, allUsers.map(j => j.id));
+        }
+        if (!entry.armed) {
+            q('run').textContent = `Click again to remove from ${ptCount(jobs.length, 'policy', 'policies')}`;
+            entry.armed = setTimeout(() => { entry.armed = null; entry.hint(); }, 4000);
+            entry.hint();
+            return;
+        }
+        clearTimeout(entry.armed);
+        entry.armed = null;
+        ptRemoveStart(entry, jobs, []);
+    }
+
+    function ptRemoveStart(entry, jobs, confirmed) {
+        const plan = entry.plan;
+        GM_deleteValue(PT_LAST_RUN_KEY);
+        // A copy of each policy as it was, kept with the Delete backups
+        jobs.forEach(j => { const p = (pt.policies || []).find(x => x.id === j.id); if (p) ptBackupSave(p, 'Before Remove from Source'); });
+        bgSaveRun({ v: 1, kind: 'remove', jobs, index: 0, results: [], leftOut: [], notRemoved: plan.notRemoved,
+            preSkipped: plan.skipped.concat(plan.jobs.filter(j => !entry.ticked.has(j.id)).map(j => ({ id: j.id, name: j.name, group: j.group, reason: 'Unticked by you' }))),
+            confirmedAllUsers: confirmed, state: 'running', startedAt: Date.now(), tenant: location.hostname, by: GM_getValue('toolkit_username', '') });
+        entry.pane.querySelector('[data-pt="rm-values"]').value = '';
+        entry.resetPlan();
+        bg.host.dataset.open = 'false';
+        bgRunLoop();
+    }
+
     function ptOnTab(name) {
         if (name === 'groups') return;
         const entry = pt.panes[name] && pt.panes[name].pane.isConnected ? pt.panes[name] : ptBuildPane(name);
@@ -40115,6 +40459,7 @@ Version 1.16:
         disable: { done: 'Disabled', ing: 'Disabling', title: 'disable policies' },
         delete:  { done: 'Deleted', ing: 'Deleting', title: 'delete policies' },
         revert:  { done: 'Reverted', ing: 'Reverting', title: 'revert policies' },
+        remove:  { done: 'Removed', ing: 'Removing', title: 'remove from Source' },
     };
     const ptLoadRun = () => { const r = GM_getValue(PT_RUN_KEY, null); return r && r.v === 1 ? r : null; };
     const ptSaveRun = run => GM_setValue(PT_RUN_KEY, run);
@@ -40565,11 +40910,11 @@ Version 1.16:
     };
 
     // Saved right before the delete call, so a policy is never gone without its copy.
-    function ptBackupSave(p) {
+    function ptBackupSave(p, why) {
         const limit = Date.now() - PT_BACKUP_DAYS * 86400000;
         const list = ptBackupsLoad().filter(b => b && b.at >= limit);
-        list.unshift({ at: Date.now(), tenant: location.hostname, id: p.id, name: p.name, group: p.group,
-            data: JSON.parse(JSON.stringify(p.raw)) });
+        list.unshift(Object.assign({ at: Date.now(), tenant: location.hostname, id: p.id, name: p.name, group: p.group,
+            data: JSON.parse(JSON.stringify(p.raw)) }, why ? { why } : {}));
         GM_setValue(PT_BACKUP_KEY, list);
     }
 
@@ -40580,6 +40925,7 @@ Version 1.16:
         return [
             `Policy: ${b.name}`,
             `Policy group: ${b.group || ''}`,
+            ...(b.why ? [`Copy: ${b.why}`] : []),
             `Tenant: ${b.tenant || ''}`,
             `State before deleting: ${String(raw.enabled) === '0' ? 'Disabled' : 'Enabled'}`,
             `Copy saved: ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
@@ -40594,7 +40940,7 @@ Version 1.16:
         block.innerHTML = `
             <div class="row" style="margin-top:0"><h3 style="margin:0;flex:1">↩ Backups</h3>
                 <button type="button" class="sbtn" data-pt="backups-toggle">Show backups</button></div>
-            <p class="help">A copy of every policy deleted here is kept for ${PT_BACKUP_DAYS} days, so you can see what it had and create it again by hand.</p>
+            <p class="help">A copy of every policy deleted here, or changed by Remove from Source, is kept for ${PT_BACKUP_DAYS} days, so you can see what it had and create it again by hand.</p>
             <div data-pt="backups" hidden></div>`;
         pane.querySelector('.body').appendChild(block);
         const q = n => block.querySelector(`[data-pt="${n}"]`);
@@ -40613,7 +40959,7 @@ Version 1.16:
                 row.dataset.ptBackup = key;
                 const d = new Date(b.at);
                 row.append(Object.assign(document.createElement('span'), { className: 'pname', textContent: b.name }),
-                    Object.assign(document.createElement('span'), { className: 'muted', textContent: `${d.toLocaleString()} · ${b.tenant}` }));
+                    Object.assign(document.createElement('span'), { className: 'muted', textContent: `${d.toLocaleString()} · ${b.tenant}${b.why ? ' · ' + b.why : ''}` }));
                 const btn = (what, label, title) => {
                     const x = Object.assign(document.createElement('button'), { type: 'button', className: 'sbtn', textContent: label, title });
                     x.dataset.ptB = what;
@@ -40917,7 +41263,7 @@ Version 1.16:
         return true;
     }
 
-    async function bgRunJob(job) {
+    async function bgRunJob(job, run) {
         // Netskope ignores a change from one edit page to another, so go through the list first
         sm.lastPolicy = null;
         if (!bgIsList()) { location.hash = BG_LIST_HASH; await bgWaitFor(() => bgIsList(), 5000); }
@@ -40937,6 +41283,7 @@ Version 1.16:
         if (!loaded) { await bgLeave(); return { outcome: 'failed', reason: 'The policy did not load in time.' }; }
 
         if (job.kind === 'source') return bgRunSourceJob(job);
+        if (job.kind === 'remove') return bgRunRemoveJob(job, run || {});
         let groups = await bgReadGroups();
         if (!job.a.some(a => bgHasGroup(groups, a))) {
             await bgLeave();
@@ -40975,6 +41322,55 @@ Version 1.16:
             return null;
         }, BG_WAIT);
         if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.', added: missing.map(smShortName) };
+        await bgLeave();
+        return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
+    }
+
+    // Remove from Source: removes the tags the policy still has, never leaves it empty without the user's confirm.
+    async function bgRunRemoveJob(job, run) {
+        const label = r => r.mode === 'group' ? smShortName(r.value) : r.value;
+        const find = (tags, r) => {
+            const same = tags.filter(t => t.type === r.mode && (r.mode === 'group' ? t.name === r.value : smKey(t.name) === smKey(r.value)));
+            if (same.length || r.mode !== 'group') return same[0] || null;
+            const short = tags.filter(t => t.type === 'group' && smShortName(t.name) === smShortName(r.value));
+            return short.length === 1 ? short[0] : null;
+        };
+        let tags = await smReadSource();
+        const present = job.removes.map(r => ({ r, tag: find(tags, r) })).filter(x => x.tag);
+        if (!present.length) {
+            await bgLeave();
+            return { outcome: 'skipped', reason: 'None of the values is in this policy any more.' };
+        }
+        const left = tags.length - present.length;
+        if (left <= 0 && !(run.confirmedAllUsers || []).includes(job.id)) {
+            await bgLeave();
+            return { outcome: 'skipped', reason: 'Would leave no users or groups, so it would apply to All Users: not confirmed. Check again.' };
+        }
+        for (const { tag } of present) {
+            const r = await smRemoveTag(tag.type, tag.name);
+            if (r !== 'removed') {
+                await bgLeave();
+                return { outcome: 'failed', reason: `${smShortName(tag.name)} could not be removed. Nothing was saved.` };
+            }
+        }
+        tags = await smReadSource();
+        const right = sm.lastPolicy && sm.lastPolicy.id === job.id && new RegExp(`[?&]id=%?2?2?${job.id}(%22)?(&|$)`).test(location.hash);
+        if (!right || present.some(({ tag }) => tags.some(t => t.type === tag.type && t.name === tag.name)) || tags.length !== left) {
+            await bgLeave();
+            return { outcome: 'failed', reason: 'The Source could not be checked after removing. Nothing was saved.' };
+        }
+        if (bg.pauseRequested || bg.stopRequested) { await bgLeave(); return { outcome: 'paused' }; }
+        sm.lastSave = null;
+        if (!(await bgClickSave())) { await bgLeave(); return { outcome: 'failed', reason: 'Save is not available: the policy has an error.' }; }
+        const end = await bgWaitFor(() => {
+            const err = document.querySelector('.ns-policy-container .form-error-message');
+            if (err && err.getClientRects().length) return { error: err.textContent.trim() };
+            if (sm.lastSave && sm.lastSave.status !== 'success') return { error: sm.lastSave.msg || 'Netskope did not save it.' };
+            if (sm.lastSave && bgIsList()) return { ok: true };
+            return null;
+        }, BG_WAIT);
+        const removed = present.map(({ r }) => label(r));
+        if (end && end.ok) return { outcome: 'done', reason: 'Removed ' + removed.join(', ') + (left <= 0 ? '. Now applies to All Users.' : '.'), removed, nowAllUsers: left <= 0 };
         await bgLeave();
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
@@ -41073,18 +41469,19 @@ Version 1.16:
         if (!run || run.state !== 'running' || bg.running) return;
         bg.running = true;
         bgShowRunCard(run);
-        bgLock(true, run.kind === 'source' ? 'Add to Source' : undefined);
+        bgLock(true, run.kind === 'source' ? 'Add to Source' : run.kind === 'remove' ? 'Remove from Source' : undefined);
         try {
             while (run.index < run.jobs.length) {
                 if (bg.pauseRequested || bg.stopRequested) break;
                 const job = run.jobs[run.index];
                 bgRenderRunCard(run, job);
                 let res;
-                try { res = await bgRunJob(job); }
+                try { res = await bgRunJob(job, run); }
                 catch (e) { res = { outcome: 'failed', reason: e.message }; await bgLeave(); }
                 if (res.outcome === 'paused') continue;
                 run.results.push({ id: job.id, type: job.type, name: job.name, outcome: res.outcome, reason: res.reason,
-                    a: job.a, added: res.added || [], already: res.already || [], allUsers: !!job.allUsers });
+                    a: job.a, added: res.added || [], already: res.already || [], allUsers: !!job.allUsers,
+                    group: job.group || '', removed: res.removed || [], nowAllUsers: !!res.nowAllUsers });
                 run.index++;
                 bgSaveRun(run);
                 bgRunLog(`${job.name}: ${res.outcome}. ${res.reason}`, res.outcome === 'failed' ? 'err' : res.outcome === 'done' ? 'ok' : 'warn');
@@ -41093,6 +41490,12 @@ Version 1.16:
             else if (bg.pauseRequested && run.index < run.jobs.length) { run.state = 'paused'; run.pausedReason = bg.pauseRequested; }
             else run.state = 'finished';
             if (run.state === 'finished') run.finishedAt = Date.now();
+            // A finished Remove from Source can be undone with ↩ Revert these, like the other Policy tools runs
+            if (run.state === 'finished' && run.kind === 'remove') {
+                GM_setValue(PT_LAST_RUN_KEY, { v: 1, action: 'remove', startedAt: run.startedAt, finishedAt: run.finishedAt,
+                    results: run.results.map(r => ({ id: r.id, name: r.name, group: r.group, outcome: r.outcome, reason: r.reason })) });
+                Object.values(pt.panes).forEach(entry => { if (entry.pane.isConnected) entry.renderLast(); });
+            }
             bgSaveRun(run);
             bgRenderRunCard(run, null);
         } finally {
@@ -41157,6 +41560,24 @@ Version 1.16:
         return lines.join('\n');
     }
 
+    function bgRemoveSummaryText(run, head) {
+        const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+        const lines = ['Netskope Real-time Protection: remove from Source', head.join(' · ')];
+        const section = (title, items, one = 'policy', many = 'policies') => {
+            if (!items.length) return;
+            lines.push('', `${title} (${count(items.length, one, many)}):`);
+            items.forEach(i => lines.push('- ' + i));
+        };
+        const of = kind => run.results.filter(r => r.outcome === kind);
+        section('Changed', of('done').map(r => `${r.name}: removed ${(r.removed || []).join(', ')}` + (r.nowAllUsers ? ' (now applies to All Users)' : '')));
+        section('Not changed', (run.preSkipped || []).map(x => `${x.name}: ${x.reason}`).concat(of('skipped').map(r => `${r.name}: ${r.reason.replace(/\.$/, '')}`)));
+        section('Failed, not saved', of('failed').map(r => `${r.name}: ${r.reason}`));
+        if (run.stopped) section('Not done, the run was stopped', run.jobs.slice(run.results.length).map(j => j.name));
+        section('Not removed', (run.notRemoved || []).map(x => `${x.value}: ${x.reason}`), 'value', 'values');
+        lines.push('', 'Pending: Apply Changes in Netskope.');
+        return lines.join('\n');
+    }
+
     // Text to paste in the ticket: what changed, grouped by policy, then what did not and why.
     function bgSummaryText(run) {
         const count = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -41166,6 +41587,7 @@ Version 1.16:
         if (run.tenant) head.push(`Tenant: ${run.tenant}`);
         if (run.by) head.push(`By: ${run.by}`);
         if (run.kind === 'source') return bgSourceSummaryText(run, head);
+        if (run.kind === 'remove') return bgRemoveSummaryText(run, head);
         const lines = ['Netskope Real-time Protection: bulk add groups', head.join(' · ')];
         const section = (title, items) => {
             if (!items.length) return;
@@ -41277,7 +41699,7 @@ Version 1.16:
 
     function bgRenderRunCard(run, job) {
         bgShowRunCard();
-        bgRunEl('run-title').textContent = run.kind === 'source' ? '➕ Add to Source' : '👥 Group pairs';
+        bgRunEl('run-title').textContent = run.kind === 'source' ? '➕ Add to Source' : run.kind === 'remove' ? '➖ Remove from Source' : '👥 Group pairs';
         const total = run.jobs.length;
         const finished = run.state === 'finished';
         const paused = run.state === 'paused';
@@ -41298,6 +41720,9 @@ Version 1.16:
         const of = kind => run.results.filter(r => r.outcome === kind);
         box.appendChild(Object.assign(document.createElement('div'), { textContent:
             `Done: ${of('done').length}, Skipped: ${of('skipped').length}, Failed: ${of('failed').length}` }));
+        const nowAll = of('done').filter(r => r.nowAllUsers).length;
+        if (nowAll) box.appendChild(Object.assign(document.createElement('b'), { textContent:
+            `⚠ ${nowAll} ${nowAll === 1 ? 'policy now applies' : 'policies now apply'} to All Users.` }));
         if (run.stopped) box.appendChild(Object.assign(document.createElement('div'), { textContent:
             `Stopped: ${total - run.results.length} of ${total} policies were not done.` }));
         for (const [kind, title] of [['skipped', 'Skipped'], ['failed', 'Failed']]) {
