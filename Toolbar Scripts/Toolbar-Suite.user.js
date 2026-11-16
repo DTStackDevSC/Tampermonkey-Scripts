@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.32.0
+// @version      2.32.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.32.0';
-    const CHANGELOG = `Version 2.32.0:
+   const SCRIPT_VERSION = '2.32.1';
+    const CHANGELOG = `Version 2.32.1:
+- NS Policies Toolkit: Policy tools: Check and the policy lists no longer miss policies after you searched the Netskope policy list or opened a policy by hand. Before, the next Check only saw the policies of that search, so the run went to the policy you had opened or to policies of the earlier batch.
+
+Version 2.32.0:
 - NS Policies Toolkit: Policy tools: new "➕ Add to Source" tab. Paste users (user@domain.es) and groups, choose one or many policies, Check, and they are all added to the Source of each policy. Policies that already have them are skipped, and a policy that applied to All Users is marked before it is changed.
 - NS Policies Toolkit: Policy tools: the "Groups" tab is now called "👥 Group pairs", next to Add to Source.
 
@@ -30544,8 +30547,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.41.0';
-    const CHANGELOG = `Version 1.41.0:
+    const SCRIPT_VERSION = '1.41.1';
+    const CHANGELOG = `Version 1.41.1:
+- Policy tools: Check and the policy lists no longer miss policies after you searched the Netskope policy list or opened a policy by hand. Before, the next Check only saw the policies of that search, so the run went to the policy you had opened or to policies of the earlier batch.
+
+Version 1.41.0:
 - Policy tools: new "➕ Add to Source" tab. Paste users (user@domain.es) and groups, choose one or many policies, Check, and they are all added to the Source of each policy. Policies that already have them are skipped, and a policy that applied to All Users is marked before it is changed.
 - Policy tools: the "Groups" tab is now called "👥 Group pairs", next to Add to Source.
 
@@ -36100,7 +36106,10 @@ Version 1.16:
                 }
             });
         }
-        if (/getPolicyGroupsWithAssociatedPolicies/.test(path)) {
+        // Only a full list is kept: a list the page filtered (its search box) would leave policies out
+        let plainList = false;
+        try { const b = JSON.parse(body); plainList = Object.keys(b).every(k => k === 'token' || k === 'all_policy_groups'); } catch (e) { /* not JSON */ }
+        if (/getPolicyGroupsWithAssociatedPolicies/.test(path) && plainList) {
             xhr.addEventListener('load', () => {
                 try {
                     const json = xhr.responseType === 'json' ? xhr.response : JSON.parse(xhr.responseText);
@@ -39682,7 +39691,7 @@ Version 1.16:
     }
 
     async function ptLoadPolicies() {
-        const data = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        const data = await smPost(PC_LIST_PATH, pcListBody());
         return ptPoliciesFrom(data);
     }
 
@@ -40756,7 +40765,7 @@ Version 1.16:
         const progress = bgEl('check-progress');
         let ticker = null;
         try {
-            const list = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+            const list = await smPost(PC_LIST_PATH, pcListBody());
             const lookup = {};
             const toFind = [...new Set(pairs.map(p => p.b))];
             progress.hidden = false;
@@ -41513,6 +41522,8 @@ Version 1.16:
     const PC_FIXED_TEMPLATES = { 'silent_block.html': 'No Notification (Mute)' };
     const PC_AISEC_PATH = '/api/v2/profiles/aiguardrails';
     const PC_LIST_PATH  = 'inline_policy_groups/getPolicyGroupsWithAssociatedPolicies';
+    // Always the full list: the page's own list requests can carry the search of its policy list
+    const pcListBody    = () => ({ all_policy_groups: false });
 
     // Which lookups this policy needs, from the values it holds.
     function pcNeededLookups(ruleData) {
@@ -41554,7 +41565,7 @@ Version 1.16:
 
     // Name readers for the Change Tracker catalog. They only read, and reuse the page's own session.
     nsCatalogReaders.policies = async () => {
-        const data = await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        const data = await smPost(PC_LIST_PATH, pcListBody());
         return [...new Set(bgPoliciesOf(data).map(p => p.name).filter(Boolean))];
     };
     nsCatalogReaders.ssl = async () => {
@@ -41618,7 +41629,7 @@ Version 1.16:
 
     // Group order and position in the group, from the policy list the page loaded or one request.
     async function pcPlace(id) {
-        if (!pc.listCache) pc.listCache = sm.policyList || await smPost(PC_LIST_PATH, sm.lastBodies[PC_LIST_PATH] || { all_policy_groups: false });
+        if (!pc.listCache) pc.listCache = sm.policyList || await smPost(PC_LIST_PATH, pcListBody());
         if (sm.policyList) pc.listCache = sm.policyList;
         const groups = Array.isArray(pc.listCache) ? pc.listCache : [];
         for (const g of groups) {
