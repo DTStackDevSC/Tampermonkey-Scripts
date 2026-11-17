@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.36.0
+// @version      2.37.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.36.0';
-    const CHANGELOG = `Version 2.36.0:
+   const SCRIPT_VERSION = '2.37.0';
+    const CHANGELOG = `Version 2.37.0:
+- NS Policies Toolkit: Steering Exception Tools: new "Certified Pinned Apps" tab in Bulk remove and Bulk add. Bulk remove finds the apps in the configurations you pick and deletes their entries, even apps Netskope no longer lists. Bulk add offers the same options as Netskope (Bypass or Block per platform, Device Classification, Tunnel Mode, Custom App Domains) and applies them to every configuration you pick, one entry per app; a configuration that already has the app is skipped. Every change is backed up with all its options and can be undone from ↩ Backups.
+
+Version 2.36.0:
 - NS Policies Toolkit: Policy tools: Group pairs, Add to Source and Remove from Source have an optional "📝 Log entry". Fill in the RITM, date, name and description once, and the run adds that line under the description of every policy it changes, with the same format as "+ Add Log Entry".
 
 Version 2.35.0:
@@ -30559,8 +30562,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.45.0';
-    const CHANGELOG = `Version 1.45.0:
+    const SCRIPT_VERSION = '1.46.0';
+    const CHANGELOG = `Version 1.46.0:
+- Steering Exception Tools: new "Certified Pinned Apps" tab in Bulk remove and Bulk add. Bulk remove finds the apps in the configurations you pick and deletes their entries, even apps Netskope no longer lists. Bulk add offers the same options as Netskope (Bypass or Block per platform, Device Classification, Tunnel Mode, Custom App Domains) and applies them to every configuration you pick, one entry per app; a configuration that already has the app is skipped. Every change is backed up with all its options and can be undone from ↩ Backups.
+
+Version 1.45.0:
 - Policy tools: Group pairs, Add to Source and Remove from Source have an optional "📝 Log entry". Fill in the RITM, date, name and description once, and the run adds that line under the description of every policy it changes, with the same format as "+ Add Log Entry".
 
 Version 1.44.0:
@@ -32176,7 +32182,7 @@ Version 1.16:
                 icon: '🧹',
                 title: 'Steering Exception Tools',
                 buildContent(body) {
-                    lead(body, 'On the Steering Configuration page, remove or add domains or categories across the exceptions of several steering configurations at once.');
+                    lead(body, 'On the Steering Configuration page, remove or add domains, categories or certified pinned apps across the exceptions of several steering configurations at once.');
 
                     body.appendChild(hrow([
                         chip('+ Add Filter', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
@@ -32189,6 +32195,7 @@ Version 1.16:
                     const tabs = hrow([
                         span('Domains', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px', background: '#f7f7f7', border: '1px solid #e6e6e6', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
                         span('Categories', { fontSize: '12px', fontWeight: 'bold', color: '#005587', padding: '4px 10px', background: '#fff', border: '1px solid #e6e6e6', borderTop: '3px solid #005587', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
+                        span('Certified Pinned Apps', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px', background: '#f7f7f7', border: '1px solid #e6e6e6', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
                     ], { gap: '4px', margin: '12px 0 6px 0', borderBottom: '1px solid #e6e6e6' });
                     body.appendChild(tabs);
                     const picker = document.createElement('div');
@@ -32208,6 +32215,18 @@ Version 1.16:
                     body.appendChild(picker);
                     caption(body, 'The Categories tab lists every predefined and custom category of the tenant, read when you open it. Search, tick the ones you want, and remove a pick with ✕ on its chip.');
 
+                    // Certified pinned apps: one block per platform in Bulk add
+                    const plat = document.createElement('div');
+                    Object.assign(plat.style, { border: '1px solid #e0e0e0', borderRadius: '6px', padding: '8px 12px', background: '#fff', maxWidth: '420px', margin: '10px 0 0 0' });
+                    const radio = (on) => span(on ? '◉' : '○', { fontSize: '13px', color: on ? '#005587' : '#999' });
+                    const box = (on) => span(on ? '✓' : '', { width: '13px', height: '13px', borderRadius: '3px', background: on ? '#667eea' : '#fff', border: on ? 'none' : '1px solid #b0b0b0', color: '#fff', fontSize: '10px', lineHeight: '13px', textAlign: 'center', display: 'inline-block' });
+                    plat.appendChild(hrow([span('Windows', { fontSize: '12px', fontWeight: 'bold', color: '#333' }), span('Signal, Zoom', { fontSize: '11px', color: '#777' })], { gap: '8px', margin: '0 0 4px 0' }));
+                    plat.appendChild(hrow([radio(true), span('Bypass', { fontSize: '12px' }), radio(false), span('Block', { fontSize: '12px' })], { gap: '6px', margin: '0 0 4px 0' }));
+                    plat.appendChild(hrow([box(true), span('Devices matching specific Device Classification', { fontSize: '12px' }), chip('Managed', '#e3f0f8', { color: '#005587' })], { gap: '6px', margin: '0 0 4px 22px' }));
+                    plat.appendChild(hrow([box(true), span('Tunnel Mode', { fontSize: '12px' }), span('login.example.com', { fontSize: '11px', fontFamily: 'monospace', border: '1px solid #ccc', borderRadius: '4px', padding: '2px 6px' })], { gap: '6px', margin: '0 0 0 22px' }));
+                    body.appendChild(plat);
+                    caption(body, 'In the Certified Pinned Apps tab, Bulk add shows the same options as Netskope: Custom App Domains, and one block per platform of the apps you picked. Each app uses only its own platforms.');
+
                     const stepBadge = n => span(n, { width: '18px', height: '18px', borderRadius: '50%', background: '#005587', color: '#fff', fontSize: '11px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' });
                     body.appendChild(hrow([
                         span('👉 Click Check to see what will change', { fontSize: '12px', color: '#005587', fontWeight: 'bold' }),
@@ -32219,6 +32238,8 @@ Version 1.16:
                         'The tab you used last opens next time. Switching tab clears the Check result but keeps the configurations and notes.',
                         'Categories work like domains: Check shows where each one is, a category a configuration already has is skipped, and every change is backed up so it can be undone.',
                         'Removing a category keeps every other category of the entry, whatever it is.',
+                        'Each certified pinned app is its own entry: an app a configuration already has is skipped, and removing an app deletes its entry. The backup keeps all its options, so ↩ Backups can recreate it exactly.',
+                        'Bulk remove also lists apps that are in the ticked configurations but no longer in the Netskope catalog, marked Retired.',
                     ]);
 
                     // The hint next to the action button
@@ -32768,7 +32789,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
-                    togglesWrap.appendChild(toggle('🧹 Steering Exception Tools', true, 'Bulk remove and bulk add domains or categories across steering exceptions, with backups to undo.'));
+                    togglesWrap.appendChild(toggle('🧹 Steering Exception Tools', true, 'Bulk remove and bulk add domains, categories or certified pinned apps across steering exceptions, with backups to undo.'));
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
                     togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
                     togglesWrap.appendChild(toggle('📥 SSL Decryption export', true, 'Download every SSL Decryption policy as an Excel file.'));
@@ -36995,7 +37016,8 @@ Version 1.16:
             const base = { entry: e, elsewhere: [], willAdd: [], addedSince: [], droppedSince: [] };
             if (e.kind === 'create') {
                 // The entry the addition made, by its id; another entry of the same app was made by someone else
-                const own = rows.find(r => r.rowId === String(e.rowId) && r.appId === appId);
+                // A run stopped before it read the new ids leaves "-1": then the entry with the same notes is taken as its own
+                const own = rows.find(r => r.appId === appId && (r.rowId === String(e.rowId) || (String(e.rowId) === '-1' && String(r.notes || '').trim() === e.notes.trim())));
                 const other = !own && rows.find(r => r.appId === appId);
                 const row = own || other;
                 return Object.assign(base, { exists: !!row, rowId: row ? row.rowId : null, state: own ? 'created' : other ? 'createdChanged' : 'same' });
@@ -37391,6 +37413,7 @@ Version 1.16:
             // Check again just before adding: the console never sends an app a configuration already has
             const before = sePinEntries(await seListExceptions(cfg.configId));
             const added = [];
+            const made = [];   // backup entries of this configuration, to get their ids after the writes
             for (const appId of cfg.toAdd) {
                 const name = sePinName(appId);
                 if (before.some(e => e.appId === appId)) continue;
@@ -37404,10 +37427,18 @@ Version 1.16:
                 progress(`Adding ${name} to ${cfg.name} (${added.length + 1} of ${cfg.toAdd.length})…`);
                 await seWriteChecked(() => seSavePin(cfg.configId, sePinPayload(appId, plats, form, notes, null)),
                     seLandedPinCreate(cfg.configId, appId), progress, `adding ${name} to ${cfg.name}`);
-                // Netskope does not return the new entry's id, so find the new row of this app
-                const row = sePinEntries(await seListExceptions(cfg.configId)).find(e => e.appId === appId && !before.some(b => b.rowId === e.rowId));
-                if (row) { entry.rowId = row.rowId; seSaveBackup(backup); }
+                made.push(entry);
                 added.push(name);
+            }
+            if (made.length) {
+                // Netskope does not return the new entries' ids: one read of the list finds the new row of each app
+                progress(`Reading the new entries in ${cfg.name}…`);
+                const after = sePinEntries(await seListExceptions(cfg.configId));
+                made.forEach(entry => {
+                    const row = after.find(e => e.appId === entry.after[0] && !before.some(b => b.rowId === e.rowId));
+                    if (row) entry.rowId = row.rowId;
+                });
+                seSaveBackup(backup);
             }
             log.push(added.length ? { config: cfg.name, kind: 'add', added } : { config: cfg.name, kind: 'skipped', added: [] });
         }

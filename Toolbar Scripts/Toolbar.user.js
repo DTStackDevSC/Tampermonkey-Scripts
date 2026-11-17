@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.36.0
+// @version      2.37.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.36.0';
-    const CHANGELOG = `Version 2.36.0:
+   const SCRIPT_VERSION = '2.37.0';
+    const CHANGELOG = `Version 2.37.0:
+- NS Policies Toolkit: Steering Exception Tools: new "Certified Pinned Apps" tab in Bulk remove and Bulk add. Bulk remove finds the apps in the configurations you pick and deletes their entries, even apps Netskope no longer lists. Bulk add offers the same options as Netskope (Bypass or Block per platform, Device Classification, Tunnel Mode, Custom App Domains) and applies them to every configuration you pick, one entry per app; a configuration that already has the app is skipped. Every change is backed up with all its options and can be undone from ↩ Backups.
+
+Version 2.36.0:
 - NS Policies Toolkit: Policy tools: Group pairs, Add to Source and Remove from Source have an optional "📝 Log entry". Fill in the RITM, date, name and description once, and the run adds that line under the description of every policy it changes, with the same format as "+ Add Log Entry".
 
 Version 2.35.0:
@@ -30559,8 +30562,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.45.0';
-    const CHANGELOG = `Version 1.45.0:
+    const SCRIPT_VERSION = '1.46.0';
+    const CHANGELOG = `Version 1.46.0:
+- Steering Exception Tools: new "Certified Pinned Apps" tab in Bulk remove and Bulk add. Bulk remove finds the apps in the configurations you pick and deletes their entries, even apps Netskope no longer lists. Bulk add offers the same options as Netskope (Bypass or Block per platform, Device Classification, Tunnel Mode, Custom App Domains) and applies them to every configuration you pick, one entry per app; a configuration that already has the app is skipped. Every change is backed up with all its options and can be undone from ↩ Backups.
+
+Version 1.45.0:
 - Policy tools: Group pairs, Add to Source and Remove from Source have an optional "📝 Log entry". Fill in the RITM, date, name and description once, and the run adds that line under the description of every policy it changes, with the same format as "+ Add Log Entry".
 
 Version 1.44.0:
@@ -32176,7 +32182,7 @@ Version 1.16:
                 icon: '🧹',
                 title: 'Steering Exception Tools',
                 buildContent(body) {
-                    lead(body, 'On the Steering Configuration page, remove or add domains or categories across the exceptions of several steering configurations at once.');
+                    lead(body, 'On the Steering Configuration page, remove or add domains, categories or certified pinned apps across the exceptions of several steering configurations at once.');
 
                     body.appendChild(hrow([
                         chip('+ Add Filter', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
@@ -32189,6 +32195,7 @@ Version 1.16:
                     const tabs = hrow([
                         span('Domains', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px', background: '#f7f7f7', border: '1px solid #e6e6e6', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
                         span('Categories', { fontSize: '12px', fontWeight: 'bold', color: '#005587', padding: '4px 10px', background: '#fff', border: '1px solid #e6e6e6', borderTop: '3px solid #005587', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
+                        span('Certified Pinned Apps', { fontSize: '12px', fontWeight: 'bold', color: '#53565a', padding: '4px 10px', background: '#f7f7f7', border: '1px solid #e6e6e6', borderBottom: '0', borderRadius: '4px 4px 0 0' }),
                     ], { gap: '4px', margin: '12px 0 6px 0', borderBottom: '1px solid #e6e6e6' });
                     body.appendChild(tabs);
                     const picker = document.createElement('div');
@@ -32208,6 +32215,18 @@ Version 1.16:
                     body.appendChild(picker);
                     caption(body, 'The Categories tab lists every predefined and custom category of the tenant, read when you open it. Search, tick the ones you want, and remove a pick with ✕ on its chip.');
 
+                    // Certified pinned apps: one block per platform in Bulk add
+                    const plat = document.createElement('div');
+                    Object.assign(plat.style, { border: '1px solid #e0e0e0', borderRadius: '6px', padding: '8px 12px', background: '#fff', maxWidth: '420px', margin: '10px 0 0 0' });
+                    const radio = (on) => span(on ? '◉' : '○', { fontSize: '13px', color: on ? '#005587' : '#999' });
+                    const box = (on) => span(on ? '✓' : '', { width: '13px', height: '13px', borderRadius: '3px', background: on ? '#667eea' : '#fff', border: on ? 'none' : '1px solid #b0b0b0', color: '#fff', fontSize: '10px', lineHeight: '13px', textAlign: 'center', display: 'inline-block' });
+                    plat.appendChild(hrow([span('Windows', { fontSize: '12px', fontWeight: 'bold', color: '#333' }), span('Signal, Zoom', { fontSize: '11px', color: '#777' })], { gap: '8px', margin: '0 0 4px 0' }));
+                    plat.appendChild(hrow([radio(true), span('Bypass', { fontSize: '12px' }), radio(false), span('Block', { fontSize: '12px' })], { gap: '6px', margin: '0 0 4px 0' }));
+                    plat.appendChild(hrow([box(true), span('Devices matching specific Device Classification', { fontSize: '12px' }), chip('Managed', '#e3f0f8', { color: '#005587' })], { gap: '6px', margin: '0 0 4px 22px' }));
+                    plat.appendChild(hrow([box(true), span('Tunnel Mode', { fontSize: '12px' }), span('login.example.com', { fontSize: '11px', fontFamily: 'monospace', border: '1px solid #ccc', borderRadius: '4px', padding: '2px 6px' })], { gap: '6px', margin: '0 0 0 22px' }));
+                    body.appendChild(plat);
+                    caption(body, 'In the Certified Pinned Apps tab, Bulk add shows the same options as Netskope: Custom App Domains, and one block per platform of the apps you picked. Each app uses only its own platforms.');
+
                     const stepBadge = n => span(n, { width: '18px', height: '18px', borderRadius: '50%', background: '#005587', color: '#fff', fontSize: '11px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' });
                     body.appendChild(hrow([
                         span('👉 Click Check to see what will change', { fontSize: '12px', color: '#005587', fontWeight: 'bold' }),
@@ -32219,6 +32238,8 @@ Version 1.16:
                         'The tab you used last opens next time. Switching tab clears the Check result but keeps the configurations and notes.',
                         'Categories work like domains: Check shows where each one is, a category a configuration already has is skipped, and every change is backed up so it can be undone.',
                         'Removing a category keeps every other category of the entry, whatever it is.',
+                        'Each certified pinned app is its own entry: an app a configuration already has is skipped, and removing an app deletes its entry. The backup keeps all its options, so ↩ Backups can recreate it exactly.',
+                        'Bulk remove also lists apps that are in the ticked configurations but no longer in the Netskope catalog, marked Retired.',
                     ]);
 
                     // The hint next to the action button
@@ -32768,7 +32789,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('💾 Save Reminder Checklist',      true, 'Checklist when you click Save on a policy page.'));
                     togglesWrap.appendChild(toggle('🔢 DLP Entity Character Counter', true, 'Live character count in the DLP Edit Entity input.'));
                     togglesWrap.appendChild(toggle('📥 Bulk Constraint Tools',        true, 'Bulk entry, bulk delete and copy in the constraint profile modal.'));
-                    togglesWrap.appendChild(toggle('🧹 Steering Exception Tools', true, 'Bulk remove and bulk add domains or categories across steering exceptions, with backups to undo.'));
+                    togglesWrap.appendChild(toggle('🧹 Steering Exception Tools', true, 'Bulk remove and bulk add domains, categories or certified pinned apps across steering exceptions, with backups to undo.'));
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
                     togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
                     togglesWrap.appendChild(toggle('📥 SSL Decryption export', true, 'Download every SSL Decryption policy as an Excel file.'));
@@ -36110,12 +36131,13 @@ Version 1.16:
     // page's own outgoing requests (the console pings every few seconds).
 
     const SE_API         = '/settings/steering_exception/';
+    const SE_PIN_API     = '/settings/ssl_pinned_apps/';   // certified pinned app catalog and writes
     const SE_CONFIGS_KEY = 'toolkit_steeringConfigs';   // { [config_id]: { name, trafficType } }
     const SE_BACKUPS_KEY      = 'toolkit_steeringBackups';      // removal backups, newest first
     const SE_BACKUP_LIMIT_KEY = 'toolkit_steeringBackupLimit';  // how many backups to keep
     const SE_FILTER_CASE_KEY  = 'toolkit_steeringFilterMatchCase'; // "Match case" in the configuration filter
     const SE_OLD_BACKUP_KEY   = 'toolkit_steeringBackup';       // the single backup kept by 1.24.x
-    const SE_TAB_KEY          = 'toolkit_steeringTab';          // last tab used: 'domain' or 'category'
+    const SE_TAB_KEY          = 'toolkit_steeringTab';          // last tab used: 'domain', 'category' or 'pinned'
     const SE_HOST_ID     = 'ns-steering-remover-host';
     const SE_BUTTON_ID   = 'ns-steering-remover-btn';
     const SE_ADD_BUTTON_ID = 'ns-steering-adder-btn';
@@ -36139,6 +36161,11 @@ Version 1.16:
         mode:           'remove',   // the panel either removes or adds
         type:           'domain',   // what it removes or adds: 'domain' or 'category' (the tab)
         categories:     new Set(),  // ids of the categories picked in the Categories tab
+        pinned:         new Set(),  // ids of the apps picked in the Certified Pinned Apps tab
+        pinSeen:        {},         // app id → name seen in the exception lists (apps Netskope retired keep theirs)
+        pinExtra:       [],         // apps in the ticked configurations that the catalog lacks: [{ id, name }]
+        pinForm:        null,       // Bulk add options: { customDomains: '', platforms: { p: { block, managed, labels, tunnel, tunnelDomains } } }
+        pinLabels:      null,       // device classifications: [{ id, name }], "Managed" first
         lastConfigs:    [],         // names of the configurations the last run changed
     };
 
@@ -36309,13 +36336,13 @@ Version 1.16:
         return text.length > 500 ? text.slice(0, 500) + '…' : text;
     }
 
-    async function sePost(endpoint, payload) {
+    async function sePost(endpoint, payload, base = SE_API) {
         if (!se.token) {
             throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
         }
         const reqId  = seRandomId();
         const prefix = se.clientIdPrefix || btoa('/settings+steering_config+traffic');
-        const res = await fetch(SE_API + endpoint, {
+        const res = await fetch(base + endpoint, {
             method: 'POST',
             credentials: 'same-origin',
             headers: {
@@ -36414,6 +36441,123 @@ Version 1.16:
             out.push({ rowId: r.settings_id, notes: read.notes != null ? read.notes : (r.notes || ''), ids: read.ids });
         }
         return out;
+    }
+
+    /* ── Certified pinned apps ── */
+
+    // Every pinned app entry holds one app with options per platform. The console always sends all seven.
+    const SE_PIN_PLATFORMS = ['windows', 'winserver', 'mac', 'linux', 'ios', 'android', 'chromeos'];
+    const SE_PIN_LABELS = { windows: 'Windows', winserver: 'Windows Server', mac: 'Mac', linux: 'Linux', ios: 'iOS', android: 'Android', chromeos: 'ChromeOS' };
+    const SE_PIN_ID_RE = /^(\d+|custom\d+)$/i;
+
+    function seLoadPinCatalog(force) {
+        if (se.pinPromise && !force) return se.pinPromise;
+        se.pinCatalog = null;
+        se.pinPromise = (async () => {
+            const d = await sePost('getAllSSLPinnedApps', { include_config_usage: false }, SE_PIN_API);
+            const apps = d && Array.isArray(d.apps) ? d.apps : Array.isArray(d) ? d : [];
+            const list = apps.filter(a => a && a.application_id != null).map(a => ({
+                id: String(a.application_id), name: String(a.current_name || a.application || a.application_id),
+                custom: String(a.custom) === 'true', platforms: Array.isArray(a.platforms) ? a.platforms.map(String) : [],
+            }));
+            list.sort((a, b) => a.name.localeCompare(b.name));
+            se.pinCatalog = { list, byId: new Map(list.map(a => [a.id, a])) };
+            return se.pinCatalog;
+        })();
+        se.pinPromise.catch(() => { se.pinPromise = null; });
+        return se.pinPromise;
+    }
+
+    function sePinName(id) {
+        const a = se.pinCatalog && se.pinCatalog.byId.get(String(id));
+        return a ? a.name : se.pinSeen[id] || `App ${id}`;
+    }
+
+    // [{ rowId, appId, name, notes }] of the pinned app entries in a list answer. Row ids are strings here.
+    function sePinEntries(rows) {
+        return (Array.isArray(rows) ? rows : [])
+            .filter(r => r && r.type === 'ssl_pinned_app' && r.display_value && r.display_value.application_id != null)
+            .map(r => {
+                const appId = String(r.display_value.application_id);
+                const name = String(r.current_name || r.application_name || '');
+                if (name) se.pinSeen[appId] = name;
+                return { rowId: String(r.settings_id), appId, name: name || sePinName(appId), notes: r.notes || '' };
+            });
+    }
+
+    const sePinList = v => Array.isArray(v) ? v.map(String).filter(Boolean)
+        : typeof v === 'string' && v.trim() ? v.split(',').map(x => x.trim()).filter(Boolean) : [];
+
+    // One entry with every option, or null when it cannot be read:
+    // { appId, name, notes, appDomains, customDomains, platforms: { p: { enabled, block, managed, labels, tunnel, tunnelDomains } } }
+    async function seReadPin(configId, rowId) {
+        const d = await sePost('getExceptionById', { config_id: String(configId), rowId: String(rowId) });
+        const data = d && d.data && typeof d.data === 'object' ? d.data : null;
+        const appId = data && Object.keys(data)[0];
+        if (!appId || !data[appId] || typeof data[appId] !== 'object') return null;
+        const x = data[appId];
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => {
+            const o = x[p] && typeof x[p] === 'object' ? x[p] : {};
+            const action = o.action == null ? '1' : String(o.action);   // "0" Block, "1" Bypass, "2" Bypass for a device classification
+            const block = action === '0';
+            const managed = !block && (action === '2' || !!o.managed_device);
+            const labels = sePinList(o.custom_labels);
+            platforms[p] = { enabled: !!o.enabled, block, managed, labels: managed ? (labels.length ? labels : ['-1']) : [],
+                tunnel: !block && !!o.tunnel, tunnelDomains: !block && o.tunnel ? sePinList(o.tunnel_domains) : [] };
+        });
+        if (x.appName) se.pinSeen[appId] = String(x.appName);
+        return { appId: String(appId), name: String(x.appName || sePinName(appId)), notes: d.notes != null ? String(d.notes) : '',
+            appDomains: sePinList(x.app_domains), customDomains: sePinList(x.custom_app_domains), platforms };
+    }
+
+    // The platforms an app has: from the catalog, or from an entry read earlier when the catalog lacks it
+    function sePinPlatformsOf(appId, pin) {
+        const a = se.pinCatalog && se.pinCatalog.byId.get(String(appId));
+        if (a && a.platforms.length) return a.platforms.slice();
+        return pin ? SE_PIN_PLATFORMS.filter(p => pin.platforms[p] && pin.platforms[p].enabled) : [];
+    }
+
+    // The body the console sends when it adds (edit null) or saves (edit { rowId, appDomains }) a pinned app.
+    // form: { customDomains: [], platforms: { p: { block, managed, labels: [], tunnel, tunnelDomains: [] } } }
+    function sePinPayload(appId, appPlatforms, form, notes, edit) {
+        const opts = {};
+        const labelValue = l => /^-?\d+$/.test(String(l)) ? Number(l) : String(l);
+        SE_PIN_PLATFORMS.forEach(p => {
+            const on = appPlatforms.includes(p);
+            const f = (on && form.platforms[p]) || {};
+            const bypass = !f.block;
+            if (p === 'chromeos') { opts[p] = { enabled: on, bypass, drop: !bypass }; return; }
+            const managed = bypass && !!f.managed;
+            const tunnel = bypass && !!f.tunnel;
+            opts[p] = { enabled: on, bypass, bypass_for_certain_custom_labels: false, drop: !bypass, managed_device: managed,
+                custom_labels: managed ? ((f.labels && f.labels.length) ? f.labels : ['-1']).map(labelValue) : [],
+                tunnel, tunnel_domains: tunnel ? (f.tunnelDomains || []).join(',') : '' };
+        });
+        const body = { sslPinnedApp: { selectionModel: [String(appId)], new_bypass_options: opts },
+            editRow: !!edit, notes: notes || '', modify_all_ssl_app_rows_for_app: 0, dynamic_steering_mode: SE_MODE,
+            custom_domains: (form.customDomains || []).slice() };
+        if (edit) { body.app_domains = (edit.appDomains || []).slice(); body.rowSelectionId = String(edit.rowId); }
+        return body;
+    }
+
+    function seSavePin(configId, body) {
+        return sePost('addSSLPinnedAppToBypass', Object.assign({}, body, { config_id: String(configId) }), SE_PIN_API);
+    }
+
+    // The options of a backed up entry, in the form shape, so a restore writes them again
+    function sePinFormOf(pin) {
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => {
+            const o = pin.platforms[p] || {};
+            platforms[p] = { block: !!o.block, managed: !!o.managed, labels: (o.labels || []).slice(), tunnel: !!o.tunnel, tunnelDomains: (o.tunnelDomains || []).slice() };
+        });
+        return { customDomains: (pin.customDomains || []).slice(), platforms };
+    }
+
+    // A config now lists an entry for this app
+    function seLandedPinCreate(configId, appId) {
+        return async () => sePinEntries(await seListExceptions(configId)).some(e => e.appId === String(appId));
     }
 
     /* ── Writes that survive a passing backend error ── */
@@ -36636,17 +36780,19 @@ Version 1.16:
             .map(e => ({
                 configId:   String(e.configId),
                 configName: String(e.configName || `Configuration ${e.configId}`),
-                rowId:      Number(e.rowId),
+                // Pinned app entries have text ids
+                rowId:      b.exceptionType === 'pinned' ? String(e.rowId) : Number(e.rowId),
                 notes:      String(e.notes || ''),
                 domains:    e.domains.map(String),
                 kind:       ['edit', 'delete', 'create', 'extend'].includes(e.kind) ? e.kind : null,
                 after:      Array.isArray(e.after) ? e.after.map(String) : null,
                 removed:    Array.isArray(e.removed) ? e.removed.map(String) : [],
+                pin:        b.exceptionType === 'pinned' ? seCleanPin(e.pin) : undefined,
             }));
         if (!entries.length || isNaN(Date.parse(b.at))) return null;
-        const exceptionType = b.exceptionType === 'category' ? 'category' : 'domain';   // older backups hold domains
+        const exceptionType = ['category', 'pinned'].includes(b.exceptionType) ? b.exceptionType : 'domain';   // older backups hold domains
         const names = {};
-        if (exceptionType === 'category' && b.names && typeof b.names === 'object') {
+        if (exceptionType !== 'domain' && b.names && typeof b.names === 'object') {
             Object.keys(b.names).forEach(k => { if (typeof b.names[k] === 'string') names[k] = b.names[k]; });
         }
         return {
@@ -36661,6 +36807,19 @@ Version 1.16:
 
     const SE_DOMAIN_RE = /^(\*\.)?[a-z0-9_-]+(\.[a-z0-9_-]+)*$/i;
 
+    // The options of a backed up pinned app entry, keeping only known fields, or null
+    function seCleanPin(pin) {
+        if (!pin || typeof pin !== 'object' || pin.appId == null || !pin.platforms || typeof pin.platforms !== 'object') return null;
+        const strings = v => Array.isArray(v) ? v.map(String) : [];
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => {
+            const o = pin.platforms[p] && typeof pin.platforms[p] === 'object' ? pin.platforms[p] : {};
+            platforms[p] = { enabled: !!o.enabled, block: !!o.block, managed: !!o.managed, labels: strings(o.labels), tunnel: !!o.tunnel, tunnelDomains: strings(o.tunnelDomains) };
+        });
+        return { appId: String(pin.appId), name: String(pin.name || ''), notes: String(pin.notes || ''),
+            appDomains: strings(pin.appDomains), customDomains: strings(pin.customDomains), platforms };
+    }
+
     // A restore writes each entry's full domain list as steering exceptions, so a backup
     // file that was edited by hand must not be able to slip in extra domains.
     // Backups made by this tool always pass these checks.
@@ -36669,10 +36828,23 @@ Version 1.16:
 
     function seBackupProblems(entries, type) {
         const problems = [];
-        const valid = type === 'category' ? (d => SE_CATEGORY_ID_RE.test(d)) : (d => SE_DOMAIN_RE.test(d.trim()));
-        const what = type === 'category' ? 'not valid category ids' : 'not valid domains';
+        const valid = type === 'category' ? (d => SE_CATEGORY_ID_RE.test(d)) : type === 'pinned' ? (d => SE_PIN_ID_RE.test(d)) : (d => SE_DOMAIN_RE.test(d.trim()));
+        const what = type === 'category' ? 'not valid category ids' : type === 'pinned' ? 'not valid app ids' : 'not valid domains';
+        const pinDomain = d => d === '*' || SE_DOMAIN_RE.test(d.trim());
         entries.forEach(e => {
             const label = `${seEntryLabel(e.notes, e.rowId)} in ${e.configName}`;
+            if (type === 'pinned') {
+                // A restore writes these options back, so every value must look like what the tool saves
+                const pin = e.pin;
+                const app = e.kind === 'create' ? (e.after || [])[0] : e.domains[0];
+                if (!pin || pin.appId !== app || (e.kind !== 'create' && e.domains.length !== 1)) problems.push(`${label}: the app's options are not recorded correctly`);
+                else {
+                    const bad = pin.customDomains.concat(...SE_PIN_PLATFORMS.map(p => pin.platforms[p].tunnelDomains)).filter(d => !pinDomain(d));
+                    if (bad.length) problems.push(`${label}: not valid domains: ${bad.slice(0, 5).join(', ')}`);
+                    const badLabels = [].concat(...SE_PIN_PLATFORMS.map(p => pin.platforms[p].labels)).filter(l => !/^[\w-]{1,64}$/.test(l));
+                    if (badLabels.length) problems.push(`${label}: not valid device classifications: ${badLabels.slice(0, 5).join(', ')}`);
+                }
+            }
             const bad = e.domains.concat(e.removed).filter(d => !valid(d));
             if (bad.length) problems.push(`${label}: ${what}: ${bad.slice(0, 5).join(', ')}`);
             if (e.kind === 'create') {
@@ -36762,6 +36934,7 @@ Version 1.16:
 
     // Compares each backed up entry with what Netskope has now
     async function seInspectBackup(backup, progress) {
+        if (backup.exceptionType === 'pinned') return seInspectPinBackup(backup, progress);
         const rowsByConfig = {};
         for (const id of new Set(backup.entries.map(e => e.configId))) {
             progress(`Reading ${backup.entries.find(e => e.configId === id).configName}…`);
@@ -36830,7 +37003,51 @@ Version 1.16:
         });
     }
 
+    // Pinned apps: an app is at most once per configuration, so entries are found by app
+    async function seInspectPinBackup(backup, progress) {
+        const byConfig = {};
+        for (const id of new Set(backup.entries.map(e => e.configId))) {
+            progress(`Reading ${backup.entries.find(e => e.configId === id).configName}…`);
+            byConfig[id] = sePinEntries(await seListExceptions(id));
+        }
+        return backup.entries.map(e => {
+            const rows = byConfig[e.configId];
+            const appId = e.kind === 'create' ? (e.after || [])[0] : e.domains[0];
+            const base = { entry: e, elsewhere: [], willAdd: [], addedSince: [], droppedSince: [] };
+            if (e.kind === 'create') {
+                // The entry the addition made, by its id; another entry of the same app was made by someone else
+                // A run stopped before it read the new ids leaves "-1": then the entry with the same notes is taken as its own
+                const own = rows.find(r => r.appId === appId && (r.rowId === String(e.rowId) || (String(e.rowId) === '-1' && String(r.notes || '').trim() === e.notes.trim())));
+                const other = !own && rows.find(r => r.appId === appId);
+                const row = own || other;
+                return Object.assign(base, { exists: !!row, rowId: row ? row.rowId : null, state: own ? 'created' : other ? 'createdChanged' : 'same' });
+            }
+            const row = rows.find(r => r.appId === appId);
+            return Object.assign(base, { exists: !!row, rowId: row ? row.rowId : null, state: row ? 'same' : 'deleted', willAdd: row ? [] : [appId] });
+        });
+    }
+
+    async function seRestorePins(inspection, progress) {
+        for (const item of inspection) {
+            if (item.state === 'same') continue;
+            const e = item.entry;
+            if (e.kind === 'create') {
+                progress(`Deleting the added entry ${seEntryLabel(e.notes, item.rowId)} in ${e.configName}…`);
+                await seWriteChecked(() => seDeleteEntries(e.configId, [item.rowId]), seLandedDelete(e.configId, [item.rowId]), progress, 'deleting the added entry');
+                continue;
+            }
+            const pin = e.pin;
+            if (!pin) throw new Error(`The backup has no options for ${seEntryLabel(e.notes, e.rowId)}, so it cannot be recreated.`);
+            const plats = SE_PIN_PLATFORMS.filter(p => pin.platforms[p] && pin.platforms[p].enabled);
+            const name = pin.name || sePinName(pin.appId);
+            progress(`Recreating ${name} in ${e.configName}…`);
+            await seWriteChecked(() => seSavePin(e.configId, sePinPayload(pin.appId, plats.length ? plats : sePinPlatformsOf(pin.appId), sePinFormOf(pin), e.notes, null)),
+                seLandedPinCreate(e.configId, pin.appId), progress, `recreating ${name}`);
+        }
+    }
+
     async function seRestoreFromInspection(inspection, progress, type) {
+        if (type === 'pinned') return seRestorePins(inspection, progress);
         const save = type === 'category' ? seSaveCategories : seSaveDomains;
         for (const item of inspection) {
             if (item.state === 'same') continue;
@@ -37077,6 +37294,164 @@ Version 1.16:
         return { log, stillThere, backup };
     }
 
+    // Pinned apps: one app per entry, so removing an app deletes its entry. The backup keeps every option.
+    async function seBuildPinPlan(configIds, ids) {
+        const configs = seGetConfigs();
+        const plan = [];
+        for (const id of configIds) {
+            const actions = sePinEntries(await seListExceptions(id)).filter(e => ids.includes(e.appId))
+                .map(e => ({ rowId: e.rowId, notes: e.notes, hits: [e.appId], keeps: 0, kind: 'delete', selected: true }));
+            plan.push({
+                configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                actions, related: [], notFound: ids.filter(a => !actions.some(x => x.hits[0] === a)),
+            });
+        }
+        return plan;
+    }
+
+    function sePinBackup(source) {
+        return { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source, action: source,
+            exceptionType: 'pinned', names: {}, entries: [] };
+    }
+
+    async function seApplyPinPlan(plan, ids, progress) {
+        const backup = sePinBackup('removal');
+        se.lastBackupId = backup.id;
+        const log = [];
+        for (const cfg of plan) {
+            const chosen = cfg.actions.filter(a => a.selected);
+            if (!chosen.length) continue;
+            const toDelete = [];
+            for (const a of chosen) {
+                progress(`Reading ${sePinName(a.hits[0])} in ${cfg.name}…`);
+                // Read the whole entry first, so the backup can recreate it with the same options
+                const pin = await seReadPin(cfg.configId, a.rowId);
+                if (!pin || pin.appId !== a.hits[0]) {
+                    log.push({ config: cfg.name, label: seEntryLabel(a.notes, a.rowId), kind: 'skipped', removed: [] });
+                    continue;
+                }
+                backup.names[pin.appId] = pin.name;
+                backup.entries.push({ configId: cfg.configId, configName: cfg.name, rowId: a.rowId, notes: pin.notes,
+                    domains: [pin.appId], kind: 'delete', after: null, removed: [pin.appId], pin });
+                seSaveBackup(backup);   // saved before every change
+                toDelete.push({ a, notes: pin.notes, name: pin.name });
+            }
+            if (toDelete.length) {
+                progress(`Deleting ${toDelete.length} entr${toDelete.length === 1 ? 'y' : 'ies'} in ${cfg.name}…`);
+                const rowIds = toDelete.map(t => t.a.rowId);
+                await seWriteChecked(() => seDeleteEntries(cfg.configId, rowIds), seLandedDelete(cfg.configId, rowIds), progress, `deleting entries in ${cfg.name}`);
+                toDelete.forEach(t => log.push({ config: cfg.name, label: seEntryLabel(t.notes, t.a.rowId), kind: 'delete', removed: [t.name] }));
+            }
+        }
+        // Read every touched configuration again to confirm the entries are gone
+        const stillThere = [];
+        for (const cfg of plan.filter(c => c.actions.some(a => a.selected))) {
+            progress(`Checking ${cfg.name}…`);
+            const chosen = cfg.actions.filter(a => a.selected).map(a => a.rowId);
+            sePinEntries(await seListExceptions(cfg.configId)).filter(e => chosen.includes(e.rowId))
+                .forEach(e => stillThere.push(`${sePinName(e.appId)} (${cfg.name})`));
+        }
+        return { log, stillThere, backup };
+    }
+
+    // The options of a new entry for this app, in the backup shape
+    function sePinFromForm(appId, plats, form, notes) {
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => {
+            const on = plats.includes(p);
+            const f = (on && form.platforms[p]) || {};
+            const block = on && !!f.block;
+            const managed = on && !block && !!f.managed;
+            const tunnel = on && !block && !!f.tunnel;
+            platforms[p] = { enabled: on, block, managed, labels: managed ? ((f.labels && f.labels.length) ? f.labels.slice() : ['-1']) : [],
+                tunnel, tunnelDomains: tunnel ? (f.tunnelDomains || []).slice() : [] };
+        });
+        return { appId: String(appId), name: sePinName(appId), notes: notes || '', appDomains: [], customDomains: (form.customDomains || []).slice(), platforms };
+    }
+
+    // Apps the catalog lists without platforms: ask Netskope, like the console does when an app is picked
+    async function sePinEnsurePlatforms(ids) {
+        for (const id of ids) {
+            const a = se.pinCatalog && se.pinCatalog.byId.get(id);
+            if (!a || a.platforms.length) continue;
+            const res = await fetch(SE_PIN_API + 'fetchPlatformsForCertPinnedApp', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Accept': 'application/json, text/plain, */*', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'resource': SE_RESOURCE },
+                body: JSON.stringify({ app_id: id, token: se.token }),
+            });
+            const json = res.ok ? await res.json().catch(() => null) : null;
+            if (json && Array.isArray(json.platform_choices)) a.platforms = json.platform_choices.map(String);
+            if (!a.platforms.length) throw new Error(`Netskope did not say which platforms ${a.name} has. Reload the app list and click Check again.`);
+        }
+    }
+
+    // One new entry per app and configuration. An app a configuration already has is skipped there.
+    async function seBuildPinAddPlan(configIds, ids) {
+        await sePinEnsurePlatforms(ids);
+        const configs = seGetConfigs();
+        const plan = [];
+        for (const id of configIds) {
+            const entries = sePinEntries(await seListExceptions(id));
+            const present = [];
+            ids.forEach(a => {
+                const holder = entries.find(e => e.appId === a);
+                if (holder) present.push({ id: a, label: seEntryLabel(holder.notes, holder.rowId) });
+            });
+            const toAdd = ids.filter(a => !present.some(p => p.id === a));
+            plan.push({ configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                toAdd, present, related: [], selected: toAdd.length > 0, findKey: '', matches: [], target: null });
+        }
+        return plan;
+    }
+
+    async function seApplyPinAddPlan(plan, notes, form, progress) {
+        const backup = sePinBackup('addition');
+        se.lastBackupId = backup.id;
+        const log = [];
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Reading ${cfg.name}…`);
+            // Check again just before adding: the console never sends an app a configuration already has
+            const before = sePinEntries(await seListExceptions(cfg.configId));
+            const added = [];
+            const made = [];   // backup entries of this configuration, to get their ids after the writes
+            for (const appId of cfg.toAdd) {
+                const name = sePinName(appId);
+                if (before.some(e => e.appId === appId)) continue;
+                const plats = sePinPlatformsOf(appId);
+                const pin = sePinFromForm(appId, plats, form, notes);
+                // Saved before the change so an interrupted run can still be undone
+                const entry = { configId: cfg.configId, configName: cfg.name, rowId: '-1', notes: notes || '', domains: [], kind: 'create', after: [appId], removed: [], pin };
+                backup.names[appId] = name;
+                backup.entries.push(entry);
+                seSaveBackup(backup);
+                progress(`Adding ${name} to ${cfg.name} (${added.length + 1} of ${cfg.toAdd.length})…`);
+                await seWriteChecked(() => seSavePin(cfg.configId, sePinPayload(appId, plats, form, notes, null)),
+                    seLandedPinCreate(cfg.configId, appId), progress, `adding ${name} to ${cfg.name}`);
+                made.push(entry);
+                added.push(name);
+            }
+            if (made.length) {
+                // Netskope does not return the new entries' ids: one read of the list finds the new row of each app
+                progress(`Reading the new entries in ${cfg.name}…`);
+                const after = sePinEntries(await seListExceptions(cfg.configId));
+                made.forEach(entry => {
+                    const row = after.find(e => e.appId === entry.after[0] && !before.some(b => b.rowId === e.rowId));
+                    if (row) entry.rowId = row.rowId;
+                });
+                seSaveBackup(backup);
+            }
+            log.push(added.length ? { config: cfg.name, kind: 'add', added } : { config: cfg.name, kind: 'skipped', added: [] });
+        }
+        // Confirm every requested app is now an exception in each configuration
+        const missing = [];
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Checking ${cfg.name}…`);
+            const have = new Set(sePinEntries(await seListExceptions(cfg.configId)).map(e => e.appId));
+            cfg.toAdd.filter(a => !have.has(a)).forEach(a => missing.push(`${sePinName(a)} (${cfg.name})`));
+        }
+        return { log, missing, backup };
+    }
+
     // Backups keep the ids in the same fields as domains (domains, after), with their names alongside
     function seCategoryBackup(source) {
         return { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source, action: source,
@@ -37155,11 +37530,12 @@ Version 1.16:
 
     // How a requested value is shown: domains as they are, categories by name
     function seShow(value) {
-        return se.type === 'category' ? seCategoryName(value) : value;
+        return se.type === 'category' ? seCategoryName(value) : se.type === 'pinned' ? sePinName(value) : value;
     }
 
     function seNoun(n) {
-        return se.type === 'category' ? (n === 1 ? 'category' : 'categories') : (n === 1 ? 'domain' : 'domains');
+        return se.type === 'category' ? (n === 1 ? 'category' : 'categories')
+            : se.type === 'pinned' ? (n === 1 ? 'app' : 'apps') : (n === 1 ? 'domain' : 'domains');
     }
 
     function seBuildAddSummary(plan, result, notes) {
@@ -37168,7 +37544,7 @@ Version 1.16:
         plan.forEach(cfg => {
             const done = result.log.find(l => l.config === cfg.name && (l.kind === 'add' || l.kind === 'extend'));
             lines.push('', cfg.name + ':');
-            if (done && done.kind === 'add') lines.push(`  Added ${done.added.join(', ')} as a new exception entry`);
+            if (done && done.kind === 'add') lines.push(se.type === 'pinned' ? `  Added ${done.added.join(', ')} (one exception entry per app)` : `  Added ${done.added.join(', ')} as a new exception entry`);
             if (done && done.kind === 'extend') lines.push(`  Added ${done.added.join(', ')} to the existing entry ${done.label}`);
             if (cfg.present.length) lines.push(`  Already present: ${cfg.present.map(p => `${p.domain != null ? p.domain : seShow(p.id)} (in ${p.label})`).join(', ')}`);
             if (!done && !cfg.present.length) lines.push(cfg.selected ? '  No changes' : '  Skipped');
@@ -37307,6 +37683,14 @@ Version 1.16:
             .warnbox { margin: 12px 0 4px; padding: 10px 12px; border-radius: 6px; font-size: 13px; line-height: 1.45;
                 color: #6b4400; background: #fff6e0; border: 1px solid #f0c36d; }
             .note.warn { color: #8a5a00; }
+            .pin-form { margin-top: 14px; }
+            .pin-plat { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 12px; margin-top: 8px; font-size: 13px; }
+            .pin-plat-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+            .pin-plat label { display: inline-flex; align-items: center; gap: 6px; margin: 3px 14px 3px 0; cursor: pointer; }
+            .pin-sub { margin: 2px 0 2px 22px; }
+            .pin-sub.off { opacity: .5; }
+            .pin-sub input[type="text"] { margin: 4px 0; }
+            .pin-labels { margin-left: 22px; }
         `);
         shadow.adoptedStyleSheets = [sheet];
 
@@ -37320,6 +37704,7 @@ Version 1.16:
                     <nav class="tabs" role="tablist">
                         <button type="button" role="tab" id="se-tab-domain" data-action="tab" data-type="domain">Domains</button>
                         <button type="button" role="tab" id="se-tab-category" data-action="tab" data-type="category">Categories</button>
+                        <button type="button" role="tab" id="se-tab-pinned" data-action="tab" data-type="pinned">Certified Pinned Apps</button>
                     </nav>
                     <main class="body">
                         <div class="cols">
@@ -37335,6 +37720,13 @@ Version 1.16:
                                 <div class="configs cat-list" id="se-cat-list"></div>
                                 <div class="help" id="se-cat-status"></div>
                             </div>
+                            <div class="col" id="se-pin-input" hidden>
+                                <label class="label" for="se-pin-search"><span class="step">1</span><span id="se-pin-label">Apps to remove</span></label>
+                                <input type="text" id="se-pin-search" placeholder="Search certified pinned apps" autocomplete="off">
+                                <div class="cat-chips" id="se-pin-chips"></div>
+                                <div class="configs cat-list" id="se-pin-list"></div>
+                                <div class="help" id="se-pin-status"></div>
+                            </div>
                             <div class="col">
                                 <label class="label" for="se-filter"><span class="step">2</span>Steering configurations</label>
                                 <input type="text" id="se-filter" placeholder="Filter by name">
@@ -37343,11 +37735,19 @@ Version 1.16:
                                 <div class="help" id="se-config-help"></div>
                             </div>
                         </div>
+                        <div class="pin-form" id="se-pin-form" hidden>
+                            <label class="label" for="se-pin-custom">Custom App Domains <span class="muted" style="font-weight:400">(optional)</span></label>
+                            <input type="text" id="se-pin-custom" placeholder="Enter custom domains to be bypassed" autocomplete="off">
+                            <div class="help">Comma separated. * means all domains. The same for every app you add.</div>
+                            <div class="label" style="margin-top:12px">Actions per platform</div>
+                            <div class="help" id="se-pin-plat-help">Specify the action for each platform. Bypass sends the traffic straight to its destination, Block drops it. Each app uses only the platforms it has.</div>
+                            <div id="se-pin-plats"></div>
+                        </div>
                         <div class="notes-row" id="se-notes-row" hidden>
                             <label class="label" for="se-notes"><span class="step">3</span>Notes for the new entries</label>
                             <textarea id="se-notes" placeholder="RITM0000000: reason for the exception"></textarea>
                             <label class="option"><input type="checkbox" id="se-no-notes"><span>No notes needed</span></label>
-                            <label class="option find"><input type="checkbox" id="se-find-entry"><span>Add to the existing entry with this note, when there is one</span></label>
+                            <label class="option find" id="se-find-option"><input type="checkbox" id="se-find-entry"><span>Add to the existing entry with this note, when there is one</span></label>
                             <div class="help" id="se-find-help" hidden>Looks for the entry whose notes hold the ticket number in your notes (for example RITM0123456), or your whole notes when there is no number. That entry keeps its own notes. Configurations without such an entry get a new one.</div>
                         </div>
                         <div class="results" id="se-results"></div>
@@ -37395,6 +37795,8 @@ Version 1.16:
             if (action === 'tab' && target.dataset.type !== se.type) seApplyType(target.dataset.type);
             if (action === 'cat-unpick') { se.categories.delete(target.dataset.id); seRenderCategoryList(); seRenderCategoryChips(); seResetPlan(); }
             if (action === 'cat-reload') seShowCategories(true);
+            if (action === 'pin-unpick') { se.pinned.delete(target.dataset.id); seRenderPinList(); seRenderPinChips(); seRenderPinForm(); seResetPlan(); }
+            if (action === 'pin-reload') seShowPins(true);
             if (action === 'backups')     seShowBackupList();
             if (action === 'bk-main')     seShowView('main');
             if (action === 'bk-list')     seShowBackupList();
@@ -37407,6 +37809,8 @@ Version 1.16:
             if (e.target.id === 'se-filter') seRenderConfigList();
             if (e.target.id === 'se-domains') seResetPlan();
             if (e.target.id === 'se-cat-search') seRenderCategoryList();
+            if (e.target.id === 'se-pin-search') seRenderPinList();
+            if (e.target.id === 'se-pin-custom' || e.target.dataset.pintunneldom !== undefined) seReadPinFormInputs();
             if (e.target.id === 'se-notes') {
                 // The note decides which entry gets the domains, so a new note needs a new Check
                 if (seEl('se-find-entry').checked && se.plan) seResetPlan();
@@ -37434,7 +37838,18 @@ Version 1.16:
                 se.plan[Number(e.target.dataset.addcfg)].selected = e.target.checked;
                 seUpdateRemoveButton();
             }
-            if (e.target.dataset.cfg !== undefined) seResetPlan();
+            if (e.target.dataset.cfg !== undefined) { seResetPlan(); if (se.type === 'pinned') seLearnPinExtra(); }
+            if (e.target.dataset.pin !== undefined) {
+                if (e.target.checked) se.pinned.add(e.target.dataset.pin); else se.pinned.delete(e.target.dataset.pin);
+                seRenderPinChips();
+                seRenderPinForm();
+                seResetPlan();
+            }
+            if (e.target.dataset.pinact !== undefined || e.target.dataset.pinmanaged !== undefined ||
+                e.target.dataset.pintunnel !== undefined || e.target.dataset.pinlabel !== undefined) {
+                seReadPinFormInputs();
+                seRenderPinForm();
+            }
             if (e.target.dataset.cat !== undefined) {
                 if (e.target.checked) se.categories.add(e.target.dataset.cat); else se.categories.delete(e.target.dataset.cat);
                 seRenderCategoryChips();
@@ -37518,7 +37933,7 @@ Version 1.16:
     }
 
     function seInputCount() {
-        return se.type === 'category' ? se.categories.size : seParseDomains(seEl('se-domains').value).length;
+        return se.type === 'category' ? se.categories.size : se.type === 'pinned' ? se.pinned.size : seParseDomains(seEl('se-domains').value).length;
     }
 
     function sePlanCount() {
@@ -37531,7 +37946,7 @@ Version 1.16:
     // The first thing still missing before the action button can be used, or '' when nothing is
     function seMissingStep() {
         if (!seSelectedConfigs().length) return 'Choose at least one configuration';
-        if (!seInputCount()) return se.type === 'category' ? 'Pick at least one category' : 'Paste at least one domain';
+        if (!seInputCount()) return se.type === 'category' ? 'Pick at least one category' : se.type === 'pinned' ? 'Pick at least one app' : 'Paste at least one domain';
         if (seNotesMissing()) return 'Write the notes or tick No notes needed';
         if (!se.plan) return 'Click Check to see what will change';
         if (!sePlanCount()) return 'Nothing to change';
@@ -37562,7 +37977,7 @@ Version 1.16:
             const count = se.plan ? se.plan.filter(c => c.selected && c.toAdd.length).length : 0;
             btn.className = 'success';
             btn.disabled = se.busy || !count || seNotesMissing();
-            btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : se.type === 'category' ? 'Add categories' : 'Add domains';
+            btn.textContent = count ? `Add to ${count} configuration${count === 1 ? '' : 's'}` : `Add ${seNoun(2)}`;
             btn.title = !se.plan ? checkFirst : seNotesMissing() ? 'Fill in the notes, or tick "No notes needed"' : !count ? 'Nothing to add' : '';
             btn.classList.toggle('next', !btn.disabled);
             seEl('se-check-btn').disabled = se.busy;
@@ -37587,7 +38002,10 @@ Version 1.16:
         if (check) check.disabled = busy;
         seEl('se-domains').disabled = busy;
         seEl('se-cat-search').disabled = busy;
-        se.shadow.querySelectorAll('#se-cat-list input, #se-cat-chips button').forEach(i => { i.disabled = busy; });
+        seEl('se-pin-search').disabled = busy;
+        if (busy) se.shadow.querySelectorAll('#se-pin-form input').forEach(i => { i.disabled = true; });
+        else seRenderPinForm();
+        se.shadow.querySelectorAll('#se-cat-list input, #se-cat-chips button, #se-pin-list input, #se-pin-chips button').forEach(i => { i.disabled = busy; });
         seUpdateRemoveButton();
     }
 
@@ -37603,7 +38021,8 @@ Version 1.16:
             cfg.actions.forEach((a, ai) => {
                 const row = document.createElement('label');
                 row.className = 'row';
-                const what = a.kind === 'delete'
+                const what = se.type === 'pinned' ? 'Each app has its own entry, so the entry is deleted. The backup keeps its options.'
+                    : a.kind === 'delete'
                     ? `Every ${seNoun(1)} in this entry was requested, so the whole entry is deleted.`
                     : `Keeps its other ${a.keeps} ${seNoun(a.keeps)}.`;
                 row.innerHTML = `<input type="checkbox" data-row="${ci}:${ai}"${a.selected ? ' checked' : ''}>
@@ -37692,10 +38111,11 @@ Version 1.16:
     async function seRunCheck() {
         if (se.busy) return;
         const cats = se.type === 'category';
-        // In the Categories tab, se.domains holds the picked category ids
-        const domains = cats ? [...se.categories] : seParseDomains(seEl('se-domains').value);
+        const pins = se.type === 'pinned';
+        // In the Categories and Certified Pinned Apps tabs, se.domains holds the picked ids
+        const domains = cats ? [...se.categories] : pins ? [...se.pinned] : seParseDomains(seEl('se-domains').value);
         const configIds = seSelectedConfigs();
-        if (!domains.length)   return seSetStatus(cats ? 'Pick at least one category.' : 'Paste at least one domain.', true);
+        if (!domains.length)   return seSetStatus(`${seMissingStep()}.`, true);
         if (!configIds.length) return seSetStatus('Tick at least one steering configuration.', true);
 
         seResetPlan();
@@ -37705,6 +38125,7 @@ Version 1.16:
             se.domains = domains;
             if (se.mode === 'add') {
                 se.plan = cats ? await seBuildCategoryAddPlan(configIds, domains, seFindKey())
+                               : pins ? await seBuildPinAddPlan(configIds, domains)
                                : await seBuildAddPlan(configIds, domains, seFindKey());
                 seRenderAddPlan();
                 const total = se.plan.filter(c => c.toAdd.length).length;
@@ -37714,7 +38135,7 @@ Version 1.16:
                     : `Every ${seNoun(1)} is already an exception in the selected configurations. Nothing to add.`);
                 return;
             }
-            se.plan = cats ? await seBuildCategoryPlan(configIds, domains) : await seBuildPlan(configIds, domains);
+            se.plan = cats ? await seBuildCategoryPlan(configIds, domains) : pins ? await seBuildPinPlan(configIds, domains) : await seBuildPlan(configIds, domains);
             seRenderPlan();
             const total = se.plan.reduce((n, c) => n + c.actions.length, 0);
             seSetStatus(total
@@ -37742,8 +38163,8 @@ Version 1.16:
         seSetBusy(true);
         const plan = se.plan;
         try {
-            const result = se.type === 'category'
-                ? await seApplyCategoryAddPlan(plan, notes, msg => seSetStatus(msg))
+            const result = se.type === 'category' ? await seApplyCategoryAddPlan(plan, notes, msg => seSetStatus(msg))
+                : se.type === 'pinned' ? await seApplyPinAddPlan(plan, notes, seReadPinFormInputs(), msg => seSetStatus(msg))
                 : await seApplyAddPlan(plan, notes, msg => seSetStatus(msg));
             se.plan = null;
             se.lastConfigs = seChangedConfigs(result.log, ['add', 'extend']);
@@ -37777,8 +38198,8 @@ Version 1.16:
         seSetBusy(true);
         const plan = se.plan;
         try {
-            const result = se.type === 'category'
-                ? await seApplyCategoryPlan(plan, se.domains, msg => seSetStatus(msg))
+            const result = se.type === 'category' ? await seApplyCategoryPlan(plan, se.domains, msg => seSetStatus(msg))
+                : se.type === 'pinned' ? await seApplyPinPlan(plan, se.domains, msg => seSetStatus(msg))
                 : await seApplyPlan(plan, se.domains, msg => seSetStatus(msg));
             se.plan = null;
             se.lastConfigs = seChangedConfigs(result.log, ['edit', 'delete']);
@@ -37855,14 +38276,25 @@ Version 1.16:
     // How a backed up value is shown. Categories use the tenant's own name: a backup file can be
     // edited, so the name saved in it is only shown, marked, when the tenant does not know the id.
     function seBackupShow(backup, value) {
+        if (backup.exceptionType === 'pinned') {
+            const live = se.pinCatalog && se.pinCatalog.byId.get(String(value));
+            if (live) return live.name;
+            return backup.names[value] ? backup.names[value] : `App ${value}`;
+        }
         if (backup.exceptionType !== 'category') return value;
         const live = se.catalog && se.catalog.byId.get(String(value));
         if (live) return live.name;
         return backup.names[value] ? `${backup.names[value]} (name saved in the backup, id ${value})` : `Category ${value}`;
     }
 
+    function seBackupNoun(backup, n) {
+        return backup.exceptionType === 'category' ? (n === 1 ? 'category' : 'categories')
+            : backup.exceptionType === 'pinned' ? (n === 1 ? 'app' : 'apps') : (n === 1 ? 'domain' : 'domains');
+    }
+
     function seBackupChips(backup) {
-        let html = backup.exceptionType === 'category' ? '<span class="chip info">Categories</span>' : '<span class="chip gray">Domains</span>';
+        let html = backup.exceptionType === 'category' ? '<span class="chip info">Categories</span>'
+            : backup.exceptionType === 'pinned' ? '<span class="chip info">Pinned apps</span>' : '<span class="chip gray">Domains</span>';
         if (backup.restoredAt) html += `<span class="chip ok">Restored ${seEscape(seFormatDate(backup.restoredAt))}</span>`;
         if (backup.action === 'addition') html += '<span class="chip ok">Addition</span>';
         if (backup.source === 'import') html += '<span class="chip info">Imported</span>';
@@ -37953,6 +38385,11 @@ Version 1.16:
             try { await seLoadCatalog(); } catch (e) { /* names fall back to the ids */ }
             if (se.bkSelected !== id) return;
         }
+        if (backup.exceptionType === 'pinned' && !se.pinCatalog) {
+            seBkStatus('Loading certified pinned apps…');
+            try { await seLoadPinCatalog(); } catch (e) { /* names fall back to the backup's */ }
+            if (se.bkSelected !== id) return;
+        }
         seRenderBackupDetail(backup);
 
         const blocker = seRestoreBlocker(backup);
@@ -37965,7 +38402,7 @@ Version 1.16:
             se.bkInspection = inspection;
             seRenderBackupDetail(backup);
             seBkStatus(inspection.every(i => i.state === 'same')
-                ? (backup.action === 'addition' ? `The added entries and ${backup.exceptionType === 'category' ? 'categories' : 'domains'} are already gone. Nothing to undo.` : 'Every entry is already as it was in this backup. Nothing to restore.')
+                ? (backup.action === 'addition' ? `The added entries and ${seBackupNoun(backup, 2)} are already gone. Nothing to undo.` : 'Every entry is already as it was in this backup. Nothing to restore.')
                 : `Nothing has changed yet. Review the entries, then click ${backup.action === 'addition' ? 'Undo' : 'Restore'}.`);
         } catch (err) {
             console.error('[NS Toolkit] Steering backup check:', err);
@@ -38016,7 +38453,7 @@ Version 1.16:
 
         html += '<div class="card" style="margin-top:12px">';
         const show = list => list.map(v => seBackupShow(backup, v)).join(', ');
-        const noun = n => backup.exceptionType === 'category' ? (n === 1 ? 'category' : 'categories') : (n === 1 ? 'domain' : 'domains');
+        const noun = n => seBackupNoun(backup, n);
         backup.entries.forEach((e, i) => {
             const item = insp && insp[i];
             const info = item ? SE_STATE_INFO[item.state] : null;
@@ -38094,7 +38531,7 @@ Version 1.16:
             se.busy = false;
             await seOpenBackup(backup.id);
             seBkStatus(backup.action === 'addition'
-                ? `Addition undone: new entries were deleted and added ${backup.exceptionType === 'category' ? 'categories' : 'domains'} were taken out of existing entries. Reload the page to see the exceptions table updated.`
+                ? `Addition undone: new entries were deleted${backup.exceptionType === 'pinned' ? '' : ` and added ${seBackupNoun(backup, 2)} were taken out of existing entries`}. Reload the page to see the exceptions table updated.`
                 : 'Backup restored. Reload the page to see the exceptions table updated.');
         } catch (err) {
             console.error('[NS Toolkit] Steering restore:', err);
@@ -38114,10 +38551,21 @@ Version 1.16:
         seEl('se-title').textContent = add ? '➕ Add to Steering Exceptions' : '🧹 Remove from Steering Exceptions';
         seEl('se-domains-label').textContent = add ? 'Domains to add' : 'Domains to remove';
         seEl('se-cat-label').textContent = add ? 'Categories to add' : 'Categories to remove';
+        seEl('se-pin-label').textContent = add ? 'Apps to add' : 'Apps to remove';
         seEl('se-domains-help').textContent = add
             ? 'One per line. A domain a configuration already has is skipped there.'
             : 'One per line. Matching is exact: example.com does not remove *.example.com.';
         seEl('se-notes-row').hidden = !add;
+        seUpdatePinAddView();
+    }
+
+    // Bulk add on the Certified Pinned Apps tab shows the option form, and never adds into an existing entry
+    function seUpdatePinAddView() {
+        const pinAdd = se.mode === 'add' && se.type === 'pinned';
+        seEl('se-pin-form').hidden = !pinAdd;
+        seEl('se-find-option').hidden = se.type === 'pinned';
+        seEl('se-find-help').hidden = se.type === 'pinned' || !seEl('se-find-entry').checked;
+        if (pinAdd) { seLoadPinLabels(); seRenderPinForm(); }
     }
 
     /* ── Categories: the tenant's list and the picker ── */
@@ -38206,9 +38654,173 @@ Version 1.16:
             : '<span id="se-cat-count">None selected yet</span>';
     }
 
+    /* ── Certified pinned apps: the tenant's list and the picker ── */
+
+    async function seShowPins(force) {
+        const status = seEl('se-pin-status');
+        seRenderPinChips();
+        if (se.pinCatalog && !force) return seRenderPinList();
+        const list = seEl('se-pin-list');
+        list.innerHTML = '';
+        status.textContent = 'Loading certified pinned apps…';
+        const wheel = suiteBusyStart(list, 'Loading apps…');
+        list.style.minHeight = '80px';
+        const reload = '<button type="button" class="link-btn" data-action="pin-reload" id="se-pin-reload" style="padding:1px 6px;font-size:11px">↺ Reload</button>';
+        try {
+            // The page sends its session token a few seconds after it loads
+            for (let i = 0; !se.token && i < 40; i++) await seWait(250);
+            await seLoadPinCatalog(force);
+            status.textContent = `${se.pinCatalog.list.length} certified pinned apps in this tenant. `;
+            status.insertAdjacentHTML('beforeend', reload);
+            seRenderPinList();
+            seRenderPinChips();
+        } catch (err) {
+            console.error('[NS Toolkit] Pinned app list:', err);
+            status.textContent = `The apps could not be loaded: ${err.message} `;
+            status.insertAdjacentHTML('beforeend', reload);
+        } finally {
+            wheel.stop();
+            list.style.minHeight = '';
+        }
+    }
+
+    // Apps in the ticked configurations that the catalog lacks (Netskope retired them), so they can still be removed
+    async function seLearnPinExtra() {
+        if (se.mode !== 'remove' || se.type !== 'pinned') return;
+        const ids = seSelectedConfigs();
+        const run = se.pinExtraRun = (se.pinExtraRun || 0) + 1;
+        const found = new Map();
+        try {
+            for (let i = 0; !se.token && i < 40; i++) await seWait(250);
+            for (const id of ids) sePinEntries(await seListExceptions(id)).forEach(e => found.set(e.appId, e.name));
+            if (se.pinPromise) await se.pinPromise.catch(() => null);
+        } catch (err) {
+            console.error('[NS Toolkit] Pinned apps in configurations:', err);
+            return;
+        }
+        if (run !== se.pinExtraRun) return;
+        se.pinExtra = [...found].filter(([id]) => !(se.pinCatalog && se.pinCatalog.byId.has(id))).map(([id, name]) => ({ id, name }));
+        seRenderPinList();
+        seRenderPinChips();
+    }
+
+    function seRenderPinList() {
+        const box = seEl('se-pin-list');
+        if (!se.pinCatalog) return;
+        const q = seEl('se-pin-search').value.trim().toLowerCase();
+        const extra = se.mode === 'remove' ? se.pinExtra.map(a => ({ id: a.id, name: a.name, retired: true })) : [];
+        const all = extra.concat(se.pinCatalog.list);
+        const matches = all.filter(a => !q || a.name.toLowerCase().includes(q));
+        box.innerHTML = matches.slice(0, SE_CAT_SHOWN).map(a => `<label class="cfg cat" data-id="${seEscape(a.id)}">
+                <input type="checkbox" data-pin="${seEscape(a.id)}"${se.pinned.has(a.id) ? ' checked' : ''}${se.busy ? ' disabled' : ''}>
+                <span class="cat-name">${seEscape(a.name)}</span>${a.retired ? '<span class="tag custom" title="In the ticked configurations, no longer in the Netskope catalog">Retired</span>'
+                    : a.custom ? '<span class="tag custom">Custom</span>' : ''}${a.platforms && a.platforms.length ? `<span class="tag">${seEscape(a.platforms.map(p => SE_PIN_LABELS[p] || p).join(', '))}</span>` : ''}</label>`).join('');
+        if (!matches.length) box.innerHTML = '<div class="help" style="padding:6px 10px">No app matches this search.</div>';
+        if (matches.length > SE_CAT_SHOWN) box.insertAdjacentHTML('beforeend', `<div class="help" style="padding:6px 10px">${matches.length - SE_CAT_SHOWN} more, refine the search</div>`);
+    }
+
+    function sePinFormState() {
+        if (!se.pinForm) {
+            const platforms = {};
+            SE_PIN_PLATFORMS.forEach(p => { platforms[p] = { block: false, managed: false, labels: [], tunnel: false, tunnelDomains: '' }; });
+            se.pinForm = { customDomains: '', platforms };
+        }
+        return se.pinForm;
+    }
+
+    // Reads the form into se.pinForm and returns the options in the shape the writes use
+    function seReadPinFormInputs() {
+        const f = sePinFormState();
+        const custom = seEl('se-pin-custom');
+        if (custom) f.customDomains = custom.value;
+        se.shadow.querySelectorAll('#se-pin-plats [data-pinplat]').forEach(block => {
+            const p = block.dataset.pinplat;
+            const x = f.platforms[p];
+            const act = block.querySelector(`input[name="pin-act-${p}"]:checked`);
+            x.block = !!act && act.value === 'block';
+            const managed = block.querySelector(`[data-pinmanaged="${p}"]`);
+            const wasManaged = x.managed;
+            x.managed = !!managed && managed.checked;
+            const ticked = [...block.querySelectorAll(`[data-pinlabel="${p}"]:checked`)].map(i => i.value);
+            // Ticking the box picks "Managed", like the console's first choice
+            x.labels = x.managed && !wasManaged && !ticked.length ? ['-1'] : ticked;
+            const tunnel = block.querySelector(`[data-pintunnel="${p}"]`);
+            x.tunnel = !!tunnel && tunnel.checked;
+            const dom = block.querySelector(`[data-pintunneldom="${p}"]`);
+            if (dom) x.tunnelDomains = dom.value;
+        });
+        const split = text => String(text || '').split(/[\s,;]+/).map(d => d.trim()).filter(Boolean);
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => {
+            const x = f.platforms[p];
+            platforms[p] = { block: x.block, managed: x.managed, labels: x.labels.slice(), tunnel: x.tunnel, tunnelDomains: split(x.tunnelDomains) };
+        });
+        return { customDomains: split(f.customDomains), platforms };
+    }
+
+    async function seLoadPinLabels() {
+        if (se.pinLabels || se.pinLabelsLoading) return;
+        se.pinLabelsLoading = true;
+        const labels = [{ id: '-1', name: 'Managed' }];
+        try {
+            for (let i = 0; !se.token && i < 40; i++) await seWait(250);
+            const d = await sePost('getDeviceClassificationLabels', { label_ids: [] }, '/settings/deviceClassification/');
+            (Array.isArray(d) ? d : []).forEach(x => {
+                const id = x && (x.id != null ? x.id : x.label_id != null ? x.label_id : x.value);
+                const name = x && (x.name || x.label_name || x.label);
+                if (id != null && name && String(id) !== '-1') labels.push({ id: String(id), name: String(name) });
+            });
+        } catch (err) {
+            console.error('[NS Toolkit] Device classifications:', err);   // "Managed" is always offered
+        } finally {
+            se.pinLabelsLoading = false;
+        }
+        se.pinLabels = labels;
+        seRenderPinForm();
+    }
+
+    // One block per platform any picked app has. Each block lists the apps it applies to.
+    function seRenderPinForm() {
+        const box = seEl('se-pin-plats');
+        if (!box || seEl('se-pin-form').hidden) return;
+        const f = sePinFormState();
+        const custom = seEl('se-pin-custom');
+        if (custom.value !== f.customDomains) custom.value = f.customDomains;
+        custom.disabled = se.busy;
+        const ids = [...se.pinned];
+        const used = SE_PIN_PLATFORMS.map(p => ({ p, apps: ids.filter(id => sePinPlatformsOf(id).includes(p)).map(sePinName) })).filter(x => x.apps.length);
+        const unknown = ids.filter(id => !sePinPlatformsOf(id).length).map(sePinName);
+        const labels = se.pinLabels || [{ id: '-1', name: 'Managed' }];
+        const dis = se.busy ? ' disabled' : '';
+        box.innerHTML = used.map(({ p, apps }) => {
+            const x = f.platforms[p];
+            const off = x.block;
+            return `<div class="pin-plat" data-pinplat="${p}">
+                <div class="pin-plat-head"><b>${SE_PIN_LABELS[p]}</b><span class="muted">${seEscape(apps.join(', '))}</span></div>
+                <label><input type="radio" name="pin-act-${p}" value="bypass" data-pinact="${p}"${off ? '' : ' checked'}${dis}>Bypass</label>
+                <label><input type="radio" name="pin-act-${p}" value="block" data-pinact="${p}"${off ? ' checked' : ''}${dis}>Block</label>
+                <div class="pin-sub${off ? ' off' : ''}" title="${off ? 'Only for Bypass' : ''}">
+                    <label><input type="checkbox" data-pinmanaged="${p}"${x.managed ? ' checked' : ''}${off || se.busy ? ' disabled' : ''}>Devices matching specific Device Classification</label>
+                    ${x.managed && !off ? `<div class="pin-labels">${labels.map(l => `<label><input type="checkbox" data-pinlabel="${p}" value="${seEscape(l.id)}"${x.labels.includes(l.id) ? ' checked' : ''}${dis}>${seEscape(l.name)}</label>`).join('')}</div>` : ''}
+                    <div><label><input type="checkbox" data-pintunnel="${p}"${x.tunnel ? ' checked' : ''}${off || se.busy ? ' disabled' : ''}>Tunnel Mode</label></div>
+                    <input type="text" data-pintunneldom="${p}" placeholder="Enter tunnel domains to be bypassed" value="${seEscape(x.tunnelDomains)}"${!x.tunnel || off || se.busy ? ' disabled' : ''}>
+                </div></div>`;
+        }).join('') + (unknown.length ? `<div class="help">Platforms not known yet for ${seEscape(unknown.join(', '))}. Check asks Netskope for them.</div>` : '');
+        seEl('se-pin-plat-help').hidden = !used.length;
+        if (!ids.length) box.innerHTML = '<div class="help">Pick at least one app to see its platforms.</div>';
+    }
+
+    function seRenderPinChips() {
+        const box = seEl('se-pin-chips');
+        const ids = [...se.pinned];
+        box.innerHTML = ids.length
+            ? `<span id="se-pin-count">${ids.length} selected</span>` + ids.map(id => `<span class="cchip" data-id="${seEscape(id)}">${seEscape(sePinName(id))}<button type="button" data-action="pin-unpick" data-id="${seEscape(id)}" aria-label="Remove ${seEscape(sePinName(id))}"${se.busy ? ' disabled' : ''}>✕</button></span>`).join('')
+            : '<span id="se-pin-count">None selected yet</span>';
+    }
+
     // Switches the tab. The Check result belongs to one type, so it is cleared; configurations and notes stay.
     function seApplyType(type) {
-        se.type = type === 'category' ? 'category' : 'domain';
+        se.type = ['category', 'pinned'].includes(type) ? type : 'domain';
         GM_setValue(SE_TAB_KEY, se.type);
         se.shadow.querySelectorAll('.tabs button').forEach(b => {
             const on = b.dataset.type === se.type;
@@ -38217,8 +38829,11 @@ Version 1.16:
         });
         seEl('se-domain-input').hidden = se.type !== 'domain';
         seEl('se-cat-input').hidden = se.type !== 'category';
+        seEl('se-pin-input').hidden = se.type !== 'pinned';
+        seUpdatePinAddView();
         seResetPlan();
         if (se.type === 'category') seShowCategories();
+        if (se.type === 'pinned') { seShowPins(); seLearnPinExtra(); }
     }
 
     function seOpen(insideConfig, mode) {
@@ -38228,6 +38843,10 @@ Version 1.16:
             seApplyMode(mode === 'add' ? 'add' : 'remove');
             se.catalog = null;
             se.catalogPromise = null;   // read again on every open, so new categories show up
+            se.pinCatalog = null;
+            se.pinPromise = null;
+            se.pinExtra = [];
+            se.pinForm = null;
             seApplyType(GM_getValue(SE_TAB_KEY, 'domain'));
             se.lastConfigs = [];
             seShowView('main');
@@ -38242,7 +38861,7 @@ Version 1.16:
         seUpdateRemoveButton();
         seUpdateRemoveButton();
         if (!se.token) seSetStatus('Waiting for the page to send its session token. This takes a few seconds after the page loads.');
-        setTimeout(() => (se.type === 'category' ? seEl('se-cat-search') : seEl('se-domains'))?.focus(), 50);
+        setTimeout(() => seEl(se.type === 'category' ? 'se-cat-search' : se.type === 'pinned' ? 'se-pin-search' : 'se-domains')?.focus(), 50);
     }
 
     function seClose() {
