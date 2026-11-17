@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.37.0
+// @version      2.38.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.37.0';
-    const CHANGELOG = `Version 2.37.0:
+   const SCRIPT_VERSION = '2.38.0';
+    const CHANGELOG = `Version 2.38.0:
+- NS Policies Toolkit: Steering Exception Tools: a Certified Pinned Apps backup now lists every option a restore will write (action per platform, device classification, tunnel and custom domains), and an app name taken from a backup file is marked with its id.
+- NS Policies Toolkit: Steering Exception Tools: the steering configuration list has "☑ Select all" and "Clear" buttons in every tab. Select all ticks every configuration in the list, or only those matching the filter when you typed one.
+
+Version 2.37.0:
 - NS Policies Toolkit: Steering Exception Tools: new "Certified Pinned Apps" tab in Bulk remove and Bulk add. Bulk remove finds the apps in the configurations you pick and deletes their entries, even apps Netskope no longer lists. Bulk add offers the same options as Netskope (Bypass or Block per platform, Device Classification, Tunnel Mode, Custom App Domains) and applies them to every configuration you pick, one entry per app; a configuration that already has the app is skipped. Every change is backed up with all its options and can be undone from ↩ Backups.
 
 Version 2.36.0:
@@ -30562,8 +30566,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.46.0';
-    const CHANGELOG = `Version 1.46.0:
+    const SCRIPT_VERSION = '1.47.0';
+    const CHANGELOG = `Version 1.47.0:
+- Steering Exception Tools: a Certified Pinned Apps backup now lists every option a restore will write (action per platform, device classification, tunnel and custom domains), and an app name taken from a backup file is marked with its id.
+- Steering Exception Tools: the steering configuration list has "☑ Select all" and "Clear" buttons in every tab. Select all ticks every configuration in the list, or only those matching the filter when you typed one.
+
+Version 1.46.0:
 - Steering Exception Tools: new "Certified Pinned Apps" tab in Bulk remove and Bulk add. Bulk remove finds the apps in the configurations you pick and deletes their entries, even apps Netskope no longer lists. Bulk add offers the same options as Netskope (Bypass or Block per platform, Device Classification, Tunnel Mode, Custom App Domains) and applies them to every configuration you pick, one entry per app; a configuration that already has the app is skipped. Every change is backed up with all its options and can be undone from ↩ Backups.
 
 Version 1.45.0:
@@ -32240,6 +32248,7 @@ Version 1.16:
                         'Removing a category keeps every other category of the entry, whatever it is.',
                         'Each certified pinned app is its own entry: an app a configuration already has is skipped, and removing an app deletes its entry. The backup keeps all its options, so ↩ Backups can recreate it exactly.',
                         'Bulk remove also lists apps that are in the ticked configurations but no longer in the Netskope catalog, marked Retired.',
+                        '☑ Select all, next to Match case, ticks every configuration in the list, or only those matching the filter when you typed one. Clear unticks them all. The list is the same in every tab.',
                     ]);
 
                     // The hint next to the action button
@@ -37659,6 +37668,9 @@ Version 1.16:
             #se-next-hint { color: #005587; font-style: normal; font-weight: 600; }
             .footer .step { margin: 0 -2px 0 4px; }
             .filter-case { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; cursor: pointer; }
+            .cfg-actions { display: inline-flex; gap: 6px; margin-left: 12px; vertical-align: middle; }
+            .cfg-actions .link-btn { padding: 2px 8px; font-size: 11px; }
+            .link-btn:hover:not(:disabled) { background: #eef4f8; }
             .notes-row { margin-top: 14px; }
             .notes-row textarea { min-height: 54px; font-family: Arial, sans-serif; }
             .notes-row .option { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; cursor: pointer; }
@@ -37731,6 +37743,7 @@ Version 1.16:
                                 <label class="label" for="se-filter"><span class="step">2</span>Steering configurations</label>
                                 <input type="text" id="se-filter" placeholder="Filter by name">
                                 <label class="filter-case"><input type="checkbox" id="se-filter-case"${GM_getValue(SE_FILTER_CASE_KEY, false) ? ' checked' : ''}><span>Match case</span></label>
+                                <span class="cfg-actions"><button type="button" class="link-btn" data-action="cfg-all" id="se-cfg-all">☑ Select all</button><button type="button" class="link-btn" data-action="cfg-none" id="se-cfg-none">Clear</button></span>
                                 <div class="configs" id="se-configs"></div>
                                 <div class="help" id="se-config-help"></div>
                             </div>
@@ -37795,6 +37808,7 @@ Version 1.16:
             if (action === 'tab' && target.dataset.type !== se.type) seApplyType(target.dataset.type);
             if (action === 'cat-unpick') { se.categories.delete(target.dataset.id); seRenderCategoryList(); seRenderCategoryChips(); seResetPlan(); }
             if (action === 'cat-reload') seShowCategories(true);
+            if (action === 'cfg-all' || action === 'cfg-none') seTickAllConfigs(action === 'cfg-all');
             if (action === 'pin-unpick') { se.pinned.delete(target.dataset.id); seRenderPinList(); seRenderPinChips(); seRenderPinForm(); seResetPlan(); }
             if (action === 'pin-reload') seShowPins(true);
             if (action === 'backups')     seShowBackupList();
@@ -37838,7 +37852,7 @@ Version 1.16:
                 se.plan[Number(e.target.dataset.addcfg)].selected = e.target.checked;
                 seUpdateRemoveButton();
             }
-            if (e.target.dataset.cfg !== undefined) { seResetPlan(); if (se.type === 'pinned') seLearnPinExtra(); }
+            if (e.target.dataset.cfg !== undefined) { seResetPlan(); seUpdateCfgButtons(); if (se.type === 'pinned') seLearnPinExtra(); }
             if (e.target.dataset.pin !== undefined) {
                 if (e.target.checked) se.pinned.add(e.target.dataset.pin); else se.pinned.delete(e.target.dataset.pin);
                 seRenderPinChips();
@@ -37914,6 +37928,37 @@ Version 1.16:
         seEl('se-config-help').textContent = ids.length < 2
             ? 'Configurations appear here once you open them. Open Settings > Steering Configuration once so the full list loads.'
             : `${ids.length} configurations known. Open the Steering Configuration list again if one is missing.`;
+        seUpdateCfgButtons();
+    }
+
+    // Select all ticks every configuration the list shows (only those matching the filter, when one is typed)
+    function seTickAllConfigs(on) {
+        seEl('se-configs').querySelectorAll('input[data-cfg]').forEach(b => { b.checked = on; });
+        seResetPlan();
+        if (se.type === 'pinned') seLearnPinExtra();
+        const n = seSelectedConfigs().length;
+        se.cfgFeedbackUntil = 0;
+        seUpdateCfgButtons();
+        seEl(on ? 'se-cfg-all' : 'se-cfg-none').textContent = on ? `✅ ${n} selected` : '✅ Cleared';
+        se.cfgFeedbackUntil = Date.now() + 1500;
+        clearTimeout(se.cfgFeedbackTimer);
+        se.cfgFeedbackTimer = setTimeout(() => { se.cfgFeedbackUntil = 0; seUpdateCfgButtons(); }, 1500);
+    }
+
+    function seUpdateCfgButtons() {
+        const all = seEl('se-cfg-all');
+        const none = seEl('se-cfg-none');
+        if (!all || !none) return;
+        const shown = seEl('se-configs').querySelectorAll('input[data-cfg]').length;
+        const ticked = seSelectedConfigs().length;
+        all.disabled = se.busy || !shown || ticked === shown;
+        all.title = !shown ? 'No configuration in the list' : ticked === shown ? 'Every configuration in the list is already ticked'
+            : 'Ticks every configuration shown in the list (only those matching the filter, when you typed one)';
+        none.disabled = se.busy || !ticked;
+        none.title = ticked ? `Unticks the ${ticked} ticked configuration${ticked === 1 ? '' : 's'}` : 'Nothing is ticked';
+        if (Date.now() < (se.cfgFeedbackUntil || 0)) return;   // the "✅ selected" feedback stays a moment
+        all.textContent = `☑ Select all (${shown})`;
+        none.textContent = 'Clear';
     }
 
     function seSelectedConfigs() {
@@ -37962,6 +38007,7 @@ Version 1.16:
 
     function seUpdateRemoveButton() {
         seUpdateHint();
+        seUpdateCfgButtons();
         const btn = seEl('se-remove-btn');
         se.confirming = false;
         seEl('se-notes').disabled = se.busy || seEl('se-no-notes').checked;
@@ -38279,12 +38325,28 @@ Version 1.16:
         if (backup.exceptionType === 'pinned') {
             const live = se.pinCatalog && se.pinCatalog.byId.get(String(value));
             if (live) return live.name;
-            return backup.names[value] ? backup.names[value] : `App ${value}`;
+            // A backup file can be edited, so a name taken from it is marked with the app id
+            return backup.names[value] ? `${backup.names[value]} (name saved in the backup, id ${value})` : `App ${value}`;
         }
         if (backup.exceptionType !== 'category') return value;
         const live = se.catalog && se.catalog.byId.get(String(value));
         if (live) return live.name;
         return backup.names[value] ? `${backup.names[value]} (name saved in the backup, id ${value})` : `Category ${value}`;
+    }
+
+    // Every option a pinned app entry holds, in words, so a restore never writes anything unseen
+    function sePinSummary(pin) {
+        const doms = list => list.map(d => d === '*' ? '* (every domain)' : d).join(', ');
+        const parts = SE_PIN_PLATFORMS.filter(p => pin.platforms[p] && pin.platforms[p].enabled).map(p => {
+            const o = pin.platforms[p];
+            if (o.block) return `${SE_PIN_LABELS[p]}: Block`;
+            const bits = ['Bypass'];
+            if (o.managed) bits.push(o.labels.length && !(o.labels.length === 1 && o.labels[0] === '-1') ? `Device classification ${o.labels.join(', ')}` : 'Managed devices');
+            if (o.tunnel) bits.push(`Tunnel ${o.tunnelDomains.length ? doms(o.tunnelDomains) : '(no domains)'}`);
+            return `${SE_PIN_LABELS[p]}: ${bits.join(', ')}`;
+        });
+        parts.push(`Custom App Domains: ${pin.customDomains.length ? doms(pin.customDomains) : 'none'}`);
+        return parts.join('. ');
     }
 
     function seBackupNoun(backup, n) {
@@ -38466,6 +38528,7 @@ Version 1.16:
                 ${info ? `<span class="chip ${info.chip}">${info.label}</span>` : '<span class="chip gray">Checking…</span>'}
                 <div><div><b>${seEscape(seEntryLabel(e.notes, e.rowId))}</b> <span class="muted">in ${seEscape(e.configName)}</span></div>
                 <div class="muted">${what}. ${facts}</div>
+                ${backup.exceptionType === 'pinned' && e.pin ? `<div class="muted"><b>Options:</b> ${seEscape(sePinSummary(e.pin))}</div>` : ''}
                 ${info ? `<div class="muted">${info.text}</div>` : ''}
                 ${item && ['changed', 'createdChanged'].includes(item.state) && item.addedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Added since: ${seEscape(show(item.addedSince))}. These would be removed.</div>` : ''}
                 ${item && item.state === 'changed' && item.droppedSince.length ? `<div class="note warn" style="padding:4px 0;border:0">Removed since: ${seEscape(show(item.droppedSince))}. These would come back.</div>` : ''}
