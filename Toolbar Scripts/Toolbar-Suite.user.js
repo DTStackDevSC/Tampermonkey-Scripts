@@ -36143,6 +36143,8 @@ Version 1.16:
         pinned:         new Set(),  // ids of the apps picked in the Certified Pinned Apps tab
         pinSeen:        {},         // app id → name seen in the exception lists (apps Netskope retired keep theirs)
         pinExtra:       [],         // apps in the ticked configurations that the catalog lacks: [{ id, name }]
+        pinForm:        null,       // Bulk add options: { customDomains: '', platforms: { p: { block, managed, labels, tunnel, tunnelDomains } } }
+        pinLabels:      null,       // device classifications: [{ id, name }], "Managed" first
         lastConfigs:    [],         // names of the configurations the last run changed
     };
 
@@ -37286,6 +37288,95 @@ Version 1.16:
         return { log, stillThere, backup };
     }
 
+    // The options of a new entry for this app, in the backup shape
+    function sePinFromForm(appId, plats, form, notes) {
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => {
+            const on = plats.includes(p);
+            const f = (on && form.platforms[p]) || {};
+            const block = on && !!f.block;
+            const managed = on && !block && !!f.managed;
+            const tunnel = on && !block && !!f.tunnel;
+            platforms[p] = { enabled: on, block, managed, labels: managed ? ((f.labels && f.labels.length) ? f.labels.slice() : ['-1']) : [],
+                tunnel, tunnelDomains: tunnel ? (f.tunnelDomains || []).slice() : [] };
+        });
+        return { appId: String(appId), name: sePinName(appId), notes: notes || '', appDomains: [], customDomains: (form.customDomains || []).slice(), platforms };
+    }
+
+    // Apps the catalog lists without platforms: ask Netskope, like the console does when an app is picked
+    async function sePinEnsurePlatforms(ids) {
+        for (const id of ids) {
+            const a = se.pinCatalog && se.pinCatalog.byId.get(id);
+            if (!a || a.platforms.length) continue;
+            const res = await fetch(SE_PIN_API + 'fetchPlatformsForCertPinnedApp', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Accept': 'application/json, text/plain, */*', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'resource': SE_RESOURCE },
+                body: JSON.stringify({ app_id: id, token: se.token }),
+            });
+            const json = res.ok ? await res.json().catch(() => null) : null;
+            if (json && Array.isArray(json.platform_choices)) a.platforms = json.platform_choices.map(String);
+            if (!a.platforms.length) throw new Error(`Netskope did not say which platforms ${a.name} has. Reload the app list and click Check again.`);
+        }
+    }
+
+    // One new entry per app and configuration. An app a configuration already has is skipped there.
+    async function seBuildPinAddPlan(configIds, ids) {
+        await sePinEnsurePlatforms(ids);
+        const configs = seGetConfigs();
+        const plan = [];
+        for (const id of configIds) {
+            const entries = sePinEntries(await seListExceptions(id));
+            const present = [];
+            ids.forEach(a => {
+                const holder = entries.find(e => e.appId === a);
+                if (holder) present.push({ id: a, label: seEntryLabel(holder.notes, holder.rowId) });
+            });
+            const toAdd = ids.filter(a => !present.some(p => p.id === a));
+            plan.push({ configId: id, name: (configs[id] && configs[id].name) || `Configuration ${id}`,
+                toAdd, present, related: [], selected: toAdd.length > 0, findKey: '', matches: [], target: null });
+        }
+        return plan;
+    }
+
+    async function seApplyPinAddPlan(plan, notes, form, progress) {
+        const backup = sePinBackup('addition');
+        se.lastBackupId = backup.id;
+        const log = [];
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Reading ${cfg.name}…`);
+            // Check again just before adding: the console never sends an app a configuration already has
+            const before = sePinEntries(await seListExceptions(cfg.configId));
+            const added = [];
+            for (const appId of cfg.toAdd) {
+                const name = sePinName(appId);
+                if (before.some(e => e.appId === appId)) continue;
+                const plats = sePinPlatformsOf(appId);
+                const pin = sePinFromForm(appId, plats, form, notes);
+                // Saved before the change so an interrupted run can still be undone
+                const entry = { configId: cfg.configId, configName: cfg.name, rowId: '-1', notes: notes || '', domains: [], kind: 'create', after: [appId], removed: [], pin };
+                backup.names[appId] = name;
+                backup.entries.push(entry);
+                seSaveBackup(backup);
+                progress(`Adding ${name} to ${cfg.name} (${added.length + 1} of ${cfg.toAdd.length})…`);
+                await seWriteChecked(() => seSavePin(cfg.configId, sePinPayload(appId, plats, form, notes, null)),
+                    seLandedPinCreate(cfg.configId, appId), progress, `adding ${name} to ${cfg.name}`);
+                // Netskope does not return the new entry's id, so find the new row of this app
+                const row = sePinEntries(await seListExceptions(cfg.configId)).find(e => e.appId === appId && !before.some(b => b.rowId === e.rowId));
+                if (row) { entry.rowId = row.rowId; seSaveBackup(backup); }
+                added.push(name);
+            }
+            log.push(added.length ? { config: cfg.name, kind: 'add', added } : { config: cfg.name, kind: 'skipped', added: [] });
+        }
+        // Confirm every requested app is now an exception in each configuration
+        const missing = [];
+        for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
+            progress(`Checking ${cfg.name}…`);
+            const have = new Set(sePinEntries(await seListExceptions(cfg.configId)).map(e => e.appId));
+            cfg.toAdd.filter(a => !have.has(a)).forEach(a => missing.push(`${sePinName(a)} (${cfg.name})`));
+        }
+        return { log, missing, backup };
+    }
+
     // Backups keep the ids in the same fields as domains (domains, after), with their names alongside
     function seCategoryBackup(source) {
         return { id: seNewBackupId(), at: new Date().toISOString(), host: location.host, source, action: source,
@@ -37378,7 +37469,7 @@ Version 1.16:
         plan.forEach(cfg => {
             const done = result.log.find(l => l.config === cfg.name && (l.kind === 'add' || l.kind === 'extend'));
             lines.push('', cfg.name + ':');
-            if (done && done.kind === 'add') lines.push(`  Added ${done.added.join(', ')} as a new exception entry`);
+            if (done && done.kind === 'add') lines.push(se.type === 'pinned' ? `  Added ${done.added.join(', ')} (one exception entry per app)` : `  Added ${done.added.join(', ')} as a new exception entry`);
             if (done && done.kind === 'extend') lines.push(`  Added ${done.added.join(', ')} to the existing entry ${done.label}`);
             if (cfg.present.length) lines.push(`  Already present: ${cfg.present.map(p => `${p.domain != null ? p.domain : seShow(p.id)} (in ${p.label})`).join(', ')}`);
             if (!done && !cfg.present.length) lines.push(cfg.selected ? '  No changes' : '  Skipped');
@@ -37517,6 +37608,14 @@ Version 1.16:
             .warnbox { margin: 12px 0 4px; padding: 10px 12px; border-radius: 6px; font-size: 13px; line-height: 1.45;
                 color: #6b4400; background: #fff6e0; border: 1px solid #f0c36d; }
             .note.warn { color: #8a5a00; }
+            .pin-form { margin-top: 14px; }
+            .pin-plat { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 12px; margin-top: 8px; font-size: 13px; }
+            .pin-plat-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+            .pin-plat label { display: inline-flex; align-items: center; gap: 6px; margin: 3px 14px 3px 0; cursor: pointer; }
+            .pin-sub { margin: 2px 0 2px 22px; }
+            .pin-sub.off { opacity: .5; }
+            .pin-sub input[type="text"] { margin: 4px 0; }
+            .pin-labels { margin-left: 22px; }
         `);
         shadow.adoptedStyleSheets = [sheet];
 
@@ -37561,11 +37660,19 @@ Version 1.16:
                                 <div class="help" id="se-config-help"></div>
                             </div>
                         </div>
+                        <div class="pin-form" id="se-pin-form" hidden>
+                            <label class="label" for="se-pin-custom">Custom App Domains <span class="muted" style="font-weight:400">(optional)</span></label>
+                            <input type="text" id="se-pin-custom" placeholder="Enter custom domains to be bypassed" autocomplete="off">
+                            <div class="help">Comma separated. * means all domains. The same for every app you add.</div>
+                            <div class="label" style="margin-top:12px">Actions per platform</div>
+                            <div class="help" id="se-pin-plat-help">Specify the action for each platform. Bypass sends the traffic straight to its destination, Block drops it. Each app uses only the platforms it has.</div>
+                            <div id="se-pin-plats"></div>
+                        </div>
                         <div class="notes-row" id="se-notes-row" hidden>
                             <label class="label" for="se-notes"><span class="step">3</span>Notes for the new entries</label>
                             <textarea id="se-notes" placeholder="RITM0000000: reason for the exception"></textarea>
                             <label class="option"><input type="checkbox" id="se-no-notes"><span>No notes needed</span></label>
-                            <label class="option find"><input type="checkbox" id="se-find-entry"><span>Add to the existing entry with this note, when there is one</span></label>
+                            <label class="option find" id="se-find-option"><input type="checkbox" id="se-find-entry"><span>Add to the existing entry with this note, when there is one</span></label>
                             <div class="help" id="se-find-help" hidden>Looks for the entry whose notes hold the ticket number in your notes (for example RITM0123456), or your whole notes when there is no number. That entry keeps its own notes. Configurations without such an entry get a new one.</div>
                         </div>
                         <div class="results" id="se-results"></div>
@@ -37613,7 +37720,7 @@ Version 1.16:
             if (action === 'tab' && target.dataset.type !== se.type) seApplyType(target.dataset.type);
             if (action === 'cat-unpick') { se.categories.delete(target.dataset.id); seRenderCategoryList(); seRenderCategoryChips(); seResetPlan(); }
             if (action === 'cat-reload') seShowCategories(true);
-            if (action === 'pin-unpick') { se.pinned.delete(target.dataset.id); seRenderPinList(); seRenderPinChips(); seResetPlan(); }
+            if (action === 'pin-unpick') { se.pinned.delete(target.dataset.id); seRenderPinList(); seRenderPinChips(); seRenderPinForm(); seResetPlan(); }
             if (action === 'pin-reload') seShowPins(true);
             if (action === 'backups')     seShowBackupList();
             if (action === 'bk-main')     seShowView('main');
@@ -37628,6 +37735,7 @@ Version 1.16:
             if (e.target.id === 'se-domains') seResetPlan();
             if (e.target.id === 'se-cat-search') seRenderCategoryList();
             if (e.target.id === 'se-pin-search') seRenderPinList();
+            if (e.target.id === 'se-pin-custom' || e.target.dataset.pintunneldom !== undefined) seReadPinFormInputs();
             if (e.target.id === 'se-notes') {
                 // The note decides which entry gets the domains, so a new note needs a new Check
                 if (seEl('se-find-entry').checked && se.plan) seResetPlan();
@@ -37659,7 +37767,13 @@ Version 1.16:
             if (e.target.dataset.pin !== undefined) {
                 if (e.target.checked) se.pinned.add(e.target.dataset.pin); else se.pinned.delete(e.target.dataset.pin);
                 seRenderPinChips();
+                seRenderPinForm();
                 seResetPlan();
+            }
+            if (e.target.dataset.pinact !== undefined || e.target.dataset.pinmanaged !== undefined ||
+                e.target.dataset.pintunnel !== undefined || e.target.dataset.pinlabel !== undefined) {
+                seReadPinFormInputs();
+                seRenderPinForm();
             }
             if (e.target.dataset.cat !== undefined) {
                 if (e.target.checked) se.categories.add(e.target.dataset.cat); else se.categories.delete(e.target.dataset.cat);
@@ -37814,6 +37928,8 @@ Version 1.16:
         seEl('se-domains').disabled = busy;
         seEl('se-cat-search').disabled = busy;
         seEl('se-pin-search').disabled = busy;
+        if (busy) se.shadow.querySelectorAll('#se-pin-form input').forEach(i => { i.disabled = true; });
+        else seRenderPinForm();
         se.shadow.querySelectorAll('#se-cat-list input, #se-cat-chips button, #se-pin-list input, #se-pin-chips button').forEach(i => { i.disabled = busy; });
         seUpdateRemoveButton();
     }
@@ -37934,6 +38050,7 @@ Version 1.16:
             se.domains = domains;
             if (se.mode === 'add') {
                 se.plan = cats ? await seBuildCategoryAddPlan(configIds, domains, seFindKey())
+                               : pins ? await seBuildPinAddPlan(configIds, domains)
                                : await seBuildAddPlan(configIds, domains, seFindKey());
                 seRenderAddPlan();
                 const total = se.plan.filter(c => c.toAdd.length).length;
@@ -37971,8 +38088,8 @@ Version 1.16:
         seSetBusy(true);
         const plan = se.plan;
         try {
-            const result = se.type === 'category'
-                ? await seApplyCategoryAddPlan(plan, notes, msg => seSetStatus(msg))
+            const result = se.type === 'category' ? await seApplyCategoryAddPlan(plan, notes, msg => seSetStatus(msg))
+                : se.type === 'pinned' ? await seApplyPinAddPlan(plan, notes, seReadPinFormInputs(), msg => seSetStatus(msg))
                 : await seApplyAddPlan(plan, notes, msg => seSetStatus(msg));
             se.plan = null;
             se.lastConfigs = seChangedConfigs(result.log, ['add', 'extend']);
@@ -38348,6 +38465,16 @@ Version 1.16:
             ? 'One per line. A domain a configuration already has is skipped there.'
             : 'One per line. Matching is exact: example.com does not remove *.example.com.';
         seEl('se-notes-row').hidden = !add;
+        seUpdatePinAddView();
+    }
+
+    // Bulk add on the Certified Pinned Apps tab shows the option form, and never adds into an existing entry
+    function seUpdatePinAddView() {
+        const pinAdd = se.mode === 'add' && se.type === 'pinned';
+        seEl('se-pin-form').hidden = !pinAdd;
+        seEl('se-find-option').hidden = se.type === 'pinned';
+        seEl('se-find-help').hidden = se.type === 'pinned' || !seEl('se-find-entry').checked;
+        if (pinAdd) { seLoadPinLabels(); seRenderPinForm(); }
     }
 
     /* ── Categories: the tenant's list and the picker ── */
@@ -38501,6 +38628,97 @@ Version 1.16:
         if (matches.length > SE_CAT_SHOWN) box.insertAdjacentHTML('beforeend', `<div class="help" style="padding:6px 10px">${matches.length - SE_CAT_SHOWN} more, refine the search</div>`);
     }
 
+    function sePinFormState() {
+        if (!se.pinForm) {
+            const platforms = {};
+            SE_PIN_PLATFORMS.forEach(p => { platforms[p] = { block: false, managed: false, labels: [], tunnel: false, tunnelDomains: '' }; });
+            se.pinForm = { customDomains: '', platforms };
+        }
+        return se.pinForm;
+    }
+
+    // Reads the form into se.pinForm and returns the options in the shape the writes use
+    function seReadPinFormInputs() {
+        const f = sePinFormState();
+        const custom = seEl('se-pin-custom');
+        if (custom) f.customDomains = custom.value;
+        se.shadow.querySelectorAll('#se-pin-plats [data-pinplat]').forEach(block => {
+            const p = block.dataset.pinplat;
+            const x = f.platforms[p];
+            const act = block.querySelector(`input[name="pin-act-${p}"]:checked`);
+            x.block = !!act && act.value === 'block';
+            const managed = block.querySelector(`[data-pinmanaged="${p}"]`);
+            const wasManaged = x.managed;
+            x.managed = !!managed && managed.checked;
+            const ticked = [...block.querySelectorAll(`[data-pinlabel="${p}"]:checked`)].map(i => i.value);
+            // Ticking the box picks "Managed", like the console's first choice
+            x.labels = x.managed && !wasManaged && !ticked.length ? ['-1'] : ticked;
+            const tunnel = block.querySelector(`[data-pintunnel="${p}"]`);
+            x.tunnel = !!tunnel && tunnel.checked;
+            const dom = block.querySelector(`[data-pintunneldom="${p}"]`);
+            if (dom) x.tunnelDomains = dom.value;
+        });
+        const split = text => String(text || '').split(/[\s,;]+/).map(d => d.trim()).filter(Boolean);
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => {
+            const x = f.platforms[p];
+            platforms[p] = { block: x.block, managed: x.managed, labels: x.labels.slice(), tunnel: x.tunnel, tunnelDomains: split(x.tunnelDomains) };
+        });
+        return { customDomains: split(f.customDomains), platforms };
+    }
+
+    async function seLoadPinLabels() {
+        if (se.pinLabels || se.pinLabelsLoading) return;
+        se.pinLabelsLoading = true;
+        const labels = [{ id: '-1', name: 'Managed' }];
+        try {
+            for (let i = 0; !se.token && i < 40; i++) await seWait(250);
+            const d = await sePost('getDeviceClassificationLabels', { label_ids: [] }, '/settings/deviceClassification/');
+            (Array.isArray(d) ? d : []).forEach(x => {
+                const id = x && (x.id != null ? x.id : x.label_id != null ? x.label_id : x.value);
+                const name = x && (x.name || x.label_name || x.label);
+                if (id != null && name && String(id) !== '-1') labels.push({ id: String(id), name: String(name) });
+            });
+        } catch (err) {
+            console.error('[NS Toolkit] Device classifications:', err);   // "Managed" is always offered
+        } finally {
+            se.pinLabelsLoading = false;
+        }
+        se.pinLabels = labels;
+        seRenderPinForm();
+    }
+
+    // One block per platform any picked app has. Each block lists the apps it applies to.
+    function seRenderPinForm() {
+        const box = seEl('se-pin-plats');
+        if (!box || seEl('se-pin-form').hidden) return;
+        const f = sePinFormState();
+        const custom = seEl('se-pin-custom');
+        if (custom.value !== f.customDomains) custom.value = f.customDomains;
+        custom.disabled = se.busy;
+        const ids = [...se.pinned];
+        const used = SE_PIN_PLATFORMS.map(p => ({ p, apps: ids.filter(id => sePinPlatformsOf(id).includes(p)).map(sePinName) })).filter(x => x.apps.length);
+        const unknown = ids.filter(id => !sePinPlatformsOf(id).length).map(sePinName);
+        const labels = se.pinLabels || [{ id: '-1', name: 'Managed' }];
+        const dis = se.busy ? ' disabled' : '';
+        box.innerHTML = used.map(({ p, apps }) => {
+            const x = f.platforms[p];
+            const off = x.block;
+            return `<div class="pin-plat" data-pinplat="${p}">
+                <div class="pin-plat-head"><b>${SE_PIN_LABELS[p]}</b><span class="muted">${seEscape(apps.join(', '))}</span></div>
+                <label><input type="radio" name="pin-act-${p}" value="bypass" data-pinact="${p}"${off ? '' : ' checked'}${dis}>Bypass</label>
+                <label><input type="radio" name="pin-act-${p}" value="block" data-pinact="${p}"${off ? ' checked' : ''}${dis}>Block</label>
+                <div class="pin-sub${off ? ' off' : ''}" title="${off ? 'Only for Bypass' : ''}">
+                    <label><input type="checkbox" data-pinmanaged="${p}"${x.managed ? ' checked' : ''}${off || se.busy ? ' disabled' : ''}>Devices matching specific Device Classification</label>
+                    ${x.managed && !off ? `<div class="pin-labels">${labels.map(l => `<label><input type="checkbox" data-pinlabel="${p}" value="${seEscape(l.id)}"${x.labels.includes(l.id) ? ' checked' : ''}${dis}>${seEscape(l.name)}</label>`).join('')}</div>` : ''}
+                    <div><label><input type="checkbox" data-pintunnel="${p}"${x.tunnel ? ' checked' : ''}${off || se.busy ? ' disabled' : ''}>Tunnel Mode</label></div>
+                    <input type="text" data-pintunneldom="${p}" placeholder="Enter tunnel domains to be bypassed" value="${seEscape(x.tunnelDomains)}"${!x.tunnel || off || se.busy ? ' disabled' : ''}>
+                </div></div>`;
+        }).join('') + (unknown.length ? `<div class="help">Platforms not known yet for ${seEscape(unknown.join(', '))}. Check asks Netskope for them.</div>` : '');
+        seEl('se-pin-plat-help').hidden = !used.length;
+        if (!ids.length) box.innerHTML = '<div class="help">Pick at least one app to see its platforms.</div>';
+    }
+
     function seRenderPinChips() {
         const box = seEl('se-pin-chips');
         const ids = [...se.pinned];
@@ -38521,6 +38739,7 @@ Version 1.16:
         seEl('se-domain-input').hidden = se.type !== 'domain';
         seEl('se-cat-input').hidden = se.type !== 'category';
         seEl('se-pin-input').hidden = se.type !== 'pinned';
+        seUpdatePinAddView();
         seResetPlan();
         if (se.type === 'category') seShowCategories();
         if (se.type === 'pinned') { seShowPins(); seLearnPinExtra(); }
@@ -38536,6 +38755,7 @@ Version 1.16:
             se.pinCatalog = null;
             se.pinPromise = null;
             se.pinExtra = [];
+            se.pinForm = null;
             seApplyType(GM_getValue(SE_TAB_KEY, 'domain'));
             se.lastConfigs = [];
             seShowView('main');
