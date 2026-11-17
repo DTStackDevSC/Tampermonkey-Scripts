@@ -36913,6 +36913,7 @@ Version 1.16:
 
     // Compares each backed up entry with what Netskope has now
     async function seInspectBackup(backup, progress) {
+        if (backup.exceptionType === 'pinned') return seInspectPinBackup(backup, progress);
         const rowsByConfig = {};
         for (const id of new Set(backup.entries.map(e => e.configId))) {
             progress(`Reading ${backup.entries.find(e => e.configId === id).configName}…`);
@@ -36981,7 +36982,50 @@ Version 1.16:
         });
     }
 
+    // Pinned apps: an app is at most once per configuration, so entries are found by app
+    async function seInspectPinBackup(backup, progress) {
+        const byConfig = {};
+        for (const id of new Set(backup.entries.map(e => e.configId))) {
+            progress(`Reading ${backup.entries.find(e => e.configId === id).configName}…`);
+            byConfig[id] = sePinEntries(await seListExceptions(id));
+        }
+        return backup.entries.map(e => {
+            const rows = byConfig[e.configId];
+            const appId = e.kind === 'create' ? (e.after || [])[0] : e.domains[0];
+            const base = { entry: e, elsewhere: [], willAdd: [], addedSince: [], droppedSince: [] };
+            if (e.kind === 'create') {
+                // The entry the addition made, by its id; another entry of the same app was made by someone else
+                const own = rows.find(r => r.rowId === String(e.rowId) && r.appId === appId);
+                const other = !own && rows.find(r => r.appId === appId);
+                const row = own || other;
+                return Object.assign(base, { exists: !!row, rowId: row ? row.rowId : null, state: own ? 'created' : other ? 'createdChanged' : 'same' });
+            }
+            const row = rows.find(r => r.appId === appId);
+            return Object.assign(base, { exists: !!row, rowId: row ? row.rowId : null, state: row ? 'same' : 'deleted', willAdd: row ? [] : [appId] });
+        });
+    }
+
+    async function seRestorePins(inspection, progress) {
+        for (const item of inspection) {
+            if (item.state === 'same') continue;
+            const e = item.entry;
+            if (e.kind === 'create') {
+                progress(`Deleting the added entry ${seEntryLabel(e.notes, item.rowId)} in ${e.configName}…`);
+                await seWriteChecked(() => seDeleteEntries(e.configId, [item.rowId]), seLandedDelete(e.configId, [item.rowId]), progress, 'deleting the added entry');
+                continue;
+            }
+            const pin = e.pin;
+            if (!pin) throw new Error(`The backup has no options for ${seEntryLabel(e.notes, e.rowId)}, so it cannot be recreated.`);
+            const plats = SE_PIN_PLATFORMS.filter(p => pin.platforms[p] && pin.platforms[p].enabled);
+            const name = pin.name || sePinName(pin.appId);
+            progress(`Recreating ${name} in ${e.configName}…`);
+            await seWriteChecked(() => seSavePin(e.configId, sePinPayload(pin.appId, plats.length ? plats : sePinPlatformsOf(pin.appId), sePinFormOf(pin), e.notes, null)),
+                seLandedPinCreate(e.configId, pin.appId), progress, `recreating ${name}`);
+        }
+    }
+
     async function seRestoreFromInspection(inspection, progress, type) {
+        if (type === 'pinned') return seRestorePins(inspection, progress);
         const save = type === 'category' ? seSaveCategories : seSaveDomains;
         for (const item of inspection) {
             if (item.state === 'same') continue;
@@ -38201,14 +38245,25 @@ Version 1.16:
     // How a backed up value is shown. Categories use the tenant's own name: a backup file can be
     // edited, so the name saved in it is only shown, marked, when the tenant does not know the id.
     function seBackupShow(backup, value) {
+        if (backup.exceptionType === 'pinned') {
+            const live = se.pinCatalog && se.pinCatalog.byId.get(String(value));
+            if (live) return live.name;
+            return backup.names[value] ? backup.names[value] : `App ${value}`;
+        }
         if (backup.exceptionType !== 'category') return value;
         const live = se.catalog && se.catalog.byId.get(String(value));
         if (live) return live.name;
         return backup.names[value] ? `${backup.names[value]} (name saved in the backup, id ${value})` : `Category ${value}`;
     }
 
+    function seBackupNoun(backup, n) {
+        return backup.exceptionType === 'category' ? (n === 1 ? 'category' : 'categories')
+            : backup.exceptionType === 'pinned' ? (n === 1 ? 'app' : 'apps') : (n === 1 ? 'domain' : 'domains');
+    }
+
     function seBackupChips(backup) {
-        let html = backup.exceptionType === 'category' ? '<span class="chip info">Categories</span>' : '<span class="chip gray">Domains</span>';
+        let html = backup.exceptionType === 'category' ? '<span class="chip info">Categories</span>'
+            : backup.exceptionType === 'pinned' ? '<span class="chip info">Pinned apps</span>' : '<span class="chip gray">Domains</span>';
         if (backup.restoredAt) html += `<span class="chip ok">Restored ${seEscape(seFormatDate(backup.restoredAt))}</span>`;
         if (backup.action === 'addition') html += '<span class="chip ok">Addition</span>';
         if (backup.source === 'import') html += '<span class="chip info">Imported</span>';
@@ -38299,6 +38354,11 @@ Version 1.16:
             try { await seLoadCatalog(); } catch (e) { /* names fall back to the ids */ }
             if (se.bkSelected !== id) return;
         }
+        if (backup.exceptionType === 'pinned' && !se.pinCatalog) {
+            seBkStatus('Loading certified pinned apps…');
+            try { await seLoadPinCatalog(); } catch (e) { /* names fall back to the backup's */ }
+            if (se.bkSelected !== id) return;
+        }
         seRenderBackupDetail(backup);
 
         const blocker = seRestoreBlocker(backup);
@@ -38311,7 +38371,7 @@ Version 1.16:
             se.bkInspection = inspection;
             seRenderBackupDetail(backup);
             seBkStatus(inspection.every(i => i.state === 'same')
-                ? (backup.action === 'addition' ? `The added entries and ${backup.exceptionType === 'category' ? 'categories' : 'domains'} are already gone. Nothing to undo.` : 'Every entry is already as it was in this backup. Nothing to restore.')
+                ? (backup.action === 'addition' ? `The added entries and ${seBackupNoun(backup, 2)} are already gone. Nothing to undo.` : 'Every entry is already as it was in this backup. Nothing to restore.')
                 : `Nothing has changed yet. Review the entries, then click ${backup.action === 'addition' ? 'Undo' : 'Restore'}.`);
         } catch (err) {
             console.error('[NS Toolkit] Steering backup check:', err);
@@ -38362,7 +38422,7 @@ Version 1.16:
 
         html += '<div class="card" style="margin-top:12px">';
         const show = list => list.map(v => seBackupShow(backup, v)).join(', ');
-        const noun = n => backup.exceptionType === 'category' ? (n === 1 ? 'category' : 'categories') : (n === 1 ? 'domain' : 'domains');
+        const noun = n => seBackupNoun(backup, n);
         backup.entries.forEach((e, i) => {
             const item = insp && insp[i];
             const info = item ? SE_STATE_INFO[item.state] : null;
@@ -38440,7 +38500,7 @@ Version 1.16:
             se.busy = false;
             await seOpenBackup(backup.id);
             seBkStatus(backup.action === 'addition'
-                ? `Addition undone: new entries were deleted and added ${backup.exceptionType === 'category' ? 'categories' : 'domains'} were taken out of existing entries. Reload the page to see the exceptions table updated.`
+                ? `Addition undone: new entries were deleted${backup.exceptionType === 'pinned' ? '' : ` and added ${seBackupNoun(backup, 2)} were taken out of existing entries`}. Reload the page to see the exceptions table updated.`
                 : 'Backup restored. Reload the page to see the exceptions table updated.');
         } catch (err) {
             console.error('[NS Toolkit] Steering restore:', err);
