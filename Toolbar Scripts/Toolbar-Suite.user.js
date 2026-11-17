@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.38.0
+// @version      2.38.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.38.0';
-    const CHANGELOG = `Version 2.38.0:
+   const SCRIPT_VERSION = '2.38.1';
+    const CHANGELOG = `Version 2.38.1:
+- NS Policies Toolkit: Steering Exception Tools: Bulk remove of Certified Pinned Apps now deletes the apps even when Netskope does not send the entry details, by taking the options for the backup from the exceptions list. When an entry is left as it is, the summary now says which one and why.
+
+Version 2.38.0:
 - NS Policies Toolkit: Steering Exception Tools: a Certified Pinned Apps backup now lists every option a restore will write (action per platform, device classification, tunnel and custom domains), and an app name taken from a backup file is marked with its id.
 - NS Policies Toolkit: Steering Exception Tools: the steering configuration list has "☑ Select all" and "Clear" buttons in every tab. Select all ticks every configuration in the list, or only those matching the filter when you typed one.
 
@@ -30566,8 +30569,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.47.0';
-    const CHANGELOG = `Version 1.47.0:
+    const SCRIPT_VERSION = '1.47.1';
+    const CHANGELOG = `Version 1.47.1:
+- Steering Exception Tools: Bulk remove of Certified Pinned Apps now deletes the apps even when Netskope does not send the entry details, by taking the options for the backup from the exceptions list. When an entry is left as it is, the summary now says which one and why.
+
+Version 1.47.0:
 - Steering Exception Tools: a Certified Pinned Apps backup now lists every option a restore will write (action per platform, device classification, tunnel and custom domains), and an app name taken from a backup file is marked with its id.
 - Steering Exception Tools: the steering configuration list has "☑ Select all" and "Clear" buttons in every tab. Select all ticks every configuration in the list, or only those matching the filter when you typed one.
 
@@ -36490,7 +36496,7 @@ Version 1.16:
                 const appId = String(r.display_value.application_id);
                 const name = String(r.current_name || r.application_name || '');
                 if (name) se.pinSeen[appId] = name;
-                return { rowId: String(r.settings_id), appId, name: name || sePinName(appId), notes: r.notes || '' };
+                return { rowId: String(r.settings_id), appId, name: name || sePinName(appId), notes: r.notes || '', row: r };
             });
     }
 
@@ -36506,18 +36512,35 @@ Version 1.16:
         if (!appId || !data[appId] || typeof data[appId] !== 'object') return null;
         const x = data[appId];
         const platforms = {};
-        SE_PIN_PLATFORMS.forEach(p => {
-            const o = x[p] && typeof x[p] === 'object' ? x[p] : {};
-            const action = o.action == null ? '1' : String(o.action);   // "0" Block, "1" Bypass, "2" Bypass for a device classification
-            const block = action === '0';
-            const managed = !block && (action === '2' || !!o.managed_device);
-            const labels = sePinList(o.custom_labels);
-            platforms[p] = { enabled: !!o.enabled, block, managed, labels: managed ? (labels.length ? labels : ['-1']) : [],
-                tunnel: !block && !!o.tunnel, tunnelDomains: !block && o.tunnel ? sePinList(o.tunnel_domains) : [] };
-        });
+        SE_PIN_PLATFORMS.forEach(p => { platforms[p] = sePinPlatformFrom(x[p]); });
         if (x.appName) se.pinSeen[appId] = String(x.appName);
         return { appId: String(appId), name: String(x.appName || sePinName(appId)), notes: d.notes != null ? String(d.notes) : '',
             appDomains: sePinList(x.app_domains), customDomains: sePinList(x.custom_app_domains), platforms };
+    }
+
+    // One platform's options as Netskope stores them ("0" Block, "1" Bypass, "2" Bypass for a device classification)
+    function sePinPlatformFrom(raw) {
+        const o = raw && typeof raw === 'object' ? raw : {};
+        const action = o.action == null ? '1' : String(o.action);
+        const block = action === '0';
+        const managed = !block && (action === '2' || !!o.managed_device);
+        const labels = sePinList(o.custom_labels);
+        return { enabled: !!o.enabled, block, managed, labels: managed ? (labels.length ? labels : ['-1']) : [],
+            tunnel: !block && !!o.tunnel, tunnelDomains: !block && o.tunnel ? sePinList(o.tunnel_domains) : [] };
+    }
+
+    // The same options read from the entry's row in the list: pinned_parameters holds the app's domains,
+    // then the custom domains, and one object per platform, in no fixed order
+    function sePinFromRow(entry) {
+        const dv = entry.row && entry.row.display_value;
+        const params = dv && Array.isArray(dv.pinned_parameters) ? dv.pinned_parameters : null;
+        if (!params) return null;
+        const arrays = params.filter(Array.isArray);
+        const objs = params.filter(x => x && typeof x === 'object' && !Array.isArray(x) && x.platform);
+        const platforms = {};
+        SE_PIN_PLATFORMS.forEach(p => { platforms[p] = sePinPlatformFrom(objs.find(o => o.platform === p)); });
+        return { appId: entry.appId, name: entry.name, notes: entry.notes || '', appDomains: sePinList(arrays[0]),
+            customDomains: sePinList(arrays[1]), platforms };
     }
 
     // The platforms an app has: from the catalog, or from an entry read earlier when the catalog lacks it
@@ -37331,12 +37354,23 @@ Version 1.16:
             const chosen = cfg.actions.filter(a => a.selected);
             if (!chosen.length) continue;
             const toDelete = [];
+            progress(`Reading ${cfg.name}…`);
+            const rows = sePinEntries(await seListExceptions(cfg.configId));
             for (const a of chosen) {
                 progress(`Reading ${sePinName(a.hits[0])} in ${cfg.name}…`);
-                // Read the whole entry first, so the backup can recreate it with the same options
-                const pin = await seReadPin(cfg.configId, a.rowId);
+                // Read the whole entry first, so the backup can recreate it with the same options.
+                // When the entry's own read answers in another shape, the list row holds the same options.
+                const row = rows.find(r => r.rowId === String(a.rowId));
+                let pin = null;
+                try { pin = await seReadPin(cfg.configId, a.rowId); } catch (err) { console.warn('[NS Toolkit] Pinned app read failed, using the list row:', err); }
                 if (!pin || pin.appId !== a.hits[0]) {
-                    log.push({ config: cfg.name, label: seEntryLabel(a.notes, a.rowId), kind: 'skipped', removed: [] });
+                    if (pin || !row) console.warn('[NS Toolkit] Pinned app read answered for another app or no row:', { rowId: a.rowId, expected: a.hits[0], got: pin && pin.appId });
+                    pin = row && row.appId === a.hits[0] ? sePinFromRow(row) : null;
+                    if (pin && !pin.notes && a.notes) pin.notes = a.notes;
+                }
+                if (!pin) {
+                    log.push({ config: cfg.name, label: seEntryLabel(a.notes, a.rowId), kind: 'skipped', removed: [],
+                        reason: row ? 'its options could not be read, so it was left as it is (no backup possible)' : 'it is no longer in the configuration' });
                     continue;
                 }
                 backup.names[pin.appId] = pin.name;
@@ -37571,6 +37605,7 @@ Version 1.16:
             (byConfig[cfg.name] || []).forEach(l => {
                 if (l.kind === 'edit')   lines.push(`  Removed ${l.removed.join(', ')} from ${l.label} (${l.keeps} other ${seNoun(l.keeps)} kept)`);
                 if (l.kind === 'delete') lines.push(`  Deleted ${l.label} (it only held ${l.removed.join(', ')})`);
+                if (l.kind === 'skipped' && l.reason) lines.push(`  Left as it is: ${l.label}: ${l.reason}`);
             });
             if (cfg.notFound.length) lines.push(`  Not present: ${cfg.notFound.map(seShow).join(', ')}`);
             if (!(byConfig[cfg.name] || []).some(l => l.kind !== 'skipped') && !cfg.notFound.length) lines.push('  No changes');
