@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.38.2
+// @version      2.38.3
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.38.2';
-    const CHANGELOG = `Version 2.38.2:
+   const SCRIPT_VERSION = '2.38.3';
+    const CHANGELOG = `Version 2.38.3:
+- NS Policies Toolkit: Policy tools: Group pairs now replaces a group that no longer exists in AD (shown red in Netskope). Check marks it in red as "no longer in AD, will be removed", and the run adds the new group, removes the old one and saves. Before, the policy could not be saved and the red group stayed. The summary lists the groups removed.
+
+Version 2.38.2:
 - NS Policies Toolkit: Policy tools: Group pairs now tells apart groups that have the same name but a different AD path. Write the full path of the group to add and it is added even when the policy already has a group with that name in its old path; only the exact same path counts as already there. The summary shows the full path when two groups share a name.
 
 Version 2.38.1:
@@ -30572,8 +30575,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.47.2';
-    const CHANGELOG = `Version 1.47.2:
+    const SCRIPT_VERSION = '1.47.3';
+    const CHANGELOG = `Version 1.47.3:
+- Policy tools: Group pairs now replaces a group that no longer exists in AD (shown red in Netskope). Check marks it in red as "no longer in AD, will be removed", and the run adds the new group, removes the old one and saves. Before, the policy could not be saved and the red group stayed. The summary lists the groups removed.
+
+Version 1.47.2:
 - Policy tools: Group pairs now tells apart groups that have the same name but a different AD path. Write the full path of the group to add and it is added even when the policy already has a group with that name in its old path; only the exact same path counts as already there. The summary shows the full path when two groups share a name.
 
 Version 1.47.1:
@@ -32541,6 +32547,7 @@ Version 1.16:
                     bullets(body, [
                         'Names must be exact: capitals, spaces and dashes count. The group to add must exist once in Netskope, or write its full path.',
                         'A full path counts only that path: a group with the same name in another AD path (for example after a move in AD) is a different group, so it is added and not reported as already there.',
+                        'A group in the policy that no longer exists in AD (red in Netskope) is replaced: Check shows it in red as "will be removed", and the run removes it after adding the new group, because Netskope cannot save the policy with it.',
                         BG_TAB_WARNING,
                         'While it runs the page is locked, so a stray click or key cannot change the policy being edited. Pause on the card unlocks it.',
                         'Continue picks up where it stopped. After a reload the run waits for you to click Continue or Discard.',
@@ -40266,25 +40273,40 @@ Version 1.16:
         return out;
     }
 
+    const bgMatchesA = (g, a) => g === a || (!a.includes('/') && smShortName(g) === a);
+    // Groups of the policies that match a group in the policy (first of a pair): the paths to check in the directory.
+    function bgAGroups(pairs, policyGroups) {
+        const out = new Set();
+        bgPoliciesOf(policyGroups).forEach(p => p.groups.forEach(g => { if (pairs.some(({ a }) => bgMatchesA(g, a))) out.add(g); }));
+        return [...out];
+    }
+
     // lookup: { [group to add]: names the group search returned }. Names match exactly, capitals included.
-    function bgBuildPlan(pairs, policyGroups, lookup) {
+    // gone: keys (smKey) of the groups in the policies that no longer exist in the directory (red in Netskope).
+    function bgBuildPlan(pairs, policyGroups, lookup, gone = new Set()) {
         const policies = bgPoliciesOf(policyGroups);
         const jobs = new Map();
         const rows = pairs.map(({ a, b, line }) => {
-            const row = { a, b, line, status: 'ok', policies: [], skipped: [], fullB: null };
+            const row = { a, b, line, status: 'ok', policies: [], skipped: [], fullB: null, gone: [], replaces: [] };
             const results = lookup[b] || [];
             const exact = [...new Set(results.filter(n => b.includes('/') ? smKey(n) === smKey(b) : smShortName(n) === b))];
-            const holders = policies.filter(p => p.groups.some(g => g === a || (!a.includes('/') && smShortName(g) === a)));
+            const holders = policies.filter(p => p.groups.some(g => bgMatchesA(g, a)));
             row.policies = holders.map(p => p.name);
             if (exact.length === 1) row.fullB = exact[0];
             else row.status = exact.length > 1 ? 'bAmbiguous' : results.length >= 100 ? 'bTooMany' : 'bNotFound';
             if (row.status === 'ok' && !holders.length) row.status = 'notInPolicy';
             if (row.status !== 'ok') return row;
             holders.forEach(p => {
+                // A group of the pair that no longer exists in the directory is replaced: the policy cannot be saved with it
+                const old = p.groups.filter(g => bgMatchesA(g, a) && gone.has(smKey(g)) && smKey(g) !== smKey(row.fullB));
+                old.forEach(g => { if (!row.gone.includes(g)) row.gone.push(g); });
                 // Only the exact path counts as already there: a group with the same name in another AD path does not
-                if (p.groups.some(g => smKey(g) === smKey(row.fullB))) { row.skipped.push(p.name); return; }
-                const job = jobs.get(p.id) || { id: p.id, type: p.type, name: p.name, a: [], adds: [] };
-                if (!job.adds.includes(row.fullB)) job.adds.push(row.fullB);
+                const hasB = p.groups.some(g => smKey(g) === smKey(row.fullB));
+                if (hasB && !old.length) { row.skipped.push(p.name); return; }
+                if (old.length) row.replaces.push(p.name);
+                const job = jobs.get(p.id) || { id: p.id, type: p.type, name: p.name, a: [], adds: [], removes: [] };
+                if (!hasB && !job.adds.includes(row.fullB)) job.adds.push(row.fullB);
+                old.forEach(g => { if (!job.removes.includes(g)) job.removes.push(g); });
                 if (!job.a.includes(a)) job.a.push(a);
                 jobs.set(p.id, job);
             });
@@ -40437,6 +40459,7 @@ Version 1.16:
             .chip.found { background: #26890d; } .chip.ambiguous { background: #e08a00; }
             .chip.notfound { background: #da291c; } .chip.error { background: #75787b; }
             .muted { color: #63666a; font-size: 11px; }
+            .gone { color: #da291c; font-size: 11px; word-break: break-all; }
             .totals { margin-top: 10px; font-size: 13px; font-weight: 700; }
             .footer { border-top: 1px solid #e6e6e6; }
             .spacer { flex: 1; }
@@ -40509,7 +40532,8 @@ Version 1.16:
                             <button type="button" class="clear" data-bg="clear" disabled title="The field is already empty">🧹 Clear</button></div>
                         <p class="help">One pair per line: first the group that is already in the policy, then a comma, then the group to add.
                             Write the names exactly as in Netskope: capitals, spaces and dashes count. Two columns copied from Excel also work.
-                            A group that moved in AD keeps its name: write the full path to tell the old and the new one apart.</p>
+                            A group that moved in AD keeps its name: write the full path to tell the old and the new one apart.
+                            If the group in the policy no longer exists in AD (red in Netskope), it is replaced: removed once the new one is added.</p>
                         <div class="example"></div>
                         <textarea id="bg-pairs" data-bg="pairs" spellcheck="false"></textarea>
                         <div class="warning" data-bg="warning"></div>
@@ -42050,7 +42074,19 @@ Version 1.16:
                 if (b.includes('/') && !lookup[b].some(n => smKey(n) === smKey(b))) lookup[b] = lookup[b].concat(await smSearch('group', b));
                 clearInterval(ticker);
             }
-            const plan = bgBuildPlan(pairs, list, lookup);
+            // Groups of the pairs that are still in the policies but no longer in the directory (shown red by Netskope)
+            const gone = new Set(), byShort = {};
+            const aGroups = bgAGroups(pairs, list);
+            for (let i = 0; i < aGroups.length; i++) {
+                const g = aGroups[i], short = smShortName(g);
+                bgEl('check-bar').style.width = `${Math.round((i / aGroups.length) * 100)}%`;
+                bgNote(`Checking that the groups in the policies still exist: ${i + 1} of ${aGroups.length} (${short})…`, '', true);
+                if (!byShort[short]) byShort[short] = await smSearch('group', short);
+                const found = byShort[short];
+                // With 100 results the list may be cut: never treat the group as gone then
+                if (found.length < 100 && !found.some(n => smKey(n) === smKey(g))) gone.add(smKey(g));
+            }
+            const plan = bgBuildPlan(pairs, list, lookup, gone);
             bg.rows = plan.rows.concat(errors.map(e => ({ a: e.text, b: '', line: e.line, status: 'lineError',
                 policies: [], skipped: [], reason: e.reason }))).sort((x, y) => x.line - y.line);
             bg.jobs = plan.jobs;
@@ -42077,7 +42113,9 @@ Version 1.16:
         for (const row of bg.rows) {
             const tr = body.insertRow();
             tr.dataset.status = row.status;
-            cell(tr, row.a);
+            const aCell = cell(tr, row.a);
+            (row.gone || []).forEach(g => aCell.appendChild(Object.assign(document.createElement('div'), { className: 'gone',
+                textContent: `${g}: no longer in AD (red in Netskope), will be removed`, title: 'Netskope cannot save a policy with this group, so it is replaced by the group to add' })));
             const bCell = cell(tr, row.b);
             if (row.fullB && row.fullB !== row.b) bCell.appendChild(Object.assign(document.createElement('div'), { className: 'muted', textContent: row.fullB }));
             const pCell = tr.insertCell();
@@ -42086,7 +42124,10 @@ Version 1.16:
                 const d = document.createElement('div');
                 d.dataset.bgPolicy = name;
                 d.textContent = name;
-                if (row.skipped.includes(name)) {
+                if ((row.replaces || []).includes(name)) {
+                    d.dataset.bgReplace = '1';
+                    d.appendChild(Object.assign(document.createElement('span'), { className: 'muted', textContent: ' (replaces the old group)' }));
+                } else if (row.skipped.includes(name)) {
                     d.dataset.bgSkip = '1';
                     d.appendChild(Object.assign(document.createElement('span'), { className: 'muted', textContent: ' (already there)' }));
                 }
@@ -42200,8 +42241,11 @@ Version 1.16:
             await bgLeave();
             return { outcome: 'skipped', reason: `${job.a.join(', ')} is not in this policy any more.` };
         }
+        const before = groups.slice();
         const missing = job.adds.filter(b => !bgHasGroup(groups, b));
-        if (!missing.length) {
+        // Groups no longer in the directory (red): Netskope refuses to save the policy while they are there
+        const olds = (job.removes || []).filter(g => groups.some(x => smKey(x) === smKey(g)));
+        if (!missing.length && !olds.length) {
             await bgLeave();
             return { outcome: 'skipped', reason: 'The groups were already there.', already: job.adds.map(b => bgGroupLabel(b, groups)) };
         }
@@ -42212,9 +42256,18 @@ Version 1.16:
                 return { outcome: 'failed', reason: `${bgGroupLabel(b, groups)}: ${SM_REASON[r] || r}.` };
             }
         }
+        for (const g of olds) {
+            const name = groups.find(x => smKey(x) === smKey(g)) || g;
+            const r = await smRemoveTag('group', name);
+            if (r !== 'removed') {
+                await bgLeave();
+                return { outcome: 'failed', reason: `${g}: the old group could not be removed. Nothing was saved.` };
+            }
+        }
         groups = await bgReadGroups();
         const right = sm.lastPolicy && sm.lastPolicy.id === job.id && new RegExp(`[?&]id=%?2?2?${job.id}(%22)?(&|$)`).test(location.hash);
-        if (!right || !job.adds.every(b => bgHasGroup(groups, b)) || !job.a.some(a => bgHasGroup(groups, a))) {
+        const oldsGone = olds.every(g => !groups.some(x => smKey(x) === smKey(g)));
+        if (!right || !job.adds.every(b => bgHasGroup(groups, b)) || !oldsGone || (!olds.length && !job.a.some(a => bgHasGroup(groups, a)))) {
             await bgLeave();
             return { outcome: 'failed', reason: 'The groups could not be checked after adding them. Nothing was saved.' };
         }
@@ -42234,8 +42287,11 @@ Version 1.16:
             if (sm.lastSave && bgIsList()) return { ok: true };
             return null;
         }, BG_WAIT);
-        const added = missing.map(b => bgGroupLabel(b, groups));
-        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + added.join(', ') + '.', added, log };
+        const added = missing.map(b => bgGroupLabel(b, before));
+        const removed = olds.map(g => bgGroupLabel(g, before));
+        const what = [added.length ? 'Added ' + added.join(', ') : '', removed.length ? 'removed ' + removed.join(', ') + ' (no longer in AD)' : '']
+            .filter(Boolean).join(', ');
+        if (end && end.ok) return { outcome: 'done', reason: what.charAt(0).toUpperCase() + what.slice(1) + '.', added, removed, log };
         await bgLeave();
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
@@ -42528,7 +42584,9 @@ Version 1.16:
         };
         const of = kind => run.results.filter(r => r.outcome === kind);
 
-        section('Changed', of('done').map(r => `${r.name}: added ${(r.added || []).join(', ')} (policy has ${(r.a || []).join(', ')})`));
+        section('Changed', of('done').map(r => `${r.name}: ` + [(r.added || []).length ? `added ${r.added.join(', ')}` : '',
+            (r.removed || []).length ? `removed ${r.removed.join(', ')} (no longer in AD)` : ''].filter(Boolean).join(', ') +
+            ((r.added || []).length ? ` (policy has ${(r.a || []).join(', ')})` : '')));
         const already = (run.alreadyThere || []).map(x => ({ name: x.name, groups: x.groups.slice() }));
         of('skipped').filter(r => r.already && r.already.length).forEach(r => {
             const item = already.find(x => x.name === r.name);
