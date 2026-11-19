@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.40.0
+// @version      2.41.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,17 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.40.0';
-    const CHANGELOG = `Version 2.40.0:
+   const SCRIPT_VERSION = '2.41.0';
+    const CHANGELOG = `Version 2.41.0:
+- Ticket Assignment Tool: Regional leaders are no longer built into the tool: you add them in the team window, one per region (EMEA, AME, APA) with name and email. The Default comment names the leaders you saved.
+- Ticket Assignment Tool: Each team member now has an email address, entered with the name. The ✉️ Send mail button uses these saved emails, so nothing is looked up in ServiceNow.
+- Ticket Assignment Tool: If you installed the tool before, opening it asks once for what is missing (member emails, leaders). "Later" asks again the next day; the Default comment waits until the details are complete.
+- Ticket Assignment Tool: "Manage Members" is now "Manage Team", and import and export include the emails and the leaders.
+
+Version 2.40.1:
+- Ticket Assignment Tool: The urgent mail button now only takes an email reference this ticket produced itself (its own watermark or an email ServiceNow sent from it), never one quoted in a reply or in a comment. A reference quoted from another ticket would send the urgent mail to that ticket.
+
+Version 2.40.0:
 - Ticket Assignment Tool: The Default comment has the new wording: the assignee is the designated point of contact, and the requester learns how to ask for urgent attention. It ends with a "✉️ Send mail" button that opens a mail to the assigned technician, with Global Service Desk and the regional Enablement leader in CC, subject "Urgent <ticket>" and the ticket's email reference in the body.
 - Ticket Assignment Tool: The form has a new block for that button: the regional leader is chosen from the ticket's member firm and can be changed, and the email reference (Ref:MSG...) is looked up in the ticket's emails. When none is found you paste one, and the form will not assign with Default until there is one.
 
@@ -10396,8 +10405,17 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.0';
-    const CHANGELOG = `Version 1.6.0:
+    const SCRIPT_VERSION = '1.7.0';
+    const CHANGELOG = `Version 1.7.0:
+- Regional leaders are no longer built into the tool: you add them in the team window, one per region (EMEA, AME, APA) with name and email. The Default comment names the leaders you saved.
+- Each team member now has an email address, entered with the name. The ✉️ Send mail button uses these saved emails, so nothing is looked up in ServiceNow.
+- If you installed the tool before, opening it asks once for what is missing (member emails, leaders). "Later" asks again the next day; the Default comment waits until the details are complete.
+- "Manage Members" is now "Manage Team", and import and export include the emails and the leaders.
+
+Version 1.6.1:
+- The urgent mail button now only takes an email reference this ticket produced itself (its own watermark or an email ServiceNow sent from it), never one quoted in a reply or in a comment. A reference quoted from another ticket would send the urgent mail to that ticket.
+
+Version 1.6.0:
 - The Default comment has the new wording: the assignee is the designated point of contact, and the requester learns how to ask for urgent attention. It ends with a "✉️ Send mail" button that opens a mail to the assigned technician, with Global Service Desk and the regional Enablement leader in CC, subject "Urgent <ticket>" and the ticket's email reference in the body.
 - The form has a new block for that button: the regional leader is chosen from the ticket's member firm and can be changed, and the email reference (Ref:MSG...) is looked up in the ticket's emails. When none is found you paste one, and the form will not assign with Default until there is one.
 - Missing Information and the freeze reminder now go right before the signature.
@@ -10582,17 +10600,36 @@ Version 1.2.1:
         GM_setValue('ticketAssignmentMembers', JSON.stringify(members));
     }
 
-    function clearMembers() {
-        GM_deleteValue('ticketAssignmentMembers');
+    // Regional Enablement leaders: { region: 'EMEA' | 'AME' | 'APA', name, email }, one per region
+    const LEADER_REGIONS = ['EMEA', 'AME', 'APA'];
+    function getStoredLeaders() {
+        try {
+            const list = JSON.parse(GM_getValue('ticketAssignmentLeaders', '[]'));
+            return Array.isArray(list) ? list.filter(l => l && LEADER_REGIONS.includes(l.region) && l.name) : [];
+        } catch (e) { return []; }
     }
+    function saveLeaders(leaders) {
+        GM_setValue('ticketAssignmentLeaders', JSON.stringify(leaders));
+    }
+    const leaderOf = region => getStoredLeaders().find(l => l.region === region) || null;
+
+    const isEmail = v => /^[^\s@,;<>"'()]+@[^\s@,;<>"'()]+\.[^\s@,;<>"'()]+$/.test(String(v || '').trim());
+    const memberValue = name => name.toLowerCase().replace(/\s+/g, '_');
+
+    // What the urgent mail button still needs: members without an email, no regional leader at all
+    function missingTeamData() {
+        const members = getStoredMembers() || [];
+        return { noEmail: members.filter(m => !isEmail(m.email)).map(m => m.name), noLeaders: !getStoredLeaders().length };
+    }
+    const teamDataComplete = () => { const m = missingTeamData(); return !m.noEmail.length && !m.noLeaders; };
 
     /* ==========================================================
      *  IMPORT / EXPORT HELPERS
      * ==========================================================*/
 
-    function exportMembersToFile(members) {
-        const names = members.map(m => m.name);
-        const json = JSON.stringify(names, null, 2);
+    function exportTeamToFile(members, leaders) {
+        const json = JSON.stringify({ members: members.map(m => ({ name: m.name, email: m.email || '' })),
+            leaders: leaders.map(l => ({ region: l.region, name: l.name, email: l.email || '' })) }, null, 2);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -10604,7 +10641,8 @@ Version 1.2.1:
         URL.revokeObjectURL(url);
     }
 
-    function triggerMembersImport(currentMembers, onImport) {
+    // Reads ["Name", ...], [{ name, email }, ...] or { members: [...], leaders: [...] }; adds new people and fills missing emails.
+    function triggerTeamImport(members, leaders, onImport, onError) {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.json';
@@ -10613,33 +10651,26 @@ Version 1.2.1:
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (ev) => {
-                try {
-                    const parsed = JSON.parse(ev.target.result);
-                    let names = [];
-                    if (Array.isArray(parsed)) {
-                        if (parsed.length > 0 && typeof parsed[0] === 'string') {
-                            names = parsed;
-                        } else if (parsed.length > 0 && parsed[0].name) {
-                            names = parsed.map(m => m.name);
-                        }
-                    }
-                    if (names.length === 0) {
-                        alert('⚠️ No valid members found in file.\n\nExpected format:\n["John Smith", "Jane Doe"]');
-                        return;
-                    }
-                    // Merge: skip duplicates
-                    const merged = [...currentMembers];
-                    let added = 0;
-                    names.forEach(name => {
-                        if (!merged.some(m => m.name.toLowerCase() === name.toLowerCase())) {
-                            merged.push({ name, value: name.toLowerCase().replace(/\s+/g, '_') });
-                            added++;
-                        }
-                    });
-                    onImport(merged, added);
-                } catch (err) {
-                    alert('❌ Invalid JSON file. Could not parse members.');
-                }
+                let parsed;
+                try { parsed = JSON.parse(ev.target.result); } catch (err) { onError('This file is not valid JSON: nothing was imported.'); return; }
+                const people = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.members) ? parsed.members : []);
+                const inLeaders = parsed && !Array.isArray(parsed) && Array.isArray(parsed.leaders) ? parsed.leaders : [];
+                let added = 0, filled = 0;
+                people.forEach(p => {
+                    const name = String(typeof p === 'string' ? p : (p && p.name) || '').trim();
+                    const email = typeof p === 'object' && p && isEmail(p.email) ? String(p.email).trim() : '';
+                    if (!name) return;
+                    const have = members.find(m => m.name.toLowerCase() === name.toLowerCase());
+                    if (!have) { members.push({ name, value: memberValue(name), email }); added++; }
+                    else if (!isEmail(have.email) && email) { have.email = email; filled++; }
+                });
+                inLeaders.forEach(l => {
+                    if (!l || !LEADER_REGIONS.includes(l.region) || !String(l.name || '').trim() || leaders.some(x => x.region === l.region)) return;
+                    leaders.push({ region: l.region, name: String(l.name).trim(), email: isEmail(l.email) ? String(l.email).trim() : '' });
+                    added++;
+                });
+                if (!added && !filled) { onError('Nothing new in this file: every person is already in the list.'); return; }
+                onImport(added, filled);
             };
             reader.readAsText(file);
         };
@@ -10647,406 +10678,268 @@ Version 1.2.1:
     }
 
     /* ==========================================================
-     *  MEMBER SETUP WIZARD (first run)
+     *  TEAM WINDOW: first setup, Manage Team, and "complete the missing details"
      * ==========================================================*/
 
-    function showMemberSetupWizard(onComplete) {
-        if (document.getElementById('sn-setup-overlay')) return;
-
-        const members = [];
-
-        const style = document.createElement('style');
-        style.textContent = `
-            #sn-setup-overlay {
-                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                background: rgba(0,0,0,0.6); z-index: 100000;
-                display: flex; justify-content: center; align-items: center;
-                font-family: Arial, sans-serif;
-            }
-            #sn-setup-modal {
-                background: #fff; border-radius: 12px; padding: 30px;
-                width: 480px; max-width: 95vw;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-            }
-            #sn-setup-modal h2 { margin: 0 0 6px 0; color: #333; font-size: 18px; }
-            #sn-setup-modal .sn-setup-warning {
-                background: #fff0f0; border: 1px solid #f5c2c2;
-                border-left: 4px solid #cc0000; border-radius: 6px;
-                padding: 10px 12px; margin-bottom: 14px;
-                font-size: 12px; color: #8b0000; line-height: 1.5;
-                font-family: Arial, sans-serif;
-            }
-            #sn-setup-modal .sn-setup-warning strong { color: #cc0000; }
-            #sn-setup-modal .sn-setup-subtitle {
-                color: #888; font-size: 13px; margin-bottom: 20px;
-            }
-            #sn-setup-member-list {
-                max-height: 220px; overflow-y: auto;
-                border: 1px solid #e0e0e0; border-radius: 6px;
-                margin-bottom: 16px; min-height: 48px;
-                padding: 4px 0; background: #fafafa;
-            }
-            .sn-setup-member-item {
-                display: flex; align-items: center; justify-content: space-between;
-                padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
-                font-size: 13px; color: #333;
-            }
-            .sn-setup-member-item:last-child { border-bottom: none; }
-            .sn-setup-member-remove {
-                background: none; border: none; color: #cc0000;
-                cursor: pointer; font-size: 16px; line-height: 1;
-                padding: 0 4px; font-weight: bold;
-            }
-            .sn-setup-member-remove:hover { color: #ff0000; }
-            .sn-setup-add-row { display: flex; gap: 8px; margin-bottom: 8px; }
-            #sn-setup-name-input {
-                flex: 1; padding: 10px 12px; border: 1px solid #ccc;
-                border-radius: 6px; font-size: 14px; color: #333; outline: none;
-            }
-            #sn-setup-name-input:focus {
-                border-color: #667eea;
-                box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
-            }
-            .sn-setup-add-btn {
-                padding: 10px 18px; background: #667eea; color: #fff;
-                border: none; border-radius: 6px; font-size: 14px;
-                font-weight: bold; cursor: pointer; white-space: nowrap;
-            }
-            .sn-setup-add-btn:hover { background: #5568d3; }
-            .sn-setup-import-row { margin-bottom: 20px; }
-            .sn-setup-import-btn {
-                background: none; border: 1px dashed #aaa; color: #555;
-                border-radius: 6px; padding: 7px 14px; font-size: 12px;
-                cursor: pointer; width: 100%; text-align: center;
-                box-sizing: border-box; transition: all 0.2s ease;
-                font-family: Arial, sans-serif;
-            }
-            .sn-setup-import-btn:hover {
-                border-color: #667eea; color: #667eea; background: #f5f5ff;
-            }
-            .sn-setup-footer { display: flex; gap: 10px; justify-content: flex-end; }
-            .sn-setup-done-btn {
-                padding: 10px 24px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: #fff; border: none; border-radius: 6px;
-                font-size: 14px; font-weight: bold; cursor: pointer;
-                font-family: Arial, sans-serif;
-            }
-            .sn-setup-done-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-            .sn-setup-done-btn:not(:disabled):hover { opacity: 0.9; }
-            .sn-setup-empty-hint {
-                text-align: center; color: #aaa; font-size: 12px;
-                padding: 14px 0; font-style: italic;
-            }
-        `;
-        document.head.appendChild(style);
-
-        const overlay = document.createElement('div');
-        overlay.id = 'sn-setup-overlay';
-
-        const modal = document.createElement('div');
-        modal.id = 'sn-setup-modal';
-        modal.innerHTML = `
-            <h2>👥 Set Up Team Members</h2>
-            <div class="sn-setup-warning">
-                ⚠️ <strong>Names must match ServiceNow exactly.</strong>
-                Enter each member's full name exactly as it appears in the ServiceNow UI (e.g. in the "Assigned to" autocomplete field). Incorrect or partial names will cause assignment failures.
-            </div>
-            <p class="sn-setup-subtitle">Enter each team member's full name and click Add. You can manage this list later from the toolbar.</p>
-            <div id="sn-setup-member-list">
-                <div class="sn-setup-empty-hint">No members added yet...</div>
-            </div>
-            <div class="sn-setup-add-row">
-                <input id="sn-setup-name-input" type="text" placeholder="Full name (e.g. John Smith)" autocomplete="off" />
-                <button class="sn-setup-add-btn" id="sn-setup-add-btn">Add</button>
-            </div>
-            <div class="sn-setup-import-row">
-                <button class="sn-setup-import-btn" id="sn-setup-import-btn">⬆ Import from JSON file</button>
-            </div>
-            <div class="sn-setup-backup-row"></div>
-            <div class="sn-setup-footer">
-                <button class="sn-setup-done-btn" id="sn-setup-done-btn" disabled>Save & Continue →</button>
-            </div>
-        `;
-
-        overlay.appendChild(modal);
-        modal.querySelector('.sn-setup-backup-row').appendChild(createBackupImportLink('ticketAssignment'));
-        document.body.appendChild(overlay);
-
-        const list = document.getElementById('sn-setup-member-list');
-        const nameInput = document.getElementById('sn-setup-name-input');
-        const addBtn = document.getElementById('sn-setup-add-btn');
-        const doneBtn = document.getElementById('sn-setup-done-btn');
-        const importBtn = document.getElementById('sn-setup-import-btn');
-
-        function renderList() {
-            if (members.length === 0) {
-                list.innerHTML = '<div class="sn-setup-empty-hint">No members added yet...</div>';
-            } else {
-                list.innerHTML = '';
-                members.forEach((m, i) => {
-                    const item = document.createElement('div');
-                    item.className = 'sn-setup-member-item';
-                    const nameEl = document.createElement('span');
-                    nameEl.textContent = m.name;
-                    item.appendChild(nameEl);
-                    const removeBtn = document.createElement('button');
-                    removeBtn.className = 'sn-setup-member-remove';
-                    removeBtn.textContent = '×';
-                    removeBtn.title = 'Remove';
-                    removeBtn.onclick = () => {
-                        members.splice(i, 1);
-                        renderList();
-                        doneBtn.disabled = members.length === 0;
-                    };
-                    item.appendChild(removeBtn);
-                    list.appendChild(item);
-                });
-            }
+    const TEAM_CSS = `
+        .sn-team-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6) !important; z-index: 1000000 !important;
+            display: flex; justify-content: center; align-items: center; font-family: Arial, sans-serif;
         }
-
-        function addMember() {
-            const name = nameInput.value.trim();
-            if (!name) return;
-            if (members.some(m => m.name.toLowerCase() === name.toLowerCase())) {
-                nameInput.style.borderColor = '#cc0000';
-                nameInput.title = 'Already added';
-                setTimeout(() => { nameInput.style.borderColor = ''; nameInput.title = ''; }, 1500);
-                return;
-            }
-            members.push({ name, value: name.toLowerCase().replace(/\s+/g, '_') });
-            nameInput.value = '';
-            nameInput.focus();
-            renderList();
-            doneBtn.disabled = false;
+        /* The first setup stays under other tools' windows, as it always did */
+        .sn-team-overlay.sn-team-setup { z-index: 100000 !important; }
+        .sn-team-modal {
+            background: #fff !important; color: #333 !important; border-radius: 12px; padding: 26px;
+            width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-sizing: border-box;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.25); font-family: Arial, sans-serif;
         }
+        .sn-team-modal input, .sn-team-modal select { background-color: #fff !important; color: #333 !important; }
+        .sn-team-modal h2 { margin: 0 0 6px 0; color: #333 !important; font-size: 18px; }
+        .sn-team-intro { color: #666 !important; font-size: 13px; line-height: 1.5; margin: 0 0 14px 0; }
+        .sn-team-warning {
+            background: #fff0f0 !important; border: 1px solid #f5c2c2; border-left: 4px solid #cc0000; border-radius: 6px;
+            padding: 9px 12px; margin-bottom: 14px; font-size: 12px; color: #8b0000 !important; line-height: 1.5;
+        }
+        .sn-team-section { font-size: 13px; font-weight: bold; color: #333 !important; margin: 14px 0 6px 0; }
+        .sn-team-hint { font-size: 11px; color: #888 !important; margin: -2px 0 6px 0; line-height: 1.4; }
+        .sn-team-list { border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa !important; margin-bottom: 8px; min-height: 40px; padding: 2px 0; }
+        .sn-team-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        .sn-team-row:last-child { border-bottom: none; }
+        .sn-team-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #333 !important; }
+        .sn-team-region { font-size: 11px; font-weight: bold; color: #fff !important; background: #005587 !important; border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+        .sn-team-row input[type="email"] { width: 230px; padding: 6px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 12px; }
+        .sn-team-add { display: flex; gap: 6px; margin-bottom: 4px; }
+        .sn-team-add input, .sn-team-add select { padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; min-width: 0; }
+        .sn-team-add input[data-f="name"] { flex: 1; }
+        .sn-team-add input[data-f="email"] { flex: 1.2; }
+        .sn-team-modal input:focus, .sn-team-modal select:focus { border-color: #667eea; outline: none; box-shadow: 0 0 0 3px rgba(102,126,234,0.15); }
+        .sn-team-bad { border-color: #da291c !important; box-shadow: 0 0 0 2px rgba(218,41,28,.15) !important; }
+        .sn-team-btn { padding: 8px 16px; background: #667eea !important; color: #fff !important; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; white-space: nowrap; }
+        .sn-team-btn:hover { background: #5568d3 !important; }
+        .sn-team-remove { background: none !important; border: none; color: #cc0000 !important; cursor: pointer; font-size: 16px; font-weight: bold; padding: 0 4px; }
+        .sn-team-remove:hover { color: #ff0000 !important; }
+        .sn-team-empty { text-align: center; color: #aaa !important; font-size: 12px; padding: 12px 0; font-style: italic; }
+        .sn-team-addmsg { font-size: 11px; min-height: 14px; color: #da291c !important; margin-bottom: 4px; }
+        .sn-team-io { display: flex; gap: 8px; margin: 14px 0 0 0; }
+        .sn-team-io button { flex: 1; padding: 8px; background: none !important; border: 1px dashed #aaa; border-radius: 6px; font-size: 12px; color: #555 !important; cursor: pointer; }
+        .sn-team-io button:hover { border-color: #667eea; color: #667eea !important; background: #f5f5ff !important; }
+        .sn-team-msg { font-size: 12px; line-height: 1.4; min-height: 16px; margin: 12px 0 0 0; color: #da291c !important; }
+        .sn-team-msg.ok { color: #26890d !important; }
+        .sn-team-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+        .sn-team-save { padding: 9px 22px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; color: #fff !important; border: none; border-radius: 6px; font-size: 13px; font-weight: bold; cursor: pointer; }
+        .sn-team-save:hover { opacity: 0.9; }
+        .sn-team-cancel { padding: 9px 16px; background: #e0e0e0 !important; color: #333 !important; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; cursor: pointer; }
+        .sn-team-cancel:hover { background: #d0d0d0 !important; }
+    `;
 
-        addBtn.onclick = addMember;
-        nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') addMember(); });
+    const TEAM_LATER_KEY = 'ticketAssignmentCompleteLater';
+    const todayKey = () => new Date().toISOString().slice(0, 10);
 
-        importBtn.onclick = () => {
-            triggerMembersImport(members, (merged, added) => {
-                members.length = 0;
-                merged.forEach(m => members.push(m));
-                renderList();
-                doneBtn.disabled = members.length === 0;
-                importBtn.textContent = `✓ Imported (${added} added)`;
-                setTimeout(() => { importBtn.textContent = '⬆ Import from JSON file'; }, 2500);
-            });
-        };
-
-        doneBtn.onclick = () => {
-            if (members.length === 0) return;
-            saveMembers(members);
-            overlay.remove();
-            style.remove();
-            onComplete(members);
-        };
-
-        nameInput.focus();
-    }
-
-    /* ==========================================================
-     *  MEMBER MANAGEMENT MODAL (edit existing list)
-     * ==========================================================*/
-
-    function showManageMembersModal() {
-        if (document.getElementById('sn-manage-overlay')) return;
-
+    // mode: 'setup' (first run), 'manage' (footer button), 'complete' (asks for what the urgent mail button still needs)
+    function showTeamEditor(mode, onDone) {
+        if (document.querySelector('.sn-team-overlay')) return;
         const members = JSON.parse(JSON.stringify(getStoredMembers() || []));
+        const leaders = JSON.parse(JSON.stringify(getStoredLeaders()));
 
         const style = document.createElement('style');
-        style.textContent = `
-            #sn-manage-overlay {
-                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                background: rgba(0,0,0,0.6); z-index: 1000000;
-                display: flex; justify-content: center; align-items: center;
-                font-family: Arial, sans-serif;
-            }
-            #sn-manage-modal {
-                background: #fff; border-radius: 12px; padding: 28px;
-                width: 440px; max-width: 95vw;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-            }
-            #sn-manage-modal h3 { margin: 0 0 12px 0; color: #333; font-size: 16px; }
-            #sn-manage-modal .sn-manage-warning {
-                background: #fff0f0; border: 1px solid #f5c2c2;
-                border-left: 4px solid #cc0000; border-radius: 6px;
-                padding: 10px 12px; margin-bottom: 14px;
-                font-size: 12px; color: #8b0000; line-height: 1.5;
-                font-family: Arial, sans-serif;
-            }
-            #sn-manage-modal .sn-manage-warning strong { color: #cc0000; }
-            #sn-manage-list {
-                max-height: 240px; overflow-y: auto;
-                border: 1px solid #e0e0e0; border-radius: 6px;
-                margin-bottom: 14px; background: #fafafa;
-                min-height: 48px; padding: 4px 0;
-            }
-            .sn-manage-item {
-                display: flex; align-items: center; justify-content: space-between;
-                padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
-                font-size: 13px; color: #333;
-            }
-            .sn-manage-item:last-child { border-bottom: none; }
-            .sn-manage-remove {
-                background: none; border: none; color: #cc0000;
-                cursor: pointer; font-size: 16px; font-weight: bold; padding: 0 4px;
-            }
-            .sn-manage-remove:hover { color: #ff0000; }
-            .sn-manage-add-row { display: flex; gap: 8px; margin-bottom: 12px; }
-            #sn-manage-input {
-                flex: 1; padding: 9px 12px; border: 1px solid #ccc;
-                border-radius: 6px; font-size: 13px; color: #333; outline: none;
-                font-family: Arial, sans-serif;
-            }
-            #sn-manage-input:focus { border-color: #667eea; }
-            .sn-manage-add {
-                padding: 9px 16px; background: #667eea; color: #fff;
-                border: none; border-radius: 6px; font-size: 13px;
-                font-weight: bold; cursor: pointer; font-family: Arial, sans-serif;
-            }
-            .sn-manage-add:hover { background: #5568d3; }
-            .sn-manage-io-row {
-                display: flex; gap: 8px; margin-bottom: 16px;
-            }
-            .sn-manage-io-btn {
-                flex: 1; padding: 8px; background: none;
-                border: 1px dashed #aaa; border-radius: 6px;
-                font-size: 12px; color: #555; cursor: pointer;
-                text-align: center; transition: all 0.2s ease;
-                font-family: Arial, sans-serif;
-            }
-            .sn-manage-io-btn:hover {
-                border-color: #667eea; color: #667eea; background: #f5f5ff;
-            }
-            .sn-manage-footer { display: flex; gap: 8px; justify-content: flex-end; }
-            .sn-manage-save {
-                padding: 9px 22px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: #fff; border: none; border-radius: 6px;
-                font-size: 13px; font-weight: bold; cursor: pointer;
-                font-family: Arial, sans-serif;
-            }
-            .sn-manage-save:hover { opacity: 0.9; }
-            .sn-manage-cancel {
-                padding: 9px 16px; background: #e0e0e0; color: #333;
-                border: 1px solid #ccc; border-radius: 6px;
-                font-size: 13px; cursor: pointer; font-family: Arial, sans-serif;
-            }
-            .sn-manage-cancel:hover { background: #d0d0d0; }
-            .sn-manage-empty {
-                text-align: center; color: #aaa; font-size: 12px;
-                padding: 14px 0; font-style: italic;
-            }
-        `;
+        style.textContent = TEAM_CSS;
         document.head.appendChild(style);
-
         const overlay = document.createElement('div');
-        overlay.id = 'sn-manage-overlay';
-
+        overlay.className = 'sn-team-overlay' + (mode === 'setup' ? ' sn-team-setup' : '');
+        overlay.id = mode === 'setup' ? 'sn-setup-overlay' : 'sn-manage-overlay';
         const modal = document.createElement('div');
-        modal.id = 'sn-manage-modal';
-        modal.innerHTML = `
-            <h3>👥 Manage Team Members</h3>
-            <div class="sn-manage-warning">
-                ⚠️ <strong>Names must match ServiceNow exactly.</strong>
-                Enter each member's full name exactly as it appears in the ServiceNow UI (e.g. in the "Assigned to" autocomplete field). Incorrect or partial names will cause assignment failures.
-            </div>
-            <div id="sn-manage-list"></div>
-            <div class="sn-manage-add-row">
-                <input id="sn-manage-input" type="text" placeholder="Add new member..." autocomplete="off" />
-                <button class="sn-manage-add" id="sn-manage-add-btn">Add</button>
-            </div>
-            <div class="sn-manage-io-row">
-                <button class="sn-manage-io-btn" id="sn-manage-import-btn">⬆ Import from JSON</button>
-                <button class="sn-manage-io-btn" id="sn-manage-export-btn">⬇ Export to JSON</button>
-            </div>
-            <div class="sn-manage-footer">
-                <button class="sn-manage-cancel" id="sn-manage-cancel-btn">Cancel</button>
-                <button class="sn-manage-save" id="sn-manage-save-btn">Save Changes</button>
-            </div>
-        `;
-
+        modal.className = 'sn-team-modal';
+        modal.id = mode === 'setup' ? 'sn-setup-modal' : 'sn-manage-modal';
         overlay.appendChild(modal);
+
+        const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+        const titles = { setup: '👥 Set Up Your Team', manage: '👥 Manage Team', complete: '📧 Complete Your Team Details' };
+        const intros = {
+            setup: 'Add each team member with their email address, then your regional Enablement leaders. You can change both later with Manage Team.',
+            manage: 'Team members fill the assignment list. Their email and the regional leaders are used by the ✉️ Send mail button of the Default comment.',
+            complete: 'The Default comment now ends with a ✉️ Send mail button for urgent requests. It needs the email of each team member and your regional leaders. Fill in what is missing below.',
+        };
+        modal.appendChild(el('h2', '', titles[mode]));
+        modal.appendChild(el('p', 'sn-team-intro', intros[mode]));
+        if (mode === 'setup') modal.appendChild(createBackupImportLink('ticketAssignment'));
+        const warn = el('div', 'sn-team-warning');
+        warn.append('⚠️ ', el('strong', '', 'Names must match ServiceNow exactly.'), ' Write each member\'s full name as it appears in the "Assigned to" field. Partial names cause assignment failures.');
+        modal.appendChild(warn);
+
+        // Members
+        modal.appendChild(el('div', 'sn-team-section', 'Team members'));
+        const memberList = el('div', 'sn-team-list');
+        memberList.id = 'sn-team-members';
+        modal.appendChild(memberList);
+        const mAdd = el('div', 'sn-team-add');
+        const mName = el('input'); mName.type = 'text'; mName.dataset.f = 'name'; mName.placeholder = 'Full name (e.g. John Smith)'; mName.autocomplete = 'off';
+        mName.id = mode === 'setup' ? 'sn-setup-name-input' : 'sn-manage-input';
+        const mEmail = el('input'); mEmail.type = 'email'; mEmail.dataset.f = 'email'; mEmail.placeholder = 'Email (e.g. jsmith@deloitte.com)'; mEmail.autocomplete = 'off';
+        mEmail.id = 'sn-team-member-email';
+        const mBtn = el('button', 'sn-team-btn', 'Add'); mBtn.type = 'button'; mBtn.id = 'sn-team-member-add';
+        mAdd.append(mName, mEmail, mBtn);
+        const mMsg = el('div', 'sn-team-addmsg');
+        modal.append(mAdd, mMsg);
+
+        // Leaders
+        modal.appendChild(el('div', 'sn-team-section', 'Regional Enablement leaders'));
+        modal.appendChild(el('div', 'sn-team-hint', 'One per region. The leader of the ticket\'s region goes in CC of the urgent mail, and the comment names each of them.'));
+        const leaderList = el('div', 'sn-team-list');
+        leaderList.id = 'sn-team-leaders';
+        modal.appendChild(leaderList);
+        const lAdd = el('div', 'sn-team-add');
+        const lRegion = el('select'); lRegion.id = 'sn-team-leader-region';
+        const lName = el('input'); lName.type = 'text'; lName.dataset.f = 'name'; lName.placeholder = 'Full name'; lName.id = 'sn-team-leader-name'; lName.autocomplete = 'off';
+        const lEmail = el('input'); lEmail.type = 'email'; lEmail.dataset.f = 'email'; lEmail.placeholder = 'Email'; lEmail.id = 'sn-team-leader-email'; lEmail.autocomplete = 'off';
+        const lBtn = el('button', 'sn-team-btn', 'Add'); lBtn.type = 'button'; lBtn.id = 'sn-team-leader-add';
+        lAdd.append(lRegion, lName, lEmail, lBtn);
+        const lMsg = el('div', 'sn-team-addmsg');
+        modal.append(lAdd, lMsg);
+
+        const io = el('div', 'sn-team-io');
+        const importBtn = el('button', '', '⬆ Import from JSON'); importBtn.type = 'button'; importBtn.id = 'sn-team-import';
+        const exportBtn = el('button', '', '⬇ Export to JSON'); exportBtn.type = 'button'; exportBtn.id = 'sn-team-export';
+        io.append(importBtn, exportBtn);
+        modal.appendChild(io);
+
+        const msg = el('div', 'sn-team-msg');
+        msg.id = 'sn-team-msg';
+        modal.appendChild(msg);
+        const footer = el('div', 'sn-team-footer');
+        const cancel = el('button', 'sn-team-cancel', mode === 'complete' ? 'Later' : 'Cancel'); cancel.type = 'button'; cancel.id = 'sn-team-cancel';
+        cancel.title = mode === 'complete' ? 'Close for today: you are asked again tomorrow. The Default comment cannot be used until the details are complete.' : 'Close without saving';
+        const save = el('button', 'sn-team-save', mode === 'setup' ? 'Save & Continue →' : 'Save'); save.type = 'button'; save.id = mode === 'setup' ? 'sn-setup-done-btn' : 'sn-manage-save-btn';
+        if (mode !== 'setup') footer.appendChild(cancel);
+        footer.appendChild(save);
+        modal.appendChild(footer);
         document.body.appendChild(overlay);
 
-        const list = document.getElementById('sn-manage-list');
-        const input = document.getElementById('sn-manage-input');
-        const addBtn = document.getElementById('sn-manage-add-btn');
-        const saveBtn = document.getElementById('sn-manage-save-btn');
-        const cancelBtn = document.getElementById('sn-manage-cancel-btn');
-        const importBtn = document.getElementById('sn-manage-import-btn');
-        const exportBtn = document.getElementById('sn-manage-export-btn');
+        const flash = (box, text) => { box.textContent = text; clearTimeout(box._t); box._t = setTimeout(() => { box.textContent = ''; }, 3500); };
 
-        function renderList() {
-            if (members.length === 0) {
-                list.innerHTML = '<div class="sn-manage-empty">No members yet...</div>';
-            } else {
-                list.innerHTML = '';
-                members.forEach((m, i) => {
-                    const item = document.createElement('div');
-                    item.className = 'sn-manage-item';
-                    const nameEl = document.createElement('span');
-                    nameEl.textContent = m.name;
-                    item.appendChild(nameEl);
-                    const rm = document.createElement('button');
-                    rm.className = 'sn-manage-remove';
-                    rm.textContent = '×';
-                    rm.onclick = () => { members.splice(i, 1); renderList(); };
-                    item.appendChild(rm);
-                    list.appendChild(item);
-                });
-            }
+        function renderRegions() {
+            lRegion.textContent = '';
+            const free = LEADER_REGIONS.filter(r => !leaders.some(l => l.region === r));
+            (free.length ? free : ['']).forEach(r => { const o = el('option', '', r || 'All regions set'); o.value = r; lRegion.appendChild(o); });
+            [lRegion, lName, lEmail, lBtn].forEach(x => { x.disabled = !free.length; });
+            lBtn.title = free.length ? 'Add this leader' : 'Every region has a leader: remove one to change it';
+        }
+
+        function emailInput(person, list) {
+            const inp = el('input');
+            inp.type = 'email';
+            inp.value = person.email || '';
+            inp.placeholder = 'Email address';
+            inp.title = `Email of ${person.name}`;
+            if (!isEmail(person.email)) inp.classList.add('sn-team-bad');
+            inp.oninput = () => { person.email = inp.value.trim(); inp.classList.toggle('sn-team-bad', !isEmail(person.email)); msg.textContent = ''; };
+            return inp;
+        }
+
+        function render() {
+            memberList.textContent = '';
+            if (!members.length) memberList.appendChild(el('div', 'sn-team-empty', 'No members yet...'));
+            members.forEach((m, i) => {
+                const row = el('div', 'sn-team-row');
+                row.dataset.member = m.name;
+                const rm = el('button', 'sn-team-remove', '×'); rm.type = 'button'; rm.title = `Remove ${m.name}`;
+                rm.onclick = () => { members.splice(i, 1); render(); };
+                row.append(el('span', 'sn-team-name', m.name), emailInput(m), rm);
+                memberList.appendChild(row);
+            });
+            leaderList.textContent = '';
+            if (!leaders.length) leaderList.appendChild(el('div', 'sn-team-empty', 'No leaders yet...'));
+            leaders.sort((a, b) => LEADER_REGIONS.indexOf(a.region) - LEADER_REGIONS.indexOf(b.region)).forEach((l, i) => {
+                const row = el('div', 'sn-team-row');
+                row.dataset.leader = l.region;
+                const rm = el('button', 'sn-team-remove', '×'); rm.type = 'button'; rm.title = `Remove the ${l.region} leader`;
+                rm.onclick = () => { leaders.splice(i, 1); render(); };
+                row.append(el('span', 'sn-team-region', l.region), el('span', 'sn-team-name', l.name), emailInput(l), rm);
+                leaderList.appendChild(row);
+            });
+            renderRegions();
         }
 
         function addMember() {
-            const name = input.value.trim();
-            if (!name) return;
-            if (members.some(m => m.name.toLowerCase() === name.toLowerCase())) return;
-            members.push({ name, value: name.toLowerCase().replace(/\s+/g, '_') });
-            input.value = '';
-            input.focus();
-            renderList();
+            const name = mName.value.trim(), email = mEmail.value.trim();
+            mName.classList.toggle('sn-team-bad', !name);
+            mEmail.classList.toggle('sn-team-bad', !isEmail(email));
+            if (!name) { flash(mMsg, 'Write the full name.'); mName.focus(); return; }
+            if (members.some(m => m.name.toLowerCase() === name.toLowerCase())) { mName.classList.add('sn-team-bad'); flash(mMsg, `${name} is already in the list.`); return; }
+            if (!isEmail(email)) { flash(mMsg, 'Write a valid email address, like jsmith@deloitte.com.'); mEmail.focus(); return; }
+            members.push({ name, value: memberValue(name), email });
+            mName.value = mEmail.value = '';
+            mName.classList.remove('sn-team-bad'); mEmail.classList.remove('sn-team-bad');
+            mMsg.textContent = '';
+            render();
+            mName.focus();
         }
+        function addLeader() {
+            const region = lRegion.value, name = lName.value.trim(), email = lEmail.value.trim();
+            lName.classList.toggle('sn-team-bad', !name);
+            lEmail.classList.toggle('sn-team-bad', !isEmail(email));
+            if (!region) return;
+            if (!name) { flash(lMsg, 'Write the leader\'s full name.'); lName.focus(); return; }
+            if (!isEmail(email)) { flash(lMsg, 'Write a valid email address.'); lEmail.focus(); return; }
+            leaders.push({ region, name, email });
+            lName.value = lEmail.value = '';
+            lName.classList.remove('sn-team-bad'); lEmail.classList.remove('sn-team-bad');
+            lMsg.textContent = '';
+            render();
+        }
+        mBtn.onclick = addMember;
+        lBtn.onclick = addLeader;
+        [mName, mEmail].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter') addMember(); }));
+        [lName, lEmail].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter') addLeader(); }));
 
-        addBtn.onclick = addMember;
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') addMember(); });
-
-        importBtn.onclick = () => {
-            triggerMembersImport(members, (merged, added) => {
-                members.length = 0;
-                merged.forEach(m => members.push(m));
-                renderList();
-                importBtn.textContent = `✓ ${added} member(s) added`;
-                setTimeout(() => { importBtn.textContent = '⬆ Import from JSON'; }, 2500);
-            });
-        };
-
+        importBtn.onclick = () => triggerTeamImport(members, leaders, (added, filled) => {
+            render();
+            importBtn.textContent = `✓ ${added} added` + (filled ? `, ${filled} emails filled` : '');
+            setTimeout(() => { importBtn.textContent = '⬆ Import from JSON'; }, 2500);
+        }, text => { msg.className = 'sn-team-msg'; msg.textContent = '⚠️ ' + text; });
         exportBtn.onclick = () => {
-            if (members.length === 0) {
-                exportBtn.textContent = '⚠ Nothing to export';
-                setTimeout(() => { exportBtn.textContent = '⬇ Export to JSON'; }, 2000);
-                return;
-            }
-            exportMembersToFile(members);
+            if (!members.length && !leaders.length) { exportBtn.textContent = '⚠ Nothing to export'; setTimeout(() => { exportBtn.textContent = '⬇ Export to JSON'; }, 2000); return; }
+            exportTeamToFile(members, leaders);
             exportBtn.textContent = '✓ Exported!';
             setTimeout(() => { exportBtn.textContent = '⬇ Export to JSON'; }, 2000);
         };
 
-        saveBtn.onclick = () => {
-            saveMembers(members);
-            overlay.remove();
-            style.remove();
-            rebuildDropdown(members);
+        const close = () => { overlay.remove(); style.remove(); };
+        save.onclick = () => {
+            msg.className = 'sn-team-msg';
+            const noEmail = members.filter(m => !isEmail(m.email)).map(m => m.name);
+            const badLeaders = leaders.filter(l => !isEmail(l.email)).map(l => l.region);
+            const problems = [];
+            if (!members.length) problems.push('add at least one team member');
+            if (noEmail.length) problems.push(`add a valid email for ${noEmail.join(', ')}`);
+            if (!leaders.length) problems.push('add at least one regional leader');
+            if (badLeaders.length) problems.push(`add a valid email for the ${badLeaders.join(', ')} leader`);
+            if (problems.length) {
+                msg.textContent = '⚠️ Not saved yet: ' + problems.join('; ') + '.';
+                const first = modal.querySelector('.sn-team-bad') || (!members.length ? mName : !leaders.length ? lName : null);
+                if (first) first.focus();
+                return;
+            }
+            saveMembers(members.map(m => ({ name: m.name, value: m.value || memberValue(m.name), email: m.email.trim() })));
+            saveLeaders(leaders.map(l => ({ region: l.region, name: l.name, email: l.email.trim() })));
+            GM_deleteValue(TEAM_LATER_KEY);
+            close();
+            rebuildDropdown(getStoredMembers());
+            refreshUrgentBlock();
+            if (onDone) onDone(getStoredMembers());
         };
+        cancel.onclick = () => {
+            if (mode === 'complete') GM_setValue(TEAM_LATER_KEY, todayKey());
+            close();
+        };
+        overlay.onclick = (e) => { if (e.target === overlay && mode !== 'setup') cancel.click(); };
 
-        cancelBtn.onclick = () => { overlay.remove(); style.remove(); };
-        overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
-
-        renderList();
-        input.focus();
+        render();
+        (mode === 'complete' ? (modal.querySelector('.sn-team-bad') || lName) : mName).focus();
     }
+
+    function showMemberSetupWizard(onComplete) { showTeamEditor('setup', onComplete); }
+    function showManageMembersModal() { showTeamEditor('manage'); }
 
     /* ==========================================================
      *  DROPDOWN REBUILD HELPER
@@ -11305,12 +11198,6 @@ Version 1.2.1:
      * ==========================================================*/
 
     const URGENT_GSD_EMAIL = 'globalservicedesk@servicedesk.deloitte.com';
-    // Regional Enablement team leaders, looked up in ServiceNow by name for their email address
-    const URGENT_LEADERS = {
-        EMEA: 'David Igualada',
-        AME:  'George Garvin',
-        APA:  'Chetan Jain',
-    };
     // The ticket's Netskope tenant (from its Requesting Member Firm) decides the default leader
     const URGENT_TENANT_TO_REGION = { EMA: 'EMEA', EU: 'EMEA', CE: 'EMEA', AME: 'AME', APAC: 'APA' };
     const URGENT_REF_RE = /Ref:(MSG[A-Za-z0-9_]+)/g;
@@ -11348,44 +11235,31 @@ Version 1.2.1:
         return (await r.json()).result || [];
     }
 
-    // Any Ref of the ticket brings a reply back to it: the newest one found is used.
-    // Tries the ticket's emails, then its watermarks, then the activity shown on the page.
+    // Any Ref of the ticket brings a reply back to it: the newest one found is used. Only references the ticket
+    // itself produced count: its watermarks, then the emails ServiceNow sent from it. Never a received email or
+    // page text: a requester can quote the Ref of another ticket there, and the urgent mail would land in that one.
     async function findTicketRef(ctx) {
         const id = ticketSysId(ctx);
         const tried = [];
-        if (id) {
-            try {
-                const mails = await snTable(ctx, 'sys_email', `instance=${id}^ORDERBYDESCsys_created_on`, 'body,body_text', 20);
-                for (const m of mails) {
-                    const found = [...String((m.body_text || '') + ' ' + (m.body || '')).matchAll(URGENT_REF_RE)];
-                    if (found.length) return { ref: 'Ref:' + found[found.length - 1][1], source: 'the emails of this ticket' };
-                }
-                tried.push('emails: none with a Ref');
-            } catch (e) { tried.push('emails: ' + e.message); }
-            try {
-                const marks = await snTable(ctx, 'sys_watermark', `source_id=${id}^ORDERBYDESCsys_created_on`, 'number', 1);
-                const n = marks[0] && String(marks[0].number || '').trim();
-                if (n && /^MSG/i.test(n)) return { ref: 'Ref:' + n, source: 'the watermarks of this ticket' };
-                tried.push('watermarks: none');
-            } catch (e) { tried.push('watermarks: ' + e.message); }
-        } else tried.push('ticket id not found');
-        const docs = [ctx && ctx.doc, document].filter((d, i, a) => d && a.indexOf(d) === i);
-        for (const d of docs) {
-            const found = [...String((d.body && d.body.innerText) || '').matchAll(URGENT_REF_RE)];
-            if (found.length) return { ref: 'Ref:' + found[0][1], source: 'the activity shown on the page' };
-        }
-        tried.push('page: none');
+        if (!id) return { ref: '', tried: ['ticket id not found'] };
+        try {
+            const marks = await snTable(ctx, 'sys_watermark', `source_id=${id}^ORDERBYDESCsys_created_on`, 'number,source_id', 1);
+            const m = marks[0];
+            const n = m && String(m.number || '').trim();
+            const src = m && (m.source_id && typeof m.source_id === 'object' ? m.source_id.value : m.source_id);
+            if (n && /^MSG[A-Za-z0-9_]+$/i.test(n) && (!src || src === id)) return { ref: 'Ref:' + n, source: 'the watermarks of this ticket' };
+            tried.push('watermarks: none');
+        } catch (e) { tried.push('watermarks: ' + e.message); }
+        try {
+            const mails = await snTable(ctx, 'sys_email', `instance=${id}^type=sent^ORDERBYDESCsys_created_on`, 'body,body_text', 20);
+            for (const mail of mails) {
+                // The watermark of a sent email is the one ServiceNow appends last
+                const found = [...String((mail.body_text || '') + ' ' + (mail.body || '')).matchAll(URGENT_REF_RE)];
+                if (found.length) return { ref: 'Ref:' + found[found.length - 1][1], source: 'the emails sent from this ticket' };
+            }
+            tried.push('sent emails: none with a Ref');
+        } catch (e) { tried.push('sent emails: ' + e.message); }
         return { ref: '', tried };
-    }
-
-    const userEmailCache = new Map();
-    async function lookupUserEmail(ctx, name) {
-        if (userEmailCache.has(name)) return userEmailCache.get(name);
-        const users = await snTable(ctx, 'sys_user', `name=${name}^active=true`, 'email,name', 3);
-        const emails = [...new Set(users.map(u => String(u.email || '').trim()).filter(Boolean))];
-        if (emails.length !== 1) throw new Error(emails.length ? `several ServiceNow users are called "${name}"` : `no active ServiceNow user "${name}" with an email address was found`);
-        userEmailCache.set(name, emails[0]);
-        return emails[0];
     }
 
     const URGENT_MAIL_BODY = (ref) => `Hello team,\r\n\r\nWe need this request to be reviewed urgently.\r\n\r\nJustification for the urgency:\r\n\r\n\r\n\r\n${ref}`;
@@ -11948,8 +11822,8 @@ Version 1.2.1:
                     box.appendChild(span('✔ Found in the emails of this ticket.', { display: 'block', fontSize: '11px', color: '#26890d', marginTop: '4px' }));
                     body.appendChild(box);
                     const grid = [
-                        ['Region', 'Chosen from the Requesting Member Firm (EMEA, AME or APA). Change it in the list if it is wrong; with no member firm you choose it.'],
-                        ['Reference', 'The Ref:MSG... of an email of this ticket: a reply that carries it lands back in this ticket. Found in the ticket\'s emails; if none is found, paste one from an email in the activity.'],
+                        ['Region', 'Chosen from the Requesting Member Firm (EMEA, AME or APA) among the leaders you saved. Change it in the list if it is wrong; with no member firm you choose it.'],
+                        ['Reference', 'The Ref:MSG... of this ticket: a reply that carries it lands back in this ticket. Taken only from the ticket\'s own watermark or the emails ServiceNow sent from it, never from a reply. If none is found, paste one from an email the ticket sent.'],
                         ['Send mail', 'To the assigned technician, CC Global Service Desk and the regional leader, subject "Urgent <ticket>", body with an example line, room for the justification and the reference.'],
                     ];
                     const g = document.createElement('div');
@@ -11960,31 +11834,41 @@ Version 1.2.1:
                     });
                     body.appendChild(g);
                     body.appendChild(hrow([chip('✉️ Send mail', '#005587')]));
-                    caption(body, 'How the button looks in the comment. The email addresses of the technician and the leader are looked up in ServiceNow by name when you assign; if one is missing, nothing is changed and the form says why.');
+                    caption(body, 'How the button looks in the comment. The emails come from Manage Team: if the assignee has no email or no leader is saved, the team window opens and nothing is changed.');
                 }
             },
             {
-                icon: '👤', title: 'Team Members',
+                icon: '👤', title: 'Team Members & Leaders',
                 buildContent(body) {
-                    lead(body, 'Your saved team list fills the member dropdown. Set it up once, edit it any time.');
+                    lead(body, 'Your saved team fills the member dropdown; their emails and your regional leaders feed the ✉️ Send mail button.');
 
                     const listMock = document.createElement('div');
                     Object.assign(listMock.style, {
                         border: '1px solid #e0e0e0', borderRadius: '6px', background: '#fafafa',
-                        marginBottom: '10px', maxWidth: '320px', overflow: 'hidden'
+                        marginBottom: '10px', maxWidth: '420px', overflow: 'hidden'
                     });
-                    ['Jane Smith', 'John Doe'].forEach((nm, i) => {
+                    [['Jane Smith', 'jsmith@deloitte.com'], ['John Doe', 'jdoe@deloitte.com']].forEach(([nm, mail], i) => {
                         const item = document.createElement('div');
                         Object.assign(item.style, {
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                             padding: '8px 12px', fontSize: '12px', color: '#333',
                             borderBottom: i === 0 ? '1px solid #f0f0f0' : 'none', fontFamily: 'Arial, sans-serif'
                         });
-                        item.appendChild(span(nm, { fontSize: '12px', color: '#333' }));
+                        item.appendChild(span(nm, { fontSize: '12px', color: '#333', flex: '1' }));
+                        item.appendChild(span(mail, { fontSize: '11px', color: '#333', border: '1px solid #ccc', borderRadius: '4px', padding: '3px 6px', margin: '0 8px', background: '#fff' }));
                         item.appendChild(span('×', { color: '#cc0000', fontWeight: 'bold' }));
                         listMock.appendChild(item);
                     });
                     body.appendChild(listMock);
+                    body.appendChild(span('Regional Enablement leaders', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#333', margin: '4px 0 4px 0' }));
+                    const leadMock = listMock.cloneNode(false);
+                    [['EMEA', 'Leader Name', 'leader@deloitte.com']].forEach(([r, nm, mail]) => {
+                        leadMock.appendChild(hrow([chip(r, '#005587'), span(nm, { fontSize: '12px', color: '#333', flex: '1' }),
+                            span(mail, { fontSize: '11px', color: '#333', border: '1px solid #ccc', borderRadius: '4px', padding: '3px 6px', background: '#fff' }),
+                            span('×', { color: '#cc0000', fontWeight: 'bold' })], { padding: '6px 12px', margin: '0', flexWrap: 'nowrap' }));
+                    });
+                    body.appendChild(leadMock);
+                    caption(body, 'One leader per region (EMEA, AME, APA). Every email is checked before saving.');
 
                     const dashed = { color: '#555', border: '1px dashed #aaa' };
                     body.appendChild(hrow([
@@ -12002,10 +11886,11 @@ Version 1.2.1:
                     body.appendChild(warn);
 
                     bullets(body, [
-                        'A setup wizard runs the first time you open the tool.',
-                        'In the wizard, "Import from a backup file" restores your team list from a toolbar backup.',
-                        'Manage Members in the footer reopens the editor later.',
-                        'Import or export the list as a JSON file to share it with teammates.'
+                        'A setup window runs the first time you open the tool: each member needs a name and an email, and at least one leader is needed.',
+                        'Installed before? When a member has no email or no leader is saved, opening the tool asks for them. "Later" asks again the next day; until then the Default comment cannot be used.',
+                        'In the setup, "Import from a backup file" restores your team from a toolbar backup.',
+                        'Manage Team in the footer reopens the editor later.',
+                        'Import or export the team (members, emails and leaders) as a JSON file to share it with teammates.'
                     ]);
                 }
             },
@@ -12053,7 +11938,7 @@ Version 1.2.1:
                 buildContent(body) {
                     lead(body, 'The footer of the assignment form shows the version and these controls.');
                     badgeRow(body, { bg: 'transparent', color: '#666', label: "🔵 What's New", desc: 'Appears with a pulsing dot when a new version is available. Opens the changelog. Sits beside the version number.' });
-                    badgeRow(body, { bg: 'transparent', color: '#0066cc', label: 'Manage Members', desc: 'Opens the team list editor to add, remove, import, or export members.' });
+                    badgeRow(body, { bg: 'transparent', color: '#0066cc', label: 'Manage Team', desc: 'Opens the team editor: members with their emails and the regional leaders. Add, remove, import or export them.' });
                     badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' });
                 }
             }
@@ -12271,9 +12156,7 @@ Version 1.2.1:
         const regionSelect = document.createElement('select');
         regionSelect.id = 'sn-assign-region';
         regionSelect.className = 'sn-assign-dropdown';
-        [['', 'Choose a region...'], ...Object.entries(URGENT_LEADERS).map(([r, n]) => [r, `${r}: ${n}`])].forEach(([v, t]) => {
-            const o = document.createElement('option'); o.value = v; o.textContent = t; regionSelect.appendChild(o);
-        });
+        fillRegionOptions(regionSelect);
         const regionTip = document.createElement('div');
         regionTip.id = 'sn-assign-region-tip';
         regionTip.className = 'sn-assign-field-tip';
@@ -12470,7 +12353,8 @@ Version 1.2.1:
         // Manage Members button
         const manageMembersBtn = document.createElement('button');
         manageMembersBtn.className = 'sn-assign-switch-team-btn';
-        manageMembersBtn.textContent = 'Manage Members';
+        manageMembersBtn.textContent = 'Manage Team';
+        manageMembersBtn.title = 'Team members, their emails and the regional leaders';
         manageMembersBtn.onclick = () => showManageMembersModal();
         teamActions.appendChild(manageMembersBtn);
 
@@ -12524,6 +12408,8 @@ Version 1.2.1:
         if (overlay) {
             overlay.classList.add('active');
             refreshUrgentBlock();
+            // Installs from before 1.7.0: ask for the emails and leaders the urgent mail button needs ("Later" = tomorrow)
+            if (!teamDataComplete() && GM_getValue(TEAM_LATER_KEY, '') !== todayKey()) showTeamEditor('complete');
             const dropdown = document.getElementById('sn-assign-team-dropdown');
             if (dropdown) setTimeout(() => dropdown.focus(), 100);
         }
@@ -12538,16 +12424,31 @@ Version 1.2.1:
         el.appendChild(document.createTextNode(text));
     }
 
+    // The regions that have a saved leader, as "EMEA: Name"
+    function fillRegionOptions(select) {
+        select.textContent = '';
+        const first = document.createElement('option');
+        first.value = ''; first.textContent = 'Choose a region...';
+        select.appendChild(first);
+        getStoredLeaders().sort((a, b) => LEADER_REGIONS.indexOf(a.region) - LEADER_REGIONS.indexOf(b.region)).forEach(l => {
+            const o = document.createElement('option'); o.value = l.region; o.textContent = `${l.region}: ${l.name}`; select.appendChild(o);
+        });
+    }
+
     // Each time the form opens: region from the ticket, then the reference (the user can still change both)
     function refreshUrgentBlock() {
         const ctx = getTicketContext();
         const select = document.getElementById('sn-assign-region');
         const tip = document.getElementById('sn-assign-region-tip');
         if (select) {
+            fillRegionOptions(select);
             const region = ticketRegion(ctx);
-            select.value = region;
+            const hasLeader = !!leaderOf(region);
+            select.value = hasLeader ? region : '';
             select.classList.remove('sn-assign-field-error');
-            if (tip) tip.textContent = region ? 'Chosen from the Requesting Member Firm of the ticket. You can change it.' : 'The region could not be read from the ticket: choose it.';
+            if (tip) tip.textContent = !getStoredLeaders().length ? 'No regional leader saved yet: add them with Manage Team.' :
+                hasLeader ? 'Chosen from the Requesting Member Firm of the ticket. You can change it.' :
+                region ? `No ${region} leader saved: choose another region or add one with Manage Team.` : 'The region could not be read from the ticket: choose it.';
         }
         const urgent = document.getElementById('sn-assign-urgent');
         const type = document.getElementById('sn-assign-response-type');
@@ -12569,7 +12470,7 @@ Version 1.2.1:
             if (run !== refLookup) return;
             if (r.ref) {
                 input.value = r.ref;
-                setRefStatus(`✔ Found in ${r.source}.`, 'ok');
+                setRefStatus(`✔ Found in ${r.source}. Check it matches this ticket's emails.`, 'ok');
             } else {
                 if (byUser || !normalizeRef(input.value)) input.value = '';
                 setRefStatus('⚠️ No reference found. Open an email of this ticket in its activity, copy the Ref:MSG... line at its end and paste it here.', 'warn');
@@ -12865,9 +12766,16 @@ Version 1.2.1:
             alert('Could not detect the ticket form. Make sure you are on a ticket page.');
             return;
         }
-        // Default response: the urgent mail button needs a region and the ticket's reference before anything changes
+        // Default response: the urgent mail button needs the emails, a region and the ticket's reference before anything changes
         let mail = null;
         if (responseType === 'default') {
+            const member = (getStoredMembers() || []).find(m => m.name === assigneeName);
+            if (!member || !isEmail(member.email) || !getStoredLeaders().length) {
+                showTeamEditor('complete');
+                const m = document.getElementById('sn-team-msg');
+                if (m) m.textContent = `⚠️ The Default comment needs ${!member || !isEmail(member.email) ? `the email of ${assigneeName}` : 'at least one regional leader'}. Fill it in and save, then assign again.`;
+                return;
+            }
             const regionSelect = document.getElementById('sn-assign-region');
             const refInput = document.getElementById('sn-assign-ref');
             const region = regionSelect ? regionSelect.value : '';
@@ -12886,25 +12794,24 @@ Version 1.2.1:
                     '⚠️ The urgent mail needs the reference: paste a Ref:MSG... from an email of this ticket, then assign.', 'error');
                 return;
             }
-            mail = { ref, region };
+            const leader = leaderOf(region);
+            if (!leader || !isEmail(leader.email)) {
+                regionSelect.classList.add('sn-assign-field-error');
+                const tip = document.getElementById('sn-assign-region-tip');
+                if (tip) tip.textContent = `⚠️ No ${region} leader with an email is saved: add one with Manage Team.`;
+                return;
+            }
+            mail = { ref, region, leader, techEmail: member.email.trim() };
         }
         console.log('🎫 Starting ticket assignment to:', assigneeName, '| Mode:', _ctx.mode);
         showLoading();
         const loadingText = document.querySelector('#sn-assign-loading .sn-assign-loading-text');
 
         if (mail) {
-            try {
-                if (loadingText) loadingText.textContent = 'Looking up the email addresses…';
-                const [tech, leader] = await Promise.all([lookupUserEmail(_ctx, assigneeName), lookupUserEmail(_ctx, URGENT_LEADERS[mail.region])]);
-                const ticket = getTicketNumber() || 'ticket';
-                Object.assign(mail, { to: [tech], cc: [URGENT_GSD_EMAIL, leader], subject: `Urgent ${ticket}`, body: URGENT_MAIL_BODY(mail.ref) });
-            } catch (e) {
-                hideLoading();
-                alert(`❌ Nothing was changed: the urgent mail button could not be built, ${e.message}.\n\nCheck the name of the team member and try again.`);
-                return;
-            } finally {
-                if (loadingText) loadingText.textContent = 'Assigning ticket...';
-            }
+            const ticket = getTicketNumber() || 'ticket';
+            const leaders = getStoredLeaders().sort((a, b) => LEADER_REGIONS.indexOf(a.region) - LEADER_REGIONS.indexOf(b.region));
+            Object.assign(mail, { to: [mail.techEmail], cc: [URGENT_GSD_EMAIL, mail.leader.email], subject: `Urgent ${ticket}`, body: URGENT_MAIL_BODY(mail.ref),
+                leadersText: leaders.map(l => `${l.region}: ${l.name}`).join(', ') });
         }
 
         try {
@@ -13110,7 +13017,7 @@ Your request has been registered and will be reviewed as part of our ongoing tic
 
 We aim to provide you with an update within the next two business days.
 
-If your request requires urgent attention, please send an email to the assigned technician, copy Global Service Desk ${URGENT_GSD_EMAIL} and the regional Enablement team leader (EMEA: ${URGENT_LEADERS.EMEA}, AME: ${URGENT_LEADERS.AME}, APA: ${URGENT_LEADERS.APA}) and include “Urgent <ticket number>” in the subject line and provide justification for the urgency in the email body.
+If your request requires urgent attention, please send an email to the assigned technician, copy Global Service Desk ${URGENT_GSD_EMAIL} and the regional Enablement team leader (${mail.leadersText}) and include “Urgent <ticket number>” in the subject line and provide justification for the urgency in the email body.
 
 IMPORTANT, please make sure that the following reference is added in the email body:
 
