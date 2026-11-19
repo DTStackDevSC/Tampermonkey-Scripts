@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.38.1
+// @version      2.38.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.38.1';
-    const CHANGELOG = `Version 2.38.1:
+   const SCRIPT_VERSION = '2.38.2';
+    const CHANGELOG = `Version 2.38.2:
+- NS Policies Toolkit: Policy tools: Group pairs now tells apart groups that have the same name but a different AD path. Write the full path of the group to add and it is added even when the policy already has a group with that name in its old path; only the exact same path counts as already there. The summary shows the full path when two groups share a name.
+
+Version 2.38.1:
 - NS Policies Toolkit: Steering Exception Tools: Bulk remove of Certified Pinned Apps now deletes the apps even when Netskope does not send the entry details, by taking the options for the backup from the exceptions list. When an entry is left as it is, the summary now says which one and why.
 
 Version 2.38.0:
@@ -30569,8 +30572,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.47.1';
-    const CHANGELOG = `Version 1.47.1:
+    const SCRIPT_VERSION = '1.47.2';
+    const CHANGELOG = `Version 1.47.2:
+- Policy tools: Group pairs now tells apart groups that have the same name but a different AD path. Write the full path of the group to add and it is added even when the policy already has a group with that name in its old path; only the exact same path counts as already there. The summary shows the full path when two groups share a name.
+
+Version 1.47.1:
 - Steering Exception Tools: Bulk remove of Certified Pinned Apps now deletes the apps even when Netskope does not send the entry details, by taking the options for the backup from the exceptions list. When an entry is left as it is, the summary now says which one and why.
 
 Version 1.47.0:
@@ -32534,6 +32540,7 @@ Version 1.16:
 
                     bullets(body, [
                         'Names must be exact: capitals, spaces and dashes count. The group to add must exist once in Netskope, or write its full path.',
+                        'A full path counts only that path: a group with the same name in another AD path (for example after a move in AD) is a different group, so it is added and not reported as already there.',
                         BG_TAB_WARNING,
                         'While it runs the page is locked, so a stray click or key cannot change the policy being edited. Pause on the card unlocks it.',
                         'Continue picks up where it stopped. After a reload the run waits for you to click Continue or Discard.',
@@ -40266,15 +40273,16 @@ Version 1.16:
         const rows = pairs.map(({ a, b, line }) => {
             const row = { a, b, line, status: 'ok', policies: [], skipped: [], fullB: null };
             const results = lookup[b] || [];
-            const exact = [...new Set(results.filter(n => n === b || smShortName(n) === b))];
-            const holders = policies.filter(p => p.groups.some(g => g === a || smShortName(g) === a));
+            const exact = [...new Set(results.filter(n => b.includes('/') ? smKey(n) === smKey(b) : smShortName(n) === b))];
+            const holders = policies.filter(p => p.groups.some(g => g === a || (!a.includes('/') && smShortName(g) === a)));
             row.policies = holders.map(p => p.name);
             if (exact.length === 1) row.fullB = exact[0];
             else row.status = exact.length > 1 ? 'bAmbiguous' : results.length >= 100 ? 'bTooMany' : 'bNotFound';
             if (row.status === 'ok' && !holders.length) row.status = 'notInPolicy';
             if (row.status !== 'ok') return row;
             holders.forEach(p => {
-                if (p.groups.some(g => g === row.fullB || smShortName(g) === b)) { row.skipped.push(p.name); return; }
+                // Only the exact path counts as already there: a group with the same name in another AD path does not
+                if (p.groups.some(g => smKey(g) === smKey(row.fullB))) { row.skipped.push(p.name); return; }
                 const job = jobs.get(p.id) || { id: p.id, type: p.type, name: p.name, a: [], adds: [] };
                 if (!job.adds.includes(row.fullB)) job.adds.push(row.fullB);
                 if (!job.a.includes(a)) job.a.push(a);
@@ -40500,7 +40508,8 @@ Version 1.16:
                         <div class="label-row"><label class="label" for="bg-pairs"><span class="step">1</span>Pairs of groups</label>
                             <button type="button" class="clear" data-bg="clear" disabled title="The field is already empty">🧹 Clear</button></div>
                         <p class="help">One pair per line: first the group that is already in the policy, then a comma, then the group to add.
-                            Write the names exactly as in Netskope: capitals, spaces and dashes count. Two columns copied from Excel also work.</p>
+                            Write the names exactly as in Netskope: capitals, spaces and dashes count. Two columns copied from Excel also work.
+                            A group that moved in AD keeps its name: write the full path to tell the old and the new one apart.</p>
                         <div class="example"></div>
                         <textarea id="bg-pairs" data-bg="pairs" spellcheck="false"></textarea>
                         <div class="warning" data-bg="warning"></div>
@@ -42036,7 +42045,9 @@ Version 1.16:
                 show();
                 // Shows how long Netskope takes, so a stuck lookup can be told from a slow one
                 ticker = setInterval(show, 1000);
-                lookup[b] = await smSearch('group', b);
+                // Netskope searches by name: a full path is looked up by its last segment, then matched exactly
+                lookup[b] = await smSearch('group', smShortName(b));
+                if (b.includes('/') && !lookup[b].some(n => smKey(n) === smKey(b))) lookup[b] = lookup[b].concat(await smSearch('group', b));
                 clearInterval(ticker);
             }
             const plan = bgBuildPlan(pairs, list, lookup);
@@ -42101,7 +42112,12 @@ Version 1.16:
     const BG_ADD_CFG     = { timeout: 30000, retries: 1, pause: 0 };
 
     const bgEditHash = job => `#/inline-policy-page?type=${encodeURIComponent(job.type)}&view=wizard&mode=edit&id=${encodeURIComponent(job.id)}`;
-    const bgHasGroup = (groups, name) => groups.some(g => g === name || smShortName(g) === smShortName(name));
+    // A full path matches only that path: a group moved in AD keeps its name but is another group.
+    // A short name (no path) still matches the last path segment.
+    const bgSameGroup = (g, name) => String(name).includes('/') ? smKey(g) === smKey(name) : (g === name || smShortName(g) === name);
+    const bgHasGroup = (groups, name) => groups.some(g => bgSameGroup(g, name));
+    // Shows the full path when the policy groups share the short name, so the two paths can be told apart
+    const bgGroupLabel = (name, others) => others.some(o => smKey(o) !== smKey(name) && smShortName(o) === smShortName(name)) ? name : smShortName(name);
     const bgLoadRun = () => { const r = GM_getValue(BG_RUN_KEY, null); return r && r.v === 1 ? r : null; };
     const bgSaveRun = run => GM_setValue(BG_RUN_KEY, run);
     const bgRunEl = name => bg.runShadow && bg.runShadow.querySelector(`[data-bg="${name}"]`);
@@ -42187,13 +42203,13 @@ Version 1.16:
         const missing = job.adds.filter(b => !bgHasGroup(groups, b));
         if (!missing.length) {
             await bgLeave();
-            return { outcome: 'skipped', reason: 'The groups were already there.', already: job.adds.map(smShortName) };
+            return { outcome: 'skipped', reason: 'The groups were already there.', already: job.adds.map(b => bgGroupLabel(b, groups)) };
         }
         for (const b of missing) {
             const r = await smAddValue('group', b, BG_ADD_CFG);
             if (r !== 'added' && r !== 'already') {
                 await bgLeave();
-                return { outcome: 'failed', reason: `${smShortName(b)}: ${SM_REASON[r] || r}.` };
+                return { outcome: 'failed', reason: `${bgGroupLabel(b, groups)}: ${SM_REASON[r] || r}.` };
             }
         }
         groups = await bgReadGroups();
@@ -42218,7 +42234,8 @@ Version 1.16:
             if (sm.lastSave && bgIsList()) return { ok: true };
             return null;
         }, BG_WAIT);
-        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + missing.map(smShortName).join(', ') + '.', added: missing.map(smShortName), log };
+        const added = missing.map(b => bgGroupLabel(b, groups));
+        if (end && end.ok) return { outcome: 'done', reason: 'Added ' + added.join(', ') + '.', added, log };
         await bgLeave();
         return { outcome: 'failed', reason: end ? end.error : 'Netskope did not confirm the save in time.' };
     }
