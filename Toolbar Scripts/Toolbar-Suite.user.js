@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.41.0
+// @version      2.41.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.41.0';
-    const CHANGELOG = `Version 2.41.0:
+   const SCRIPT_VERSION = '2.41.1';
+    const CHANGELOG = `Version 2.41.1:
+- Ticket Assignment Tool: The three regional leaders (EMEA, AME and APA) are now required. The team window does not save until all three have a name and an email, and the tool asks for them each time it opens until they are saved. Closing that window also closes the assignment form.
+- Ticket Assignment Tool: The assignment form now fits in the browser window: when it is taller than the window, its content scrolls and the title and close button stay in view.
+
+Version 2.41.0:
 - Ticket Assignment Tool: Regional leaders are no longer built into the tool: you add them in the team window, one per region (EMEA, AME, APA) with name and email. The Default comment names the leaders you saved.
 - Ticket Assignment Tool: Each team member now has an email address, entered with the name. The ✉️ Send mail button uses these saved emails, so nothing is looked up in ServiceNow.
 - Ticket Assignment Tool: If you installed the tool before, opening it asks once for what is missing (member emails, leaders). "Later" asks again the next day; the Default comment waits until the details are complete.
@@ -10405,8 +10409,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.0';
-    const CHANGELOG = `Version 1.7.0:
+    const SCRIPT_VERSION = '1.7.1';
+    const CHANGELOG = `Version 1.7.1:
+- The three regional leaders (EMEA, AME and APA) are now required. The team window does not save until all three have a name and an email, and the tool asks for them each time it opens until they are saved. Closing that window also closes the assignment form.
+- The assignment form now fits in the browser window: when it is taller than the window, its content scrolls and the title and close button stay in view.
+
+Version 1.7.0:
 - Regional leaders are no longer built into the tool: you add them in the team window, one per region (EMEA, AME, APA) with name and email. The Default comment names the leaders you saved.
 - Each team member now has an email address, entered with the name. The ✉️ Send mail button uses these saved emails, so nothing is looked up in ServiceNow.
 - If you installed the tool before, opening it asks once for what is missing (member emails, leaders). "Later" asks again the next day; the Default comment waits until the details are complete.
@@ -10619,9 +10627,11 @@ Version 1.2.1:
     // What the urgent mail button still needs: members without an email, no regional leader at all
     function missingTeamData() {
         const members = getStoredMembers() || [];
-        return { noEmail: members.filter(m => !isEmail(m.email)).map(m => m.name), noLeaders: !getStoredLeaders().length };
+        const leaders = getStoredLeaders();
+        return { noEmail: members.filter(m => !isEmail(m.email)).map(m => m.name),
+            noLeaders: LEADER_REGIONS.filter(r => !leaders.some(l => l.region === r && isEmail(l.email))) };
     }
-    const teamDataComplete = () => { const m = missingTeamData(); return !m.noEmail.length && !m.noLeaders; };
+    const teamDataComplete = () => { const m = missingTeamData(); return !m.noEmail.length && !m.noLeaders.length; };
 
     /* ==========================================================
      *  IMPORT / EXPORT HELPERS
@@ -10733,8 +10743,6 @@ Version 1.2.1:
         .sn-team-cancel:hover { background: #d0d0d0 !important; }
     `;
 
-    const TEAM_LATER_KEY = 'ticketAssignmentCompleteLater';
-    const todayKey = () => new Date().toISOString().slice(0, 10);
 
     // mode: 'setup' (first run), 'manage' (footer button), 'complete' (asks for what the urgent mail button still needs)
     function showTeamEditor(mode, onDone) {
@@ -10756,9 +10764,9 @@ Version 1.2.1:
         const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
         const titles = { setup: '👥 Set Up Your Team', manage: '👥 Manage Team', complete: '📧 Complete Your Team Details' };
         const intros = {
-            setup: 'Add each team member with their email address, then your regional Enablement leaders. You can change both later with Manage Team.',
+            setup: 'Add each team member with their email address, then the three regional Enablement leaders (EMEA, AME, APA). You can change both later with Manage Team.',
             manage: 'Team members fill the assignment list. Their email and the regional leaders are used by the ✉️ Send mail button of the Default comment.',
-            complete: 'The Default comment now ends with a ✉️ Send mail button for urgent requests. It needs the email of each team member and your regional leaders. Fill in what is missing below.',
+            complete: 'The Default comment now ends with a ✉️ Send mail button for urgent requests. It needs the email of each team member and the three regional leaders (EMEA, AME, APA). Fill in what is missing below: the tool can be used once they are saved.',
         };
         modal.appendChild(el('h2', '', titles[mode]));
         modal.appendChild(el('p', 'sn-team-intro', intros[mode]));
@@ -10784,7 +10792,7 @@ Version 1.2.1:
 
         // Leaders
         modal.appendChild(el('div', 'sn-team-section', 'Regional Enablement leaders'));
-        modal.appendChild(el('div', 'sn-team-hint', 'One per region. The leader of the ticket\'s region goes in CC of the urgent mail, and the comment names each of them.'));
+        modal.appendChild(el('div', 'sn-team-hint', 'Required: one per region (EMEA, AME, APA). The leader of the ticket\'s region goes in CC of the urgent mail, and the comment names all three.'));
         const leaderList = el('div', 'sn-team-list');
         leaderList.id = 'sn-team-leaders';
         modal.appendChild(leaderList);
@@ -10807,8 +10815,8 @@ Version 1.2.1:
         msg.id = 'sn-team-msg';
         modal.appendChild(msg);
         const footer = el('div', 'sn-team-footer');
-        const cancel = el('button', 'sn-team-cancel', mode === 'complete' ? 'Later' : 'Cancel'); cancel.type = 'button'; cancel.id = 'sn-team-cancel';
-        cancel.title = mode === 'complete' ? 'Close for today: you are asked again tomorrow. The Default comment cannot be used until the details are complete.' : 'Close without saving';
+        const cancel = el('button', 'sn-team-cancel', mode === 'complete' ? 'Close' : 'Cancel'); cancel.type = 'button'; cancel.id = 'sn-team-cancel';
+        cancel.title = mode === 'complete' ? 'Closes the assignment form too: it can be used once these details are complete' : 'Close without saving';
         const save = el('button', 'sn-team-save', mode === 'setup' ? 'Save & Continue →' : 'Save'); save.type = 'button'; save.id = mode === 'setup' ? 'sn-setup-done-btn' : 'sn-manage-save-btn';
         if (mode !== 'setup') footer.appendChild(cancel);
         footer.appendChild(save);
@@ -10912,27 +10920,28 @@ Version 1.2.1:
             const problems = [];
             if (!members.length) problems.push('add at least one team member');
             if (noEmail.length) problems.push(`add a valid email for ${noEmail.join(', ')}`);
-            if (!leaders.length) problems.push('add at least one regional leader');
+            const noRegion = LEADER_REGIONS.filter(r => !leaders.some(l => l.region === r));
+            if (noRegion.length) problems.push(`add the ${noRegion.join(', ')} leader${noRegion.length > 1 ? 's' : ''} (all three regions are needed)`);
             if (badLeaders.length) problems.push(`add a valid email for the ${badLeaders.join(', ')} leader`);
             if (problems.length) {
                 msg.textContent = '⚠️ Not saved yet: ' + problems.join('; ') + '.';
-                const first = modal.querySelector('.sn-team-bad') || (!members.length ? mName : !leaders.length ? lName : null);
+                const first = modal.querySelector('.sn-team-bad') || (!members.length ? mName : noRegion.length ? lName : null);
                 if (first) first.focus();
                 return;
             }
             saveMembers(members.map(m => ({ name: m.name, value: m.value || memberValue(m.name), email: m.email.trim() })));
             saveLeaders(leaders.map(l => ({ region: l.region, name: l.name, email: l.email.trim() })));
-            GM_deleteValue(TEAM_LATER_KEY);
             close();
             rebuildDropdown(getStoredMembers());
             refreshUrgentBlock();
             if (onDone) onDone(getStoredMembers());
         };
         cancel.onclick = () => {
-            if (mode === 'complete') GM_setValue(TEAM_LATER_KEY, todayKey());
             close();
+            // The details are required: without them the assignment form does not stay open
+            if (mode === 'complete') hideModal();
         };
-        overlay.onclick = (e) => { if (e.target === overlay && mode !== 'setup') cancel.click(); };
+        overlay.onclick = (e) => { if (e.target === overlay && mode === 'manage') cancel.click(); };
 
         render();
         (mode === 'complete' ? (modal.querySelector('.sn-team-bad') || lName) : mName).focus();
@@ -11358,6 +11367,9 @@ Version 1.2.1:
             box-shadow: 0px 4px 12px rgba(0,0,0,0.1) !important;
             max-width: 500px; width: 90%; position: relative;
             font-family: Arial, sans-serif !important;
+            /* Never taller than the window: the header stays, the content scrolls */
+            display: flex !important; flex-direction: column; box-sizing: border-box;
+            max-height: calc(100vh - 24px) !important;
         }
 
         .sn-assign-modal-header {
@@ -11380,7 +11392,7 @@ Version 1.2.1:
         }
         .sn-assign-close-btn:hover { opacity: 0.8; }
 
-        .sn-assign-modal-content { display: flex; flex-direction: column; gap: 15px; }
+        .sn-assign-modal-content { display: flex; flex-direction: column; gap: 15px; overflow-y: auto; min-height: 0; padding-right: 4px; margin-right: -4px; }
         .sn-assign-form-group { margin-bottom: 0; }
 
         .sn-assign-label {
@@ -11868,7 +11880,7 @@ Version 1.2.1:
                             span('×', { color: '#cc0000', fontWeight: 'bold' })], { padding: '6px 12px', margin: '0', flexWrap: 'nowrap' }));
                     });
                     body.appendChild(leadMock);
-                    caption(body, 'One leader per region (EMEA, AME, APA). Every email is checked before saving.');
+                    caption(body, 'One leader for each region (EMEA, AME and APA), all three required. Every email is checked before saving.');
 
                     const dashed = { color: '#555', border: '1px dashed #aaa' };
                     body.appendChild(hrow([
@@ -11886,8 +11898,8 @@ Version 1.2.1:
                     body.appendChild(warn);
 
                     bullets(body, [
-                        'A setup window runs the first time you open the tool: each member needs a name and an email, and at least one leader is needed.',
-                        'Installed before? When a member has no email or no leader is saved, opening the tool asks for them. "Later" asks again the next day; until then the Default comment cannot be used.',
+                        'A setup window runs the first time you open the tool: each member needs a name and an email, and the three regional leaders (EMEA, AME, APA) are required.',
+                        'Installed before? When a member has no email or a regional leader is missing, opening the tool asks for them. They are required: closing that window also closes the assignment form.',
                         'In the setup, "Import from a backup file" restores your team from a toolbar backup.',
                         'Manage Team in the footer reopens the editor later.',
                         'Import or export the team (members, emails and leaders) as a JSON file to share it with teammates.'
@@ -12408,8 +12420,8 @@ Version 1.2.1:
         if (overlay) {
             overlay.classList.add('active');
             refreshUrgentBlock();
-            // Installs from before 1.7.0: ask for the emails and leaders the urgent mail button needs ("Later" = tomorrow)
-            if (!teamDataComplete() && GM_getValue(TEAM_LATER_KEY, '') !== todayKey()) showTeamEditor('complete');
+            // Required details missing (installs from before 1.7.0, or a leader removed): ask for them before the tool is used
+            if (!teamDataComplete()) showTeamEditor('complete');
             const dropdown = document.getElementById('sn-assign-team-dropdown');
             if (dropdown) setTimeout(() => dropdown.focus(), 100);
         }
@@ -12446,7 +12458,7 @@ Version 1.2.1:
             const hasLeader = !!leaderOf(region);
             select.value = hasLeader ? region : '';
             select.classList.remove('sn-assign-field-error');
-            if (tip) tip.textContent = !getStoredLeaders().length ? 'No regional leader saved yet: add them with Manage Team.' :
+            if (tip) tip.textContent = missingTeamData().noLeaders.length ? `Missing leader for ${missingTeamData().noLeaders.join(', ')}: add them with Manage Team.` :
                 hasLeader ? 'Chosen from the Requesting Member Firm of the ticket. You can change it.' :
                 region ? `No ${region} leader saved: choose another region or add one with Manage Team.` : 'The region could not be read from the ticket: choose it.';
         }
@@ -12770,10 +12782,10 @@ Version 1.2.1:
         let mail = null;
         if (responseType === 'default') {
             const member = (getStoredMembers() || []).find(m => m.name === assigneeName);
-            if (!member || !isEmail(member.email) || !getStoredLeaders().length) {
+            if (!member || !isEmail(member.email) || missingTeamData().noLeaders.length) {
                 showTeamEditor('complete');
                 const m = document.getElementById('sn-team-msg');
-                if (m) m.textContent = `⚠️ The Default comment needs ${!member || !isEmail(member.email) ? `the email of ${assigneeName}` : 'at least one regional leader'}. Fill it in and save, then assign again.`;
+                if (m) m.textContent = `⚠️ The Default comment needs ${!member || !isEmail(member.email) ? `the email of ${assigneeName}` : `the ${missingTeamData().noLeaders.join(', ')} leader${missingTeamData().noLeaders.length > 1 ? 's' : ''}`}. Fill it in and save, then assign again.`;
                 return;
             }
             const regionSelect = document.getElementById('sn-assign-region');
