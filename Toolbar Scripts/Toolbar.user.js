@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.39.0
+// @version      2.40.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.39.0';
-    const CHANGELOG = `Version 2.39.0:
+   const SCRIPT_VERSION = '2.40.0';
+    const CHANGELOG = `Version 2.40.0:
+- Ticket Assignment Tool: The Default comment has the new wording: the assignee is the designated point of contact, and the requester learns how to ask for urgent attention. It ends with a "✉️ Send mail" button that opens a mail to the assigned technician, with Global Service Desk and the regional Enablement leader in CC, subject "Urgent <ticket>" and the ticket's email reference in the body.
+- Ticket Assignment Tool: The form has a new block for that button: the regional leader is chosen from the ticket's member firm and can be changed, and the email reference (Ref:MSG...) is looked up in the ticket's emails. When none is found you paste one, and the form will not assign with Default until there is one.
+
+Version 2.39.0:
 - NS Policies Toolkit: Copy policy: new "💾 Copy after Save" button for a policy you changed but did not save yet. Click it, then click Save as usual: once Netskope confirms the save, the policy is copied with your changes and a card on the list page says so. If the Save is refused it keeps waiting and says why; leaving without saving cancels it.
 - NS Policies Toolkit: Copy policy: the old Copy button is now "📋 Copy saved version", with a note that unsaved changes are not included.
 
@@ -10392,8 +10396,13 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.3';
-    const CHANGELOG = `Version 1.5.3:
+    const SCRIPT_VERSION = '1.6.0';
+    const CHANGELOG = `Version 1.6.0:
+- The Default comment has the new wording: the assignee is the designated point of contact, and the requester learns how to ask for urgent attention. It ends with a "✉️ Send mail" button that opens a mail to the assigned technician, with Global Service Desk and the regional Enablement leader in CC, subject "Urgent <ticket>" and the ticket's email reference in the body.
+- The form has a new block for that button: the regional leader is chosen from the ticket's member firm and can be changed, and the email reference (Ref:MSG...) is looked up in the ticket's emails. When none is found you paste one, and the form will not assign with Default until there is one.
+- Missing Information and the freeze reminder now go right before the signature.
+
+Version 1.5.3:
 - The @mentions in the assignment comment no longer turn into a line break. The tool now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the comment field's own list. If ServiceNow does not list someone, the name stays as plain text and the confirmation says so, so you can retype the mention before posting.
 
 Version 1.5.2:
@@ -11292,6 +11301,105 @@ Version 1.2.1:
     let _ctx = null;
 
     /* ==========================================================
+     *  URGENT MAIL (Default response): Ref of the ticket, regional leader, mail button
+     * ==========================================================*/
+
+    const URGENT_GSD_EMAIL = 'globalservicedesk@servicedesk.deloitte.com';
+    // Regional Enablement team leaders, looked up in ServiceNow by name for their email address
+    const URGENT_LEADERS = {
+        EMEA: 'David Igualada',
+        AME:  'George Garvin',
+        APA:  'Chetan Jain',
+    };
+    // The ticket's Netskope tenant (from its Requesting Member Firm) decides the default leader
+    const URGENT_TENANT_TO_REGION = { EMA: 'EMEA', EU: 'EMEA', CE: 'EMEA', AME: 'AME', APAC: 'APA' };
+    const URGENT_REF_RE = /Ref:(MSG[A-Za-z0-9_]+)/g;
+
+    // "Ref:MSG..." from what the user typed or pasted, or '' when it is not one
+    function normalizeRef(text) {
+        const m = String(text || '').trim().match(/^(?:Ref:)?\s*(MSG[A-Za-z0-9_]{4,})$/i);
+        return m ? 'Ref:' + m[1].replace(/^msg/i, 'MSG') : '';
+    }
+
+    function ticketRegion(ctx) {
+        try {
+            const t = detectTicketTenant(ctx ? ctx.doc : document);
+            return (t && URGENT_TENANT_TO_REGION[t.type]) || '';
+        } catch (e) { return ''; }
+    }
+
+    function ticketSysId(ctx) {
+        try { const v = ctx && ctx.gForm && ctx.gForm.getUniqueValue && ctx.gForm.getUniqueValue(); if (v) return v; } catch (e) { /* not ready */ }
+        const doc = ctx ? ctx.doc : document;
+        const hidden = doc.getElementById('sys_uniqueValue');
+        if (hidden && hidden.value) return hidden.value;
+        for (const loc of [ctx && ctx.win && ctx.win.location, location]) {
+            try { const m = /[?&]sys_id=([0-9a-f]{32})/i.exec(decodeURIComponent((loc && (loc.search + loc.pathname + loc.hash)) || '')); if (m) return m[1]; } catch (e) { /* cross origin */ }
+        }
+        return '';
+    }
+
+    async function snTable(ctx, table, query, fields, limit) {
+        let token = '';
+        try { token = (ctx && ctx.win && ctx.win.g_ck) || (typeof unsafeWindow !== 'undefined' && unsafeWindow.g_ck) || window.g_ck || ''; } catch (e) { /* none */ }
+        const url = `/api/now/table/${table}?sysparm_query=${encodeURIComponent(query)}&sysparm_fields=${fields}&sysparm_limit=${limit}`;
+        const r = await fetch(url, { credentials: 'same-origin', headers: Object.assign({ Accept: 'application/json' }, token ? { 'X-UserToken': token } : {}) });
+        if (!r.ok) throw new Error(`ServiceNow answered ${r.status}`);
+        return (await r.json()).result || [];
+    }
+
+    // Any Ref of the ticket brings a reply back to it: the newest one found is used.
+    // Tries the ticket's emails, then its watermarks, then the activity shown on the page.
+    async function findTicketRef(ctx) {
+        const id = ticketSysId(ctx);
+        const tried = [];
+        if (id) {
+            try {
+                const mails = await snTable(ctx, 'sys_email', `instance=${id}^ORDERBYDESCsys_created_on`, 'body,body_text', 20);
+                for (const m of mails) {
+                    const found = [...String((m.body_text || '') + ' ' + (m.body || '')).matchAll(URGENT_REF_RE)];
+                    if (found.length) return { ref: 'Ref:' + found[found.length - 1][1], source: 'the emails of this ticket' };
+                }
+                tried.push('emails: none with a Ref');
+            } catch (e) { tried.push('emails: ' + e.message); }
+            try {
+                const marks = await snTable(ctx, 'sys_watermark', `source_id=${id}^ORDERBYDESCsys_created_on`, 'number', 1);
+                const n = marks[0] && String(marks[0].number || '').trim();
+                if (n && /^MSG/i.test(n)) return { ref: 'Ref:' + n, source: 'the watermarks of this ticket' };
+                tried.push('watermarks: none');
+            } catch (e) { tried.push('watermarks: ' + e.message); }
+        } else tried.push('ticket id not found');
+        const docs = [ctx && ctx.doc, document].filter((d, i, a) => d && a.indexOf(d) === i);
+        for (const d of docs) {
+            const found = [...String((d.body && d.body.innerText) || '').matchAll(URGENT_REF_RE)];
+            if (found.length) return { ref: 'Ref:' + found[0][1], source: 'the activity shown on the page' };
+        }
+        tried.push('page: none');
+        return { ref: '', tried };
+    }
+
+    const userEmailCache = new Map();
+    async function lookupUserEmail(ctx, name) {
+        if (userEmailCache.has(name)) return userEmailCache.get(name);
+        const users = await snTable(ctx, 'sys_user', `name=${name}^active=true`, 'email,name', 3);
+        const emails = [...new Set(users.map(u => String(u.email || '').trim()).filter(Boolean))];
+        if (emails.length !== 1) throw new Error(emails.length ? `several ServiceNow users are called "${name}"` : `no active ServiceNow user "${name}" with an email address was found`);
+        userEmailCache.set(name, emails[0]);
+        return emails[0];
+    }
+
+    const URGENT_MAIL_BODY = (ref) => `Hello team,\r\n\r\nWe need this request to be reviewed urgently.\r\n\r\nJustification for the urgency:\r\n\r\n\r\n\r\n${ref}`;
+
+    function buildUrgentMailHref({ to, cc, subject, body }) {
+        const addr = list => list.filter(Boolean).map(a => a.replace(/[^A-Za-z0-9@._+-]/g, '')).join(',');
+        return `mailto:${addr(to)}?cc=${addr(cc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
+
+    function buildUrgentMailButton(mail) {
+        return `[code]<a href="${buildUrgentMailHref(mail)}" style="display:inline-block;padding:4px 10px;background:#005587;color:#fff;border-radius:4px;text-decoration:none;">✉️ Send mail</a>[/code]`;
+    }
+
+    /* ==========================================================
      *  MODAL STYLES
      * ==========================================================*/
 
@@ -11544,6 +11652,28 @@ Version 1.2.1:
             font-size: 11px !important; color: #888 !important; margin-top: 5px !important;
             line-height: 1.4; font-family: Arial, sans-serif !important;
         }
+        .sn-assign-urgent {
+            border: 1px solid #c8dbe8 !important; background: #f4f9fc !important; border-radius: 6px;
+            padding: 10px 12px; margin-bottom: 15px; font-family: Arial, sans-serif !important;
+        }
+        .sn-assign-urgent[hidden] { display: none !important; }
+        .sn-assign-urgent-title { font-size: 12px; font-weight: bold; color: #005587 !important; margin-bottom: 8px; }
+        .sn-assign-urgent .sn-assign-form-group { margin-bottom: 8px; }
+        .sn-assign-ref-row { display: flex; gap: 6px; align-items: center; }
+        .sn-assign-ref-row input { flex: 1; }
+        .sn-assign-ref-btn {
+            padding: 6px 10px; border: 1px solid #005587 !important; color: #005587 !important; background: #fff !important;
+            border-radius: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; font-family: Arial, sans-serif !important;
+        }
+        .sn-assign-ref-btn:hover:not(:disabled) { background: #eef5fa !important; }
+        .sn-assign-ref-btn:disabled { cursor: progress; opacity: .7; }
+        .sn-assign-urgent-status { font-size: 11px; line-height: 1.4; margin-top: 5px; color: #555 !important; display: flex; gap: 6px; align-items: flex-start; }
+        .sn-assign-urgent-status.ok { color: #26890d !important; }
+        .sn-assign-urgent-status.warn { color: #8a5a00 !important; }
+        .sn-assign-urgent-status.error { color: #da291c !important; }
+        .sn-assign-urgent-wheel { width: 10px; height: 10px; margin-top: 2px; flex-shrink: 0; box-sizing: border-box; border: 2px solid #005587;
+            border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+        .sn-assign-field-error { border-color: #da291c !important; box-shadow: 0 0 0 2px rgba(218,41,28,.15) !important; }
 
         #ticketAssignmentHelpModalOverlay {
             position: fixed !important; top: 0; left: 0; width: 100%; height: 100%;
@@ -11792,7 +11922,7 @@ Version 1.2.1:
                     lead(body, 'Pick which comment is added to the ticket when you assign it.');
                     body.appendChild(mockField('Default (Standard Assignment Text)', { caret: true }));
                     const types = [
-                        { bg: '#667eea', label: 'Default',     desc: 'The standard ownership message that @mentions the assignee. Missing Information and the freeze reminder are added to this one.' },
+                        { bg: '#667eea', label: 'Default',     desc: 'The ownership message that @mentions the assignee as point of contact, explains how to ask for urgent attention and ends with a ✉️ Send mail button. Missing Information and the freeze reminder are added before the signature.' },
                         { bg: '#0066cc', label: 'SPM Request', desc: 'Points the requester to the SCC/SPM exception form and tells them the request will be closed.' },
                         { bg: '#5a6672', label: 'Handover',    desc: 'Tells the requester you are on PTO and the request has been reassigned to the new assignee, with an @mention.' }
                     ];
@@ -11800,6 +11930,37 @@ Version 1.2.1:
                         badgeRow(body, { bg: t.bg, color: '#fff', label: t.label, desc: t.desc });
                     }
                     caption(body, 'The choice only applies to this assignment. The form opens on Default every time.');
+                }
+            },
+            {
+                icon: '✉️', title: 'Urgent Mail Button',
+                buildContent(body) {
+                    lead(body, 'With Default, the comment carries a button the requester clicks to ask for urgent attention by email.');
+                    const box = document.createElement('div');
+                    Object.assign(box.style, { border: '1px solid #c8dbe8', background: '#f4f9fc', borderRadius: '6px', padding: '10px 12px', maxWidth: '360px', marginBottom: '8px' });
+                    box.appendChild(span('✉️ Urgent mail button in the comment', { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#005587', marginBottom: '8px' }));
+                    box.appendChild(span('Regional leader in CC:', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', marginBottom: '3px' }));
+                    box.appendChild(mockField('EMEA: David Igualada', { caret: true }));
+                    box.appendChild(hrow([
+                        span('Ref:MSG0012345_aB3dE5fG7h…', { fontSize: '12px', color: '#333', border: '1px solid #ddd', borderRadius: '4px', padding: '5px 8px', background: '#fff', flex: '1' }),
+                        chip('🔍 Find again', '#fff', { color: '#005587', border: '1px solid #005587' }),
+                    ], { flexWrap: 'nowrap' }));
+                    box.appendChild(span('✔ Found in the emails of this ticket.', { display: 'block', fontSize: '11px', color: '#26890d', marginTop: '4px' }));
+                    body.appendChild(box);
+                    const grid = [
+                        ['Region', 'Chosen from the Requesting Member Firm (EMEA, AME or APA). Change it in the list if it is wrong; with no member firm you choose it.'],
+                        ['Reference', 'The Ref:MSG... of an email of this ticket: a reply that carries it lands back in this ticket. Found in the ticket\'s emails; if none is found, paste one from an email in the activity.'],
+                        ['Send mail', 'To the assigned technician, CC Global Service Desk and the regional leader, subject "Urgent <ticket>", body with an example line, room for the justification and the reference.'],
+                    ];
+                    const g = document.createElement('div');
+                    Object.assign(g.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '6px 0' });
+                    grid.forEach(([k, v]) => {
+                        g.appendChild(span(k, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0' }));
+                        g.appendChild(span(v, { fontSize: '12px', color: '#555', padding: '2px 0' }));
+                    });
+                    body.appendChild(g);
+                    body.appendChild(hrow([chip('✉️ Send mail', '#005587')]));
+                    caption(body, 'How the button looks in the comment. The email addresses of the technician and the leader are looked up in ServiceNow by name when you assign; if one is missing, nothing is changed and the form says why.');
                 }
             },
             {
@@ -12094,6 +12255,70 @@ Version 1.2.1:
         responseTypeGroup.appendChild(responseTypeLabel);
         responseTypeGroup.appendChild(responseTypeDropdown);
 
+        // Urgent mail (Default response only): regional leader and the ticket's email reference
+        const urgent = document.createElement('div');
+        urgent.id = 'sn-assign-urgent';
+        urgent.className = 'sn-assign-urgent';
+        const urgentTitle = document.createElement('div');
+        urgentTitle.className = 'sn-assign-urgent-title';
+        urgentTitle.textContent = '✉️ Urgent mail button in the comment';
+        const regionGroup = document.createElement('div');
+        regionGroup.className = 'sn-assign-form-group';
+        const regionLabel = document.createElement('label');
+        regionLabel.className = 'sn-assign-label';
+        regionLabel.htmlFor = 'sn-assign-region';
+        regionLabel.textContent = 'Regional leader in CC:';
+        const regionSelect = document.createElement('select');
+        regionSelect.id = 'sn-assign-region';
+        regionSelect.className = 'sn-assign-dropdown';
+        [['', 'Choose a region...'], ...Object.entries(URGENT_LEADERS).map(([r, n]) => [r, `${r}: ${n}`])].forEach(([v, t]) => {
+            const o = document.createElement('option'); o.value = v; o.textContent = t; regionSelect.appendChild(o);
+        });
+        const regionTip = document.createElement('div');
+        regionTip.id = 'sn-assign-region-tip';
+        regionTip.className = 'sn-assign-field-tip';
+        regionSelect.onchange = () => { regionSelect.classList.remove('sn-assign-field-error'); regionTip.textContent = regionSelect.value ? 'Chosen by you.' : 'Choose the region of the ticket.'; };
+        regionGroup.append(regionLabel, regionSelect, regionTip);
+
+        const refGroup = document.createElement('div');
+        refGroup.className = 'sn-assign-form-group';
+        const refLabel = document.createElement('label');
+        refLabel.className = 'sn-assign-label';
+        refLabel.htmlFor = 'sn-assign-ref';
+        refLabel.textContent = 'Email reference of the ticket:';
+        const refRow = document.createElement('div');
+        refRow.className = 'sn-assign-ref-row';
+        const refInput = document.createElement('input');
+        refInput.type = 'text';
+        refInput.id = 'sn-assign-ref';
+        refInput.className = 'sn-assign-dropdown';
+        refInput.placeholder = 'Ref:MSG...';
+        refInput.spellcheck = false;
+        refInput.oninput = () => {
+            refInput.classList.remove('sn-assign-field-error');
+            const v = refInput.value.trim();
+            if (!v) setRefStatus('Paste a Ref:MSG... from an email of this ticket.', 'warn');
+            else if (normalizeRef(v)) setRefStatus('✔ Typed by you.', 'ok');
+            else setRefStatus('This does not look like a reference: it starts with Ref:MSG.', 'error');
+        };
+        const refFind = document.createElement('button');
+        refFind.type = 'button';
+        refFind.id = 'sn-assign-ref-find';
+        refFind.className = 'sn-assign-ref-btn';
+        refFind.textContent = '🔍 Find again';
+        refFind.title = 'Look for the reference in the emails of this ticket again';
+        refFind.onclick = () => refreshTicketRef(true);
+        refRow.append(refInput, refFind);
+        const refStatus = document.createElement('div');
+        refStatus.id = 'sn-assign-ref-status';
+        refStatus.className = 'sn-assign-urgent-status';
+        refGroup.append(refLabel, refRow, refStatus);
+        const urgentTip = document.createElement('div');
+        urgentTip.className = 'sn-assign-field-tip';
+        urgentTip.textContent = `The button opens a mail to the assigned technician, CC Global Service Desk and the leader, subject "Urgent <ticket>", with the reference in the body.`;
+        urgent.append(urgentTitle, regionGroup, refGroup, urgentTip);
+        responseTypeDropdown.addEventListener('change', () => { urgent.hidden = responseTypeDropdown.value !== 'default'; });
+
         // Missing Info checkbox
         const checkboxContainer = document.createElement('div');
         checkboxContainer.className = 'sn-assign-checkbox-container';
@@ -12204,6 +12429,7 @@ Version 1.2.1:
         content.appendChild(infoBox);
         content.appendChild(formGroup);
         content.appendChild(responseTypeGroup);
+        content.appendChild(urgent);
         content.appendChild(shortDescGroup);
         content.appendChild(checkboxContainer);
         content.appendChild(freezeContainer);
@@ -12297,8 +12523,65 @@ Version 1.2.1:
         const overlay = document.getElementById('sn-assign-overlay');
         if (overlay) {
             overlay.classList.add('active');
+            refreshUrgentBlock();
             const dropdown = document.getElementById('sn-assign-team-dropdown');
             if (dropdown) setTimeout(() => dropdown.focus(), 100);
+        }
+    }
+
+    function setRefStatus(text, kind, busy) {
+        const el = document.getElementById('sn-assign-ref-status');
+        if (!el) return;
+        el.className = 'sn-assign-urgent-status' + (kind ? ' ' + kind : '');
+        el.textContent = '';
+        if (busy) { const w = document.createElement('span'); w.className = 'sn-assign-urgent-wheel'; el.appendChild(w); }
+        el.appendChild(document.createTextNode(text));
+    }
+
+    // Each time the form opens: region from the ticket, then the reference (the user can still change both)
+    function refreshUrgentBlock() {
+        const ctx = getTicketContext();
+        const select = document.getElementById('sn-assign-region');
+        const tip = document.getElementById('sn-assign-region-tip');
+        if (select) {
+            const region = ticketRegion(ctx);
+            select.value = region;
+            select.classList.remove('sn-assign-field-error');
+            if (tip) tip.textContent = region ? 'Chosen from the Requesting Member Firm of the ticket. You can change it.' : 'The region could not be read from the ticket: choose it.';
+        }
+        const urgent = document.getElementById('sn-assign-urgent');
+        const type = document.getElementById('sn-assign-response-type');
+        if (urgent && type) urgent.hidden = type.value !== 'default';
+        refreshTicketRef(false);
+    }
+
+    let refLookup = 0;
+    async function refreshTicketRef(byUser) {
+        const input = document.getElementById('sn-assign-ref');
+        const btn = document.getElementById('sn-assign-ref-find');
+        if (!input) return;
+        const run = ++refLookup;
+        input.disabled = true;
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Looking…'; }
+        setRefStatus('Looking for the reference in the emails of this ticket…', '', true);
+        try {
+            const r = await findTicketRef(getTicketContext());
+            if (run !== refLookup) return;
+            if (r.ref) {
+                input.value = r.ref;
+                setRefStatus(`✔ Found in ${r.source}.`, 'ok');
+            } else {
+                if (byUser || !normalizeRef(input.value)) input.value = '';
+                setRefStatus('⚠️ No reference found. Open an email of this ticket in its activity, copy the Ref:MSG... line at its end and paste it here.', 'warn');
+                console.warn('Ticket Assignment: no Ref found', r.tried);
+            }
+        } catch (e) {
+            if (run === refLookup) setRefStatus(`⚠️ The reference could not be looked up (${e.message}). Paste it from an email of this ticket.`, 'warn');
+        } finally {
+            if (run === refLookup) {
+                input.disabled = false;
+                if (btn) { btn.disabled = false; btn.textContent = '🔍 Find again'; }
+            }
         }
     }
 
@@ -12318,6 +12601,9 @@ Version 1.2.1:
             if (shortDescInput) shortDescInput.value = '';
             const responseTypeDropdown = document.getElementById('sn-assign-response-type');
             if (responseTypeDropdown) responseTypeDropdown.value = 'default';
+            const refInput = document.getElementById('sn-assign-ref');
+            if (refInput) { refInput.value = ''; refInput.classList.remove('sn-assign-field-error'); }
+            refLookup++;
         }
     }
 
@@ -12579,14 +12865,53 @@ Version 1.2.1:
             alert('Could not detect the ticket form. Make sure you are on a ticket page.');
             return;
         }
+        // Default response: the urgent mail button needs a region and the ticket's reference before anything changes
+        let mail = null;
+        if (responseType === 'default') {
+            const regionSelect = document.getElementById('sn-assign-region');
+            const refInput = document.getElementById('sn-assign-ref');
+            const region = regionSelect ? regionSelect.value : '';
+            const ref = normalizeRef(refInput ? refInput.value : '');
+            if (!region) {
+                regionSelect.classList.add('sn-assign-field-error');
+                regionSelect.focus();
+                const tip = document.getElementById('sn-assign-region-tip');
+                if (tip) tip.textContent = '⚠️ Choose the region: its leader goes in CC of the urgent mail.';
+                return;
+            }
+            if (!ref) {
+                refInput.classList.add('sn-assign-field-error');
+                refInput.focus();
+                setRefStatus(refInput.value.trim() ? '⚠️ This is not a reference: it looks like Ref:MSG... Fix it, then assign.' :
+                    '⚠️ The urgent mail needs the reference: paste a Ref:MSG... from an email of this ticket, then assign.', 'error');
+                return;
+            }
+            mail = { ref, region };
+        }
         console.log('🎫 Starting ticket assignment to:', assigneeName, '| Mode:', _ctx.mode);
         showLoading();
+        const loadingText = document.querySelector('#sn-assign-loading .sn-assign-loading-text');
+
+        if (mail) {
+            try {
+                if (loadingText) loadingText.textContent = 'Looking up the email addresses…';
+                const [tech, leader] = await Promise.all([lookupUserEmail(_ctx, assigneeName), lookupUserEmail(_ctx, URGENT_LEADERS[mail.region])]);
+                const ticket = getTicketNumber() || 'ticket';
+                Object.assign(mail, { to: [tech], cc: [URGENT_GSD_EMAIL, leader], subject: `Urgent ${ticket}`, body: URGENT_MAIL_BODY(mail.ref) });
+            } catch (e) {
+                hideLoading();
+                alert(`❌ Nothing was changed: the urgent mail button could not be built, ${e.message}.\n\nCheck the name of the team member and try again.`);
+                return;
+            } finally {
+                if (loadingText) loadingText.textContent = 'Assigning ticket...';
+            }
+        }
 
         try {
             await assignToTeamMember(assigneeName);
             await updateShortDescription();
             const openedByName = getOpenedByName();
-            const failedMentions = (await addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType)) || [];
+            const failedMentions = (await addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType, mail)) || [];
             await openSCTASKInBackground();
 
             let clipText = null;
@@ -12749,7 +13074,7 @@ Version 1.2.1:
         return null;
     }
 
-    async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType) {
+    async function addAdditionalComments(openedByName, assigneeName, useMissingInfoTemplate, useFreezeReminder, responseType, mail) {
         const iframeDoc = _ctx ? _ctx.doc : document;
         const textarea = await findCommentsTextarea(iframeDoc);
         if (!textarea) throw new Error('Could not find Additional Comments textarea');
@@ -12779,12 +13104,19 @@ Global Data Security Enablement`;
         } else {
             const greeting = `Hi @[${openedByName}],
 
-Our team has taken ownership of your request, and @[${assigneeName}] will be working with you directly.
-Once the ticket details have been reviewed, they will reach out if there are any questions or if additional information is required.
+Our team has taken ownership of your request, and @[${assigneeName}] will be your designated point of contact throughout the support process.
 
-Please expect an update within the next two business days.
+Your request has been registered and will be reviewed as part of our ongoing ticket management process. Should any questions arise or additional information be required, they will reach out to you accordingly.
 
-If this is an urgent request, please let us know.`;
+We aim to provide you with an update within the next two business days.
+
+If your request requires urgent attention, please send an email to the assigned technician, copy Global Service Desk ${URGENT_GSD_EMAIL} and the regional Enablement team leader (EMEA: ${URGENT_LEADERS.EMEA}, AME: ${URGENT_LEADERS.AME}, APA: ${URGENT_LEADERS.APA}) and include “Urgent <ticket number>” in the subject line and provide justification for the urgency in the email body.
+
+IMPORTANT, please make sure that the following reference is added in the email body:
+
+${mail.ref}
+
+You can send this email through the following button: ${buildUrgentMailButton(mail)}`;
 
             const freezeReminderText = useFreezeReminder ?
                 `\n\nA reminder we are currently on a change freeze for Data Security products and will be in effect until ${formatFreezeDate(getStoredFreezeDate(), getStoredTimezone())}. If you require an emergency P1 change, kindly provide business justification.` : '';
@@ -12817,7 +13149,8 @@ Thank you for your cooperation.` : '';
     }
 
     // Test only: the automated tests switch this on in their own storage
-    if (GM_getValue('toolbarSuiteTestHooks', false) === true) unsafeWindow.__assignMention = { insertTextWithMention, triggerMentionPicker };
+    if (GM_getValue('toolbarSuiteTestHooks', false) === true) unsafeWindow.__assignMention = { insertTextWithMention, triggerMentionPicker,
+        findTicketRef: () => findTicketRef(getTicketContext()), normalizeRef, buildUrgentMailHref, ticketRegion: () => ticketRegion(getTicketContext()) };
 
     function openSCTASKInBackground() {
         return new Promise((resolve) => {
