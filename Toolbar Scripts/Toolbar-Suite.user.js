@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.38.3
+// @version      2.39.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.38.3';
-    const CHANGELOG = `Version 2.38.3:
+   const SCRIPT_VERSION = '2.39.0';
+    const CHANGELOG = `Version 2.39.0:
+- NS Policies Toolkit: Copy policy: new "💾 Copy after Save" button for a policy you changed but did not save yet. Click it, then click Save as usual: once Netskope confirms the save, the policy is copied with your changes and a card on the list page says so. If the Save is refused it keeps waiting and says why; leaving without saving cancels it.
+- NS Policies Toolkit: Copy policy: the old Copy button is now "📋 Copy saved version", with a note that unsaved changes are not included.
+
+Version 2.38.3:
 - NS Policies Toolkit: Policy tools: Group pairs now replaces a group that no longer exists in AD (shown red in Netskope). Check marks it in red as "no longer in AD, will be removed", and the run adds the new group, removes the old one and saves. Before, the policy could not be saved and the red group stayed. The summary lists the groups removed.
 
 Version 2.38.2:
@@ -30575,8 +30579,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.47.3';
-    const CHANGELOG = `Version 1.47.3:
+    const SCRIPT_VERSION = '1.48.0';
+    const CHANGELOG = `Version 1.48.0:
+- Copy policy: new "💾 Copy after Save" button for a policy you changed but did not save yet. Click it, then click Save as usual: once Netskope confirms the save, the policy is copied with your changes and a card on the list page says so. If the Save is refused it keeps waiting and says why; leaving without saving cancels it.
+- Copy policy: the old Copy button is now "📋 Copy saved version", with a note that unsaved changes are not included.
+
+Version 1.47.3:
 - Policy tools: Group pairs now replaces a group that no longer exists in AD (shown red in Netskope). Check marks it in red as "no longer in AD, will be removed", and the run adds the new group, removes the old one and saves. Before, the policy could not be saved and the red group stayed. The summary lists the groups removed.
 
 Version 1.47.2:
@@ -31180,7 +31188,7 @@ Version 1.16:
         {
             key:         'policyCopy',
             label:       '📋 Copy Policy',
-            description: 'On Real-time Protection policy pages, adds a "Copy policy" button that copies the saved policy as readable text, section by section, for a support case or a ticket.',
+            description: 'On Real-time Protection policy pages, adds a "Copy policy" button that copies the policy as readable text, section by section, for a support case or a ticket: the saved version, or right after your next Save so unsaved changes are included.',
         },
         {
             key:         'bulkGroupAdd',
@@ -32702,8 +32710,28 @@ Version 1.16:
                             span(label, { fontSize: '12px', color: '#333' }),
                         ], { margin: '2px 0', flexWrap: 'nowrap' }));
                     });
+                    menu.appendChild(hrow([chip('📋 Copy saved version', '#005587')], { margin: '8px 0 0 0' }));
+                    menu.appendChild(hrow([chip('💾 Copy after Save', '#fff', { color: '#005587', border: '1px solid #005587' })], { margin: '4px 0 0 0' }));
                     body.appendChild(menu);
                     caption(body, 'Tick the sections you want. Your choice is remembered. Position shows the group order and the place in the group, for example 19.5. Metadata (ids, versions, global order) is off unless you tick it.');
+
+                    const modes = [
+                        { bg: '#005587', color: '#fff', border: 'none', label: '📋 Copy saved version', desc: 'Copies the policy as Netskope has it saved now. Changes in the form that are not saved yet are not in the copy.' },
+                        { bg: '#fff', color: '#005587', border: '1px solid #005587', label: '💾 Copy after Save', desc: 'For a policy you just changed: click it, then click Save as usual. Once Netskope confirms the save, the policy is copied with your changes.' },
+                    ];
+                    modes.forEach(m => {
+                        const row = hrow([chip(m.label, m.bg, { color: m.color, border: m.border }), span(m.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5', flex: '1', minWidth: '200px' })],
+                            { alignItems: 'flex-start', flexWrap: 'nowrap', margin: '8px 0 0 0' });
+                        body.appendChild(row);
+                    });
+                    body.appendChild(hrow([
+                        chip('⏳ Waiting for Save… (click to cancel)', '#fff8e1', { color: '#8a5a00', border: '1px solid #e0a800' }),
+                        span('→', { color: '#999' }),
+                        chip('Save', '#0073e6'),
+                        span('→', { color: '#999' }),
+                        chip('✔ Copied after Save: "Policy", 42 lines.', '#fff', { color: '#282728', border: '1px solid #26890d' }),
+                    ], { marginTop: '10px' }));
+                    caption(body, 'While it waits, the page button reads "📋 Copy policy (after Save ⏳)". The result shows in a card at the bottom right of the list page Save takes you to.');
 
                     const sample = document.createElement('pre');
                     sample.textContent = [
@@ -32722,7 +32750,9 @@ Version 1.16:
                     caption(body, 'A part of the copied text. Each section has a title, lists show how many items they hold and are never cut.');
 
                     bullets(body, [
-                        'It copies the saved configuration. Unsaved edits in the form are not included: click Save first if you need them.',
+                        'Copy saved version never includes unsaved edits: use Copy after Save for those, or save first.',
+                        'If Netskope refuses the Save, the card says why and Copy after Save keeps waiting for your next Save. Click the button again to cancel. Leaving the policy without saving cancels it too, and nothing is copied.',
+                        'Saving is always your click: the toolkit never clicks Save for you here.',
                         'Names replace ids for templates, constraint profiles, email templates, schedules, threat protection, HTTP header, destination and AI Guardrails profiles. When a name cannot be loaded, the id is shown with "(name not available)".',
                         'File constraints are described like the policy editor: the file should match or not match, with its size and file types.',
                         'Settings the toolkit does not know yet appear under Other settings, so nothing is left out.',
@@ -36266,6 +36296,8 @@ Version 1.16:
         }
         // Bulk add groups waits for the policy it opened and for the answer to its Save
         if (/^inline_policies\/(getPolicy|edit)$/.test(path)) {
+            let savedId = null;
+            try { const b = JSON.parse(body); const v = b.id != null ? b.id : b.rule_id; if (v != null) savedId = String(v).replace(/"/g, ''); } catch (e) { /* not JSON */ }
             xhr.addEventListener('load', () => {
                 try {
                     const json = xhr.responseType === 'json' ? xhr.response : JSON.parse(xhr.responseText);
@@ -36273,10 +36305,10 @@ Version 1.16:
                         const d = json && json.status === 'success' && json.data;
                         if (d && d.rule_id != null) sm.lastPolicy = { id: String(d.rule_id), name: String(d.rule_name || ''), at: Date.now() };
                     } else {
-                        sm.lastSave = { status: (json && json.status) || 'error', msg: (json && json.msg) || '', at: Date.now() };
+                        sm.lastSave = { status: (json && json.status) || 'error', msg: (json && json.msg) || '', at: Date.now(), id: savedId };
                     }
                 } catch (e) {
-                    if (/edit$/.test(path)) sm.lastSave = { status: 'error', msg: 'Netskope sent an unexpected answer.', at: Date.now() };
+                    if (/edit$/.test(path)) sm.lastSave = { status: 'error', msg: 'Netskope sent an unexpected answer.', at: Date.now(), id: savedId };
                 }
             });
         }
@@ -42076,6 +42108,8 @@ Version 1.16:
             }
             // Groups of the pairs that are still in the policies but no longer in the directory (shown red by Netskope)
             const gone = new Set(), byShort = {};
+            // A group to add was looked up by its last segment: reuse that answer for the same name
+            Object.keys(lookup).forEach(b => { if (!byShort[smShortName(b)]) byShort[smShortName(b)] = lookup[b]; });
             const aGroups = bgAGroups(pairs, list);
             for (let i = 0; i < aGroups.length; i++) {
                 const g = aGroups[i], short = smShortName(g);
@@ -42760,7 +42794,9 @@ Version 1.16:
         ['other',       'Other settings'],
         ['metadata',    'Metadata'],
     ];
-    const pc = { host: null, shadow: null, timer: null, busy: false, hasOther: false, pageSheet: false, listCache: null };
+    const pc = { host: null, shadow: null, timer: null, busy: false, hasOther: false, pageSheet: false, listCache: null,
+        armed: null,        // Copy after Save: { id, name, at, saveSeen, failedAt, leftAt } while waiting for the user's Save
+        toast: null };
 
     function pcGetSections() {
         const out = {};
@@ -42787,14 +42823,15 @@ Version 1.16:
         const right = pcPolicyId() ? pcTitleButtons() : null;
         const btn = document.getElementById(PC_BUTTON_ID);
         if (!right) { btn?.remove(); if (pc.host) pc.host.dataset.open = 'false'; return; }
-        if (btn && btn.parentElement === right) return;
+        if (btn && btn.parentElement === right) { pcButtonLabel(btn); return; }
         btn?.remove();
         const b = document.createElement('button');
         b.id = PC_BUTTON_ID;
         b.type = 'button';
         b.className = 'ns-btn ns-btn-secondary ns-left';
-        b.title = 'Copy the saved policy as readable text (NS Policies Toolkit)';
+        b.title = 'Copy the policy as readable text: the saved version, or after your next Save (NS Policies Toolkit)';
         b.appendChild(document.createTextNode('📋 Copy policy'));
+        pcButtonLabel(b);
         b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); pcToggleMenu(); });
         right.insertBefore(b, right.firstElementChild);
         const next = b.nextElementSibling;
@@ -42802,9 +42839,16 @@ Version 1.16:
         if (pc.busy) pcSetBusy(true);
     }
 
+    // While Copy after Save waits, the page button says so, also with its menu closed
+    function pcButtonLabel(btn) {
+        const text = [...btn.childNodes].find(n => n.nodeType === 3);
+        const want = pc.armed && pc.armed.id === pcPolicyId() ? '📋 Copy policy (after Save ⏳)' : '📋 Copy policy';
+        if (text && text.textContent !== want) text.textContent = want;
+    }
+
     function initPolicyCopy() {
         if (!getSetting('policyCopy') || pc.timer) return;
-        pc.timer = setInterval(pcSyncButton, 1000);
+        pc.timer = setInterval(() => { pcSyncButton(); pcWatchSave(); }, 500);
         pcSyncButton();
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && pc.host) pc.host.dataset.open = 'false'; });
         document.addEventListener('mousedown', (e) => {
@@ -42821,6 +42865,9 @@ Version 1.16:
         removeAll('#' + PC_BUTTON_ID);
         pc.host?.remove();
         pc.host = pc.shadow = null;
+        pc.armed = null;
+        pc.toast?.remove();
+        pc.toast = null;
     }
 
     /* ── Menu (shadow DOM; adoptedStyleSheets passes the page CSP) ── */
@@ -42846,6 +42893,12 @@ Version 1.16:
                 color: #fff; background: #005587; font-weight: 600; font-size: 13px; cursor: pointer;
                 display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
             button:disabled { cursor: progress; opacity: .75; }
+            button:hover:not(:disabled) { filter: brightness(1.1); }
+            button.secondary { margin-top: 6px; color: #005587; background: #fff; }
+            button.secondary:hover:not(:disabled) { filter: none; background: #eef5fa; }
+            button.secondary.armed { color: #8a5a00; background: #fff8e1; border-color: #e0a800; }
+            .note { margin-top: 6px; font-size: 11px; line-height: 1.4; color: #63666a; }
+            .note.armed { color: #8a5a00; }
             .pc-wheel { width: 12px; height: 12px; box-sizing: border-box; border: 2px solid currentColor;
                 border-right-color: transparent; border-radius: 50%; animation: pc-spin .8s linear infinite; }
             @keyframes pc-spin { to { transform: rotate(360deg); } }
@@ -42886,17 +42939,27 @@ Version 1.16:
         const copy = document.createElement('button');
         copy.type = 'button';
         copy.id = 'pc-copy';
-        copy.textContent = 'Copy';
+        copy.textContent = PC_COPY_LABEL;
+        copy.title = 'Copies the policy as Netskope has it saved now. Changes not saved yet are not included.';
         copy.addEventListener('click', () => pcCopy());
+        const after = document.createElement('button');
+        after.type = 'button';
+        after.id = 'pc-after-save';
+        after.className = 'secondary';
+        after.addEventListener('click', () => pcToggleAfterSave());
+        const note = document.createElement('div');
+        note.className = 'note';
+        note.id = 'pc-after-note';
         const status = document.createElement('div');
         status.className = 'status';
         status.id = 'pc-status';
-        menu.append(copy, status);
+        menu.append(copy, after, note, status);
         shadow.appendChild(menu);
         document.documentElement.appendChild(host);
         pc.host = host;
         pc.shadow = shadow;
         if (pc.busy) pcSetBusy(true);
+        pcRenderAfterSave();
     }
 
     function pcToggleMenu() {
@@ -42953,8 +43016,138 @@ Version 1.16:
                 const wheel = document.createElement('span');
                 wheel.className = 'pc-wheel';
                 copy.append(wheel, document.createTextNode(' Copying…'));
-            } else copy.textContent = 'Copy';
+            } else copy.textContent = PC_COPY_LABEL;
+            pcRenderAfterSave();
         }
+    }
+
+    /* ── Copy after Save: waits for the user's own Save, then copies the policy as Netskope saved it ── */
+
+    const PC_COPY_LABEL = '📋 Copy saved version';
+
+    function pcRenderAfterSave() {
+        if (!pc.shadow) return;
+        const btn = pcEl('pc-after-save'), note = pcEl('pc-after-note');
+        const armed = !!pc.armed;
+        btn.textContent = armed ? '⏳ Waiting for Save… (click to cancel)' : '💾 Copy after Save';
+        btn.classList.toggle('armed', armed);
+        btn.disabled = pc.busy;
+        btn.title = armed ? 'Click to cancel: nothing will be copied when you save' :
+            'Use it when you changed the policy and did not save yet: the copy is made right after you click Save';
+        note.classList.toggle('armed', armed);
+        note.textContent = armed
+            ? 'Now click Save in Netskope. The policy is copied as soon as Netskope confirms the save.'
+            : 'Unsaved changes? Use Copy after Save: the copy then includes them.';
+        const pageBtn = document.getElementById(PC_BUTTON_ID);
+        if (pageBtn) pcButtonLabel(pageBtn);
+    }
+
+    function pcToggleAfterSave() {
+        if (pc.busy) return;
+        if (pc.armed) {
+            pc.armed = null;
+            pcRenderAfterSave();
+            pcStatus('ℹ️ Copy after Save cancelled. Nothing was copied.', 'warn');
+            return;
+        }
+        const id = pcPolicyId();
+        if (!id) { pcStatus('Open a policy in edit mode first.', 'error'); return; }
+        const h1 = document.querySelector('.ns-policy-container .ns-policy-title h1');
+        const name = h1 ? h1.textContent.trim().replace(/^Edit\s+/, '') : 'policy ' + id;
+        pc.armed = { id, name, at: Date.now() };
+        pcRenderAfterSave();
+        pcStatus('');
+    }
+
+    // Runs every half second: copies after a confirmed Save, keeps waiting after a refused one, gives up when the user leaves.
+    function pcWatchSave() {
+        const a = pc.armed;
+        if (!a || pc.busy) return;
+        const save = sm.lastSave;
+        if (save && save.at > a.at && (!save.id || save.id === a.id)) {
+            if (save.status === 'success') {
+                pc.armed = null;
+                pcRenderAfterSave();
+                pcCopyAfterSave(a);
+                return;
+            }
+            if (a.failedAt !== save.at) {
+                a.failedAt = save.at;
+                pcStatus(`Netskope did not save: ${save.msg || 'no reason given'}. Fix it and click Save again: Copy after Save is still waiting.`, 'error');
+                pcToast(`⚠️ Netskope did not save "${a.name}": ${save.msg || 'no reason given'}. Copy after Save is still waiting for a Save.`, 'warn');
+            }
+        }
+        // Left the policy without saving: a Save answer can arrive just after the page moves, so wait 3 s first
+        if (pcPolicyId() === a.id) { a.leftAt = null; return; }
+        a.leftAt = a.leftAt || Date.now();
+        if (Date.now() - a.leftAt < 3000) return;
+        pc.armed = null;
+        pcRenderAfterSave();
+        pcToast(`ℹ️ Copy after Save cancelled: you left "${a.name}" without saving. Nothing was copied.`, 'warn');
+    }
+
+    async function pcCopyAfterSave(a) {
+        pcSetBusy(true);
+        pcStatus('');
+        pcToast(`Copying "${a.name}" as Netskope saved it…`, 'busy');
+        try {
+            const { text, data } = await pcBuildText(a.id);
+            const lines = text.trimEnd().split('\n').length;
+            if (data.missing.size) pcToast(`✔ Copied after Save: "${a.name}", ${lines} lines. Some names could not be loaded, their ids are shown.`, 'warn');
+            else pcToast(`✔ Copied after Save: "${a.name}", ${lines} lines.`, 'ok');
+            pcStatus(`✔ Copied after Save (${lines} lines).`);
+        } catch (e) {
+            pcToast(`✖ The policy was saved but could not be copied: ${e.message} Open it again and use Copy saved version.`, 'error');
+            pcStatus(e.message, 'error');
+        } finally {
+            pcSetBusy(false);
+        }
+    }
+
+    // A small card at the bottom right: the result of Copy after Save is shown on the list page Save goes back to.
+    function pcToast(text, kind) {
+        if (!pc.toast || !pc.toast.isConnected) {
+            const host = document.createElement('div');
+            host.id = 'nstk-policy-copy-toast';
+            const shadow = host.attachShadow({ mode: 'open' });
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(`
+                :host { all: initial; position: fixed !important; right: 20px !important; bottom: 20px !important;
+                    z-index: 2147483646 !important; font-family: Arial, sans-serif; }
+                .card { display: flex; align-items: flex-start; gap: 10px; max-width: 380px; box-sizing: border-box; padding: 10px 12px;
+                    font-size: 13px; line-height: 1.4; color: #282728; background: #fff; border: 1px solid #d5d5d5;
+                    border-left: 5px solid #26890d; border-radius: 6px; box-shadow: 0 6px 22px rgba(0, 0, 0, .25); }
+                .card.warn { border-left-color: #e0a800; } .card.error { border-left-color: #da291c; } .card.busy { border-left-color: #005587; }
+                .text { flex: 1; word-break: break-word; }
+                .wheel { width: 12px; height: 12px; margin-top: 3px; box-sizing: border-box; border: 2px solid #005587;
+                    border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
+                @keyframes spin { to { transform: rotate(360deg); } }
+                button { border: 0; background: transparent; font-size: 16px; line-height: 1; color: #63666a; cursor: pointer; padding: 0 2px; }
+                button:hover { color: #282728; }
+            `);
+            shadow.adoptedStyleSheets = [sheet];
+            const card = document.createElement('div');
+            const wheel = document.createElement('span');
+            wheel.className = 'wheel';
+            const t = document.createElement('span');
+            t.className = 'text';
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.textContent = '✕';
+            close.title = 'Close';
+            close.addEventListener('click', () => host.remove());
+            card.append(wheel, t, close);
+            shadow.appendChild(card);
+            document.documentElement.appendChild(host);
+            pc.toast = host;
+        }
+        const root = pc.toast.shadowRoot;
+        root.querySelector('div').className = 'card ' + (kind || 'ok');
+        root.querySelector('.wheel').hidden = kind !== 'busy';
+        root.querySelector('.wheel').style.display = kind === 'busy' ? '' : 'none';
+        root.querySelector('.text').textContent = text;
+        clearTimeout(pc.toastTimer);
+        if (kind === 'ok') pc.toastTimer = setTimeout(() => pc.toast && pc.toast.remove(), 10000);
     }
 
     /* ── Loading: the saved policy and only the name lookups it needs ── */
@@ -43416,6 +43609,24 @@ Version 1.16:
         } catch (e) { /* the copy itself already worked */ }
     }
 
+    // Loads the policy as Netskope has it saved, copies its text and hands it to the Change Tracker.
+    async function pcBuildText(id) {
+        const wanted = pcGetSections();
+        const data = await pcLoad(id, wanted);
+        pc.hasOther = pcOtherKeys(data.policy.rule_data).length > 0;
+        const otherRow = pc.shadow && pc.shadow.querySelector('label[data-row="other"]');
+        if (otherRow) otherRow.hidden = !pc.hasOther;
+        const text = pcRender(data, wanted);
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (e) {
+            if (typeof GM_setClipboard !== 'function') throw new Error('The browser refused to copy the text.');
+            GM_setClipboard(text);
+        }
+        pcSaveHandoff(data);
+        return { text, data };
+    }
+
     async function pcCopy() {
         if (pc.busy) return;
         const id = pcPolicyId();
@@ -43423,19 +43634,7 @@ Version 1.16:
         pcSetBusy(true);
         pcStatus('');
         try {
-            const wanted = pcGetSections();
-            const data = await pcLoad(id, wanted);
-            pc.hasOther = pcOtherKeys(data.policy.rule_data).length > 0;
-            const otherRow = pc.shadow && pc.shadow.querySelector('label[data-row="other"]');
-            if (otherRow) otherRow.hidden = !pc.hasOther;
-            const text = pcRender(data, wanted);
-            try {
-                await navigator.clipboard.writeText(text);
-            } catch (e) {
-                if (typeof GM_setClipboard !== 'function') throw new Error('The browser refused to copy the text.');
-                GM_setClipboard(text);
-            }
-            pcSaveHandoff(data);
+            const { text, data } = await pcBuildText(id);
             if (data.missing.size) pcStatus('✔ Copied. Some names could not be loaded, their ids are shown.', 'warn');
             else pcStatus(`✔ Copied ${text.trimEnd().split('\n').length} lines.`);
         } catch (e) {
