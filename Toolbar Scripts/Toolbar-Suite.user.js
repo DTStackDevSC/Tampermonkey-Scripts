@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.41.1
+// @version      2.42.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.41.1';
-    const CHANGELOG = `Version 2.41.1:
+   const SCRIPT_VERSION = '2.42.0';
+    const CHANGELOG = `Version 2.42.0:
+- Change Tracker: New "Console Admins" group to record Netskope console admin users: "Console Admin Added" with the user and their role, "Console Admin Role Changed" with the previous and the new role, and "Console Admin Removed". All three write the Work Note and the Comment and show in the change summary.
+
+Version 2.41.1:
 - Ticket Assignment Tool: The three regional leaders (EMEA, AME and APA) are now required. The team window does not save until all three have a name and an email, and the tool asks for them each time it opens until they are saved. Closing that window also closes the assignment form.
 - Ticket Assignment Tool: The assignment form now fits in the browser window: when it is taller than the window, its content scrolls and the title and close button stay in view.
 
@@ -18585,8 +18588,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.13.2';
-    const CHANGELOG = `Version 2.13.2:
+    const SCRIPT_VERSION = '2.14.0';
+    const CHANGELOG = `Version 2.14.0:
+- New "Console Admins" group to record Netskope console admin users: "Console Admin Added" with the user and their role, "Console Admin Role Changed" with the previous and the new role, and "Console Admin Removed". All three write the Work Note and the Comment and show in the change summary. The Feature Guide has a new Console Admins section.
+
+Version 2.13.2:
 - Enter on a name that is not in the list now adds it as a new entry, like clicking ➕ Add.
 - Leaving a name field and clicking back into it without typing keeps offering ➕ Add for the name you typed.
 - ➕ Add now explains that it only adds the name to the list and does not change anything on the Netskope tenant.
@@ -19047,6 +19053,19 @@ Version 1.4.3:
         dlp_rule_deleted: [
             { key: 'name', label: 'Name', type: 'text' },
         ],
+        console_admin_added: [
+            { key: 'adminUser', label: 'Admin user', type: 'text' },
+            { key: 'role',      label: 'Role',       type: 'text' },
+        ],
+        console_admin_role_changed: [
+            { key: 'adminUser',    label: 'Admin user',    type: 'text' },
+            { key: 'previousRole', label: 'Previous role', type: 'text' },
+            { key: 'role',         label: 'New role',      type: 'text' },
+        ],
+        console_admin_removed: [
+            { key: 'adminUser', label: 'Admin user', type: 'text' },
+            { key: 'role',      label: 'Role',       type: 'text' },
+        ],
     };
 
     /* ==========================================================
@@ -19220,6 +19239,14 @@ Version 1.4.3:
                 { label: 'DLP Rule Added',    value: 'DLP Rule Added',    color: '#007bff', schema: 'dlp_rule_full'    },
                 { label: 'DLP Rule Modified', value: 'DLP Rule Modified', color: '#6610f2', schema: 'dlp_rule_full'    },
                 { label: 'DLP Rule Removed',  value: 'DLP Rule Removed',  color: '#c0392b', schema: 'dlp_rule_deleted' },
+            ],
+        },
+        {
+            group: 'Console Admins',
+            items: [
+                { label: 'Console Admin Added',        value: 'Console Admin Added',        color: '#007bff', schema: 'console_admin_added'        },
+                { label: 'Console Admin Role Changed', value: 'Console Admin Role Changed', color: '#6610f2', schema: 'console_admin_role_changed' },
+                { label: 'Console Admin Removed',      value: 'Console Admin Removed',      color: '#c0392b', schema: 'console_admin_removed'      },
             ],
         },
         {
@@ -19468,6 +19495,7 @@ Version 1.4.3:
         { label: 'File Profiles',               types: ['File Profile Added', 'File Profile Modified', 'File Profile Removed'] },
         { label: 'DLP Profiles',                types: ['DLP Profile Added', 'DLP Profile Modified', 'DLP Profile Removed'] },
         { label: 'DLP Rules',                   types: ['DLP Rule Added', 'DLP Rule Modified', 'DLP Rule Removed'] },
+        { label: 'Console Admins',              types: ['Console Admin Added', 'Console Admin Role Changed', 'Console Admin Removed'] },
         { label: 'Handover Notes',              types: ['Handover Note'] },
         { label: 'Other',                       types: ['Custom'] },
     ];
@@ -21623,6 +21651,20 @@ Version 1.4.3:
                 commentsHeader: "We've removed the following Netskope DLP Rule as requested:",
             },
 
+            // ── Console Admins ─────────────────────────────────────
+            'Console Admin Added': {
+                workNoteHeader: 'Netskope console admin user has been added:',
+                commentsHeader: "We've given the following user admin access to the Netskope console with the role below:",
+            },
+            'Console Admin Role Changed': {
+                workNoteHeader: 'Netskope console admin role has been changed:',
+                commentsHeader: "We've changed the Netskope console admin role of the following user:",
+            },
+            'Console Admin Removed': {
+                workNoteHeader: 'Netskope console admin user has been removed:',
+                commentsHeader: "We've removed the following user's admin access to the Netskope console as requested:",
+            },
+
             // 'Custom' is intentionally absent — freeform notes don't auto-write.
         };
 
@@ -23536,6 +23578,12 @@ Version 1.4.3:
             createTypes: ['DLP Rule Added'],
             modifyTypes: ['DLP Rule Modified'],
             deleteTypes: ['DLP Rule Removed'],
+        },
+        'Console Admins': {
+            nameKey:     'adminUser',
+            createTypes: ['Console Admin Added'],
+            modifyTypes: ['Console Admin Role Changed'],
+            deleteTypes: ['Console Admin Removed'],
         },
     };
 
@@ -25697,6 +25745,26 @@ Version 1.4.3:
                         'The purple chips come from this ticket: the domains still in an SSL bypass, with their policy, and the steerings already used. A click adds the value (purple) and fills the policy, a second click takes it out. A domain of another policy starts the list over with that policy.',
                         'Only one comment is written: it tells the user the bypasses were switched from SSL Bypass to Domain Bypass, with the policy, domains and steerings, and asks them to test.',
                         'In a batch session both entries join the batch. Each entry can be edited or deleted on its own like any other.',
+                    ]);
+                }
+            },
+            {
+                icon: '🛡️',
+                title: 'Console Admins',
+                buildContent: (body) => {
+                    lead(body, 'The "Console Admins" group records who gets admin access to the Netskope console and with which role.');
+                    badgeRow(body, chip('Console Admin Added', '#007bff', { fontSize: '10px', padding: '2px 8px', radius: '10px' }), 'A user becomes a console admin. Fill Admin user (the email) and Role, the admin role given in Netskope.');
+                    badgeRow(body, chip('Console Admin Role Changed', '#6610f2', { fontSize: '10px', padding: '2px 8px', radius: '10px' }), 'The admin keeps access with another role. Fill Admin user, Previous role and New role.');
+                    badgeRow(body, chip('Console Admin Removed', '#c0392b', { fontSize: '10px', padding: '2px 8px', radius: '10px' }), 'The user is no longer a console admin. Fill Admin user and, if you know it, the Role they had.');
+                    const card = panel({ border: '1px solid #e0e0e0', borderRadius: '6px' });
+                    card.appendChild(hrow([chip('Console Admin Role Changed', '#6610f2', { fontSize: '10px', padding: '2px 8px', radius: '10px' })], { margin: '0 0 6px 0' }));
+                    card.appendChild(span('Admin user: jane.doe@example.com', { fontSize: '12px', color: '#333', display: 'block' }));
+                    card.appendChild(span('Previous role: Read Only Admin', { fontSize: '12px', color: '#333', display: 'block' }));
+                    card.appendChild(span('New role: Security Admin', { fontSize: '12px', color: '#333', display: 'block' }));
+                    body.appendChild(card);
+                    bullets(body, [
+                        'All three write a Work Note and a Comment like the other types, and ↪ Write is shown on their cards.',
+                        'The change summary lists each admin once under "Console Admins": added, role changed or removed, with the latest role. An admin added and removed in the same ticket is left out.',
                     ]);
                 }
             },
