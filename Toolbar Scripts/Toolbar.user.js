@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.42.0
+// @version      2.42.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,24 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.42.0';
-    const CHANGELOG = `Version 2.42.0:
+   const SCRIPT_VERSION = '2.42.1';
+    const CHANGELOG = `Version 2.42.1:
+- Toolbar: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer unlocks the API key or saves the change note before you finish typing.
+- ServiceNow Toolkit: The saved drafts list and the save indicator are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Mini Summary Sidebar: The summary panel and the SPM copy window are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Ticket Assignment Tool: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer adds the member or leader before you finish typing.
+- Ticket Assignment Tool: The team member list is cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Destination Profile Editor: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer starts the search before you finish typing.
+- Destination Profile Editor: Results and profile lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Row Highlighter: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer saves your username before you finish typing.
+- Change Tracker: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks a name from the list or saves before you finish typing.
+- Change Tracker: The change log, the name lists, the forms and the reminder cards are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Domain Tools: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer starts the check before you finish typing.
+- Domain Tools: Results and the extracted domain list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- NS Policies Toolkit: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer saves your name before you finish typing.
+- NS Policies Toolkit: The steering exception, Policy tools and backup lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 2.42.0:
 - Change Tracker: New "Console Admins" group to record Netskope console admin users: "Console Admin Added" with the user and their role, "Console Admin Role Changed" with the previous and the new role, and "Console Admin Removed". All three write the Work Note and the Comment and show in the change summary.
 
 Version 2.41.1:
@@ -1508,7 +1524,7 @@ Version 1.0.0:
         // Drawn in a closed shadow root, so page scripts cannot read the code or change the boxes.
         const host = document.createElement('div');
         dtAttachShadow.call(host, { mode: 'closed' }).appendChild(dtSettingsToolList.element);
-        container.innerHTML = '';
+        container.replaceChildren();
         container.appendChild(host);
     }
 
@@ -2320,7 +2336,7 @@ Version 1.0.0:
         }
 
         // Clear everything except the settings cog
-        while (menu.firstChild) menu.removeChild(menu.firstChild);
+        menu.replaceChildren();
 
         const leftEls = leftPinned
             .filter(p => toolRegistry.has(p.id))
@@ -4309,7 +4325,7 @@ Version 1.0.0:
                     finish(true);
                 };
                 go.onclick = tryIt;
-                pass.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); tryIt(); } };
+                pass.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); tryIt(); } };
                 d.querySelector('#nsapi-cancel-btn').onclick = () => finish(false);
                 d.addEventListener('cancel', e => { e.preventDefault(); finish(false); });
                 forgot.onclick = () => {
@@ -4419,7 +4435,7 @@ Version 1.0.0:
                 const sync = () => { count.textContent = `${note.value.length}/${NOTE_MAX}`; apply.disabled = !note.value.trim(); };
                 const finish = (v) => { d.close(); d.remove(); resolve(v); };
                 note.addEventListener('input', sync);
-                note.onkeydown = e => { if (e.key === 'Enter' && note.value.trim()) { e.preventDefault(); finish(note.value.trim()); } };
+                note.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing && note.value.trim()) { e.preventDefault(); finish(note.value.trim()); } };
                 d.querySelector('#nsapi-note-ritm').onclick = () => {
                     const start = note.selectionStart ?? note.value.length, end = note.selectionEnd ?? note.value.length;
                     note.value = (note.value.slice(0, start) + ticket + note.value.slice(end)).slice(0, NOTE_MAX);
@@ -6021,8 +6037,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.1';
-    const CHANGELOG = `Version 1.6.1:
+    const SCRIPT_VERSION = '1.6.2';
+    const CHANGELOG = `Version 1.6.2:
+- The saved drafts list and the save indicator are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 1.6.1:
 - The SPM Germany reminder also reads the Original ticket number field when you type it by hand or change it, and uses it when the ticket of the SPM link cannot be read. It waits until the full RITM number is typed.
 
 Version 1.6:
@@ -6315,7 +6334,7 @@ Version 1.1.4:
     function showIndicator(icon, text, actions = [], autoDismissMs = 0) {
         clearTimeout(autoDismissTimer);
         buildIndicator();
-        indicatorEl.innerHTML = '';
+        indicatorEl.replaceChildren();
         const msg = document.createElement('span');
         msg.textContent = `${icon} ${text}`;
         indicatorEl.appendChild(msg);
@@ -7177,7 +7196,7 @@ Version 1.1.4:
     function renderDraftsView() {
         const view = document.getElementById(MODAL_ID + '-view-drafts');
         if (!view) return;
-        view.innerHTML = '';
+        view.replaceChildren();
 
         const drafts = getAllDrafts();
 
@@ -7934,8 +7953,11 @@ Version 1.1.4:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.2';
-    const CHANGELOG = `Version 1.1.2:
+    const SCRIPT_VERSION = '1.1.3';
+    const CHANGELOG = `Version 1.1.3:
+- The summary panel and the SPM copy window are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 1.1.2:
 - Republished under a new file that installs in one click from the script installer page. Your saved settings are unchanged.
 
 Version 1.1.1:
@@ -8980,7 +9002,7 @@ Version 1.0.2:
         if (!content) return;
 
         // Clear existing content
-        content.innerHTML = '';
+        content.replaceChildren();
 
         // Extract data
         const data = extractSummaryData();
@@ -9245,7 +9267,7 @@ Version 1.0.2:
         }
 
         // Clear existing content
-        content.innerHTML = '';
+        content.replaceChildren();
 
         // Extract data
         const data = extractSummaryData();
@@ -10412,8 +10434,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.1';
-    const CHANGELOG = `Version 1.7.1:
+    const SCRIPT_VERSION = '1.7.2';
+    const CHANGELOG = `Version 1.7.2:
+- Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer adds the member or leader before you finish typing.
+- The team member list is cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 1.7.1:
 - The three regional leaders (EMEA, AME and APA) are now required. The team window does not save until all three have a name and an email, and the tool asks for them each time it opens until they are saved. Closing that window also closes the assignment form.
 - The assignment form now fits in the browser window: when it is taller than the window, its content scrolls and the title and close button stay in view.
 
@@ -10750,8 +10776,8 @@ Version 1.2.1:
     // mode: 'setup' (first run), 'manage' (footer button), 'complete' (asks for what the urgent mail button still needs)
     function showTeamEditor(mode, onDone) {
         if (document.querySelector('.sn-team-overlay')) return;
-        const members = JSON.parse(JSON.stringify(getStoredMembers() || []));
-        const leaders = JSON.parse(JSON.stringify(getStoredLeaders()));
+        const members = structuredClone(getStoredMembers() || []);
+        const leaders = structuredClone(getStoredLeaders());
 
         const style = document.createElement('style');
         style.textContent = TEAM_CSS;
@@ -10900,8 +10926,8 @@ Version 1.2.1:
         }
         mBtn.onclick = addMember;
         lBtn.onclick = addLeader;
-        [mName, mEmail].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter') addMember(); }));
-        [lName, lEmail].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter') addLeader(); }));
+        [mName, mEmail].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addMember(); }));
+        [lName, lEmail].forEach(x => x.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) addLeader(); }));
 
         importBtn.onclick = () => triggerTeamImport(members, leaders, (added, filled) => {
             render();
@@ -10960,7 +10986,7 @@ Version 1.2.1:
     function rebuildDropdown(members) {
         const dropdown = document.getElementById('sn-assign-team-dropdown');
         if (!dropdown) return;
-        dropdown.innerHTML = '';
+        dropdown.replaceChildren();
         const defaultOption = document.createElement('option');
         defaultOption.value = '';
         defaultOption.textContent = 'Choose a team member...';
@@ -13197,8 +13223,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.4';
-    const CHANGELOG = `Version 2.0.4:
+    const SCRIPT_VERSION = '2.0.5';
+    const CHANGELOG = `Version 2.0.5:
+- Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer starts the search before you finish typing.
+- Results and profile lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 2.0.4:
 - Saving a profile no longer fails with "type is a required field": the match type is now always sent with the values, as Netskope requires. When Netskope refuses some lines, the message lists those lines themselves, not only their numbers.
 
 Version 2.0.3:
@@ -13835,7 +13865,7 @@ Version 1.4.1:
     function buildTokenUI(tenant) {
         const container = document.getElementById('api-token-container');
         if (!container) return;
-        container.innerHTML = '';
+        container.replaceChildren();
         if (!tenant) {
             container.innerHTML = '<div style="padding: 10px; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; font-size: 13px; color: #856404;">Please select a Member Firm first</div>';
             return;
@@ -14696,7 +14726,7 @@ Version 1.4.1:
     function resetModal() {
         ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container', 'custom-category-container', 'urllist-id-lookup-container'].forEach(id => {
             const el = document.getElementById(id);
-            if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+            if (el) { el.style.display = 'none'; el.replaceChildren(); }
         });
         UI.hideStatus();
     }
@@ -14851,7 +14881,7 @@ Version 1.4.1:
         renderList(list);
         search.oninput = () => { if (!domainSearch.value.trim()) byName(); };
         domainSearch.oninput = () => { if (!domainSearch.value.trim()) byName(); };
-        domainSearch.onkeydown = (e) => { if (e.key === 'Enter') runDomainSearch(); };
+        domainSearch.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) runDomainSearch(); };
         document.getElementById('urllist-domain-search-btn').onclick = runDomainSearch;
     }
 
@@ -14958,7 +14988,7 @@ Version 1.4.1:
         const container = document.getElementById('domain-lookup-container');
         if (!container) return;
         Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
-        container.innerHTML = '';
+        container.replaceChildren();
         container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🔎 Domain Lookup' }));
         const desc = UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' });
         desc.innerHTML = 'Search for a domain or URL in every Destination Profile of this tenant.<br><span style="color: #888; font-size: 11px;">Exact, substring and wildcard entries (e.g. <code>*.example.com</code>) match; comment lines do not.</span>';
@@ -14977,7 +15007,7 @@ Version 1.4.1:
         Object.assign(cancel.style, { border: '1px solid #ccc', color: '#333' });
         cancelRow.appendChild(cancel);
         container.appendChild(cancelRow);
-        input.onkeydown = (e) => { if (e.key === 'Enter') executeDomainLookup(); };
+        input.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) executeDomainLookup(); };
         setTimeout(() => input.focus(), 100);
     }
 
@@ -14991,7 +15021,7 @@ Version 1.4.1:
             resultsArea.innerHTML = '<div style="text-align: center; padding: 30px; color: #888; font-size: 13px;">⏳ Fetching Destination Profiles from Netskope...</div>';
             const r = await dpBusy('Fetching Destination Profiles…', fetchAllProfiles);
             if (!r) return;
-            if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); resultsArea.innerHTML = ''; return; }
+            if (!r.ok) { if (!r.handled) UI.showStatus(`❌ Failed: ${r.error}`, 'error'); resultsArea.replaceChildren(); return; }
             currentProfiles = r.profiles;
         }
         const matches = currentProfiles.map(p => ({ profile: p, matchedEntries: dpMatches(p, query) })).filter(m => m.matchedEntries.length);
@@ -15001,7 +15031,7 @@ Version 1.4.1:
     /* ── Domain search results ── */
 
     function renderLookupResults(resultsArea, query, matches) {
-        resultsArea.innerHTML = '';
+        resultsArea.replaceChildren();
         const found = matches.length > 0;
         const summary = UI.createElement('div', {
             padding: '10px 14px', borderRadius: '6px', marginBottom: '12px', fontSize: '13px', fontWeight: 'bold',
@@ -15072,7 +15102,7 @@ Version 1.4.1:
         const container = document.getElementById('custom-category-container');
         if (!container) return;
         Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
-        container.innerHTML = '';
+        container.replaceChildren();
         container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '15px 0 5px 0' }, { textContent: '🏷️ Custom Category by ID' }));
         container.appendChild(UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '12px', lineHeight: '1.5' },
             { textContent: 'Look up a Custom Category by its numeric ID to see its name, status, Destination Profiles and audit info.' }));
@@ -15090,7 +15120,7 @@ Version 1.4.1:
         Object.assign(cancelBtn.style, { border: '1px solid #ccc', color: '#333' });
         cancelRow.appendChild(cancelBtn);
         container.appendChild(cancelRow);
-        idInput.onkeydown = (e) => { if (e.key === 'Enter') executeCustomCategoryLookup(); };
+        idInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) executeCustomCategoryLookup(); };
         setTimeout(() => idInput.focus(), 100);
     }
 
@@ -15113,7 +15143,7 @@ Version 1.4.1:
 
     function renderCustomCategoryResult(resultsArea, data) {
         _lastCategoryData = data;
-        resultsArea.innerHTML = '';
+        resultsArea.replaceChildren();
         const card = UI.createElement('div', { padding: '16px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#fff', fontSize: '13px', fontFamily: 'Arial, sans-serif' });
         const title = UI.createElement('div', { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' });
         title.appendChild(UI.createElement('div', { fontWeight: 'bold', fontSize: '16px', color: '#333' }, { textContent: data.name || '(unnamed)' }));
@@ -15179,7 +15209,7 @@ Version 1.4.1:
         const container = document.getElementById('urllist-id-lookup-container');
         if (!container) return;
         Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '0 0 auto' });
-        container.innerHTML = '';
+        container.replaceChildren();
         container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '4px 0 5px 0' }, { textContent: '🔗 Destination Profile by ID' }));
         const row = UI.createElement('div', { display: 'flex', gap: '8px', marginBottom: '10px', alignItems: 'stretch' });
         const idInput = UI.createElement('input', { flex: '1', padding: '6px 10px', border: '2px solid #ccc', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'monospace', outline: 'none' },
@@ -15207,18 +15237,18 @@ Version 1.4.1:
             if (!r) return;
             if (!r.ok) {
                 if (!r.handled) UI.showStatus(r.status === 404 ? '⚠️ No Destination Profile has this ID.' : `❌ Failed: ${r.error}`, r.status === 404 ? 'warning' : 'error');
-                resultsArea.innerHTML = '';
+                resultsArea.replaceChildren();
                 return;
             }
             UI.hideStatus();
             renderProfileEditor(resultsArea, r.data, doLookup);
         }
-        idInput.onkeydown = (e) => { if (e.key === 'Enter') doLookup(); };
+        idInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) doLookup(); };
         if (prefillId) { idInput.value = prefillId; doLookup(); } else setTimeout(() => idInput.focus(), 100);
     }
 
     function renderProfileEditor(resultsArea, data, reload) {
-        resultsArea.innerHTML = '';
+        resultsArea.replaceChildren();
         const info = UI.createElement('div', { padding: '8px 12px', border: '1px solid #ccc', borderRadius: '8px', backgroundColor: '#f8f9fa', marginBottom: '10px', fontSize: '12px', color: '#555' });
         const n = (data.values || []).filter(v => !String(v).trim().startsWith('#')).length;
         info.innerHTML = `
@@ -15341,8 +15371,8 @@ Version 1.4.1:
             const n = doc.getElementById(id);
             if (n?.value?.trim()) return n.value.trim();
         }
-        const m = window.location.search.match(/[?&]sys_id=([^&]+)/);
-        return m ? `SYS_${m[1].slice(0, 8)}` : null;
+        const sysId = new URLSearchParams(window.location.search).get('sys_id');
+        return sysId ? `SYS_${sysId.slice(0, 8)}` : null;
     }
 
     function insertAtCursor(textarea, text) {
@@ -15898,7 +15928,7 @@ Version 1.4.1:
                 return true;
             });
 
-            scrollArea.innerHTML = '';
+            scrollArea.replaceChildren();
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
                 empty.textContent = allGroups.length === 0 ? 'No log entries found in these values.' : 'No entries match the current filters.';
@@ -16107,8 +16137,11 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.3';
-    const CHANGELOG = `Version 2.4.3:
+    const SCRIPT_VERSION = '2.4.4';
+    const CHANGELOG = `Version 2.4.4:
+- Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer saves your username before you finish typing.
+
+Version 2.4.3:
 - Rows are now colored on the first load of a dashboard too, without having to open a ticket and come back.
 - The browser console no longer fills up with progress messages every two seconds.
 
@@ -16568,7 +16601,7 @@ Version 2.3.1:
 
         // Allow Enter key to submit
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') btnSave.click();
+            if (e.key === 'Enter' && !e.isComposing) btnSave.click();
             if (e.key === 'Escape') btnSkip.click();
         });
 
@@ -18588,8 +18621,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.14.0';
-    const CHANGELOG = `Version 2.14.0:
+    const SCRIPT_VERSION = '2.14.1';
+    const CHANGELOG = `Version 2.14.1:
+- Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks a name from the list or saves before you finish typing.
+- The change log, the name lists, the forms and the reminder cards are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 2.14.0:
 - New "Console Admins" group to record Netskope console admin users: "Console Admin Added" with the user and their role, "Console Admin Role Changed" with the previous and the new role, and "Console Admin Removed". All three write the Work Note and the Comment and show in the change summary. The Feature Guide has a new Console Admins section.
 
 Version 2.13.2:
@@ -19282,7 +19319,7 @@ Version 1.4.3:
      * @param {boolean} addPlaceholder - prepend the "— Select —" blank option
      */
     function populateSnippetSelect(selectEl, selectedValue, addPlaceholder) {
-        selectEl.innerHTML = '';
+        selectEl.replaceChildren();
         if (addPlaceholder) {
             const ph = mk('option'); ph.value = ''; ph.textContent = '— Select a change type —';
             selectEl.appendChild(ph);
@@ -19356,7 +19393,7 @@ Version 1.4.3:
         updateTriggerText();
 
         function renderList(filter) {
-            listEl.innerHTML = '';
+            listEl.replaceChildren();
             const q = filter.toLowerCase();
             let hasAny = false;
             SNIPPET_GROUPS.forEach(({ group, items }) => {
@@ -19428,6 +19465,7 @@ Version 1.4.3:
         searchInput.addEventListener('input', () => renderList(searchInput.value));
 
         searchInput.addEventListener('keydown', e => {
+            if (e.isComposing) return; // the keyboard is still composing a character (Japanese, Chinese, Korean)
             if (e.key === 'Escape') { e.preventDefault(); closeDropdown(); trigger.focus(); return; }
             const items = [...listEl.querySelectorAll('.ct-cs-item')];
             if (!items.length) return;
@@ -19940,8 +19978,8 @@ Version 1.4.3:
             const n = ticketDoc.getElementById(id);
             if (n?.value?.trim()) return n.value.trim();
         }
-        const m = window.location.search.match(/[?&]sys_id=([^&]+)/);
-        return m ? `SYS_${m[1].slice(0, 8)}` : 'UNKNOWN';
+        const sysId = new URLSearchParams(window.location.search).get('sys_id');
+        return sysId ? `SYS_${sysId.slice(0, 8)}` : 'UNKNOWN';
     }
 
     /* ==========================================================
@@ -22306,7 +22344,7 @@ Version 1.4.3:
         function renderChips(warn) {
             if (!multi) return;
             if (!tenant) tenant = getTenant() || null;
-            chipsBox.innerHTML = '';
+            chipsBox.replaceChildren();
             list.forEach(n => {
                 const ok = isOk(n);
                 const c = mk('span', { className: 'ct-cat-chip ' + (ok ? 'ct-cat-chip-ok' : 'ct-cat-chip-missing') });
@@ -22442,7 +22480,7 @@ Version 1.4.3:
             const all = names();
             let shown = ql ? all.filter(n => n.toLowerCase().includes(ql)) : all;
             if (multi) shown = shown.filter(n => !list.some(x => lc(x) === lc(n)));
-            optsBox.innerHTML = '';
+            optsBox.replaceChildren();
             items = [];
             if (!tenant) message('Choose the tenant above to see its names.');
             else if (!all.length) message('No list for this tenant yet. It fills itself when someone opens this Netskope tenant. You can add the name.');
@@ -22472,7 +22510,7 @@ Version 1.4.3:
             active = Math.max(0, Math.min(active, items.length - 1));
             items.forEach((el, i) => el.classList.toggle('ct-cat-active', i === active));
             const row = tenant && catalogCached(tenant, spec.kind);
-            footer.innerHTML = '';
+            footer.replaceChildren();
             if (!tenant) return;
             footer.appendChild(mk('span', { textContent: (row && row.checkedAt)
                 ? `Updated ${catalogAgo(row.checkedAt)} by ${row.checkedBy || 'someone'} · ` : 'Not loaded from Netskope yet · ' }));
@@ -22631,6 +22669,7 @@ Version 1.4.3:
         });
         search.addEventListener('keydown', onSearchKey);
         function onSearchKey(e) {
+            if (e.isComposing) return; // the keyboard is still composing a character (Japanese, Chinese, Korean)
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                 e.preventDefault();
                 if (!items.length) return;
@@ -22663,7 +22702,7 @@ Version 1.4.3:
     }
 
     function buildFieldInputs(schema, values, prefix, container) {
-        container.innerHTML = '';
+        container.replaceChildren();
         schema.forEach(f => {
             const wrap = css(mk('div'), { marginBottom: '7px' });
 
@@ -22810,7 +22849,7 @@ Version 1.4.3:
 
     /** Builds the freeform textarea and appends it into container. */
     function buildFreeformInput(note, prefix, container) {
-        container.innerHTML = '';
+        container.replaceChildren();
         const ta = css(mk('textarea', { id: `${prefix}-note` }), {
             width: '100%', height: '60px', resize: 'vertical',
             fontFamily: '"Courier New", Courier, monospace', fontSize: '12px',
@@ -23432,7 +23471,7 @@ Version 1.4.3:
         const sep  = '─'.repeat(50);
         const head = `Change Log — ${ticket}\nGenerated: ${nowStamp()}\n${sep}\n`;
         if (!entries.length) return head + '\n(no entries)\n';
-        return head + '\n' + [...entries].reverse()
+        return head + '\n' + entries.toReversed()
             .map(e => `[${e.ts}] ${e.type}\n${formatEntryContent(e, true)}\n`)
             .join('\n');
     }
@@ -23720,7 +23759,7 @@ Version 1.4.3:
             // Always mark entries as covered so they don't appear in the catch-all
             matching.forEach(e => coveredIds.add(e.id));
 
-            const chronological = [...matching].sort((a, b) => a.ts.localeCompare(b.ts));
+            const chronological = matching.toSorted((a, b) => a.ts.localeCompare(b.ts));
             const reconcileConf = RECONCILE_CONFIG[label];
             const lifecycleConf = LIFECYCLE_CONFIG[label];
 
@@ -24433,7 +24472,7 @@ Version 1.4.3:
         const allEntries      = loadEntries(ticket);
         const filteredEntries = filterEntries(allEntries, activeFilter);
         const isFiltered      = filteredEntries.length !== allEntries.length;
-        container.innerHTML   = '';
+        container.replaceChildren();
 
         if (countEl) {
             if (!allEntries.length) {
@@ -24465,7 +24504,7 @@ Version 1.4.3:
             return;
         }
 
-        [...filteredEntries].reverse().forEach(e =>
+        filteredEntries.toReversed().forEach(e =>
             container.appendChild(renderEntryCard(e, ticket, () => refreshLog(ticket)))
         );
     }
@@ -24914,10 +24953,10 @@ Version 1.4.3:
 
         if (!['OFFLINE', 'SESSION_EXPIRED', 'NO_ACCESS'].includes(connState)) {
             banner.style.display = 'none';
-            banner.innerHTML     = '';
+            banner.replaceChildren();
             return;
         }
-        banner.innerHTML = '';
+        banner.replaceChildren();
         banner.style.display = 'flex';
 
         const button = (text, id, colors) => {
@@ -25146,7 +25185,7 @@ Version 1.4.3:
         if (!bar) return;
         const ticket  = getTicketNumber();
         const session = getBatchSession(ticket);
-        bar.innerHTML = '';
+        bar.replaceChildren();
 
         if (inputArea) {
             inputArea.style.borderColor = session ? '#f0ad4e' : '#ddd';
@@ -26159,7 +26198,7 @@ Version 1.4.3:
     function nrdComputeDue(rows, settings, now = Date.now()) {
         const open = new Map();   // key → item
         const sameTarget = (it, tenantType, profile) => it.profile === profile && (!tenantType || !it.tenantType || it.tenantType === tenantType);
-        const sorted = rows.filter(r => r && r.entry).slice().sort((a, b) => nrdTime(a.entry.ts) - nrdTime(b.entry.ts));
+        const sorted = rows.filter(r => r && r.entry).toSorted((a, b) => nrdTime(a.entry.ts) - nrdTime(b.entry.ts));
         for (const { ticket, entry } of sorted) {
             const f = entry.fields || {};
             const profile = String(f.profileName || '').trim();
@@ -26233,7 +26272,7 @@ Version 1.4.3:
         const open = new Map();
         const sameTarget = (it, group, tenantType, name) => it.group === group && it.policyName === name
             && (!tenantType || !it.tenantType || it.tenantType === tenantType);
-        const sorted = rows.filter(r => r && r.entry).slice().sort((a, b) => nrdTime(a.entry.ts) - nrdTime(b.entry.ts));
+        const sorted = rows.filter(r => r && r.entry).toSorted((a, b) => nrdTime(a.entry.ts) - nrdTime(b.entry.ts));
         for (const { ticket, entry } of sorted) {
             const f = entry.fields || {};
             const name = String(f.policyName || '').trim();
@@ -26676,7 +26715,7 @@ Version 1.4.3:
                     catch (e) { res.textContent = '⚠ Could not save to SharePoint. Try again later.'; }
                     finally { if (ok.isConnected) { ok.disabled = false; ok.textContent = '✔ Confirm'; } }
                 };
-                input.onkeydown = (e) => { if (e.key === 'Enter') ok.click(); };
+                input.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) ok.click(); };
                 form.append(lbl, input, ok, cancel);
                 r.appendChild(form);
                 input.focus();
@@ -27452,7 +27491,7 @@ Version 1.4.3:
         checklist.after(actions);
 
         function renderChecklist(steps) {
-            checklist.innerHTML = '';
+            checklist.replaceChildren();
             checklist.style.display = 'block';
             for (const s of steps) {
                 const row = mk('div', { className: 'ct-check-row' });
@@ -27486,7 +27525,7 @@ Version 1.4.3:
         }
 
         function renderActions(result) {
-            actions.innerHTML = '';
+            actions.replaceChildren();
             const { list } = currentTarget();
             if (result.needsCreate) {
                 for (const l of result.similar || []) {
@@ -27515,7 +27554,7 @@ Version 1.4.3:
             if (!/^https:\/\/[^/]+\/.+/i.test(site)) { showError('Enter the full address of the SharePoint site, starting with https://'); return false; }
             checkBtn.disabled = true;
             checkBtn.textContent = 'Checking…';
-            actions.innerHTML = '';
+            actions.replaceChildren();
             actions.style.display = 'none';
             GM_setValue(SP_SITE_KEY, site);
             GM_setValue(SP_LIST_KEY, list);
@@ -27992,8 +28031,12 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.1';
-    const CHANGELOG = `Version 1.7.1:
+    const SCRIPT_VERSION = '1.7.2';
+    const CHANGELOG = `Version 1.7.2:
+- Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer starts the check before you finish typing.
+- Results and the extracted domain list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 1.7.1:
 - The VirusTotal limit per minute now counts the queries of every open tab and ticket together, so checks running in two tickets at once no longer go over it.
 
 Version 1.7.0:
@@ -28634,7 +28677,7 @@ Version 1.0:
         apiPanel.id = 'dt-api-panel';
         Object.assign(apiPanel.style, { display: 'none', padding: '10px 16px', background: '#f5f6ff', borderBottom: '1px solid #dde', fontSize: '12px', color: '#444' });
         function renderApiPanel() {
-            apiPanel.innerHTML = '';
+            apiPanel.replaceChildren();
             const intro = document.createElement('div');
             intro.textContent = 'Optional. With a switch on and its key in 🔑 API Keys, that value comes from the API and its browser tab no longer opens. Values not obtained show as # (you can type them).';
             Object.assign(intro.style, { marginBottom: '8px', lineHeight: '1.4' });
@@ -28978,7 +29021,7 @@ Version 1.0:
         multiResults.id = 'dt-multi-results';
         Object.assign(multiResults.style, { display: 'none', marginTop: '12px' });
         function renderMultiResults(domains) {
-            multiResults.innerHTML = '';
+            multiResults.replaceChildren();
             multiResults.style.display = 'block';
             const map = new Map();
             const unique = [...new Set(domains)];
@@ -29162,7 +29205,7 @@ Version 1.0:
 
         function runExtract() {
             const raw = textarea.value;
-            domainList.innerHTML = '';
+            domainList.replaceChildren();
             copyRow.style.display = 'none';
             countRow.style.display = 'none';
             selectedDomains.clear();
@@ -29281,7 +29324,7 @@ Version 1.0:
             checkPreview.style.display = d ? 'block' : 'none';
         });
 
-        checkInput.addEventListener('keydown', e => { if (e.key === 'Enter') runCheck(); });
+        checkInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) runCheck(); });
         checkBtn.addEventListener('click', runCheck);
 
         function checkNote(text, isError) {
@@ -29312,7 +29355,7 @@ Version 1.0:
 
         // Single check with APIs: the line in the copy format, its values, and a copy button
         async function renderSingleResult(domain, services) {
-            singleResult.innerHTML = '';
+            singleResult.replaceChildren();
             singleResult.style.display = 'block';
             const top = document.createElement('div');
             Object.assign(top.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' });
@@ -30899,8 +30942,12 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.48.0';
-    const CHANGELOG = `Version 1.48.0:
+    const SCRIPT_VERSION = '1.48.1';
+    const CHANGELOG = `Version 1.48.1:
+- Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer saves your name before you finish typing.
+- The steering exception, Policy tools and backup lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 1.48.0:
 - Copy policy: new "💾 Copy after Save" button for a policy you changed but did not save yet. Click it, then click Save as usual: once Netskope confirms the save, the policy is copied with your changes and a card on the list page says so. If the Save is refused it keeps waiting and says why; leaving without saving cancels it.
 - Copy policy: the old Copy button is now "📋 Copy saved version", with a note that unsaved changes are not included.
 
@@ -31699,7 +31746,7 @@ Version 1.16:
             nameSaveBtn.style.background = '#4caf50';
             setTimeout(() => { nameSaveBtn.textContent = 'Save'; nameSaveBtn.style.background = '#1a73e8'; }, 1500);
         });
-        nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameSaveBtn.click(); });
+        nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) nameSaveBtn.click(); });
         nameRow.appendChild(nameSaveBtn);
         scrollBody.appendChild(nameRow);
 
@@ -34524,7 +34571,7 @@ Version 1.16:
                 return true;
             });
 
-            scrollArea.innerHTML = '';
+            scrollArea.replaceChildren();
 
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
@@ -35630,7 +35677,7 @@ Version 1.16:
                 return true;
             });
 
-            scrollArea.innerHTML = '';
+            scrollArea.replaceChildren();
 
             if (filtered.length === 0) {
                 const empty = document.createElement('div');
@@ -37875,7 +37922,7 @@ Version 1.16:
         const backup = seCategoryBackup('addition');
         se.lastBackupId = backup.id;
         const log = [];
-        const sameSet = (a, b) => a.slice().sort().join('\n') === b.slice().sort().join('\n');
+        const sameSet = (a, b) => a.toSorted().join('\n') === b.toSorted().join('\n');
         const names = ids => ids.map(seCategoryName);
 
         for (const cfg of plan.filter(c => c.selected && c.toAdd.length)) {
@@ -37964,8 +38011,7 @@ Version 1.16:
 
     function seBuildSummary(plan, result) {
         const lines = [`Steering exception ${seNoun(1)} removal (${new Date().toISOString().slice(0, 10)})`];
-        const byConfig = {};
-        result.log.forEach(l => { (byConfig[l.config] = byConfig[l.config] || []).push(l); });
+        const byConfig = Object.groupBy(result.log, l => l.config);
         plan.forEach(cfg => {
             lines.push('', cfg.name + ':');
             (byConfig[cfg.name] || []).forEach(l => {
@@ -38316,7 +38362,7 @@ Version 1.16:
         const configs = seGetConfigs();
         const ids = Object.keys(configs).sort((a, b) => configs[a].name.localeCompare(configs[b].name));
 
-        box.innerHTML = '';
+        box.replaceChildren();
         ids.filter(id => ticked.has(id) || !filter || fold(configs[id].name).includes(filter)).forEach(id => {
             const row = document.createElement('label');
             row.className = 'cfg';
@@ -38370,7 +38416,7 @@ Version 1.16:
         if (se.busy) return;
         se.plan = null;
         se.confirming = false;
-        seEl('se-results').innerHTML = '';
+        seEl('se-results').replaceChildren();
         seUpdateRemoveButton();
     }
 
@@ -38458,7 +38504,7 @@ Version 1.16:
 
     function seRenderPlan() {
         const out = seEl('se-results');
-        out.innerHTML = '';
+        out.replaceChildren();
         se.plan.forEach((cfg, ci) => {
             const card = document.createElement('div');
             card.className = 'card';
@@ -38497,7 +38543,7 @@ Version 1.16:
 
     function seRenderAddPlan() {
         const out = seEl('se-results');
-        out.innerHTML = '';
+        out.replaceChildren();
         se.plan.forEach((cfg, ci) => {
             const card = document.createElement('div');
             card.className = 'card';
@@ -38622,7 +38668,7 @@ Version 1.16:
         } catch (err) {
             console.error('[NS Toolkit] Steering addition:', err);
             se.plan = null;
-            seEl('se-results').innerHTML = '';
+            seEl('se-results').replaceChildren();
             seSetStatus(`Stopped: ${err.message}\nEntries added before this point were kept. Open "↩ Backups" to undo them, or click Check again to see the current state.`, true);
         } finally {
             seSetBusy(false);
@@ -38657,7 +38703,7 @@ Version 1.16:
         } catch (err) {
             console.error('[NS Toolkit] Steering removal:', err);
             se.plan = null;
-            seEl('se-results').innerHTML = '';
+            seEl('se-results').replaceChildren();
             seSetStatus(`Stopped: ${err.message}\nChanges made before this point were kept. Open "↩ Backups" to undo them, or click Check again to see the current state.`, true);
         } finally {
             seSetBusy(false);
@@ -39077,7 +39123,7 @@ Version 1.16:
         const status = seEl('se-cat-status');
         seRenderCategoryChips();
         if (se.catalog && !force) return seRenderCategoryList();
-        seEl('se-cat-list').innerHTML = '';
+        seEl('se-cat-list').replaceChildren();
         status.textContent = 'Loading categories…';
         const list = seEl('se-cat-list');
         const wheel = suiteBusyStart(list, 'Loading categories…');
@@ -39125,7 +39171,7 @@ Version 1.16:
         seRenderPinChips();
         if (se.pinCatalog && !force) return seRenderPinList();
         const list = seEl('se-pin-list');
-        list.innerHTML = '';
+        list.replaceChildren();
         status.textContent = 'Loading certified pinned apps…';
         const wheel = suiteBusyStart(list, 'Loading apps…');
         list.style.minHeight = '80px';
@@ -39316,7 +39362,7 @@ Version 1.16:
             seShowView('main');
             se.openConfig = insideConfig ? se.currentConfig : null;
             const box = seEl('se-configs');
-            box.innerHTML = '';
+            box.replaceChildren();
             delete box.dataset.init;
             seResetPlan();
             seSetStatus('');
@@ -39611,7 +39657,7 @@ Version 1.16:
     // Pure: the three sheets for a list of policies
     function sxBuildSheets(policies, names, meta) {
         const yesNo = v => (v === true || v === 'true' ? 'Yes' : v === false || v === 'false' ? 'No' : (v == null ? '' : String(v)));
-        const list = policies.slice().sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+        const list = policies.toSorted((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
         const keys = [];
         list.forEach(p => (Array.isArray(p.criteria) ? p.criteria : []).forEach(c => { if (c && c.key && !keys.includes(c.key)) keys.push(c.key); }));
         const extra = [];
@@ -39676,7 +39722,7 @@ Version 1.16:
                 list = Array.isArray(json && json.data) ? json.data : null;
                 if (!list) throw new Error('Netskope sent an unexpected answer');
             } catch (e) {
-                throw new Error(`Could not read the SSL Decryption policies: ${e.message}. This tenant may use the older policy editor, which the export does not know yet.`);
+                throw new Error(`Could not read the SSL Decryption policies: ${e.message}. This tenant may use the older policy editor, which the export does not know yet.`, { cause: e });
             }
             const names = await sxLoadNames(progress);
             const now = new Date();
@@ -44041,7 +44087,7 @@ Version 1.16:
             overlay.remove();
             modal.remove();
         };
-        nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBtn.click(); });
+        nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) saveBtn.click(); });
 
         modal.appendChild(title);
         modal.appendChild(subtitle);

@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.3.4
+// @version      4.3.5
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,16 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.4';
-    const CHANGELOG = `Version 4.3.4:
+    const SCRIPT_VERSION = '4.3.5';
+    const CHANGELOG = `Version 4.3.5:
+- Short Description Helper: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option in a searchable list before you finish typing.
+- Short Description Helper: The searchable lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Ticket Response Helper: The custom responses window and the response list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Formatted Text Helper: The editor is cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Policy Naming Helper: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option or moves to the next question before you finish typing.
+- Policy Naming Helper: The preset lists and the quick setup questions are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 4.3.4:
 - Ticket Response Helper and Formatted Text Helper: @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
 
 Version 4.3.3:
@@ -1187,8 +1195,16 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.4';
-    const CHANGELOG = `Version 4.3.4:
+    const SCRIPT_VERSION = '4.3.5';
+    const CHANGELOG = `Version 4.3.5:
+- Short Description Helper: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option in a searchable list before you finish typing.
+- Short Description Helper: The searchable lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Ticket Response Helper: The custom responses window and the response list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Formatted Text Helper: The editor is cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+- Policy Naming Helper: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option or moves to the next question before you finish typing.
+- Policy Naming Helper: The preset lists and the quick setup questions are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 4.3.4:
 - Ticket Response Helper and Formatted Text Helper: @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
 
 Version 4.3.3:
@@ -3516,7 +3532,7 @@ Version 3.0.8.1:
         list.className = 'custom-select-list';
 
         function renderList(filter) {
-            list.innerHTML = '';
+            list.replaceChildren();
             const q = filter.toLowerCase();
             const filtered = normalized.filter(o => o.label.toLowerCase().includes(q));
             if (filtered.length === 0) {
@@ -3580,6 +3596,7 @@ Version 3.0.8.1:
         searchInput.addEventListener('input', () => renderList(searchInput.value));
 
         searchInput.addEventListener('keydown', (e) => {
+            if (e.isComposing) return; // the keyboard is still composing a character (Japanese, Chinese, Korean)
             if (e.key === 'Escape') {
                 e.preventDefault();
                 closeDropdown();
@@ -4396,8 +4413,11 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.4';
-    const CHANGELOG = `Version 2.21.4:
+    const SCRIPT_VERSION = '2.21.5';
+    const CHANGELOG = `Version 2.21.5:
+- The custom responses window and the response list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 2.21.4:
 - @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
 
 Version 2.21.3:
@@ -6615,7 +6635,7 @@ Regards.`,
 
         function renderList() {
             responses = getCustomResponses();
-            contentArea.innerHTML = '';
+            contentArea.replaceChildren();
             responseCount.textContent = `${responses.length} custom response${responses.length !== 1 ? 's' : ''}`;
 
             if (responses.length === 0) {
@@ -6707,7 +6727,7 @@ Regards.`,
 
         function showEditorView(existing, afterSave) {
             const isEdit = !!existing;
-            contentArea.innerHTML = '';
+            contentArea.replaceChildren();
             footerBar.style.display = 'none';
 
             const backRow = document.createElement('div');
@@ -8296,7 +8316,7 @@ Regards.`,
      * ==========================================================*/
 
     function buildSectionsContent(optionsContainer, categories, team, teamKey, dropdown) {
-        optionsContainer.innerHTML = '';
+        optionsContainer.replaceChildren();
 
         const sectionStates = getSectionStates();
         const sectionOrder  = getSectionOrder(teamKey);
@@ -8918,8 +8938,11 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.3';
-    const CHANGELOG = `Version 1.4.3:
+    const SCRIPT_VERSION = '1.4.4';
+    const CHANGELOG = `Version 1.4.4:
+- The editor is cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 1.4.3:
 - @mentions no longer turn into a line break or pick the wrong person. The helper now waits for ServiceNow to list the person (also when the lookup is slow) and picks exactly that name from the field's own list. If ServiceNow does not list someone, the name stays as plain text and a note asks you to retype the mention before posting.
 
 Version 1.4.2:
@@ -11255,7 +11278,7 @@ Version 1.0.3:
             }
 
             // Clear the editor
-            editor.innerHTML = '';
+            editor.replaceChildren();
 
             // Split by double newlines for paragraphs, single newlines for breaks
             const paragraphs = plainText.split('\n\n');
@@ -13615,8 +13638,12 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.6';
-    const CHANGELOG = `Version 1.5.6:
+    const SCRIPT_VERSION = '1.5.7';
+    const CHANGELOG = `Version 1.5.7:
+- Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option or moves to the next question before you finish typing.
+- The preset lists and the quick setup questions are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
+
+Version 1.5.6:
 - The Feature Guide is now visual: it shows the button, both tabs with their fields, the DLP criteria list, the Quick Setup steps, the preset bar and the panel buttons as they look on screen.
 
 Version 1.5.5:
@@ -14767,7 +14794,7 @@ Version 1.2.0:
         }
 
         function renderList(filter) {
-            list.innerHTML = '';
+            list.replaceChildren();
             const q = (filter || '').toLowerCase();
             const filtered = normalized.filter(o =>
                 o.label.toLowerCase().includes(q) || o.code.toLowerCase().includes(q)
@@ -14866,6 +14893,7 @@ Version 1.2.0:
         searchInput.addEventListener('input', () => renderList(searchInput.value));
 
         searchInput.addEventListener('keydown', e => {
+            if (e.isComposing) return; // the keyboard is still composing a character (Japanese, Chinese, Korean)
             const items = [...list.querySelectorAll('li:not(.npg-cs-no-results)')];
             if (items.length === 0) return;
             const hl  = list.querySelector('.npg-cs-hl');
@@ -15043,7 +15071,7 @@ Version 1.2.0:
         forceStyles(listContainer, { 'font-family': 'Arial,sans-serif' });
 
         function renderList() {
-            listContainer.innerHTML = '';
+            listContainer.replaceChildren();
             const presets = getPresets();
             countBadge.textContent = `${presets.length} saved`;
 
@@ -15230,7 +15258,7 @@ Version 1.2.0:
         });
 
         function populateDropdown() {
-            presetDropdown.innerHTML = '';
+            presetDropdown.replaceChildren();
             const placeholder = document.createElement('option');
             placeholder.value = '';
             const presets = getPresets();
@@ -15586,7 +15614,7 @@ Version 1.2.0:
         modal.style.setProperty('color',            '#333333',              'important');
 
         function render() {
-            modal.innerHTML = '';
+            modal.replaceChildren();
 
             const visible = getVisible();
             const total   = visible.length;
@@ -15724,7 +15752,7 @@ Version 1.2.0:
                 });
                 inp.addEventListener('focus', () => { inp.style.borderColor = '#667eea'; });
                 inp.addEventListener('blur',  () => { inp.style.borderColor = '#d1d5db'; });
-                inp.addEventListener('keydown', e => { if (e.key === 'Enter' && nextBtnRef) nextBtnRef.click(); });
+                inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && nextBtnRef) nextBtnRef.click(); });
                 answerArea.appendChild(inp);
                 getAnswer = () => inp.value.trim();
                 setTimeout(() => inp.focus(), 40);
