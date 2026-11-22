@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.43.2
+// @version      2.43.3
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.43.2';
-    const CHANGELOG = `Version 2.43.2:
+   const SCRIPT_VERSION = '2.43.3';
+    const CHANGELOG = `Version 2.43.3:
+- General Toolkit: the settings panel opens above everything on the page. Esc closes it like a click outside, the page behind waits until you close it, and the keyboard goes back to the toolbar.
+
+Version 2.43.2:
 - Toolbar: Fixed the API Keys window showing as plain unstyled text on Netskope pages. It now looks the same on Netskope as on ServiceNow.
 - Toolbar: Opening Settings again right after closing it with Esc no longer closes it straight away.
 
@@ -4864,12 +4867,14 @@ Version 1.0.0:
         return dlg;
     }
 
-    // For a window that stays in the page and is shown by a class (cls, default 'visible'): it moves
-    // into a <dialog> once, which opens with showModal() when the class is added and closes when it
-    // is removed, so the window's existing show and hide code keeps working. Esc removes the class.
+    // For a window that stays in the page and is shown and hidden by its own code: by a class (cls, default
+    // 'visible') or by any other test given as isShown (for example style.display). It moves into a <dialog>
+    // once, which opens with showModal() when the window shows and closes when it hides, so the window's
+    // existing show and hide code keeps working. Esc runs close (default: remove the class).
     function suiteModalByClass(el, opts = {}) {
         if (!el || el.__suiteDialog || !suiteModalSupported()) return el && el.__suiteDialog || null;
         const cls = opts.cls || 'visible';
+        const isShown = opts.isShown || (() => el.classList.contains(cls));
         const title = el.querySelector('h1, h2, h3');
         const dlg = suiteModalDialog(el.ownerDocument || document, opts.label || (title && title.textContent.trim()));
         el.parentNode.insertBefore(dlg, el);
@@ -4878,15 +4883,15 @@ Version 1.0.0:
         suiteModalSheet(dlg.getRootNode());
         const hide = opts.close || (() => el.classList.remove(cls));
         const sync = () => {
-            const shown = el.classList.contains(cls);
+            const shown = isShown();
             if (shown && !dlg.open) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
             else if (!shown && dlg.open) dlg.close();
         };
-        new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
+        new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
         dlg.addEventListener('cancel', (e) => { e.preventDefault(); hide(); });
         // Closed by the browser anyway (repeated Esc): same as the window's own close. The close event comes
         // a moment later, so a window opened again in between is left open.
-        dlg.addEventListener('close', () => { if (!dlg.open && el.classList.contains(cls)) hide(); });
+        dlg.addEventListener('close', () => { if (!dlg.open && isShown()) hide(); });
         sync();
         return dlg;
     }
@@ -4972,8 +4977,11 @@ Version 1.0.0:
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.4.1';
-    const CHANGELOG = `Version 1.4.1:
+    const SCRIPT_VERSION = '1.4.2';
+    const CHANGELOG = `Version 1.4.2:
+- The settings panel opens above everything on the page. Esc closes it like a click outside, the page behind waits until you close it, and the keyboard goes back to the toolbar.
+
+Version 1.4.1:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.4:
@@ -5496,6 +5504,8 @@ Version 1.2:
         modal.appendChild(footer);
         backdrop.appendChild(modal);
         document.body.appendChild(backdrop);
+        // Native modal dialog, shown and hidden with the backdrop's display; Esc closes it like a click outside
+        suiteModalByClass(backdrop, { label: 'General Toolkit', isShown: () => backdrop.style.display !== 'none', close: hideSettingsModal });
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -5663,6 +5673,7 @@ Version 1.2:
                         'A pulsing dot on the icon means a new version is available. Open settings to see what is new.',
                         'Two feature groups are available: ServiceNow tickets and Netskope support cases.',
                         'Each group can be toggled on or off independently from the settings panel.',
+                        'The settings panel opens above the page. Esc or a click outside closes it, and your toggles are already saved.',
                     ]);
                 },
             },
