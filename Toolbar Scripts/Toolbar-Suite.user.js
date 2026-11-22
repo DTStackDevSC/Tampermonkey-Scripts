@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.42.1
+// @version      2.42.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.42.1';
-    const CHANGELOG = `Version 2.42.1:
+   const SCRIPT_VERSION = '2.42.2';
+    const CHANGELOG = `Version 2.42.2:
+- Toolbar: Button hints inside the toolbar windows now show in the browser's top layer, so nothing on the ServiceNow or Netskope page can cover them.
+
+Version 2.42.1:
 - Toolbar: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer unlocks the API key or saves the change note before you finish typing.
 - ServiceNow Toolkit: The saved drafts list and the save indicator are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 - Mini Summary Sidebar: The summary panel and the SPM copy window are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
@@ -4773,6 +4776,9 @@ Version 1.0.0:
      *  under the suite's windows. Inside a suite window (fixed, z-index
      *  of 100000 or more) the suite shows the title itself, on top of
      *  everything; the title comes back when the pointer leaves.
+     *  The tooltip is a popover, so the browser draws it in the top
+     *  layer, above any page z-index and above native modal dialogs.
+     *  Browsers without popovers keep the highest z-index instead.
      * ==========================================================*/
 
     (function suiteTooltips() {
@@ -4798,11 +4804,14 @@ Version 1.0.0:
             tip = suiteBusyStyle(document.createElement('div'), {
                 position: 'fixed', 'z-index': '2147483647', 'max-width': '320px', padding: '5px 8px', 'border-radius': '4px',
                 background: '#333333', color: '#ffffff', 'font-size': '11px', 'line-height': '1.4', 'font-family': 'Arial, sans-serif',
-                'pointer-events': 'none', 'white-space': 'pre-line', 'box-shadow': '0 2px 8px rgba(0,0,0,0.25)', margin: '0'
+                'pointer-events': 'none', 'white-space': 'pre-line', 'box-shadow': '0 2px 8px rgba(0,0,0,0.25)', margin: '0',
+                inset: 'auto', border: 'none', overflow: 'visible', width: 'auto', height: 'auto'
             });
             tip.className = 'suite-tooltip';
             tip.textContent = el.dataset.suiteTitle;
+            if ('popover' in HTMLElement.prototype) tip.setAttribute('popover', 'manual');
             document.body.appendChild(tip);
+            if (tip.hasAttribute('popover')) { try { tip.showPopover(); } catch (err) { /* keeps the z-index */ } }
             const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
             const below = r.bottom + 6 + t.height <= window.innerHeight;
             tip.style.setProperty('top', (below ? r.bottom + 6 : Math.max(4, r.top - 6 - t.height)) + 'px', 'important');

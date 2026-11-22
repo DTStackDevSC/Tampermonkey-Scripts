@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.3.5
+// @version      4.3.6
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.5';
-    const CHANGELOG = `Version 4.3.5:
+    const SCRIPT_VERSION = '4.3.6';
+    const CHANGELOG = `Version 4.3.6:
+- Ticket Response Helper: The hints of the variable buttons in the custom response editor now show in the browser's top layer, so nothing on the page can cover them.
+- Formatted Text Helper: Pasted content is first cleaned by the browser's own safety filter, where the browser has one, and then by the helper as before. What you paste looks the same.
+
+Version 4.3.5:
 - Short Description Helper: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option in a searchable list before you finish typing.
 - Short Description Helper: The searchable lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 - Ticket Response Helper: The custom responses window and the response list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
@@ -1195,8 +1199,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.5';
-    const CHANGELOG = `Version 4.3.5:
+    const SCRIPT_VERSION = '4.3.6';
+    const CHANGELOG = `Version 4.3.6:
+- Ticket Response Helper: The hints of the variable buttons in the custom response editor now show in the browser's top layer, so nothing on the page can cover them.
+- Formatted Text Helper: Pasted content is first cleaned by the browser's own safety filter, where the browser has one, and then by the helper as before. What you paste looks the same.
+
+Version 4.3.5:
 - Short Description Helper: Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option in a searchable list before you finish typing.
 - Short Description Helper: The searchable lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 - Ticket Response Helper: The custom responses window and the response list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
@@ -4413,8 +4421,11 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.5';
-    const CHANGELOG = `Version 2.21.5:
+    const SCRIPT_VERSION = '2.21.6';
+    const CHANGELOG = `Version 2.21.6:
+- The hints of the variable buttons in the custom response editor now show in the browser's top layer, so nothing on the page can cover them.
+
+Version 2.21.5:
 - The custom responses window and the response list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
 Version 2.21.4:
@@ -6859,7 +6870,10 @@ Regards.`,
                 const tooltipEl = document.createElement('div');
                 tooltipEl.className = 'custom-response-tooltip';
                 tooltipEl.textContent = v.tooltip;
-                Object.assign(tooltipEl.style, { position: 'fixed', background: '#333', color: '#fff', padding: '6px 10px', borderRadius: '4px', fontSize: '11px', whiteSpace: 'nowrap', zIndex: '20000', pointerEvents: 'none', display: 'none', boxShadow: '0 2px 6px rgba(0,0,0,0.25)' });
+                Object.assign(tooltipEl.style, { position: 'fixed', background: '#333', color: '#fff', padding: '6px 10px', borderRadius: '4px', fontSize: '11px', whiteSpace: 'nowrap', zIndex: '20000', pointerEvents: 'none', display: 'none', boxShadow: '0 2px 6px rgba(0,0,0,0.25)', inset: 'auto', margin: '0', border: 'none', overflow: 'visible' });
+                // A popover is drawn in the browser's top layer, above every window of the page.
+                const tipPopover = 'popover' in HTMLElement.prototype;
+                if (tipPopover) tooltipEl.setAttribute('popover', 'manual');
                 document.body.appendChild(tooltipEl);
 
                 const varBtn = document.createElement('button');
@@ -6872,8 +6886,13 @@ Regards.`,
                     tooltipEl.style.left = `${rect.left}px`;
                     tooltipEl.style.top  = `${rect.top - 30}px`;
                     tooltipEl.style.display = 'block';
+                    if (tipPopover && tooltipEl.isConnected && !tooltipEl.matches(':popover-open')) { try { tooltipEl.showPopover(); } catch (err) { /* keeps the z-index */ } }
                 };
-                varBtn.onmouseout = () => { varBtn.style.backgroundColor = '#f0f2ff'; varBtn.style.color = '#667eea'; tooltipEl.style.display = 'none'; };
+                varBtn.onmouseout = () => {
+                    varBtn.style.backgroundColor = '#f0f2ff'; varBtn.style.color = '#667eea';
+                    if (tipPopover && tooltipEl.matches(':popover-open')) tooltipEl.hidePopover();
+                    tooltipEl.style.display = 'none';
+                };
                 varBtn.onclick = () => {
                     const start = bodyTextarea.selectionStart;
                     const end   = bodyTextarea.selectionEnd;
@@ -8938,8 +8957,11 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.4';
-    const CHANGELOG = `Version 1.4.4:
+    const SCRIPT_VERSION = '1.4.5';
+    const CHANGELOG = `Version 1.4.5:
+- Pasted content is first cleaned by the browser's own safety filter, where the browser has one, and then by the helper as before. What you paste looks the same.
+
+Version 1.4.4:
 - The editor is cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
 Version 1.4.3:
@@ -12036,9 +12058,23 @@ Version 1.0.3:
         return keep.join('; ');
     }
 
+    // Pasted content goes first through the browser's own sanitizer (Sanitizer API) where it exists:
+    // with an empty configuration it keeps every safe element, attribute and style, and removes
+    // scripts, event handlers, javascript: links and frames. The rules below then keep only what
+    // ServiceNow should get. Browsers without it use the inert parser alone, as before.
+    function parsePasteSafely(html) {
+        if (typeof Document !== 'undefined' && typeof Document.parseHTML === 'function') {
+            try {
+                const root = Document.parseHTML('<div>' + html + '</div>', { sanitizer: {} }).body.firstChild;
+                if (root) return root;
+            } catch (e) { /* fall back to the inert parser */ }
+        }
+        return parseInert(html);
+    }
+
     function sanitizePastedHTML(html) {
-        // Pasted content comes from anywhere: parse it in an inert document so nothing in it runs
-        const temp = parseInert(html);
+        // Pasted content comes from anywhere: parse it safely so nothing in it runs
+        const temp = parsePasteSafely(html);
 
         // Drop dangerous or noise containers entirely
         temp.querySelectorAll('script, style, meta, link, title, head, noscript, iframe, object, embed')
