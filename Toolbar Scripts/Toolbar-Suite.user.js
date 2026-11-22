@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.43.3
+// @version      2.43.4
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.43.3';
-    const CHANGELOG = `Version 2.43.3:
+   const SCRIPT_VERSION = '2.43.4';
+    const CHANGELOG = `Version 2.43.4:
+- ServiceNow Toolkit: the Settings panel (also the Saved Drafts view) opens above everything on the page. Esc closes it like ✕, the page behind waits until you close it, and the keyboard goes back to the toolbar.
+
+Version 2.43.3:
 - General Toolkit: the settings panel opens above everything on the page. Esc closes it like a click outside, the page behind waits until you close it, and the keyboard goes back to the toolbar.
 
 Version 2.43.2:
@@ -6180,8 +6183,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.3';
-    const CHANGELOG = `Version 1.6.3:
+    const SCRIPT_VERSION = '1.6.4';
+    const CHANGELOG = `Version 1.6.4:
+- The Settings panel (also the Saved Drafts view) opens above everything on the page. Esc closes it like ✕, the page behind waits until you close it, and the keyboard goes back to the toolbar.
+
+Version 1.6.3:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.6.2:
@@ -6675,6 +6681,7 @@ Version 1.1.4:
                         'On RITM and INC ticket pages, autosave activates automatically when Work Notes or Comments fields are detected.',
                         'A floating indicator in the bottom-right corner shows save status and any restore prompts.',
                         'Settings are saved across browser sessions via Tampermonkey storage.',
+                        'The Settings panel opens above the page. Esc, ✕ or a click outside closes it, and your toggles are already saved.',
                     ]);
                 }
             },
@@ -7143,6 +7150,8 @@ Version 1.1.4:
 
         backdrop.appendChild(card);
         document.body.appendChild(backdrop);
+        // Native modal dialog, shown and hidden with the backdrop's display; Esc closes it like ✕
+        suiteModalByClass(backdrop, { label: 'ServiceNow Toolkit', isShown: () => backdrop.style.display !== 'none', close: hideModal });
 
         // Build both views
         buildSettingsView(body);
