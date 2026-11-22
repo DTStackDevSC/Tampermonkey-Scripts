@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.42.2
+// @version      2.43.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.42.2';
-    const CHANGELOG = `Version 2.42.2:
+   const SCRIPT_VERSION = '2.43.0';
+   const CHANGELOG = `Version 2.43.0:
+- All tools: the Feature Guide and What's New windows of every tool now open above everything on the ServiceNow or Netskope page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 2.42.2:
 - Toolbar: Button hints inside the toolbar windows now show in the browser's top layer, so nothing on the ServiceNow or Netskope page can cover them.
 
 Version 2.42.1:
@@ -1675,8 +1678,7 @@ Version 1.0.0:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
 
         // Close on overlay click
         overlay.onclick = () => {
@@ -1819,7 +1821,8 @@ Version 1.0.0:
                     bullets(body, [
                         'Click the floating button to open or close the menu.',
                         'Click any tool icon to run that tool.',
-                        'Click the gear to open the Settings window.'
+                        'Click the gear to open the Settings window.',
+                        'Feature Guide and What\'s New windows open above the page: Esc, ✕ or Close takes you back where you were.'
                     ]);
                 }
             },
@@ -2216,8 +2219,7 @@ Version 1.0.0:
         overlay.onclick  = () => closeBtn.click();
 
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -4771,6 +4773,69 @@ Version 1.0.0:
     }
 
     /* ==========================================================
+     *  NATIVE WINDOWS (core, shared by every tool)
+     *  suiteModal(overlay, modal) opens an overlay and window pair inside a
+     *  native <dialog> shown with showModal(). The browser then draws it
+     *  above everything on the page (top layer), makes the page behind
+     *  it inert, keeps keyboard focus inside and gives focus back to the
+     *  button that opened it. The overlay and the window keep their ids,
+     *  look and close code: Esc runs the same close as a click on the
+     *  overlay, and the <dialog> goes away by itself as soon as the
+     *  window is removed. The modal may also sit inside the overlay.
+     *  Styles are inline and !important (ServiceNow dark theme), the
+     *  backdrop rule goes through adoptedStyleSheets (Netskope CSP).
+     *  opts: { parent, label, close }.
+     * ==========================================================*/
+
+    function suiteModalSheet(root) {
+        try {
+            if (!root || !('adoptedStyleSheets' in root)) return;
+            const win = (root.ownerDocument || root).defaultView || window;
+            if ((root.adoptedStyleSheets || []).some(s => s.__suiteModal)) return;
+            const sheet = new win.CSSStyleSheet();
+            sheet.replaceSync('dialog.suite-modal::backdrop { background: transparent !important; overflow: hidden; overscroll-behavior: contain; }'
+                + ' dialog.suite-modal:modal { overscroll-behavior: contain; }');
+            sheet.__suiteModal = true;
+            root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+        } catch (e) { /* the default backdrop is only a light tint */ }
+    }
+
+    function suiteModal(overlay, modal, opts = {}) {
+        const watch = modal || overlay;
+        const parent = opts.parent || document.body;
+        const doc = parent.ownerDocument || document;
+        const add = () => { if (overlay) parent.appendChild(overlay); if (modal && !(overlay && overlay.contains(modal))) parent.appendChild(modal); };
+        if (typeof HTMLDialogElement !== 'function' || !('showModal' in HTMLDialogElement.prototype)) { add(); return null; }
+        const dlg = doc.createElement('dialog');
+        dlg.className = 'suite-modal';
+        const title = watch.querySelector('h1, h2, h3');
+        dlg.setAttribute('aria-label', opts.label || (title && title.textContent.trim()) || 'Window');
+        suiteBusyStyle(dlg, {
+            position: 'fixed', inset: '0', width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none',
+            margin: '0', padding: '0', border: '0', background: 'transparent', color: '#333333',
+            overflow: 'hidden', 'overscroll-behavior': 'contain', 'box-sizing': 'border-box'
+        });
+        if (overlay) dlg.appendChild(overlay);
+        if (modal && !(overlay && overlay.contains(modal))) dlg.appendChild(modal);
+        parent.appendChild(dlg);
+        suiteModalSheet(dlg.getRootNode());
+        const close = opts.close || (() => { if (overlay && overlay.isConnected) overlay.click(); else watch.remove(); });
+        const finish = () => { obs.disconnect(); if (dlg.open) dlg.close(); dlg.remove(); };
+        const obs = new MutationObserver(() => { if (!dlg.contains(watch)) finish(); });
+        obs.observe(dlg, { childList: true, subtree: true });
+        // Esc: the window's own close, so a window that asks before closing still asks
+        dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+        // The browser may close the dialog anyway (repeated Esc): run the close, or show it again
+        dlg.addEventListener('close', () => {
+            if (!dlg.isConnected || !dlg.contains(watch)) return;
+            close();
+            if (dlg.isConnected && dlg.contains(watch)) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+        });
+        try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+        return dlg;
+    }
+
+    /* ==========================================================
      *  TOOLTIPS ABOVE THE SUITE'S WINDOWS (core)
      *  ServiceNow turns title attributes into its own tooltips, drawn
      *  under the suite's windows. Inside a suite window (fixed, z-index
@@ -4851,8 +4916,11 @@ Version 1.0.0:
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.4';
-    const CHANGELOG = `Version 1.4:
+    const SCRIPT_VERSION = '1.4.1';
+    const CHANGELOG = `Version 1.4.1:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.4:
 - Added a ? Help button to the settings panel that opens a visual Feature Guide covering both tool groups and the ticket quick-open mechanism.
 
 Version 1.3.3:
@@ -5118,7 +5186,7 @@ Version 1.2:
         });
 
         modal.append(title, cardsWrap, closeBtn);
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal);
         overlay.onclick = () => closeBtn.click();
     }
 
@@ -5910,8 +5978,7 @@ Version 1.2:
         overlay.onclick  = () => closeBtn.click();
 
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     function showSettingsModal() {
@@ -6046,8 +6113,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.2';
-    const CHANGELOG = `Version 1.6.2:
+    const SCRIPT_VERSION = '1.6.3';
+    const CHANGELOG = `Version 1.6.3:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.6.2:
 - The saved drafts list and the save indicator are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
 Version 1.6.1:
@@ -6905,8 +6975,7 @@ Version 1.1.4:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -7697,7 +7766,7 @@ Version 1.1.4:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
         overlay.appendChild(modal);
-        document.body.appendChild(overlay);
+        suiteModal(overlay, modal);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeButton.click(); });
     }
 
@@ -7962,8 +8031,11 @@ Version 1.1.4:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.3';
-    const CHANGELOG = `Version 1.1.3:
+    const SCRIPT_VERSION = '1.1.4';
+    const CHANGELOG = `Version 1.1.4:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.1.3:
 - The summary panel and the SPM copy window are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
 Version 1.1.2:
@@ -8155,8 +8227,7 @@ Version 1.0.2:
 
         modal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
 
         // Close on overlay click
         overlay.onclick = () => {
@@ -8769,8 +8840,7 @@ Version 1.0.2:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -9423,8 +9493,11 @@ Version 1.0.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.0';
-    const CHANGELOG = `Version 1.2.0:
+    const SCRIPT_VERSION = '1.2.1';
+    const CHANGELOG = `Version 1.2.1:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.2.0:
 - Added a "? Help" button next to the version number in the form. It opens a visual Feature Guide that explains every field of the request form and how the pre-filled form opens.
 - The request form and its windows now stay readable when ServiceNow uses a dark theme.
 
@@ -9680,8 +9753,7 @@ Version 1.1.1:
 
         clModal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(clModal);
+        suiteModal(overlay, clModal);
         overlay.onclick = () => closeButton.click();
     }
 
@@ -10027,8 +10099,7 @@ Version 1.1.1:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     function injectStyles() {
@@ -10443,8 +10514,11 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.2';
-    const CHANGELOG = `Version 1.7.2:
+    const SCRIPT_VERSION = '1.7.3';
+    const CHANGELOG = `Version 1.7.3:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.7.2:
 - Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer adds the member or leader before you finish typing.
 - The team member list is cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
@@ -11128,8 +11202,7 @@ Version 1.2.1:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
 
         overlay.onclick = () => closeButton.click();
     }
@@ -12091,8 +12164,7 @@ Version 1.2.1:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -13232,8 +13304,11 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.5';
-    const CHANGELOG = `Version 2.0.5:
+    const SCRIPT_VERSION = '2.0.6';
+    const CHANGELOG = `Version 2.0.6:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 2.0.5:
 - Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer starts the search before you finish typing.
 - Results and profile lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
@@ -13862,8 +13937,7 @@ Version 1.4.1:
         modal.appendChild(closeBtn);
 
         overlay.onclick = closeModal;
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -14508,8 +14582,7 @@ Version 1.4.1:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -16146,8 +16219,11 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.4';
-    const CHANGELOG = `Version 2.4.4:
+    const SCRIPT_VERSION = '2.4.5';
+    const CHANGELOG = `Version 2.4.5:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 2.4.4:
 - Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer saves your username before you finish typing.
 
 Version 2.4.3:
@@ -16393,8 +16469,7 @@ Version 2.3.1:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
 
         // Close on overlay click
         overlay.onclick = () => {
@@ -17509,8 +17584,7 @@ Version 2.3.1:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -18630,8 +18704,11 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.14.1';
-    const CHANGELOG = `Version 2.14.1:
+    const SCRIPT_VERSION = '2.14.2';
+    const CHANGELOG = `Version 2.14.2:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 2.14.1:
 - Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks a name from the list or saves before you finish typing.
 - The change log, the name lists, the forms and the reminder cards are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
@@ -19731,7 +19808,7 @@ Version 1.4.3:
         };
 
         modal.append(h2, info, cardsWrap, btn);
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal);
         overlay.onclick = () => btn.click();
     }
 
@@ -26155,8 +26232,7 @@ Version 1.4.3:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -28040,8 +28116,11 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.2';
-    const CHANGELOG = `Version 1.7.2:
+    const SCRIPT_VERSION = '1.7.3';
+    const CHANGELOG = `Version 1.7.3:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.7.2:
 - Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer starts the check before you finish typing.
 - Results and the extracted domain list are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
@@ -28264,7 +28343,7 @@ Version 1.0:
 
         modal.append(title, versionInfo, cardsWrap, closeBtn);
         overlay.appendChild(modal);
-        document.body.appendChild(overlay);
+        suiteModal(overlay, modal);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeBtn.click(); });
     }
 
@@ -29813,7 +29892,7 @@ Version 1.0:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -29913,8 +29992,11 @@ Version 1.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
+    const SCRIPT_VERSION = '1.1.1';
+    const CHANGELOG = `Version 1.1.1:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.1.0:
 - Added a "? Help" button next to the version number at the bottom of the window. It opens a visual Feature Guide that explains what is filled in and how the reminder form opens.
 - The window and its changelog now stay readable on dark themed pages.
 
@@ -30203,8 +30285,7 @@ Version 0.9.1:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeBtn);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
         overlay.onclick = () => closeBtn.click();
     }
 
@@ -30548,8 +30629,7 @@ Version 0.9.1:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     function initializeModal() {
@@ -30951,8 +31031,11 @@ Version 0.9.1:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.48.1';
-    const CHANGELOG = `Version 1.48.1:
+    const SCRIPT_VERSION = '1.48.2';
+    const CHANGELOG = `Version 1.48.2:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.48.1:
 - Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer saves your name before you finish typing.
 - The steering exception, Policy tools and backup lists are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
@@ -31414,8 +31497,7 @@ Version 1.16:
         modal.appendChild(cardsContainer);
         modal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
 
         overlay.onclick = () => closeButton.click();
     }
@@ -33383,8 +33465,7 @@ Version 1.16:
         overlay.onclick  = () => closeBtn.click();
 
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        suiteModal(overlay, modal);
     }
 
     function showSettingsModal() {

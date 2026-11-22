@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.3.6
+// @version      4.4.0
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.6';
-    const CHANGELOG = `Version 4.3.6:
+    const SCRIPT_VERSION = '4.4.0';
+    const CHANGELOG = `Version 4.4.0:
+- All helpers: the Feature Guide and What's New windows of every helper now open above everything on the ServiceNow or Netskope page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 4.3.6:
 - Ticket Response Helper: The hints of the variable buttons in the custom response editor now show in the browser's top layer, so nothing on the page can cover them.
 - Formatted Text Helper: Pasted content is first cleaned by the browser's own safety filter, where the browser has one, and then by the helper as before. What you paste looks the same.
 
@@ -1188,6 +1191,69 @@ Version 4.0.0:
         try { return await work(); } finally { busy.stop(); }
     }
 
+    /* ==========================================================
+     *  NATIVE WINDOWS (core, shared by every tool)
+     *  helpersModal(overlay, modal) opens an overlay and window pair inside a
+     *  native <dialog> shown with showModal(). The browser then draws it
+     *  above everything on the page (top layer), makes the page behind
+     *  it inert, keeps keyboard focus inside and gives focus back to the
+     *  button that opened it. The overlay and the window keep their ids,
+     *  look and close code: Esc runs the same close as a click on the
+     *  overlay, and the <dialog> goes away by itself as soon as the
+     *  window is removed. The modal may also sit inside the overlay.
+     *  Styles are inline and !important (ServiceNow dark theme), the
+     *  backdrop rule goes through adoptedStyleSheets (Netskope CSP).
+     *  opts: { parent, label, close }.
+     * ==========================================================*/
+
+    function helpersModalSheet(root) {
+        try {
+            if (!root || !('adoptedStyleSheets' in root)) return;
+            const win = (root.ownerDocument || root).defaultView || window;
+            if ((root.adoptedStyleSheets || []).some(s => s.__suiteModal)) return;
+            const sheet = new win.CSSStyleSheet();
+            sheet.replaceSync('dialog.helpers-modal::backdrop { background: transparent !important; overflow: hidden; overscroll-behavior: contain; }'
+                + ' dialog.helpers-modal:modal { overscroll-behavior: contain; }');
+            sheet.__suiteModal = true;
+            root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+        } catch (e) { /* the default backdrop is only a light tint */ }
+    }
+
+    function helpersModal(overlay, modal, opts = {}) {
+        const watch = modal || overlay;
+        const parent = opts.parent || document.body;
+        const doc = parent.ownerDocument || document;
+        const add = () => { if (overlay) parent.appendChild(overlay); if (modal && !(overlay && overlay.contains(modal))) parent.appendChild(modal); };
+        if (typeof HTMLDialogElement !== 'function' || !('showModal' in HTMLDialogElement.prototype)) { add(); return null; }
+        const dlg = doc.createElement('dialog');
+        dlg.className = 'helpers-modal';
+        const title = watch.querySelector('h1, h2, h3');
+        dlg.setAttribute('aria-label', opts.label || (title && title.textContent.trim()) || 'Window');
+        helpersBusyStyle(dlg, {
+            position: 'fixed', inset: '0', width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none',
+            margin: '0', padding: '0', border: '0', background: 'transparent', color: '#333333',
+            overflow: 'hidden', 'overscroll-behavior': 'contain', 'box-sizing': 'border-box'
+        });
+        if (overlay) dlg.appendChild(overlay);
+        if (modal && !(overlay && overlay.contains(modal))) dlg.appendChild(modal);
+        parent.appendChild(dlg);
+        helpersModalSheet(dlg.getRootNode());
+        const close = opts.close || (() => { if (overlay && overlay.isConnected) overlay.click(); else watch.remove(); });
+        const finish = () => { obs.disconnect(); if (dlg.open) dlg.close(); dlg.remove(); };
+        const obs = new MutationObserver(() => { if (!dlg.contains(watch)) finish(); });
+        obs.observe(dlg, { childList: true, subtree: true });
+        // Esc: the window's own close, so a window that asks before closing still asks
+        dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+        // The browser may close the dialog anyway (repeated Esc): run the close, or show it again
+        dlg.addEventListener('close', () => {
+            if (!dlg.isConnected || !dlg.contains(watch)) return;
+            close();
+            if (dlg.isConnected && dlg.contains(watch)) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+        });
+        try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+        return dlg;
+    }
+
     /* === TOOL: SHORT DESCRIPTION HELPER === */
     (() => {
         'use strict';
@@ -1199,8 +1265,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.3.6';
-    const CHANGELOG = `Version 4.3.6:
+    const SCRIPT_VERSION = '4.4.0';
+    const CHANGELOG = `Version 4.4.0:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 4.3.6:
 - Ticket Response Helper: The hints of the variable buttons in the custom response editor now show in the browser's top layer, so nothing on the page can cover them.
 - Formatted Text Helper: Pasted content is first cleaned by the browser's own safety filter, where the browser has one, and then by the helper as before. What you paste looks the same.
 
@@ -2793,8 +2862,7 @@ Version 3.0.8.1:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
 
         overlay.onclick = () => closeButton.click();
     }
@@ -3215,7 +3283,8 @@ Version 3.0.8.1:
                     caption(body, 'Helper panel, Update Date and Open Tenant, from left to right.');
                     bullets(body, [
                         'Click 📝 to open the panel, fill in the fields and click "Change Short description".',
-                        'If the ticket already uses the standard format, the panel opens with every field filled in.'
+                        'If the ticket already uses the standard format, the panel opens with every field filled in.',
+                        'Feature Guide and What\'s New windows open above the page: Esc, ✕ or Close takes you back where you were.'
                     ]);
                 }
             },
@@ -3471,8 +3540,7 @@ Version 3.0.8.1:
         overlay.onclick  = () => closeBtn.click();
 
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -4421,8 +4489,11 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.6';
-    const CHANGELOG = `Version 2.21.6:
+    const SCRIPT_VERSION = '2.21.7';
+    const CHANGELOG = `Version 2.21.7:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 2.21.6:
 - The hints of the variable buttons in the custom response editor now show in the browser's top layer, so nothing on the page can cover them.
 
 Version 2.21.5:
@@ -7191,8 +7262,7 @@ Regards.`,
         modal.appendChild(versionInfo);
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
         overlay.onclick = () => closeButton.click();
     }
 
@@ -7694,8 +7764,7 @@ Regards.`,
         overlay.onclick  = () => closeBtn.click();
 
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
     }
 
     /* ==========================================================
@@ -8957,8 +9026,11 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.5';
-    const CHANGELOG = `Version 1.4.5:
+    const SCRIPT_VERSION = '1.4.6';
+    const CHANGELOG = `Version 1.4.6:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.4.5:
 - Pasted content is first cleaned by the browser's own safety filter, where the browser has one, and then by the helper as before. What you paste looks the same.
 
 Version 1.4.4:
@@ -9315,8 +9387,7 @@ Version 1.0.3:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
 
         overlay.onclick = () => {
             closeButton.click();
@@ -10906,8 +10977,7 @@ Version 1.0.3:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
     }
 
     /* ----------------------------------------------------------*/
@@ -12726,8 +12796,11 @@ Version 1.0.3:
         if (!isToolEnabled('slaBanner') || !dtToolRunsHere('slaBanner')) return;
 
 
-    const SCRIPT_VERSION = '1.4.1';
-    const CHANGELOG = `Version 1.4.1:
+    const SCRIPT_VERSION = '1.4.2';
+    const CHANGELOG = `Version 1.4.2:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.4.1:
 - The banner also stays hidden on tickets that are Closed Skipped or Canceled, like on every other closed ticket.
 
 Version 1.4.0:
@@ -12930,7 +13003,7 @@ Version 1.3:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
         overlay.appendChild(modal);
-        document.body.appendChild(overlay);
+        helpersModal(overlay, modal);
         overlay.addEventListener('click', e => { if (e.target === overlay) closeButton.click(); });
     }
 
@@ -13236,8 +13309,7 @@ Version 1.3:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
     }
 
     // ─── Dark Mode Isolation ──────────────────────────────────────────────────
@@ -13674,8 +13746,11 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.7';
-    const CHANGELOG = `Version 1.5.7:
+    const SCRIPT_VERSION = '1.5.8';
+    const CHANGELOG = `Version 1.5.8:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.5.7:
 - Pressing Enter to confirm a character typed with a Japanese, Chinese or Korean keyboard no longer picks an option or moves to the next question before you finish typing.
 - The preset lists and the quick setup questions are cleared and redrawn in a lighter way. Nothing changes in how they look or work.
 
@@ -14064,8 +14139,7 @@ Version 1.2.0:
         modal.appendChild(closeButton);
 
         const parent = mainPanel ? mainPanel.parentElement : document.body;
-        parent.appendChild(overlay);
-        parent.appendChild(modal);
+        helpersModal(overlay, modal, { parent: parent });
         overlay.onclick = () => closeButton.click();
     }
 
@@ -14519,8 +14593,7 @@ Version 1.2.0:
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
         const helpParent = mainPanel ? mainPanel.parentElement : document.body;
-        helpParent.appendChild(overlay);
-        helpParent.appendChild(modal);
+        helpersModal(overlay, modal, { parent: helpParent });
     }
 
     /* ==========================================================
@@ -16509,8 +16582,11 @@ Version 1.2.0:
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.1.0';
-    const CHANGELOG = `Version 1.1.0:
+    const SCRIPT_VERSION = '1.1.1';
+    const CHANGELOG = `Version 1.1.1:
+- Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
+
+Version 1.1.0:
 - Added a "? Help" button next to Tenant URLs in the panel header. It opens a visual Feature Guide that explains the subject format, the tenant URL auto fill and every button of the panel.
 
 Version 1.0.7:
@@ -17197,8 +17273,7 @@ Version 1.0.0:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeBtn);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
 
         overlay.onclick = () => closeBtn.click();
     }
@@ -17508,8 +17583,7 @@ Version 1.0.0:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal);
     }
 
     function closePanel() {
