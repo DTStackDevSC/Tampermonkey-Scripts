@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.46.0
+// @version      2.47.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.46.0';
-    const CHANGELOG = `Version 2.46.0:
+   const SCRIPT_VERSION = '2.47.0';
+    const CHANGELOG = `Version 2.47.0:
+- Destination Profile Editor: added 🗑 Delete profile in the profile editor. It takes two clicks, keeps a copy of the profile first, and applies the delete with a change note like any other change.
+- Destination Profile Editor: new 🗃 Deleted profiles link next to Tenant Hosts: it lists the profiles deleted in the last 90 days, and ♻ Recreate creates one again.
+- Destination Profile Editor: more room under the buttons at the bottom of the window.
+
+Version 2.46.0:
 - Destination Profile Editor: the panel and its log windows (Add log entry, Mark as deleted, Remove older entries, Log entries) open above everything on the page. Esc closes the window on top like a click outside, and the page behind waits until you close it.
 
 Version 2.45.0:
@@ -13456,9 +13461,14 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.7';
+    const SCRIPT_VERSION = '2.1.0';
 
-    const CHANGELOG = `Version 2.0.7:
+    const CHANGELOG = `Version 2.1.0:
+- Added 🗑 Delete profile in the profile editor. It takes two clicks, keeps a copy of the profile first, and applies the delete with a change note like any other change.
+- New 🗃 Deleted profiles link next to Tenant Hosts: it lists the profiles deleted in the last 90 days, and ♻ Recreate creates one again.
+- More room under the buttons at the bottom of the window.
+
+Version 2.0.7:
 - The panel and its log windows (Add log entry, Mark as deleted, Remove older entries, Log entries) open above everything on the page. Esc closes the window on top like a click outside, and the page behind waits until you close it.
 
 Version 2.0.6:
@@ -14572,6 +14582,7 @@ Version 1.4.1:
                     body.appendChild(metaCard);
                     body.appendChild(hrow([
                         chip('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'),
+                        chip('🗑 Delete profile', '#fff', { color: '#e53935', border: '1px solid #e53935' }),
                         chip('← Back', '#fff', { color: '#555', border: '1px solid #ccc' }),
                     ], { margin: '0 0 10px 0' }));
                     const note = document.createElement('div');
@@ -14588,6 +14599,7 @@ Version 1.4.1:
                         'Apply now (it needs a change note, usually the RITM, and 🎫 Insert RITM fills it in) applies the change in Netskope. Leave pending keeps it pending and opens the console to apply it there.',
                         'Renaming warns first: other parts of the scripts find profiles by their exact name, such as the Change Tracker Newly Registered Domains check.',
                         'When opened from a Category by ID result, "← Back to Category" restores the category view without re-fetching.',
+                        '🗑 Delete profile takes two clicks (the button turns red and says Click again). A copy of the profile is kept first, then it is deleted and applied with a change note like any other change. If Netskope refuses, for example because a policy still uses the profile, nothing is deleted and its answer is shown.',
                     ]);
                 }
             },
@@ -14598,6 +14610,7 @@ Version 1.4.1:
                     lead(body, 'Tenant host URLs are configured once on first run and can be updated at any time via the Tenant Hosts link.');
                     const headerButtons = [
                         { bg: 'transparent', color: '#0066cc', border: '1px solid #aad4f5', label: '⚙ Tenant Hosts', desc: 'Opens the Tenant Host Setup form to view or edit the saved Netskope hostnames for each region (EMA, EU, CE, APAC, AME).' },
+                        { bg: 'transparent', color: '#0066cc', border: '1px solid #aad4f5', label: '🗃 Deleted profiles', desc: 'Lists the profiles deleted from this window on this tenant in the last 90 days. ♻ Recreate creates one again with the same name, type, description and values.' },
                         { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help',          desc: 'Opens this Feature Guide.' },
                     ];
                     for (const item of headerButtons) {
@@ -14761,7 +14774,7 @@ Version 1.4.1:
         const modal = UI.createElement('div', {
             position: 'fixed', top: '60px', left: '50%', transform: 'translateX(-50%)',
             backgroundColor: '#f9f9f9', border: '1px solid #ccc',
-            boxShadow: '0px 4px 12px rgba(0,0,0,0.1)', padding: '40px 20px 16px 20px',
+            boxShadow: '0px 4px 12px rgba(0,0,0,0.1)', padding: '40px 20px 28px 20px',
             zIndex: '999998', borderRadius: '10px', fontFamily: 'Arial, sans-serif',
             display: 'none', flexDirection: 'column', alignItems: 'center', gap: '10px',
             minWidth: '650px', maxWidth: '750px', bottom: '20px',
@@ -14805,6 +14818,11 @@ Version 1.4.1:
             });
         };
         versionRow.appendChild(configureHostsLink);
+        const deletedLink = UI.createElement('span', { color: '#0066cc', cursor: 'pointer', textDecoration: 'underline', fontSize: '11px' });
+        deletedLink.textContent = '🗃 Deleted profiles';
+        deletedLink.title = 'Copies of the Destination Profiles deleted from this window, to create them again';
+        deletedLink.onclick = () => showDeletedProfiles();
+        versionRow.appendChild(deletedLink);
 
         const helpBtn = document.createElement('span');
         helpBtn.textContent = '? Help';
@@ -14878,9 +14896,11 @@ Version 1.4.1:
             textAlign: 'center', display: 'none'
         }, { id: 'urllist-status' }));
 
-        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container', 'custom-category-container', 'urllist-id-lookup-container'].forEach(id => {
+        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container', 'custom-category-container', 'urllist-id-lookup-container', 'dp-deleted-container'].forEach(id => {
             modal.appendChild(UI.createElement('div', { display: 'none', width: '100%' }, { id }));
         });
+        // Room under the last buttons, also when the window scrolls
+        modal.appendChild(UI.createElement('div', { flex: '0 0 12px', width: '100%' }));
 
         document.body.appendChild(modal);
         // Native modal dialog with its backdrop, shown with the editor's display; Esc closes it like a click outside.
@@ -14966,7 +14986,7 @@ Version 1.4.1:
     }
 
     function resetModal() {
-        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container', 'custom-category-container', 'urllist-id-lookup-container'].forEach(id => {
+        ['url-lists-container', 'create-form-container', 'update-form-container', 'domain-lookup-container', 'custom-category-container', 'urllist-id-lookup-container', 'dp-deleted-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) { el.style.display = 'none'; el.replaceChildren(); }
         });
@@ -15520,7 +15540,15 @@ Version 1.4.1:
         const btns = UI.createElement('div', { display: 'flex', gap: '8px', marginTop: '10px' });
         const save = UI.createButton('💾 Save Changes', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', () => saveProfile());
         btns.appendChild(save);
+        // Deleting takes two clicks; a copy of the profile is kept first, so it can be created again
+        const del = UI.createButton('🗑 Delete profile', 'white', () => deleteProfile());
+        Object.assign(del.style, { border: '1px solid #e53935', color: '#e53935', flex: '0 0 auto' });
+        del.id = 'dp-delete-profile';
+        del.title = 'Deletes this Destination Profile in Netskope. A copy is kept under 🗃 Deleted profiles.';
+        btns.appendChild(del);
         resultsArea.appendChild(btns);
+        let deleteArmed = null;
+        const disarmDelete = () => { clearTimeout(deleteArmed); deleteArmed = null; del.textContent = '🗑 Delete profile'; del.style.background = 'white'; del.style.color = '#e53935'; };
         let renameConfirmed = false;
         nameIn.addEventListener('input', () => { renameConfirmed = false; warning.style.display = 'none'; save.textContent = '💾 Save Changes'; });
 
@@ -15590,6 +15618,120 @@ Version 1.4.1:
                 save.disabled = false;
             }
         }
+
+        async function deleteProfile() {
+            if (!deleteArmed) {
+                del.textContent = `🗑 Click again to delete "${data.name}"`;
+                del.style.background = '#e53935';
+                del.style.color = '#fff';
+                UI.showStatus(`⚠️ Click again within 6 seconds to delete "${data.name}". A copy is kept under 🗃 Deleted profiles.`, 'warning');
+                deleteArmed = setTimeout(() => { disarmDelete(); UI.hideStatus(); }, 6000);
+                return;
+            }
+            disarmDelete();
+            del.disabled = true; save.disabled = true;
+            try {
+                UI.showStatus('🔄 Checking the profile in Netskope…', 'info');
+                // The copy is made from the profile as it is now
+                const fresh = await dpBusy('Checking the profile…', () => dpCall('GET', `${DP_PATH}/${encodeURIComponent(data.id)}`));
+                if (!fresh) return;
+                if (!fresh.ok) { if (!fresh.handled) UI.showStatus(fresh.status === 404 ? '⚠️ This profile no longer exists in Netskope.' : `❌ Failed: ${fresh.error}`, fresh.status === 404 ? 'warning' : 'error'); return; }
+                const now = fresh.data || {};
+                if (now.status === 'pending-delete') return UI.showStatus('ℹ️ This profile is already waiting to be deleted in Netskope.', 'info');
+                dpSaveDeletedCopy(fresh.tenant, now);
+                UI.showStatus('🔄 Deleting…', 'info');
+                const r = await dpBusy('Deleting the profile…', () => dpCall('DELETE', `${DP_PATH}/${encodeURIComponent(data.id)}?interactive=true`));
+                if (!r) return;
+                if (!r.ok) {
+                    if (r.handled) return;
+                    dpForgetDeletedCopy(fresh.tenant, now.id);
+                    return UI.showStatus(`❌ Netskope did not delete "${now.name}" (${r.status}): ${r.error}. It may still be used by a policy. Nothing was deleted. The full answer is also in the browser console.`, 'error');
+                }
+                currentProfiles = [];
+                const applied = await dpApply(r.tenant, { id: now.id, name: now.name }, `Deleted "${now.name}"`);
+                if (applied) {
+                    UI.showStatus(`✅ Deleted "${now.name}". A copy is kept under 🗃 Deleted profiles.`, 'success');
+                    resultsArea.replaceChildren();
+                }
+            } finally {
+                del.disabled = false; save.disabled = false;
+            }
+        }
+    }
+
+    /* ==========================================================
+     *  DELETED PROFILES: copies kept before a delete, to create them again
+     *  Stored per tenant in netskopeUrlListDeletedProfiles, 90 days.
+     * ==========================================================*/
+
+    const DP_DELETED_KEY = 'netskopeUrlListDeletedProfiles';
+    const DP_DELETED_DAYS = 90;
+
+    function dpDeletedCopies() {
+        let all = [];
+        try { all = JSON.parse(GM_getValue(DP_DELETED_KEY, '[]')) || []; } catch (e) { all = []; }
+        const cutoff = Date.now() - DP_DELETED_DAYS * 86400000;
+        return all.filter(c => c && Date.parse(c.deletedAt) > cutoff);
+    }
+
+    function dpSaveDeletedCopy(tenant, profile) {
+        const copies = dpDeletedCopies().filter(c => !(c.tenant === tenant && c.id === profile.id));
+        copies.unshift({ tenant, id: profile.id, name: profile.name, description: profile.description || '', type: profile.type, values: profile.values || [],
+            deletedAt: new Date().toISOString(), ticket: getTicketNumber() || '' });
+        GM_setValue(DP_DELETED_KEY, JSON.stringify(copies));
+    }
+
+    function dpForgetDeletedCopy(tenant, id) {
+        GM_setValue(DP_DELETED_KEY, JSON.stringify(dpDeletedCopies().filter(c => !(c.tenant === tenant && c.id === id))));
+    }
+
+    function showDeletedProfiles() {
+        resetModal();
+        const container = document.getElementById('dp-deleted-container');
+        if (!container) return;
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '0 0 auto' });
+        container.replaceChildren();
+        const tenant = getActiveTenant();
+        container.appendChild(UI.createElement('h3', { fontSize: '14px', fontWeight: 'bold', color: '#333', margin: '4px 0 5px 0' }, { textContent: '🗃 Deleted profiles' }));
+        container.appendChild(UI.createElement('div', { fontSize: '12px', color: '#666', marginBottom: '8px' },
+            { textContent: `Copies of the profiles deleted from this window${tenant ? ` on ${tenant}` : ''}, kept ${DP_DELETED_DAYS} days. ♻ Recreate creates the profile again with the same name, type, description and values.` }));
+        const copies = dpDeletedCopies().filter(c => !tenant || c.tenant === tenant);
+        const list = UI.createElement('div', { display: 'flex', flexDirection: 'column', gap: '8px' });
+        if (!copies.length) list.appendChild(UI.createElement('div', { textAlign: 'center', padding: '20px', color: '#999', fontSize: '13px' }, { textContent: 'No deleted profiles kept for this tenant.' }));
+        for (const c of copies) {
+            const n = (c.values || []).filter(v => !String(v).trim().startsWith('#')).length;
+            const card = UI.createElement('div', { padding: '10px', border: '1px solid #ccc', borderRadius: '6px', backgroundColor: '#fff', display: 'flex', gap: '10px', alignItems: 'center' });
+            card.dataset.dpDeleted = c.id;
+            const text = UI.createElement('div', { flex: '1', minWidth: '0', fontSize: '12px', color: '#555' });
+            text.innerHTML = `<div style="font-weight:bold;font-size:14px;color:#333">${escapeHtml(c.name || '(unnamed)')}</div>
+                <div>${escapeHtml(dpTypeLabel(c.type))} • ${n} value${n === 1 ? '' : 's'} • deleted ${escapeHtml(dpFormatDate(c.deletedAt))}${c.ticket ? ` • ${escapeHtml(c.ticket)}` : ''}</div>`;
+            const again = UI.createButton('♻ Recreate', 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)', async () => {
+                again.disabled = true;
+                try {
+                    UI.showStatus(`🔄 Creating "${c.name}" again…`, 'info');
+                    const values = (c.values || []).length ? c.values : [DP_EMPTY];
+                    const r = await dpBusy('Creating the profile again…', () => dpCall('POST', `${DP_PATH}?interactive=true`, { name: c.name, type: c.type, description: c.description || '', values }));
+                    if (!r) return;
+                    if (!r.ok) {
+                        if (r.handled) return;
+                        return UI.showStatus(r.status === 409 ? `⚠️ A Destination Profile called "${c.name}" already exists.` : `❌ Failed: ${r.error}`, r.status === 409 ? 'warning' : 'error');
+                    }
+                    const profile = r.data && r.data.id ? r.data : { id: null, name: c.name };
+                    if (!profile.id) return UI.showStatus('⚠️ Netskope did not return the new profile. Check it in the console.', 'warning');
+                    dpForgetDeletedCopy(c.tenant, c.id);
+                    card.remove();
+                    currentProfiles = [];
+                    await dpApply(r.tenant, profile, `Created "${c.name}" again from the copy kept when it was deleted`);
+                } finally { again.disabled = false; }
+            });
+            Object.assign(again.style, { flex: '0 0 auto', padding: '6px 10px', fontSize: '12px' });
+            card.append(text, again);
+            list.appendChild(card);
+        }
+        container.appendChild(list);
+        const back = UI.createButton('✖️ Close', 'white', resetModal);
+        Object.assign(back.style, { border: '1px solid #ccc', color: '#333', flex: '0 0 auto', marginTop: '10px', alignSelf: 'flex-start' });
+        container.appendChild(back);
     }
 
     /* ==========================================================
