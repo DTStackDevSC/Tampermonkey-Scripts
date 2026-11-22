@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.43.1
+// @version      2.43.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.43.1';
-    const CHANGELOG = `Version 2.43.1:
+   const SCRIPT_VERSION = '2.43.2';
+    const CHANGELOG = `Version 2.43.2:
+- Toolbar: Fixed the API Keys window showing as plain unstyled text on Netskope pages. It now looks the same on Netskope as on ServiceNow.
+- Toolbar: Opening Settings again right after closing it with Esc no longer closes it straight away.
+
+Version 2.43.1:
 - Toolbar: the Settings window and the toolbar's own small windows (Export everything, Import everything, Import from old scripts, choosing your tools) now open above everything on the page. Esc closes Settings like Cancel, the page behind waits until you close it, and the keyboard goes back to the gear.
 
 Version 2.43.0:
@@ -4242,7 +4246,8 @@ Version 1.0.0:
             const host = document.createElement('div');
             host.id = 'nsapi-host';
             const root = host.attachShadow({ mode: 'closed' });
-            root.innerHTML = `<style>
+            // Netskope's Content Security Policy blocks <style> elements: the sheet is adopted instead
+            const css = `
                 :host { all: initial; }
                 dialog { border: 0; border-radius: 12px; padding: 0; max-width: min(560px, calc(100vw - 32px)); width: 100%;
                     color: #333333 !important; background: #ffffff !important; font: 13px Arial, sans-serif; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
@@ -4280,7 +4285,16 @@ Version 1.0.0:
                 .tabs button { border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: none; color: #777; padding: 6px 12px; }
                 .tabs button:hover { color: #333; background: #f5f6ff; }
                 .tabs button.on { color: #667eea; border-color: #e3e3ef; background: #fff; margin-bottom: -1px; }
-            </style>`;
+            `;
+            try {
+                const sheet = new CSSStyleSheet();
+                sheet.replaceSync(css);
+                root.adoptedStyleSheets = [sheet];
+            } catch (e) {
+                const style = document.createElement('style');
+                style.textContent = css;
+                root.appendChild(style);
+            }
             // In the body like every other panel; the dialogs themselves go on the top layer
             (document.body || document.documentElement).appendChild(host);
             ui = { host, root };
@@ -4870,8 +4884,9 @@ Version 1.0.0:
         };
         new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
         dlg.addEventListener('cancel', (e) => { e.preventDefault(); hide(); });
-        // Closed by the browser anyway (repeated Esc): same as the window's own close
-        dlg.addEventListener('close', () => { if (el.classList.contains(cls)) hide(); });
+        // Closed by the browser anyway (repeated Esc): same as the window's own close. The close event comes
+        // a moment later, so a window opened again in between is left open.
+        dlg.addEventListener('close', () => { if (!dlg.open && el.classList.contains(cls)) hide(); });
         sync();
         return dlg;
     }
