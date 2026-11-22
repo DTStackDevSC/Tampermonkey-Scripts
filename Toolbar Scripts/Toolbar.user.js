@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.45.0
+// @version      2.46.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.45.0';
-    const CHANGELOG = `Version 2.45.0:
+   const SCRIPT_VERSION = '2.46.0';
+    const CHANGELOG = `Version 2.46.0:
+- Destination Profile Editor: the panel and its log windows (Add log entry, Mark as deleted, Remove older entries, Log entries) open above everything on the page. Esc closes the window on top like a click outside, and the page behind waits until you close it.
+
+Version 2.45.0:
 - Ticket Assignment: fixed assigning and @mentions, which stopped working in 2.44.0. The assignment form is back to how it was before, so the ticket can be filled in while the form shows its progress. Manage Team and the missing details window still open above it.
 - Policy Deletion Reminder is removed from the toolbar. Deletion reminders are handled in the Change Tracker, in Manage Reminders, under Policies to delete. Its saved data is left untouched.
 
@@ -13453,8 +13456,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.0.6';
-    const CHANGELOG = `Version 2.0.6:
+    const SCRIPT_VERSION = '2.0.7';
+
+    const CHANGELOG = `Version 2.0.7:
+- The panel and its log windows (Add log entry, Mark as deleted, Remove older entries, Log entries) open above everything on the page. Esc closes the window on top like a click outside, and the page behind waits until you close it.
+
+Version 2.0.6:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 2.0.5:
@@ -14305,6 +14312,7 @@ Version 1.4.1:
                         'In the setup prompt, "Import from a backup file" restores your hosts and tokens from a toolbar backup.',
                         'If the detected tenant has an API key, the toolbar asks for its passphrase to unlock it before the panel opens. Cancel still opens the panel.',
                         'The toolbar button shows a pulsing dot when a new version has been installed and the changelog has not been viewed yet.',
+                        'The panel and its log windows open above the page. Esc or a click outside closes the window on top.',
                     ]);
                 }
             },
@@ -14875,6 +14883,9 @@ Version 1.4.1:
         });
 
         document.body.appendChild(modal);
+        // Native modal dialog with its backdrop, shown with the editor's display; Esc closes it like a click outside.
+        // It only edits its own fields (the page is not written while it is open).
+        suiteModalByClass(modal, { before: [backdrop], label: 'Destination Profiles', isShown: () => modal.style.display !== 'none', close: closeModal });
     }
 
     /* ==========================================================
@@ -15758,8 +15769,8 @@ Version 1.4.1:
         modal.appendChild(tipEl);
         modal.appendChild(btnRow);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        // Native modal dialog above the editor; Esc does what a click outside does
+        suiteModal(overlay, modal, { label: 'Add log entry' });
         overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
         setTimeout(() => ritmInp.focus(), 50);
     }
@@ -15778,7 +15789,8 @@ Version 1.4.1:
                 borderRadius: '6px', zIndex: '1100002', fontSize: '13px',
                 fontFamily: 'Arial, sans-serif', boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
             });
-            document.body.appendChild(msg);
+            // Inside the editor's dialog, or it would sit under it
+            (textarea.closest('dialog') || document.body).appendChild(msg);
             setTimeout(() => msg.remove(), 2500);
             return;
         }
@@ -15904,8 +15916,8 @@ Version 1.4.1:
         modal.appendChild(userLbl); modal.appendChild(userInp);
         modal.appendChild(btnRow);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        // Native modal dialog above the editor; Esc does what a click outside does
+        suiteModal(overlay, modal, { label: 'Mark as deleted' });
         overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
         setTimeout(() => ritmInp.focus(), 50);
     }
@@ -16015,8 +16027,8 @@ Version 1.4.1:
         modal.appendChild(previewEl);
         modal.appendChild(btnRow);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        // Native modal dialog above the editor; Esc does what a click outside does
+        suiteModal(overlay, modal, { label: 'Remove older entries' });
         overlay.onclick = (e) => { if (e.target === overlay) cancelBtn.click(); };
         setTimeout(() => dateInput.focus(), 50);
     }
@@ -16220,8 +16232,8 @@ Version 1.4.1:
         footerRow.appendChild(closeBtn);
         modal.appendChild(footerRow);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        // Native modal dialog above the editor; Esc does what a click outside does
+        suiteModal(overlay, modal, { label: 'Log entries' });
         overlay.onclick = (e) => { if (e.target === overlay) closeBtn.click(); };
     }
 
