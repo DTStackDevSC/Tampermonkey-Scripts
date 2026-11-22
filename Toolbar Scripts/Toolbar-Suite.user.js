@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.43.4
+// @version      2.44.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.43.4';
-    const CHANGELOG = `Version 2.43.4:
+   const SCRIPT_VERSION = '2.44.0';
+    const CHANGELOG = `Version 2.44.0:
+- Mini Summary, Enhancement Request Logger, Row Highlighter, Domain Tools and Policy Deletion Scheduler: their windows now show above everything on the page, while the page stays usable next to them as before.
+- Ticket Assignment: the assignment form, Manage Team and the missing details window open above everything on the page. Esc closes them like ✕, Cancel or Close.
+
+Version 2.43.4:
 - ServiceNow Toolkit: the Settings panel (also the Saved Drafts view) opens above everything on the page. Esc closes it like ✕, the page behind waits until you close it, and the keyboard goes back to the toolbar.
 
 Version 2.43.3:
@@ -1837,7 +1841,7 @@ Version 1.0.0:
                         'Click the floating button to open or close the menu.',
                         'Click any tool icon to run that tool.',
                         'Click the gear to open the Settings window.',
-                        'Settings, Feature Guide and What\'s New open above the page: Esc, ✕ or Close takes you back where you were. In Settings, Esc works like Cancel.'
+                        'Tool windows open above the page. Windows with a dark background (Settings, Feature Guides, What\'s New, forms) close with Esc like Cancel or ✕; side panels without one leave the page usable next to them.'
                     ]);
                 }
             },
@@ -4827,7 +4831,12 @@ Version 1.0.0:
         } catch (e) { /* the default backdrop is only a light tint */ }
     }
 
-    const suiteModalSupported = () => typeof HTMLDialogElement === 'function' && 'showModal' in HTMLDialogElement.prototype;
+    // Function declarations, so they also work for a dialog opened before this part of the core has run
+    function suiteModalSupported() { return typeof HTMLDialogElement === 'function' && 'showModal' in HTMLDialogElement.prototype; }
+    // Kept windows and panels react to their show and hide a moment later (MutationObserver). A new modal first
+    // brings them up to date, so a window shown just before it stays under it.
+    function suiteKeptAdd(sync) { (suiteKeptAdd.all = suiteKeptAdd.all || new Set()).add(sync); }
+    function suiteFlushKept() { (suiteKeptAdd.all || new Set()).forEach(f => { try { f(); } catch (e) { /* gone */ } }); }
 
     // The transparent <dialog> that holds a window: it fills the viewport, the window inside keeps its own look
     function suiteModalDialog(doc, label) {
@@ -4866,6 +4875,7 @@ Version 1.0.0:
             close();
             if (dlg.isConnected && dlg.contains(watch)) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
         });
+        suiteFlushKept();
         try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
         return dlg;
     }
@@ -4874,6 +4884,7 @@ Version 1.0.0:
     // 'visible') or by any other test given as isShown (for example style.display). It moves into a <dialog>
     // once, which opens with showModal() when the window shows and closes when it hides, so the window's
     // existing show and hide code keeps working. Esc runs close (default: remove the class).
+    // opts.before: elements shown with it (its own overlay), moved into the same dialog.
     function suiteModalByClass(el, opts = {}) {
         if (!el || el.__suiteDialog || !suiteModalSupported()) return el && el.__suiteDialog || null;
         const cls = opts.cls || 'visible';
@@ -4881,6 +4892,8 @@ Version 1.0.0:
         const title = el.querySelector('h1, h2, h3');
         const dlg = suiteModalDialog(el.ownerDocument || document, opts.label || (title && title.textContent.trim()));
         el.parentNode.insertBefore(dlg, el);
+        // Elements shown with the window, such as its own dark overlay, go into the same dialog before it
+        (opts.before || []).forEach(b => { if (b) dlg.appendChild(b); });
         dlg.appendChild(el);
         el.__suiteDialog = dlg;
         suiteModalSheet(dlg.getRootNode());
@@ -4891,12 +4904,50 @@ Version 1.0.0:
             else if (!shown && dlg.open) dlg.close();
         };
         new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+        suiteKeptAdd(sync);
         dlg.addEventListener('cancel', (e) => { e.preventDefault(); hide(); });
         // Closed by the browser anyway (repeated Esc): same as the window's own close. The close event comes
         // a moment later, so a window opened again in between is left open.
         dlg.addEventListener('close', () => { if (!dlg.open && isShown()) hide(); });
         sync();
         return dlg;
+    }
+
+    // For a panel the user works next to (no dark overlay, the page stays usable): it moves into a transparent
+    // popover="manual" holder in the top layer, so no page element and no other suite window covers it. The
+    // holder lets clicks through to the page, the panel takes its own. Esc does not close it, like before.
+    // The holder opens when the panel shows (isShown, default: displayed), and comes back on top each time.
+    function suitePanel(el, opts = {}) {
+        if (!el || el.__suitePanel || !('popover' in HTMLElement.prototype)) return el && el.__suitePanel || null;
+        const isShown = opts.isShown || (() => getComputedStyle(el).display !== 'none');
+        const holder = document.createElement('div');
+        holder.className = 'suite-panel';
+        holder.setAttribute('popover', 'manual');
+        suiteBusyStyle(holder, {
+            position: 'fixed', inset: '0', width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none',
+            margin: '0', padding: '0', border: '0', background: 'transparent', color: '#333333',
+            overflow: 'visible', 'pointer-events': 'none', 'box-sizing': 'border-box'
+        });
+        el.parentNode.insertBefore(holder, el);
+        holder.appendChild(el);
+        if (!el.style.getPropertyValue('pointer-events')) el.style.setProperty('pointer-events', 'auto', 'important');
+        el.__suitePanel = holder;
+        let wasShown = false;
+        const sync = () => {
+            const shown = el.isConnected && isShown();
+            try {
+                if (shown && !wasShown) {
+                    // Shown again: back on top of the other top layer windows
+                    if (holder.matches(':popover-open')) holder.hidePopover();
+                    holder.showPopover();
+                } else if (!shown && holder.matches(':popover-open')) holder.hidePopover();
+            } catch (e) { /* not connected: the panel stays where it is */ }
+            wasShown = shown;
+        };
+        new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+        suiteKeptAdd(sync);
+        sync();
+        return holder;
     }
 
     /* ==========================================================
@@ -8107,8 +8158,12 @@ Version 1.1.4:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.4';
-    const CHANGELOG = `Version 1.1.4:
+    const SCRIPT_VERSION = '1.1.5';
+
+    const CHANGELOG = `Version 1.1.5:
+- The summary sidebar and the SPM copy window now show above everything on the page, while the ticket stays usable next to them.
+
+Version 1.1.4:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.1.3:
@@ -9101,6 +9156,8 @@ Version 1.0.2:
         sidebar.appendChild(content);
 
         document.body.appendChild(sidebar);
+        // Top layer panel: above the page and other windows, the ticket stays usable next to it
+        suitePanel(sidebar, { isShown: () => true });
         return sidebar;
     }
 
@@ -9324,6 +9381,8 @@ Version 1.0.2:
         modal.appendChild(content);
 
         document.body.appendChild(modal);
+        // Top layer panel: the SPM form stays usable next to it
+        suitePanel(modal);
         return modal;
     }
 
@@ -9569,8 +9628,12 @@ Version 1.0.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.1';
-    const CHANGELOG = `Version 1.2.1:
+    const SCRIPT_VERSION = '1.2.2';
+
+    const CHANGELOG = `Version 1.2.2:
+- The form window now shows above everything on the page, while the ticket stays usable next to it, for example to copy text from it.
+
+Version 1.2.1:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.2.0:
@@ -10451,6 +10514,8 @@ Version 1.1.1:
         modal.appendChild(btnOpen);
 
         document.body.appendChild(modal);
+        // Top layer panel: the ticket stays usable next to it, for example to copy text from it
+        suitePanel(modal);
     }
 
     /* ==========================================================
@@ -10590,8 +10655,13 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.3';
-    const CHANGELOG = `Version 1.7.3:
+    const SCRIPT_VERSION = '1.7.4';
+
+    const CHANGELOG = `Version 1.7.4:
+- The assignment form opens above everything on the page. Esc closes it like ✕, and the page behind waits until you close it.
+- Manage Team and the window that asks for missing team details open above the assignment form. Esc works like Cancel or Close.
+
+Version 1.7.3:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.7.2:
@@ -11009,7 +11079,10 @@ Version 1.2.1:
         if (mode !== 'setup') footer.appendChild(cancel);
         footer.appendChild(save);
         modal.appendChild(footer);
-        document.body.appendChild(overlay);
+        // Manage Team and the missing details window open from the assignment form, so they go above it as native
+        // modals (Esc = Cancel / Close). The first setup opens by itself on page load and stays under other tools.
+        if (mode === 'setup') document.body.appendChild(overlay);
+        else suiteModal(overlay, modal, { label: mode === 'complete' ? 'Complete the team details' : 'Manage Team', close: () => cancel.click() });
 
         const flash = (box, text) => { box.textContent = text; clearTimeout(box._t); box._t = setTimeout(() => { box.textContent = ''; }, 3500); };
 
@@ -12581,6 +12654,8 @@ Version 1.2.1:
         modal.appendChild(content);
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
+        // Native modal dialog, shown with the overlay's active class; Esc closes it like ✕
+        suiteModalByClass(overlay, { cls: 'active', label: 'Ticket Assignment', close: hideModal });
 
         console.log('✅ Ticket Assignment modal created');
     }
@@ -16295,8 +16370,12 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.5';
-    const CHANGELOG = `Version 2.4.5:
+    const SCRIPT_VERSION = '2.4.6';
+
+    const CHANGELOG = `Version 2.4.6:
+- The settings window now shows above everything on the page, while the list stays usable next to it.
+
+Version 2.4.5:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 2.4.4:
@@ -16770,6 +16849,7 @@ Version 2.3.1:
         card.appendChild(btnRow);
 
         overlay.appendChild(card);
+        // Opens by itself on page load, so it stays a plain window under the suite's own dialogs
         document.body.appendChild(overlay);
 
         // Auto-focus input
@@ -17220,6 +17300,8 @@ Version 2.3.1:
         });
 
         document.body.appendChild(modal);
+        // Top layer panel: the list stays usable next to it
+        suitePanel(modal);
         return modal;
     }
 
@@ -18017,6 +18099,7 @@ Version 2.3.1:
 
         box.append(title, hint, howTo, btnGroup);
         overlay.appendChild(box);
+        // Opens by itself on page load, so it stays a plain window under the suite's own dialogs
         document.body.appendChild(overlay);
     }
 
@@ -28192,8 +28275,12 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.3';
-    const CHANGELOG = `Version 1.7.3:
+    const SCRIPT_VERSION = '1.7.4';
+
+    const CHANGELOG = `Version 1.7.4:
+- The Domain Tools window now shows above everything on the page, while the page stays usable next to it, for example to select more domains.
+
+Version 1.7.3:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.7.2:
@@ -29322,6 +29409,8 @@ Version 1.0:
         panels.append(extractPanel, checkPanel);
         modal.append(header, apiPanel, tabBar, panels);
         document.body.appendChild(modal);
+        // Top layer panel: the page stays usable next to it, for example to select more domains
+        suitePanel(modal);
 
         /* ── Tab switching ── */
         function activateTab(isExtract) {
@@ -30068,8 +30157,12 @@ Version 1.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.1';
-    const CHANGELOG = `Version 1.1.1:
+    const SCRIPT_VERSION = '1.1.2';
+
+    const CHANGELOG = `Version 1.1.2:
+- The form window now shows above everything on the Netskope page, while the page stays usable next to it.
+
+Version 1.1.1:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.1.0:
@@ -30905,6 +30998,8 @@ Version 0.9.1:
         modal.appendChild(footer);
 
         document.body.appendChild(modal);
+        // Top layer panel: the Netskope page stays usable next to it
+        suitePanel(modal);
     }
 
     /* ==========================================================

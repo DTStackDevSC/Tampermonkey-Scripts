@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.4.3
+// @version      4.5.0
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.3';
-    const CHANGELOG = `Version 4.4.3:
+    const SCRIPT_VERSION = '4.5.0';
+    const CHANGELOG = `Version 4.5.0:
+- Short Description, Ticket Response, SLA Alert Banner, Policy Naming and Ticket Subject: their panels and settings windows open above everything on the page. Windows with a dark background close with Esc like a click outside; the Policy Naming panel leaves the Netskope page usable next to it.
+- ⚙ Suite and the backup windows open above every other window of the helpers.
+
+Version 4.4.3:
 - Policy Naming Helper: the close button no longer sits on top of the ⚙ Suite button. When the title row is full, its buttons move to a second line.
 
 Version 4.4.2:
@@ -379,7 +383,9 @@ Version 4.0.0:
         overlay.onclick = (e) => { if (!e.isTrusted) return; close(); if (onClosed) onClosed(); };
         root.appendChild(overlay);
         root.appendChild(modal);
-        document.body.appendChild(host);
+        // Native modal dialog: above every other window of the helpers, also the ones in the browser's top layer.
+        // Esc does what a click on the dark overlay does.
+        helpersModal(null, host, { label: title, close: () => { close(); if (onClosed) onClosed(); } });
         return close;
     }
 
@@ -1212,20 +1218,42 @@ Version 4.0.0:
      *  window is removed. The modal may also sit inside the overlay.
      *  Styles are inline and !important (ServiceNow dark theme), the
      *  backdrop rule goes through adoptedStyleSheets (Netskope CSP).
-     *  opts: { parent, label, close }.
+     *  opts: { parent, label, close }. helpersModalByClass(el) does the
+     *  same for a window kept in the page; helpersPanel(el) puts a panel
+     *  the user works next to in the top layer without blocking the page.
      * ==========================================================*/
 
     function helpersModalSheet(root) {
         try {
             if (!root || !('adoptedStyleSheets' in root)) return;
             const win = (root.ownerDocument || root).defaultView || window;
-            if ((root.adoptedStyleSheets || []).some(s => s.__suiteModal)) return;
+            if ((root.adoptedStyleSheets || []).some(s => s.__helpersModal)) return;
             const sheet = new win.CSSStyleSheet();
             sheet.replaceSync('dialog.helpers-modal::backdrop { background: transparent !important; overflow: hidden; overscroll-behavior: contain; }'
                 + ' dialog.helpers-modal:modal { overscroll-behavior: contain; }');
-            sheet.__suiteModal = true;
+            sheet.__helpersModal = true;
             root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
         } catch (e) { /* the default backdrop is only a light tint */ }
+    }
+
+    // Function declarations, so they also work for a dialog opened before this part of the core has run
+    function helpersModalSupported() { return typeof HTMLDialogElement === 'function' && 'showModal' in HTMLDialogElement.prototype; }
+    // Kept windows and panels react to their show and hide a moment later (MutationObserver). A new modal first
+    // brings them up to date, so a window shown just before it stays under it.
+    function helpersKeptAdd(sync) { (helpersKeptAdd.all = helpersKeptAdd.all || new Set()).add(sync); }
+    function helpersFlushKept() { (helpersKeptAdd.all || new Set()).forEach(f => { try { f(); } catch (e) { /* gone */ } }); }
+
+    // The transparent <dialog> that holds a window: it fills the viewport, the window inside keeps its own look
+    function helpersModalDialog(doc, label) {
+        const dlg = doc.createElement('dialog');
+        dlg.className = 'helpers-modal';
+        dlg.setAttribute('aria-label', label || 'Window');
+        helpersBusyStyle(dlg, {
+            position: 'fixed', inset: '0', width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none',
+            margin: '0', padding: '0', border: '0', background: 'transparent', color: '#333333',
+            overflow: 'hidden', 'overscroll-behavior': 'contain', 'box-sizing': 'border-box'
+        });
+        return dlg;
     }
 
     function helpersModal(overlay, modal, opts = {}) {
@@ -1233,16 +1261,9 @@ Version 4.0.0:
         const parent = opts.parent || document.body;
         const doc = parent.ownerDocument || document;
         const add = () => { if (overlay) parent.appendChild(overlay); if (modal && !(overlay && overlay.contains(modal))) parent.appendChild(modal); };
-        if (typeof HTMLDialogElement !== 'function' || !('showModal' in HTMLDialogElement.prototype)) { add(); return null; }
-        const dlg = doc.createElement('dialog');
-        dlg.className = 'helpers-modal';
+        if (!helpersModalSupported()) { add(); return null; }
         const title = watch.querySelector('h1, h2, h3');
-        dlg.setAttribute('aria-label', opts.label || (title && title.textContent.trim()) || 'Window');
-        helpersBusyStyle(dlg, {
-            position: 'fixed', inset: '0', width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none',
-            margin: '0', padding: '0', border: '0', background: 'transparent', color: '#333333',
-            overflow: 'hidden', 'overscroll-behavior': 'contain', 'box-sizing': 'border-box'
-        });
+        const dlg = helpersModalDialog(doc, opts.label || (title && title.textContent.trim()));
         if (overlay) dlg.appendChild(overlay);
         if (modal && !(overlay && overlay.contains(modal))) dlg.appendChild(modal);
         parent.appendChild(dlg);
@@ -1259,8 +1280,79 @@ Version 4.0.0:
             close();
             if (dlg.isConnected && dlg.contains(watch)) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
         });
+        helpersFlushKept();
         try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
         return dlg;
+    }
+
+    // For a window that stays in the page and is shown and hidden by its own code: by a class (cls, default
+    // 'visible') or by any other test given as isShown (for example style.display). It moves into a <dialog>
+    // once, which opens with showModal() when the window shows and closes when it hides, so the window's
+    // existing show and hide code keeps working. Esc runs close (default: remove the class).
+    // opts.before: elements shown with it (its own overlay), moved into the same dialog.
+    function helpersModalByClass(el, opts = {}) {
+        if (!el || el.__helpersDialog || !helpersModalSupported()) return el && el.__helpersDialog || null;
+        const cls = opts.cls || 'visible';
+        const isShown = opts.isShown || (() => el.classList.contains(cls));
+        const title = el.querySelector('h1, h2, h3');
+        const dlg = helpersModalDialog(el.ownerDocument || document, opts.label || (title && title.textContent.trim()));
+        el.parentNode.insertBefore(dlg, el);
+        // Elements shown with the window, such as its own dark overlay, go into the same dialog before it
+        (opts.before || []).forEach(b => { if (b) dlg.appendChild(b); });
+        dlg.appendChild(el);
+        el.__helpersDialog = dlg;
+        helpersModalSheet(dlg.getRootNode());
+        const hide = opts.close || (() => el.classList.remove(cls));
+        const sync = () => {
+            const shown = isShown();
+            if (shown && !dlg.open) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+            else if (!shown && dlg.open) dlg.close();
+        };
+        new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+        helpersKeptAdd(sync);
+        dlg.addEventListener('cancel', (e) => { e.preventDefault(); hide(); });
+        // Closed by the browser anyway (repeated Esc): same as the window's own close. The close event comes
+        // a moment later, so a window opened again in between is left open.
+        dlg.addEventListener('close', () => { if (!dlg.open && isShown()) hide(); });
+        sync();
+        return dlg;
+    }
+
+    // For a panel the user works next to (no dark overlay, the page stays usable): it moves into a transparent
+    // popover="manual" holder in the top layer, so no page element and no other window of the suites covers it. The
+    // holder lets clicks through to the page, the panel takes its own. Esc does not close it, like before.
+    // The holder opens when the panel shows (isShown, default: displayed), and comes back on top each time.
+    function helpersPanel(el, opts = {}) {
+        if (!el || el.__helpersPanel || !('popover' in HTMLElement.prototype)) return el && el.__helpersPanel || null;
+        const isShown = opts.isShown || (() => getComputedStyle(el).display !== 'none');
+        const holder = document.createElement('div');
+        holder.className = 'helpers-panel';
+        holder.setAttribute('popover', 'manual');
+        helpersBusyStyle(holder, {
+            position: 'fixed', inset: '0', width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none',
+            margin: '0', padding: '0', border: '0', background: 'transparent', color: '#333333',
+            overflow: 'visible', 'pointer-events': 'none', 'box-sizing': 'border-box'
+        });
+        el.parentNode.insertBefore(holder, el);
+        holder.appendChild(el);
+        if (!el.style.getPropertyValue('pointer-events')) el.style.setProperty('pointer-events', 'auto', 'important');
+        el.__helpersPanel = holder;
+        let wasShown = false;
+        const sync = () => {
+            const shown = el.isConnected && isShown();
+            try {
+                if (shown && !wasShown) {
+                    // Shown again: back on top of the other top layer windows
+                    if (holder.matches(':popover-open')) holder.hidePopover();
+                    holder.showPopover();
+                } else if (!shown && holder.matches(':popover-open')) holder.hidePopover();
+            } catch (e) { /* not connected: the panel stays where it is */ }
+            wasShown = shown;
+        };
+        new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+        helpersKeptAdd(sync);
+        sync();
+        return holder;
     }
 
     /* === TOOL: SHORT DESCRIPTION HELPER === */
@@ -1274,8 +1366,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.3';
-    const CHANGELOG = `Version 4.4.3:
+    const SCRIPT_VERSION = '4.5.0';
+    const CHANGELOG = `Version 4.5.0:
+- The panel, Settings and the tenant URL window (when opened from Settings) open above everything on the page. Esc closes them like a click outside; the tenant URL window still needs Save.
+
+Version 4.4.3:
 - Policy Naming Helper: the close button no longer sits on top of the ⚙ Suite button. When the title row is full, its buttons move to a second line.
 
 Version 4.4.2:
@@ -1502,7 +1597,7 @@ Version 3.0.8.1:
      *  TENANT URL SETUP MODAL
      * ==========================================================*/
 
-    function showTenantURLSetup(onComplete) {
+    function showTenantURLSetup(onComplete, opts = {}) {
         const overlay = document.createElement('div');
         Object.assign(overlay.style, {
             position: 'fixed',
@@ -1684,8 +1779,10 @@ Version 3.0.8.1:
         };
 
         modal.appendChild(saveBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        // Opened from Settings it goes above the helper's windows as a native modal (Save is the only way out,
+        // so Esc does not close it). On a first install it opens by itself and stays under other tools.
+        if (opts.onTop) helpersModal(overlay, modal, { label: 'Tenant URLs', close: () => {} });
+        else { document.body.appendChild(overlay); document.body.appendChild(modal); }
     }
 
     /* ==========================================================
@@ -3075,7 +3172,7 @@ Version 3.0.8.1:
         configureTenantBtn.onclick = () => {
             overlay.remove();
             modal.remove();
-            showTenantURLSetup(() => {});
+            showTenantURLSetup(() => {}, { onTop: true });
         };
         tenantSection.appendChild(configureTenantBtn);
         modal.appendChild(tenantSection);
@@ -3097,8 +3194,7 @@ Version 3.0.8.1:
         overlay.onclick  = () => closeBtn.click();
 
         modal.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal, { label: 'Short Description Settings' });
     }
 
     /* ==========================================================
@@ -3302,7 +3398,7 @@ Version 3.0.8.1:
                     bullets(body, [
                         'Click 📝 to open the panel, fill in the fields and click "Change Short description".',
                         'If the ticket already uses the standard format, the panel opens with every field filled in.',
-                        'Feature Guide and What\'s New windows open above the page: Esc, ✕ or Close takes you back where you were.'
+                        'The panel and every helper window open above the page: Esc or a click outside closes them, and the keyboard goes back to where you were.'
                     ]);
                 }
             },
@@ -4187,6 +4283,8 @@ Version 3.0.8.1:
 
         container.appendChild(fieldsContainer);
         document.body.appendChild(container);
+        // Native modal dialog with its overlay, shown with the panel's display; Esc closes it like a click outside
+        helpersModalByClass(container, { before: [overlay], label: 'Short Description Helper', isShown: () => container.style.display !== 'none', close: closeMainPanel });
 
         window.shortDescCurrentTenantURL = null;
 
@@ -4507,8 +4605,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.7';
-    const CHANGELOG = `Version 2.21.7:
+    const SCRIPT_VERSION = '2.21.8';
+
+    const CHANGELOG = `Version 2.21.8:
+- Settings, Edit footer and Custom responses open above everything on the page. Esc closes them like a click outside.
+
+Version 2.21.7:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 2.21.6:
@@ -7081,8 +7183,7 @@ Regards.`,
         closeBtn.onclick = closeModal;
         overlay.onclick  = closeModal;
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        helpersModal(overlay, modal, { label: 'Custom responses' });
         renderList();
     }
 
@@ -7882,9 +7983,8 @@ Regards.`,
         modal.appendChild(headerBar);
         modal.appendChild(body);
         modal.appendChild(footerBar);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
         overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); modal.remove(); } };
+        helpersModal(overlay, modal, { label: 'Edit footer' });
     }
 
     function maybeInjectFooterSignature() {
@@ -8208,9 +8308,8 @@ Regards.`,
 
         modal.appendChild(headerBar);
         modal.appendChild(body);
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
         overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); modal.remove(); } };
+        helpersModal(overlay, modal, { label: 'Ticket Response Settings' });
     }
 
     function showTeamSelector() {
@@ -12814,8 +12913,13 @@ Version 1.0.3:
         if (!isToolEnabled('slaBanner') || !dtToolRunsHere('slaBanner')) return;
 
 
-    const SCRIPT_VERSION = '1.4.2';
-    const CHANGELOG = `Version 1.4.2:
+    const SCRIPT_VERSION = '1.4.3';
+
+
+    const CHANGELOG = `Version 1.4.3:
+- Changing the date format opens above everything on the page. Esc works like Cancel.
+
+Version 1.4.2:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.4.1:
@@ -13524,7 +13628,10 @@ Version 1.3:
 
         box.append(title, hint, howTo, btnGroup, versionFooter);
         overlay.appendChild(box);
-        document.body.appendChild(overlay);
+        // Opened by the user to change the format: native modal, Esc = Cancel. The first time it opens by itself
+        // and stays under other tools.
+        if (isReconfigure) helpersModal(overlay, box, { label: 'SLA date format', close: () => overlay.remove() });
+        else document.body.appendChild(overlay);
     }
 
     // ─── Date Parsing ─────────────────────────────────────────────────────────
@@ -13764,8 +13871,12 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.11';
-    const CHANGELOG = `Version 1.5.11:
+    const SCRIPT_VERSION = '1.5.12';
+
+    const CHANGELOG = `Version 1.5.12:
+- The panel now shows above everything on the Netskope page, while the page stays usable next to it. Manage presets and Quick Setup open above the panel, and Esc closes them like a click outside. The Geo lists open above them.
+
+Version 1.5.11:
 - The close button no longer sits on top of the ⚙ Suite button. When the title row is full, its buttons move to a second line.
 
 Version 1.5.10:
@@ -14165,7 +14276,7 @@ Version 1.2.0:
         modal.appendChild(cardsWrap);
         modal.appendChild(closeButton);
 
-        const parent = mainPanel ? mainPanel.parentElement : document.body;
+        const parent = document.body;   // not the panel's parent: that is its top layer holder, which lets clicks through
         helpersModal(overlay, modal, { parent: parent });
         overlay.onclick = () => closeButton.click();
     }
@@ -14619,7 +14730,7 @@ Version 1.2.0:
         closeX.onclick   = () => closeBtn.click();
         overlay.onclick  = () => closeBtn.click();
         modal.appendChild(closeBtn);
-        const helpParent = mainPanel ? mainPanel.parentElement : document.body;
+        const helpParent = document.body;   // not the panel's parent: that is its top layer holder, which lets clicks through
         helpersModal(overlay, modal, { parent: helpParent });
     }
 
@@ -14983,6 +15094,10 @@ Version 1.2.0:
                 p.removeAttribute('data-npg-cs-open');
                 forceStyle(p, 'display', 'none');
             });
+            // In a native dialog or a top layer panel the list opens inside it, or it would sit under it
+            const home = container.closest('dialog, .helpers-panel') || document.body;
+            if (portal.parentNode !== home) home.appendChild(portal);
+            forceStyle(portal, 'pointer-events', 'auto');
             const rect = trigger.getBoundingClientRect();
             forceStyles(portal, {
                 left: rect.left + 'px',
@@ -15361,9 +15476,9 @@ Version 1.2.0:
         });
 
         // Append to <html>, not <body>, to escape any stacking context or
-        // CSS transform Netskope may apply to body/its children.
-        document.documentElement.appendChild(overlay);
-        document.documentElement.appendChild(presetsPanel);
+        // CSS transform Netskope may apply to body/its children. Native modal dialog: above the panel it opens
+        // from; Esc closes it like a click outside.
+        helpersModal(overlay, presetsPanel, { parent: document.documentElement, label: 'Manage presets' });
     }
 
     /* ==========================================================
@@ -16031,9 +16146,8 @@ Version 1.2.0:
 
         render();
 
-        const wizParent = mainPanel ? mainPanel.parentElement : document.body;
-        wizParent.appendChild(overlay);
-        wizParent.appendChild(modal);
+        // Native modal dialog above the panel it opens from; Esc closes it like a click outside
+        helpersModal(overlay, modal, { parent: document.body, label: 'Quick Setup' });
     }
 
     /* ==========================================================
@@ -16585,6 +16699,8 @@ Version 1.2.0:
         overlay.addEventListener('click', (e) => { if (e.target === overlay) mainPanel.style.display = 'none'; });
         document.body.appendChild(overlay);
         document.body.appendChild(mainPanel);
+        // Top layer panel: above the Netskope page and other windows, the page stays usable next to it
+        helpersPanel(mainPanel);
 
         updateTabUI();
         console.log('[Netskope Policy Generator] Main panel created');
@@ -16645,8 +16761,12 @@ Version 1.2.0:
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.1.1';
-    const CHANGELOG = `Version 1.1.1:
+    const SCRIPT_VERSION = '1.1.2';
+
+    const CHANGELOG = `Version 1.1.2:
+- The panel opens above everything on the page. Esc closes it like a click outside.
+
+Version 1.1.1:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.1.0:
@@ -17724,6 +17844,8 @@ Version 1.0.0:
         const panel = document.createElement('div');
         panel.id = 'nsTktPanel';
         document.body.appendChild(panel);
+        // Native modal dialog with its overlay, shown with the panel's display; Esc closes it like a click outside
+        helpersModalByClass(panel, { before: [overlay], label: 'Ticket Subject Helper', isShown: () => panel.style.display === 'block', close: closePanel });
 
         /* Close button */
         const closeBtn = document.createElement('button');
