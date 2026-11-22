@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.4.2
+// @version      4.4.3
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.2';
-    const CHANGELOG = `Version 4.4.2:
+    const SCRIPT_VERSION = '4.4.3';
+    const CHANGELOG = `Version 4.4.3:
+- Policy Naming Helper: the close button no longer sits on top of the ⚙ Suite button. When the title row is full, its buttons move to a second line.
+
+Version 4.4.2:
 - Policy Naming Helper: the top of the panel (✕, ? Help, ⚙ Suite, What's New, Quick Setup, the preset bar and the CASB and DLP tabs) now also keeps its normal height on Netskope pages, with each button's text on one line and in its own letters.
 
 Version 4.4.1:
@@ -1271,8 +1274,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.2';
-    const CHANGELOG = `Version 4.4.2:
+    const SCRIPT_VERSION = '4.4.3';
+    const CHANGELOG = `Version 4.4.3:
+- Policy Naming Helper: the close button no longer sits on top of the ⚙ Suite button. When the title row is full, its buttons move to a second line.
+
+Version 4.4.2:
 - Policy Naming Helper: the top of the panel (✕, ? Help, ⚙ Suite, What's New, Quick Setup, the preset bar and the CASB and DLP tabs) now also keeps its normal height on Netskope pages, with each button's text on one line and in its own letters.
 
 Version 4.4.1:
@@ -13758,8 +13764,11 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.10';
-    const CHANGELOG = `Version 1.5.10:
+    const SCRIPT_VERSION = '1.5.11';
+    const CHANGELOG = `Version 1.5.11:
+- The close button no longer sits on top of the ⚙ Suite button. When the title row is full, its buttons move to a second line.
+
+Version 1.5.10:
 - The top of the panel (✕, ? Help, ⚙ Suite, What's New, Quick Setup, the preset bar and the CASB and DLP tabs) now also keeps its normal height on Netskope pages, with each button's text on one line and in its own letters.
 
 Version 1.5.9:
@@ -16158,9 +16167,10 @@ Version 1.2.0:
 
         // Title row
         const titleContainer = document.createElement('div');
+        // Room on the right for the ✕ in the corner; the buttons go to a second line when they do not fit
         Object.assign(titleContainer.style, {
-            display: 'flex', alignItems: 'center', gap: '10px',
-            marginBottom: '16px', paddingBottom: '14px', borderBottom: '1px solid #e5e7eb'
+            display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', rowGap: '6px',
+            marginBottom: '16px', paddingBottom: '14px', paddingRight: '36px', borderBottom: '1px solid #e5e7eb'
         });
 
         const title = document.createElement('h2');
