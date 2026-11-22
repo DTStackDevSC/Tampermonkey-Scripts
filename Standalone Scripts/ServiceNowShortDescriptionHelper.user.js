@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.4.1
+// @version      4.4.2
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.1';
-    const CHANGELOG = `Version 4.4.1:
+    const SCRIPT_VERSION = '4.4.2';
+    const CHANGELOG = `Version 4.4.2:
+- Policy Naming Helper: the top of the panel (✕, ? Help, ⚙ Suite, What's New, Quick Setup, the preset bar and the CASB and DLP tabs) now also keeps its normal height on Netskope pages, with each button's text on one line and in its own letters.
+
+Version 4.4.1:
 - Policy Naming Helper: the buttons at the top of the panel (⚙ Suite, Load, 💾 Save, the presets ⚙ and the CASB and DLP tabs) keep their own look on Netskope pages again, instead of taking Netskope's button style.
 
 Version 4.4.0:
@@ -1268,8 +1271,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.1';
-    const CHANGELOG = `Version 4.4.1:
+    const SCRIPT_VERSION = '4.4.2';
+    const CHANGELOG = `Version 4.4.2:
+- Policy Naming Helper: the top of the panel (✕, ? Help, ⚙ Suite, What's New, Quick Setup, the preset bar and the CASB and DLP tabs) now also keeps its normal height on Netskope pages, with each button's text on one line and in its own letters.
+
+Version 4.4.1:
 - Policy Naming Helper: the buttons at the top of the panel (⚙ Suite, Load, 💾 Save, the presets ⚙ and the CASB and DLP tabs) keep their own look on Netskope pages again, instead of taking Netskope's button style.
 
 Version 4.4.0:
@@ -13752,8 +13758,11 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.9';
-    const CHANGELOG = `Version 1.5.9:
+    const SCRIPT_VERSION = '1.5.10';
+    const CHANGELOG = `Version 1.5.10:
+- The top of the panel (✕, ? Help, ⚙ Suite, What's New, Quick Setup, the preset bar and the CASB and DLP tabs) now also keeps its normal height on Netskope pages, with each button's text on one line and in its own letters.
+
+Version 1.5.9:
 - The buttons at the top of the panel (⚙ Suite, Load, 💾 Save, the presets ⚙ and the CASB and DLP tabs) keep their own look on Netskope pages again, instead of taking Netskope's button style.
 
 Version 1.5.8:
@@ -15355,9 +15364,22 @@ Version 1.2.0:
     // Netskope's page styles (cascade layers with !important) win over normal inline styles, which bent the
     // panel's top buttons. This marks every inline style in el and below as !important, also the ones set
     // later (hover colors, tab switches, the Saved flash), so the buttons keep the look they are given.
+    // Properties the panel never set, which Netskope's rules would otherwise fill in (tall buttons, text on two
+    // lines, capital letters). Only used where the element has no value of its own.
+    const NPG_BASE_STYLE = {
+        'line-height': 'normal', height: 'auto', 'min-height': '0', 'max-height': 'none',
+        width: 'auto', 'min-width': '0', 'max-width': 'none', 'white-space': 'nowrap',
+        'text-transform': 'none', 'letter-spacing': 'normal', 'box-sizing': 'border-box',
+        'vertical-align': 'middle', 'font-family': 'Arial, sans-serif',
+        'background-color': 'transparent', color: 'inherit'
+    };
+
     function npgKeepInlineStyles(el) {
         const lock = (n) => {
             if (!n.style) return;
+            for (const [prop, value] of Object.entries(NPG_BASE_STYLE)) {
+                if (!n.style.getPropertyValue(prop)) n.style.setProperty(prop, value, 'important');
+            }
             for (const prop of Array.from(n.style)) {
                 if (n.style.getPropertyPriority(prop) !== 'important') n.style.setProperty(prop, n.style.getPropertyValue(prop), 'important');
             }
@@ -16246,7 +16268,6 @@ Version 1.2.0:
         const dlpTab = createTabButton('dlp', 'DLP Policies');
         tabContainer.appendChild(casbTab);
         tabContainer.appendChild(dlpTab);
-        [titleContainer, presetBar, tabContainer].forEach(npgKeepInlineStyles);
 
         // CASB Form
         const casbForm = document.createElement('div');
@@ -16548,6 +16569,8 @@ Version 1.2.0:
         mainPanel.appendChild(dlpForm);
         mainPanel.appendChild(previewContainer);
         mainPanel.appendChild(buttonsContainer);
+        // The top of the panel keeps its own look on Netskope pages
+        [closeButton, titleContainer, wizardBar, presetBar, tabContainer].forEach(npgKeepInlineStyles);
 
         overlay.addEventListener('click', (e) => { if (e.target === overlay) mainPanel.style.display = 'none'; });
         document.body.appendChild(overlay);
