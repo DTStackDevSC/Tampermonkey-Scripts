@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.43.0
+// @version      2.43.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.43.0';
-   const CHANGELOG = `Version 2.43.0:
+   const SCRIPT_VERSION = '2.43.1';
+    const CHANGELOG = `Version 2.43.1:
+- Toolbar: the Settings window and the toolbar's own small windows (Export everything, Import everything, Import from old scripts, choosing your tools) now open above everything on the page. Esc closes Settings like Cancel, the page behind waits until you close it, and the keyboard goes back to the gear.
+
+Version 2.43.0:
 - All tools: the Feature Guide and What's New windows of every tool now open above everything on the ServiceNow or Netskope page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 2.42.2:
@@ -1151,7 +1154,9 @@ Version 1.0.0:
         overlay.onclick = (e) => { if (!e.isTrusted) return; close(); if (onClosed) onClosed(); };
         root.appendChild(overlay);
         root.appendChild(modal);
-        document.body.appendChild(host);
+        // Native modal dialog: above every other suite window, also the ones in the browser's top layer.
+        // Esc does what a click on the dark overlay does.
+        suiteModal(null, host, { label: title, close: () => { close(); if (onClosed) onClosed(); } });
         return close;
     }
 
@@ -1822,7 +1827,7 @@ Version 1.0.0:
                         'Click the floating button to open or close the menu.',
                         'Click any tool icon to run that tool.',
                         'Click the gear to open the Settings window.',
-                        'Feature Guide and What\'s New windows open above the page: Esc, ✕ or Close takes you back where you were.'
+                        'Settings, Feature Guide and What\'s New open above the page: Esc, ✕ or Close takes you back where you were. In Settings, Esc works like Cancel.'
                     ]);
                 }
             },
@@ -3615,6 +3620,7 @@ Version 1.0.0:
         `;
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
+        suiteModalByClass(document.getElementById('toolbar-settings-modal'), { label: 'Toolbar Suite Settings' });
 
         loadSettings();
         setupSettingsEventListeners();
@@ -4784,7 +4790,8 @@ Version 1.0.0:
      *  window is removed. The modal may also sit inside the overlay.
      *  Styles are inline and !important (ServiceNow dark theme), the
      *  backdrop rule goes through adoptedStyleSheets (Netskope CSP).
-     *  opts: { parent, label, close }.
+     *  opts: { parent, label, close }. suiteModalByClass(el) does the
+     *  same for a window that stays in the page and is shown by a class.
      * ==========================================================*/
 
     function suiteModalSheet(root) {
@@ -4800,21 +4807,29 @@ Version 1.0.0:
         } catch (e) { /* the default backdrop is only a light tint */ }
     }
 
-    function suiteModal(overlay, modal, opts = {}) {
-        const watch = modal || overlay;
-        const parent = opts.parent || document.body;
-        const doc = parent.ownerDocument || document;
-        const add = () => { if (overlay) parent.appendChild(overlay); if (modal && !(overlay && overlay.contains(modal))) parent.appendChild(modal); };
-        if (typeof HTMLDialogElement !== 'function' || !('showModal' in HTMLDialogElement.prototype)) { add(); return null; }
+    const suiteModalSupported = () => typeof HTMLDialogElement === 'function' && 'showModal' in HTMLDialogElement.prototype;
+
+    // The transparent <dialog> that holds a window: it fills the viewport, the window inside keeps its own look
+    function suiteModalDialog(doc, label) {
         const dlg = doc.createElement('dialog');
         dlg.className = 'suite-modal';
-        const title = watch.querySelector('h1, h2, h3');
-        dlg.setAttribute('aria-label', opts.label || (title && title.textContent.trim()) || 'Window');
+        dlg.setAttribute('aria-label', label || 'Window');
         suiteBusyStyle(dlg, {
             position: 'fixed', inset: '0', width: '100%', height: '100%', 'max-width': 'none', 'max-height': 'none',
             margin: '0', padding: '0', border: '0', background: 'transparent', color: '#333333',
             overflow: 'hidden', 'overscroll-behavior': 'contain', 'box-sizing': 'border-box'
         });
+        return dlg;
+    }
+
+    function suiteModal(overlay, modal, opts = {}) {
+        const watch = modal || overlay;
+        const parent = opts.parent || document.body;
+        const doc = parent.ownerDocument || document;
+        const add = () => { if (overlay) parent.appendChild(overlay); if (modal && !(overlay && overlay.contains(modal))) parent.appendChild(modal); };
+        if (!suiteModalSupported()) { add(); return null; }
+        const title = watch.querySelector('h1, h2, h3');
+        const dlg = suiteModalDialog(doc, opts.label || (title && title.textContent.trim()));
         if (overlay) dlg.appendChild(overlay);
         if (modal && !(overlay && overlay.contains(modal))) dlg.appendChild(modal);
         parent.appendChild(dlg);
@@ -4832,6 +4847,32 @@ Version 1.0.0:
             if (dlg.isConnected && dlg.contains(watch)) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
         });
         try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+        return dlg;
+    }
+
+    // For a window that stays in the page and is shown by a class (cls, default 'visible'): it moves
+    // into a <dialog> once, which opens with showModal() when the class is added and closes when it
+    // is removed, so the window's existing show and hide code keeps working. Esc removes the class.
+    function suiteModalByClass(el, opts = {}) {
+        if (!el || el.__suiteDialog || !suiteModalSupported()) return el && el.__suiteDialog || null;
+        const cls = opts.cls || 'visible';
+        const title = el.querySelector('h1, h2, h3');
+        const dlg = suiteModalDialog(el.ownerDocument || document, opts.label || (title && title.textContent.trim()));
+        el.parentNode.insertBefore(dlg, el);
+        dlg.appendChild(el);
+        el.__suiteDialog = dlg;
+        suiteModalSheet(dlg.getRootNode());
+        const hide = opts.close || (() => el.classList.remove(cls));
+        const sync = () => {
+            const shown = el.classList.contains(cls);
+            if (shown && !dlg.open) { try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); } }
+            else if (!shown && dlg.open) dlg.close();
+        };
+        new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class'] });
+        dlg.addEventListener('cancel', (e) => { e.preventDefault(); hide(); });
+        // Closed by the browser anyway (repeated Esc): same as the window's own close
+        dlg.addEventListener('close', () => { if (el.classList.contains(cls)) hide(); });
+        sync();
         return dlg;
     }
 
