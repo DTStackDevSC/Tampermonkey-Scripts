@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.4.0
+// @version      4.4.1
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.0';
-    const CHANGELOG = `Version 4.4.0:
+    const SCRIPT_VERSION = '4.4.1';
+    const CHANGELOG = `Version 4.4.1:
+- Policy Naming Helper: the buttons at the top of the panel (⚙ Suite, Load, 💾 Save, the presets ⚙ and the CASB and DLP tabs) keep their own look on Netskope pages again, instead of taking Netskope's button style.
+
+Version 4.4.0:
 - All helpers: the Feature Guide and What's New windows of every helper now open above everything on the ServiceNow or Netskope page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 4.3.6:
@@ -1265,8 +1268,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.4.0';
-    const CHANGELOG = `Version 4.4.0:
+    const SCRIPT_VERSION = '4.4.1';
+    const CHANGELOG = `Version 4.4.1:
+- Policy Naming Helper: the buttons at the top of the panel (⚙ Suite, Load, 💾 Save, the presets ⚙ and the CASB and DLP tabs) keep their own look on Netskope pages again, instead of taking Netskope's button style.
+
+Version 4.4.0:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 4.3.6:
@@ -13746,8 +13752,11 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.8';
-    const CHANGELOG = `Version 1.5.8:
+    const SCRIPT_VERSION = '1.5.9';
+    const CHANGELOG = `Version 1.5.9:
+- The buttons at the top of the panel (⚙ Suite, Load, 💾 Save, the presets ⚙ and the CASB and DLP tabs) keep their own look on Netskope pages again, instead of taking Netskope's button style.
+
+Version 1.5.8:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.5.7:
@@ -15343,6 +15352,26 @@ Version 1.2.0:
      *  PRESET BAR (inside main panel)
      * ==========================================================*/
 
+    // Netskope's page styles (cascade layers with !important) win over normal inline styles, which bent the
+    // panel's top buttons. This marks every inline style in el and below as !important, also the ones set
+    // later (hover colors, tab switches, the Saved flash), so the buttons keep the look they are given.
+    function npgKeepInlineStyles(el) {
+        const lock = (n) => {
+            if (!n.style) return;
+            for (const prop of Array.from(n.style)) {
+                if (n.style.getPropertyPriority(prop) !== 'important') n.style.setProperty(prop, n.style.getPropertyValue(prop), 'important');
+            }
+        };
+        const lockTree = (n) => { if (n.nodeType !== 1) return; lock(n); n.querySelectorAll('*').forEach(lock); };
+        lockTree(el);
+        new MutationObserver((records) => {
+            for (const r of records) {
+                if (r.type === 'attributes') lock(r.target);
+                else r.addedNodes.forEach(lockTree);
+            }
+        }).observe(el, { attributes: true, attributeFilter: ['style'], childList: true, subtree: true });
+    }
+
     function createPresetBar() {
         const bar = document.createElement('div');
         bar.id = 'npg-preset-bar';
@@ -16217,6 +16246,7 @@ Version 1.2.0:
         const dlpTab = createTabButton('dlp', 'DLP Policies');
         tabContainer.appendChild(casbTab);
         tabContainer.appendChild(dlpTab);
+        [titleContainer, presetBar, tabContainer].forEach(npgKeepInlineStyles);
 
         // CASB Form
         const casbForm = document.createElement('div');
