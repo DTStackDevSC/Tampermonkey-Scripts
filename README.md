@@ -12,12 +12,12 @@ Scripts are split into two categories: standalone scripts that run independently
 
 | Helper | Pages | Description |
 |---|---|---|
-| Short Description Helper | ServiceNow tickets | Builds and updates the short description in the team format, with tenant detection. |
-| Ticket Response Helper | ServiceNow tickets and SCTASKs | Inserts team response templates, with @mentions, pinned and custom responses. |
-| Formatted Text Helper | ServiceNow tickets | Rich text editor for comments and work notes. |
+| Short Description Builder | ServiceNow tickets | Builds and updates the short description in the team format, with tenant detection. |
+| Response Templates | ServiceNow tickets and SCTASKs | Inserts team response templates, with @mentions, pinned and custom responses. |
+| Formatted Text Editor | ServiceNow tickets | Rich text editor for comments and work notes. |
 | SLA Alert Banner | ServiceNow tickets | Colored banner when the SLA due date is close. |
-| Policy Naming Helper | Netskope tenant | Builds policy names in the team format, with presets. |
-| Ticket Subject Helper | Netskope support portal | Builds the subject line of Netskope support cases. |
+| Policy Name Builder | Netskope tenant | Builds policy names in the team format, with presets. |
+| Support Case Subject Builder | Netskope support portal | Builds the subject line of Netskope support cases. |
 
 The **⚙ Suite** button next to Help in every helper (and **⚙ Ticket Helpers settings** in the Tampermonkey menu) opens the shared settings: tools, team, tenant URLs and backups.
 
@@ -48,16 +48,16 @@ The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `conf
 
 | Tool | Pages | Description |
 |---|---|---|
-| General Toolkit | All pages | Highlight a RITM, PER or Netskope case number to open it in a new tab. |
-| Domain Tools | ServiceNow | Extract domains from ticket text and check their reputation. |
-| Enhancement Request Logger | ServiceNow | Opens a pre filled enhancement request form for the current RITM. |
-| Mini Summary Sidebar | ServiceNow | Shows the key fields of the current ticket at a glance. |
-| Row Highlighter | ServiceNow | Highlights list rows by who updated them, with SLA heat mapping. |
+| General Web Toolkit | All pages | Small helpers for any website. Today: highlight a RITM, PER or Netskope case number to open it in a new tab. |
+| Domain Checker | ServiceNow | Extract domains from ticket text and check their reputation. |
+| Enhancement Request Launcher | ServiceNow | Opens a pre filled enhancement request form for the current RITM. |
+| Ticket Summary Panel | ServiceNow | Shows the key fields of the current ticket at a glance. |
+| List Highlighter | ServiceNow | Highlights list rows by who updated them, with SLA heat mapping. |
 | Change Tracker | ServiceNow | Shared change log per ticket, kept in your team's SharePoint list and written to work notes and comments. |
 | ServiceNow Toolkit | ServiceNow | Draft autosave for work notes and comments, SCTASK auto open. |
 | Ticket Assignment | ServiceNow | Assigns tickets and fills the related fields in one step. |
 | Destination Profile Editor | ServiceNow | Finds, creates, edits and deletes Netskope Destination Profiles from a ticket through the API. |
-| NS Policies Toolkit | Netskope tenant | Copy and open buttons, log entries, steering exception tools and more. |
+| Netskope Console Toolkit | Netskope tenant | Copy and open buttons, log entries, steering exception tools and more. |
 
 ## Old scripts
 
