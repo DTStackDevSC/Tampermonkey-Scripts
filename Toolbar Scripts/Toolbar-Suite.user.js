@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.52.1
+// @version      2.52.2
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.52.1';
-    const CHANGELOG = `Version 2.52.1:
+   const SCRIPT_VERSION = '2.52.2';
+    const CHANGELOG = `Version 2.52.2:
+- NS Policies Toolkit: "📥 Export to CSV" on Transaction Events is back next to the refresh button, top right. In 2.52.1 it had moved next to the page title.
+
+Version 2.52.1:
 - NS Policies Toolkit: pointing at "📥 Export to CSV" on Transaction Events no longer shows the page's "Click to refresh the page" hint. It shows what the export does.
 
 Version 2.52.0:
@@ -30451,9 +30454,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.1';
+    const SCRIPT_VERSION = '1.49.2';
 
-    const CHANGELOG = `Version 1.49.1:
+    const CHANGELOG = `Version 1.49.2:
+- "📥 Export to CSV" on Transaction Events is back next to the refresh button, top right. In 1.49.1 it had moved next to the page title.
+
+Version 1.49.1:
 - Pointing at "📥 Export to CSV" on Transaction Events no longer shows the page's "Click to refresh the page" hint. It shows what the export does.
 
 Version 1.49.0:
@@ -39788,14 +39794,7 @@ Version 1.16:
         if (!txOnPage()) { existing?.remove(); return; }
         const refresh = document.querySelector('[data-testid="title-action-pageRefresh"]');
         if (!refresh || refresh.offsetParent === null) { existing?.remove(); return; }
-        // The refresh button sits inside wrappers that show its "Click to refresh the page" tooltip:
-        // the export button goes before the outermost wrapper that holds only the refresh button
-        let anchor = refresh;
-        // (a wrapper hugs the button: not wider than it, so the climb never leaves the button's own spot)
-        const w = refresh.getBoundingClientRect().width;
-        while (anchor.parentElement && anchor.parentElement !== document.body &&
-            [...anchor.parentElement.children].filter(c => c.id !== TX_BUTTON_ID).length === 1 &&
-            anchor.parentElement.getBoundingClientRect().width <= w + 16) anchor = anchor.parentElement;
+        const anchor = refresh;
         if (existing && existing.nextElementSibling === anchor) return;
         existing?.remove();
         const btn = document.createElement('button');
@@ -39813,8 +39812,10 @@ Version 1.16:
         btn.addEventListener('mouseenter', () => btn.style.setProperty('background', '#e8f1fc', 'important'));
         btn.addEventListener('mouseleave', () => btn.style.setProperty('background', '#fff', 'important'));
         btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); txOpen(); });
-        // The page's own tooltips listen for these on their containers: keep them to our button
-        ['mouseover', 'mouseout', 'pointerover', 'pointerout', 'focusin', 'focusout'].forEach(type =>
+        // The refresh button's "Click to refresh the page" tooltip listens for these on the elements around it
+        // (the page's framework handles them at the top of the page): keep them to our button
+        ['mouseover', 'mouseout', 'mousemove', 'mousedown', 'pointerover', 'pointerout', 'pointermove', 'pointerdown',
+            'focusin', 'focusout'].forEach(type =>
             btn.addEventListener(type, e => e.stopPropagation()));
         anchor.insertAdjacentElement('beforebegin', btn);
     }
