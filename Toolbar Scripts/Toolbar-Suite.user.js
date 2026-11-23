@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.52.0
+// @version      2.52.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.52.0';
-    const CHANGELOG = `Version 2.52.0:
+   const SCRIPT_VERSION = '2.52.1';
+    const CHANGELOG = `Version 2.52.1:
+- NS Policies Toolkit: pointing at "📥 Export to CSV" on Transaction Events no longer shows the page's "Click to refresh the page" hint. It shows what the export does.
+
+Version 2.52.0:
 - NS Policies Toolkit: new "📥 Export to CSV" button on Skope IT Transaction Events, next to the refresh button. It downloads the events matching the time range and filters of the page as a CSV file, with every field or only the columns shown, and writes the time range and filters at the top of the file and in its name. A Stop button keeps what was read. Nothing is changed in Netskope.
 
 Version 2.51.0:
@@ -30448,9 +30451,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.0';
+    const SCRIPT_VERSION = '1.49.1';
 
-    const CHANGELOG = `Version 1.49.0:
+    const CHANGELOG = `Version 1.49.1:
+- Pointing at "📥 Export to CSV" on Transaction Events no longer shows the page's "Click to refresh the page" hint. It shows what the export does.
+
+Version 1.49.0:
 - New "📥 Export to CSV" button on Skope IT Transaction Events, next to the refresh button, for troubleshooting and later analysis. It downloads the events matching the time range and filters of the page, newest first: every field Netskope keeps (troubleshooting fields first) or only the columns shown, up to the number of events you choose. The time range, the filters and the number of events are written at the top of the file, and the tenant and time range are in its name. Choose comma or semicolon for your Excel. ■ Stop keeps the events read so far. Nothing is changed in Netskope. Turn it off in Settings with "📥 Transaction Events export".
 
 Version 1.48.4:
@@ -39780,8 +39786,16 @@ Version 1.16:
     function txSyncButton() {
         const existing = document.getElementById(TX_BUTTON_ID);
         if (!txOnPage()) { existing?.remove(); return; }
-        const anchor = document.querySelector('[data-testid="title-action-pageRefresh"]');
-        if (!anchor || anchor.offsetParent === null) { existing?.remove(); return; }
+        const refresh = document.querySelector('[data-testid="title-action-pageRefresh"]');
+        if (!refresh || refresh.offsetParent === null) { existing?.remove(); return; }
+        // The refresh button sits inside wrappers that show its "Click to refresh the page" tooltip:
+        // the export button goes before the outermost wrapper that holds only the refresh button
+        let anchor = refresh;
+        // (a wrapper hugs the button: not wider than it, so the climb never leaves the button's own spot)
+        const w = refresh.getBoundingClientRect().width;
+        while (anchor.parentElement && anchor.parentElement !== document.body &&
+            [...anchor.parentElement.children].filter(c => c.id !== TX_BUTTON_ID).length === 1 &&
+            anchor.parentElement.getBoundingClientRect().width <= w + 16) anchor = anchor.parentElement;
         if (existing && existing.nextElementSibling === anchor) return;
         existing?.remove();
         const btn = document.createElement('button');
@@ -39799,6 +39813,9 @@ Version 1.16:
         btn.addEventListener('mouseenter', () => btn.style.setProperty('background', '#e8f1fc', 'important'));
         btn.addEventListener('mouseleave', () => btn.style.setProperty('background', '#fff', 'important'));
         btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); txOpen(); });
+        // The page's own tooltips listen for these on their containers: keep them to our button
+        ['mouseover', 'mouseout', 'pointerover', 'pointerout', 'focusin', 'focusout'].forEach(type =>
+            btn.addEventListener(type, e => e.stopPropagation()));
         anchor.insertAdjacentElement('beforebegin', btn);
     }
 
