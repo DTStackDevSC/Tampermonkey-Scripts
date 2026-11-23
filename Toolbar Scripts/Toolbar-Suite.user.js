@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.51.0
+// @version      2.52.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.51.0';
-    const CHANGELOG = `Version 2.51.0:
+   const SCRIPT_VERSION = '2.52.0';
+    const CHANGELOG = `Version 2.52.0:
+- NS Policies Toolkit: new "📥 Export to CSV" button on Skope IT Transaction Events, next to the refresh button. It downloads the events matching the time range and filters of the page as a CSV file, with every field or only the columns shown, and writes the time range and filters at the top of the file and in its name. A Stop button keeps what was read. Nothing is changed in Netskope.
+
+Version 2.51.0:
 - Change Tracker: the Newly Registered Domains review and the Policies to delete card now show 👤 who added each domain or disabled each policy, so it is clear who would usually handle it. Anyone in the team can still handle it.
 
 Version 2.50.0:
@@ -30435,6 +30438,7 @@ Version 1.0:
         policyCopy:      'toolkit_policyCopy',
         bulkGroupAdd:    'toolkit_bulkGroupAdd',
         sslExport:       'toolkit_sslExport',
+        txExport:        'toolkit_txExport',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -30444,9 +30448,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.48.4';
+    const SCRIPT_VERSION = '1.49.0';
 
-    const CHANGELOG = `Version 1.48.4:
+    const CHANGELOG = `Version 1.49.0:
+- New "📥 Export to CSV" button on Skope IT Transaction Events, next to the refresh button, for troubleshooting and later analysis. It downloads the events matching the time range and filters of the page, newest first: every field Netskope keeps (troubleshooting fields first) or only the columns shown, up to the number of events you choose. The time range, the filters and the number of events are written at the top of the file, and the tenant and time range are in its name. Choose comma or semicolon for your Excel. ■ Stop keeps the events read so far. Nothing is changed in Netskope. Turn it off in Settings with "📥 Transaction Events export".
+
+Version 1.48.4:
 - Log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
 
 Version 1.48.3:
@@ -31078,6 +31085,11 @@ Version 1.16:
             label:       '📥 SSL Decryption export',
             description: 'On the SSL Decryption policy list, adds an "Export to Excel" button next to Add Policy: it downloads every policy with all its data, in a Policies sheet and a Criteria sheet ready to filter. Nothing is changed in Netskope.',
         },
+        {
+            key:         'txExport',
+            label:       '📥 Transaction Events export',
+            description: 'On Skope IT Transaction Events, adds an "Export to CSV" button next to the refresh button: it downloads the events matching the time range and filters of the page, with those criteria written at the top of the file. Nothing is changed in Netskope.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -31326,6 +31338,7 @@ Version 1.16:
                     if (key === 'policyCopy') cleanupPolicyCopy();
                     if (key === 'bulkGroupAdd') cleanupBulkGroups();
                     if (key === 'sslExport') cleanupSslExport();
+                    if (key === 'txExport') cleanupTxExport();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -31377,7 +31390,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd', 'sslExport'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd', 'sslExport', 'txExport'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -32670,6 +32683,50 @@ Version 1.16:
                 },
             },
             {
+                icon: '🧾',
+                title: 'Transaction Events export',
+                buildContent(body) {
+                    lead(body, 'On Skope IT > Transaction Events, download the events you are looking at as a CSV file for troubleshooting.');
+                    body.appendChild(hrow([
+                        chip('📥 Export to CSV', '#fff', { color: '#0073e6', border: '1px solid #0073e6' }),
+                        chip('⟳', '#fff', { color: '#555', border: '1px solid #ccc' }),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'The button sits next to the page refresh button, top right. It opens a small window with the export options.');
+                    const crit = document.createElement('div');
+                    Object.assign(crit.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', background: '#f8f8ff',
+                        border: '1px solid #d0d0f0', borderRadius: '6px', padding: '10px 12px', margin: '10px 0 0 0' });
+                    [['Tenant', 'tenant.goskope.com'], ['Time range', '2026-11-22 23:00:00 to 2026-11-23 15:16:00 UTC (Custom Range)'],
+                        ['Filters', "x_cs_site eq 'office' and x_cs_app eq 'Microsoft Forms'"]].forEach(([k, v]) => {
+                        crit.appendChild(span(k, { fontSize: '12px', fontWeight: 'bold', color: '#667eea' }));
+                        crit.appendChild(span(v, { fontSize: '12px', color: '#333' }));
+                    });
+                    body.appendChild(crit);
+                    caption(body, 'The window shows what will be exported: the same time range and filters as the table. Change them on the page, not here.');
+                    const opts = [
+                        { bg: '#667eea', label: 'All fields', desc: 'Every field Netskope keeps for each event (about 190), the troubleshooting ones first: time, user, action, policy, app, URL, IPs, SSL, transaction id.' },
+                        { bg: '#75787b', label: 'Page columns', desc: 'Only the columns shown in the table, plus the Transaction ID.' },
+                        { bg: '#0073e6', label: 'Rows', desc: 'At most 10,000 events by default, newest first, up to 100,000.' },
+                        { bg: '#26890d', label: 'Separator', desc: 'Comma, or semicolon for Excel in Spanish and other languages that use a decimal comma.' },
+                    ];
+                    for (const o of opts) {
+                        body.appendChild(hrow([chip(o.label, o.bg), span(o.desc, { fontSize: '12px', color: '#555' })], { flexWrap: 'nowrap', margin: '8px 0 0 0', alignItems: 'flex-start' }));
+                    }
+                    const box = document.createElement('div');
+                    Object.assign(box.style, { background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px', padding: '10px 14px',
+                        fontFamily: 'monospace', fontSize: '11px', color: '#333', margin: '12px 0 0 0', overflowX: 'auto', whiteSpace: 'pre' });
+                    box.textContent = "# Netskope Transaction Events export\n# Tenant: tenant.goskope.com\n# Time range: 2026-11-22 23:00:00 to 2026-11-23 15:16:00 UTC (Custom Range on the page)\n# Filters: x_cs_site eq 'office'\n# Rows: 8412\n\nTimestamp (UTC) (timestamp),User (x_c_authn_user),Action (x_action),...";
+                    body.appendChild(box);
+                    caption(body, 'The top of the file keeps the criteria. The file name has the tenant and the time range: transaction-events_tenant_20261122-2300_20261123-1516_filtered.csv');
+                    bullets(body, [
+                        'It only reads: nothing changes in Netskope.',
+                        'A wheel covers the options while it reads, with a running count. ■ Stop keeps the events read so far and saves them.',
+                        'When the limit cuts the export, the window and the file say that more events exist: narrow the time range or the filters.',
+                        'Times are in UTC. Long transaction ids are kept digit for digit, and a cell starting with = + - @ gets a leading \' so Excel never runs it.',
+                        'If the window says the time range is not known, click the page refresh button, wait for the table and open it again.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -32733,6 +32790,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('👥 Source Manager', true, 'Check, add, remove and export users or groups in the Source of a Real-time Protection policy.'));
                     togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
                     togglesWrap.appendChild(toggle('📥 SSL Decryption export', true, 'Download every SSL Decryption policy as an Excel file.'));
+                    togglesWrap.appendChild(toggle('📥 Transaction Events export', true, 'Download the Skope IT Transaction Events of the page as a CSV file, with its time range and filters.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
@@ -36245,6 +36303,7 @@ Version 1.16:
             const url = this.__nstkUrl || '';
             seLearnFromRequest(url, body);
             smLearnFromRequest(this, url, body);
+            txLearn(url);
             if (/steering/i.test(url)) {
                 this.addEventListener('load', () => {
                     try {
@@ -36261,6 +36320,7 @@ Version 1.16:
                 try {
                     const url = typeof input === 'string' ? input : (input && input.url) || '';
                     seLearnFromRequest(url, init && init.body);
+                    txLearn(url);
                 } catch (e) { /* never block the page's request */ }
                 return origFetch.apply(this, arguments);
             };
@@ -36269,7 +36329,7 @@ Version 1.16:
 
     // Must run before the console app starts so its first requests are seen
     if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy') || getSetting('bulkGroupAdd') ||
-        isToolEnabled('changeTracker')) nsInstallSniffer();
+        getSetting('txExport') || isToolEnabled('changeTracker')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -39306,6 +39366,452 @@ Version 1.16:
         clearInterval(sx.timer);
         sx.timer = null;
         removeAll('#' + SX_BUTTON_ID);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // TRANSACTION EVENTS EXPORT
+    // Downloads the Transaction Events matching the page's time range and
+    // filters as a CSV file. Repeats the console's own read request
+    // (GET /api/v2/events/datasearch/txnlog, session cookie), page by page.
+    // Reads only, nothing is changed in Netskope.
+    // ─────────────────────────────────────────────────────────────
+
+    const TX_BUTTON_ID = 'nstk-tx-export-btn';
+    const TX_HOST_ID   = 'nstk-tx-export-host';
+    const TX_LABEL     = '📥 Export to CSV';
+    const TX_TITLE     = 'Download the events matching the time range and filters of this page as a CSV file (NS Policies Toolkit). Nothing is changed in Netskope.';
+    const TX_PATH      = '/api/v2/events/datasearch/txnlog';
+    const TX_PAGE      = 500;      // the largest page the console itself asks for
+    const TX_MAX_ROWS  = 100000;
+    const TX_PREFS_KEY = 'toolkit_txExportPrefs';
+    // The page shows these columns when nothing else was chosen
+    const TX_DEFAULT_FIELDS = ['timestamp', 'x_c_authn_user', 'x_cs_app', 'x_cs_site', 'x_cs_src_ip_egress', 'x_action', 'x_transaction_id'];
+    const tx = { timer: null, busy: false, stop: false, lastUrl: null };
+
+    // Troubleshooting fields first, in this order, with the console's names; any other field follows alphabetically
+    const TX_FIELDS = [
+        ['timestamp', 'Timestamp (UTC)'], ['x_c_authn_user', 'User'], ['x_action', 'Action'], ['x_action_reason', 'Action Reason'],
+        ['x_policy_name', 'Policy Name'], ['x_policy_action', 'Policy Action'],
+        ['x_policy_justification_type', 'Justification Type'], ['x_policy_justification_reason', 'Justification Reason'],
+        ['x_cs_app', 'Name (Application)'], ['x_cs_app_activity', 'Activity'], ['x_cs_app_suite', 'Suite'],
+        ['x_cs_app_instance_id', 'Instance ID'], ['x_cs_app_cci', 'CCI'], ['x_cs_app_ccl', 'CCL'], ['x_cs_site', 'Site'],
+        ['cs_host', 'Host'], ['x_cs_url', 'URL'], ['x_cs_uri_path', 'Path'], ['cs_method', 'Method'], ['sc_status', 'Status Code'],
+        ['x_cs_access_method', 'Access Method'], ['x_cs_src_ip', 'Source IP'], ['x_cs_src_ip_egress', 'Egress Source IP'],
+        ['x_cs_dst_ip', 'Destination IP'], ['x_cs_dst_port', 'Destination Port'], ['x_cs_sni', 'SNI'],
+        ['x_ssl_bypass', 'SSL Bypass'], ['x_ssl_policy_name', 'SSL Policy Name'], ['x_type', 'Type'], ['x_error', 'Error'],
+        ['x_c_authz_groups', 'Groups'], ['x_c_authn_source', 'Authentication Source'], ['x_c_local_time', 'Local Time'],
+        ['x_cs_process', 'Process'], ['x_cs_parent_process', 'Parent Process'], ['x_cs_session_id', 'Session ID'],
+        ['x_r_cert_startdate', 'Certificate Start Date'], ['x_r_cert_enddate', 'Certificate End Date'],
+        ['x_transaction_id', 'Transaction ID'],
+    ];
+    const TX_LABELS = new Map(TX_FIELDS);
+    const TX_ORDER  = new Map(TX_FIELDS.map(([k], i) => [k, i]));
+
+    function txOnPage() {
+        return /^#\/skopeit-transaction-events\/?(\?|$)/.test(window.location.hash || '');
+    }
+
+    // Called by the shared request sniffer for every request the page sends: keeps the last list request
+    // (it carries the page's time range, filters and columns). The detail request of one event (limit=1) is skipped.
+    function txLearn(url) {
+        try {
+            // The export's own reads are not the page's choice of filters
+            if (!url || tx.busy || url.indexOf(TX_PATH) < 0) return;
+            const u = new URL(url, location.origin);
+            if (u.pathname !== TX_PATH || u.origin !== location.origin) return;
+            if (Number(u.searchParams.get('limit')) <= 1) return;
+            tx.lastUrl = u.pathname + u.search;
+        } catch (e) { /* never block the page's request */ }
+    }
+
+    // The page's address keeps the time period and the filters too: used when no request was seen yet
+    function txFromHash() {
+        const hash = window.location.hash || '';
+        const q = new URLSearchParams(hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '');
+        const period = q.get('timePeriod') || '';
+        const now = Math.floor(Date.now() / 1000);
+        let start, end = now, m;
+        if ((m = period.match(/^custom_(\d+)_(\d+)$/))) { start = Number(m[1]); end = Number(m[2]); }
+        else if ((m = period.match(/^(\d+)_(hour|day|week)s?$/i))) start = now - Number(m[1]) * { hour: 3600, day: 86400, week: 604800 }[m[2].toLowerCase()];
+        else if (!period) start = now - 30 * 86400;
+        else return null;
+        return { start, end, query: q.get('query') || '', fields: TX_DEFAULT_FIELDS.slice(), period };
+    }
+
+    // What the export asks for: the last list request of the page, else its address
+    function txCriteria() {
+        const hashPeriod = (() => {
+            const hash = window.location.hash || '';
+            return new URLSearchParams(hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '').get('timePeriod') || '';
+        })();
+        if (tx.lastUrl) {
+            const u = new URL(tx.lastUrl, location.origin);
+            const p = u.searchParams;
+            const start = Number(p.get('starttime')), end = Number(p.get('endtime'));
+            if (isFinite(start) && isFinite(end) && start > 0) {
+                const fields = (p.get('fields') || '').split(',').map(s => s.trim()).filter(Boolean);
+                return { start, end, query: p.get('query') || '', fields: fields.length ? fields : TX_DEFAULT_FIELDS.slice(),
+                    orderbys: p.get('orderbys') || 'timestamp desc', period: hashPeriod, source: 'request' };
+            }
+        }
+        const h = txFromHash();
+        return h ? Object.assign(h, { orderbys: 'timestamp desc', source: 'address' }) : null;
+    }
+
+    function txPeriodText(period) {
+        if (!period) return 'Last 30 Days';
+        if (/^custom_/.test(period)) return 'Custom Range';
+        const m = period.match(/^(\d+)_(hour|day|week)s?$/i);
+        if (m) return `Last ${m[1]} ${m[2][0].toUpperCase() + m[2].slice(1).toLowerCase()}${m[1] === '1' ? '' : 's'}`;
+        return period.replace(/_/g, ' ');
+    }
+
+    const txPad = v => String(v).padStart(2, '0');
+    function txUtc(sec, compact) {
+        const d = new Date(Number(sec) * 1000);
+        if (isNaN(d)) return String(sec);
+        const day = `${d.getUTCFullYear()}${compact ? '' : '-'}${txPad(d.getUTCMonth() + 1)}${compact ? '' : '-'}${txPad(d.getUTCDate())}`;
+        return compact ? `${day}-${txPad(d.getUTCHours())}${txPad(d.getUTCMinutes())}`
+            : `${day} ${txPad(d.getUTCHours())}:${txPad(d.getUTCMinutes())}:${txPad(d.getUTCSeconds())}`;
+    }
+
+    // Big ids (x_transaction_id) do not fit a JavaScript number: they are read as text so no digit is lost
+    function txParse(text) {
+        return JSON.parse(String(text).replace(/("[\w.-]+"\s*:\s*)(-?\d{16,})(?=\s*[,}\]])/g, '$1"$2"'));
+    }
+
+    function txUrl(c, offset, limit, allFields) {
+        const parts = [['starttime', c.start], ['endtime', c.end], ['query', c.query], ['limit', limit], ['offset', offset],
+            ['orderbys', c.orderbys || 'timestamp desc']];
+        if (!allFields) parts.push(['fields', c.fields.join(',')]);
+        return TX_PATH + '?' + parts.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
+    }
+
+    async function txGet(url) {
+        const res = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json, text/plain, */*' } });
+        const text = await res.text();
+        if (res.status === 401 || res.status === 403) throw new Error(`Netskope refused the request (${res.status}). Your session may have ended or your role cannot read Transaction Events: reload the page and sign in again.`);
+        if (!res.ok) throw new Error(`Netskope answered ${res.status}${text ? ': ' + text.slice(0, 200) : ''}`);
+        let json;
+        try { json = txParse(text); } catch (e) { throw new Error('Netskope sent an unexpected answer', { cause: e }); }
+        const st = json && json.status;
+        if (st && st.status_code && Number(st.status_code) >= 400) throw new Error(`Netskope could not run the search: ${st.message || st.status_code}`);
+        if (!json || !Array.isArray(json.result)) throw new Error('Netskope sent an unexpected answer');
+        return json.result;
+    }
+
+    // Reads every page until fewer rows come back than asked for, the limit is reached or Stop is clicked
+    async function txFetchAll(c, opts, onProgress) {
+        const rows = [];
+        let more = false;
+        for (let offset = 0; ; offset += TX_PAGE) {
+            if (tx.stop) return { rows, stopped: true, more: true };
+            const want = Math.min(TX_PAGE, opts.limit - rows.length);
+            // One row more than wanted tells whether the limit cut the export
+            const page = await txGet(txUrl(c, offset, want + 1, opts.allFields));
+            rows.push(...page.slice(0, want));
+            onProgress(rows.length);
+            if (page.length <= want) return { rows, stopped: false, more: false };
+            if (rows.length >= opts.limit) { more = true; return { rows, stopped: false, more }; }
+        }
+    }
+
+    function txColumns(rows, c, allFields) {
+        const keys = new Set(allFields ? [] : c.fields);
+        rows.forEach(r => Object.keys(r || {}).forEach(k => keys.add(k)));
+        if (!keys.size) c.fields.forEach(k => keys.add(k));
+        return [...keys].sort((a, b) => {
+            const ia = TX_ORDER.has(a) ? TX_ORDER.get(a) : 1e6, ib = TX_ORDER.has(b) ? TX_ORDER.get(b) : 1e6;
+            return ia - ib || a.localeCompare(b);
+        });
+    }
+
+    function txCell(key, v) {
+        if (v == null) return '';
+        if (key === 'timestamp' && /^\d+$/.test(String(v))) return txUtc(v);
+        if (Array.isArray(v)) return v.map(x => x != null && typeof x === 'object' ? JSON.stringify(x) : String(x)).join('; ');
+        if (typeof v === 'object') return JSON.stringify(v);
+        return String(v);
+    }
+
+    // RFC 4180 quoting. A cell that would start a formula in Excel (= + - @, tab, return) gets a leading ' so it stays text.
+    function txCsvField(s, guard = true) {
+        s = String(s);
+        if (guard && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
+        return /[",\r\n;]/.test(s) || /^\s|\s$/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+
+    function txBuildCsv(rows, columns, meta) {
+        const lines = [];
+        if (meta.headerLines) {
+            [
+                '# Netskope Transaction Events export',
+                `# Tenant: ${meta.host}`,
+                `# Time range: ${txUtc(meta.c.start)} to ${txUtc(meta.c.end)} UTC (${txPeriodText(meta.c.period)} on the page)`,
+                `# Filters: ${meta.c.query || 'none'}`,
+                `# Fields: ${meta.allFields ? 'all fields' : 'the columns shown on the page'}`,
+                `# Sorted by: ${meta.c.orderbys || 'timestamp desc'}`,
+                `# Exported: ${new Date(meta.at).toISOString().replace('T', ' ').slice(0, 19)} UTC by NS Policies Toolkit ${SCRIPT_VERSION}`,
+                `# Rows: ${rows.length}${meta.stopped ? ' (stopped by you, more events exist)' : meta.more ? ` (limit of ${meta.limit} reached, more events exist: narrow the time range or the filters)` : ''}`,
+            ].forEach(l => lines.push(txCsvField(l, false)));
+            lines.push('');
+        }
+        const sep = meta.sep === ';' ? ';' : ',';
+        lines.push(columns.map(k => txCsvField(TX_LABELS.has(k) ? `${TX_LABELS.get(k)} (${k})` : k, false)).join(sep));
+        rows.forEach(r => lines.push(columns.map(k => txCsvField(txCell(k, r[k]))).join(sep)));
+        return '﻿' + lines.join('\r\n') + '\r\n';
+    }
+
+    function txFileName(c) {
+        const tenant = (location.hostname.split('.')[0] || 'tenant').replace(/[^\w-]/g, '');
+        return `transaction-events_${tenant}_${txUtc(c.start, true)}_${txUtc(c.end, true)}${c.query ? '_filtered' : ''}.csv`;
+    }
+
+    function txDownload(text, name) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }
+
+    function txPrefs() {
+        const p = GM_getValue(TX_PREFS_KEY, null) || {};
+        return { allFields: p.allFields !== false, limit: Number(p.limit) > 0 ? Math.min(Number(p.limit), TX_MAX_ROWS) : 10000,
+            headerLines: p.headerLines !== false, sep: p.sep === ';' ? ';' : ',' };
+    }
+
+    /* ── The window (native modal <dialog> in a shadow root; adoptedStyleSheets passes the page CSP) ── */
+
+    function txOpen() {
+        if (document.getElementById(TX_HOST_ID)) return;
+        const c = txCriteria();
+        const prefs = txPrefs();
+        const host = document.createElement('div');
+        host.id = TX_HOST_ID;
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(`
+            :host { all: initial; }
+            dialog { border: none; border-radius: 10px; padding: 0; width: 560px; max-width: 92vw; max-height: 86vh;
+                color: #333; background: #fff; font: 13px/1.45 Arial, sans-serif; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+            dialog:modal { overscroll-behavior: contain; }
+            dialog::backdrop { background: rgba(0,0,0,.35); overflow: hidden; overscroll-behavior: contain; }
+            .wrap { display: flex; flex-direction: column; max-height: 86vh; }
+            header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 2px solid #667eea; }
+            h1 { margin: 0; font-size: 16px; color: #333; }
+            .x { background: none; border: none; font-size: 18px; color: #999; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+            .x:hover { background: #f0f0f0; }
+            .body { padding: 14px 18px; overflow-y: auto; }
+            .opts { position: relative; border-radius: 6px; }
+            .crit { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; background: #f8f8ff; border: 1px solid #d0d0f0;
+                border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+            .crit b { color: #667eea; font-size: 12px; white-space: nowrap; }
+            .crit span { word-break: break-word; font-size: 12px; }
+            fieldset { border: 1px solid #e5e7eb; border-radius: 6px; margin: 0 0 10px; padding: 8px 12px; }
+            legend { font-weight: bold; font-size: 12px; color: #444; padding: 0 4px; }
+            label { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0; cursor: pointer; }
+            label small { display: block; color: #777; font-size: 11px; }
+            input[type=number] { width: 110px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; background: #fff; color: #333; }
+            .note { color: #777; font-size: 11px; margin: 4px 0 0; }
+            .warn { color: #b45309; font-size: 12px; margin: 0 0 10px; }
+            .status { min-height: 18px; margin: 8px 0 0; font-size: 12px; }
+            .status.ok { color: #26890d; } .status.err { color: #c62828; } .status.info { color: #005587; }
+            footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid #eee; }
+            button.b { padding: 8px 16px; border-radius: 5px; font-weight: bold; font-size: 13px; cursor: pointer; border: 1px solid #ccc;
+                background: #fff; color: #444; }
+            button.b:hover:not(:disabled) { background: #f3f4f6; }
+            button.primary { background: #667eea; border-color: #667eea; color: #fff; }
+            button.primary:hover:not(:disabled) { background: #5568d3; }
+            button.stop { border-color: #c62828; color: #c62828; }
+            button:disabled { opacity: .6; cursor: not-allowed; }
+            [hidden] { display: none !important; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <dialog aria-labelledby="tx-title"><div class="wrap">
+                <header><h1 id="tx-title">📥 Export Transaction Events to CSV</h1>
+                    <button type="button" class="x" data-tx="x" aria-label="Close">✕</button></header>
+                <div class="body">
+                    <div class="opts">
+                        <div class="crit">
+                            <b>Tenant</b><span data-tx="tenant"></span>
+                            <b>Time range</b><span data-tx="range"></span>
+                            <b>Filters</b><span data-tx="filters"></span>
+                        </div>
+                        <p class="warn" data-tx="warn" hidden></p>
+                        <fieldset><legend>Fields</legend>
+                            <label><input type="radio" name="tx-fields" value="all"><span>All fields <small>Every field Netskope keeps for each event (about 190), troubleshooting fields first.</small></span></label>
+                            <label><input type="radio" name="tx-fields" value="page"><span>Only the columns shown on the page <small>The same columns as the table, plus the Transaction ID.</small></span></label>
+                        </fieldset>
+                        <fieldset><legend>Rows</legend>
+                            <label style="align-items:center">At most <input type="number" data-tx="limit" min="1" max="${TX_MAX_ROWS}" step="1000"> events, newest first</label>
+                            <p class="note">Up to ${TX_MAX_ROWS.toLocaleString('en-US')}. The file says when the limit cut the export.</p>
+                        </fieldset>
+                        <fieldset><legend>Separator</legend>
+                            <label><input type="radio" name="tx-sep" value=","><span>Comma <small>The CSV standard, for Excel in English and most analysis tools.</small></span></label>
+                            <label><input type="radio" name="tx-sep" value=";"><span>Semicolon <small>For Excel in Spanish, German, French and other languages that use a comma for decimals, so a double click opens it in columns.</small></span></label>
+                        </fieldset>
+                        <label><input type="checkbox" data-tx="header"><span>Write the time range and filters at the top of the file <small>Lines starting with # before the column names. Turn it off for tools that cannot skip them.</small></span></label>
+                    </div>
+                    <p class="status" data-tx="status" role="status" aria-live="polite"></p>
+                </div>
+                <footer>
+                    <button type="button" class="b stop" data-tx="stop" hidden>■ Stop</button>
+                    <button type="button" class="b" data-tx="cancel">Close</button>
+                    <button type="button" class="b primary" data-tx="go" autofocus>📥 Export</button>
+                </footer>
+            </div></dialog>`;
+        const $ = k => shadow.querySelector(`[data-tx="${k}"]`);
+        const dlg = shadow.querySelector('dialog');
+        $('tenant').textContent = location.host;
+        if (c) {
+            $('range').textContent = `${txUtc(c.start)} to ${txUtc(c.end)} UTC (${txPeriodText(c.period)})`;
+            $('filters').textContent = c.query || 'none';
+            if (c.source === 'address') {
+                $('warn').hidden = false;
+                $('warn').textContent = '⚠️ Read from the page address, not from the table. If the table shows something else, click the page\'s refresh button and open this window again.';
+            }
+        } else {
+            $('range').textContent = 'not known';
+            $('filters').textContent = 'not known';
+        }
+        shadow.querySelector(`input[name="tx-fields"][value="${prefs.allFields ? 'all' : 'page'}"]`).checked = true;
+        $('limit').value = prefs.limit;
+        $('header').checked = prefs.headerLines;
+        shadow.querySelector(`input[name="tx-sep"][value="${prefs.sep}"]`).checked = true;
+        const status = (text, kind) => { $('status').textContent = text; $('status').className = 'status ' + (kind || ''); };
+        if (!c) {
+            $('go').disabled = true;
+            $('go').title = 'The time range of the page is not known yet';
+            status('⚠️ The time range of the page is not known yet. Click the page\'s refresh button (top right), wait for the table, then open this window again.', 'err');
+        }
+
+        const close = () => {
+            if (tx.busy) { status('⏳ Still exporting. Click ■ Stop first, the events read so far are kept.', 'info'); $('stop').focus(); return; }
+            if (dlg.open) dlg.close();
+            host.remove();
+        };
+        dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
+        $('x').addEventListener('click', close);
+        $('cancel').addEventListener('click', close);
+        $('stop').addEventListener('click', () => {
+            tx.stop = true;
+            $('stop').disabled = true;
+            $('stop').textContent = '⏳ Stopping…';
+        });
+
+        $('go').addEventListener('click', async () => {
+            if (tx.busy || !c) return;
+            const limit = Math.floor(Number($('limit').value));
+            if (!(limit >= 1 && limit <= TX_MAX_ROWS)) {
+                status(`⚠️ Write a number of events from 1 to ${TX_MAX_ROWS.toLocaleString('en-US')}.`, 'err');
+                $('limit').focus();
+                return;
+            }
+            const opts = { allFields: shadow.querySelector('input[name="tx-fields"]:checked').value === 'all', limit,
+                headerLines: $('header').checked, sep: shadow.querySelector('input[name="tx-sep"]:checked').value };
+            GM_setValue(TX_PREFS_KEY, opts);
+            tx.busy = true;
+            tx.stop = false;
+            const goLabel = $('go').textContent;
+            $('go').disabled = $('cancel').disabled = true;
+            $('go').textContent = '⏳ Exporting…';
+            $('stop').hidden = false;
+            $('stop').disabled = false;
+            $('stop').textContent = '■ Stop';
+            txSetButton('⏳ Exporting…');
+            // The options are covered while it runs; Stop and the progress line stay usable
+            const busy = suiteBusyStart(shadow.querySelector('.opts'), 'Loading events…');
+            status('🔄 Reading the events from Netskope…', 'info');
+            try {
+                const res = await txFetchAll(c, opts, n => {
+                    const t = `Loading events… ${n.toLocaleString('en-US')} of at most ${limit.toLocaleString('en-US')}`;
+                    busy.setLabel(t);
+                    status('🔄 ' + t, 'info');
+                });
+                if (!res.rows.length) {
+                    status(res.stopped ? 'ℹ️ Stopped before any event was read. No file was made.' : 'ℹ️ No events match this time range and these filters. No file was made.', 'info');
+                    txSetButton('ℹ️ No events', 'No events matched, no file was made.');
+                    return;
+                }
+                const columns = txColumns(res.rows, c, opts.allFields);
+                const csv = txBuildCsv(res.rows, columns, { host: location.host, at: Date.now(), c, allFields: opts.allFields,
+                    limit, stopped: res.stopped, more: res.more, headerLines: opts.headerLines, sep: opts.sep });
+                const name = txFileName(c);
+                txDownload(csv, name);
+                const n = res.rows.length.toLocaleString('en-US');
+                if (res.stopped) status(`⚠️ Stopped: ${n} events saved to ${name}. More events exist.`, 'info');
+                else if (res.more) status(`⚠️ ${n} events saved to ${name}, the limit you set. More events exist: narrow the time range or the filters, or raise the limit.`, 'info');
+                else status(`✅ ${n} events exported to ${name} (${columns.length} columns).`, 'ok');
+                txSetButton('✓ Exported', `${n} events exported to ${name}.`);
+            } catch (err) {
+                console.error('[NS Toolkit] Transaction Events export:', err);
+                status('❌ ' + err.message, 'err');
+                txSetButton('✗ Export failed', err.message);
+            } finally {
+                busy.stop();
+                tx.busy = false;
+                tx.stop = false;
+                if ($('go').isConnected) {
+                    $('go').disabled = $('cancel').disabled = false;
+                    $('go').textContent = goLabel;
+                    $('stop').hidden = true;
+                }
+                setTimeout(() => { if (!tx.busy) txSetButton(TX_LABEL, null); }, 4000);
+            }
+        });
+
+        document.body.appendChild(host);
+        try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+    }
+
+    /* ── The button, next to the page's refresh button ── */
+
+    function txSetButton(text, title) {
+        const b = document.getElementById(TX_BUTTON_ID);
+        if (!b) return;
+        b.textContent = text;
+        b.title = title || TX_TITLE;
+    }
+
+    function txSyncButton() {
+        const existing = document.getElementById(TX_BUTTON_ID);
+        if (!txOnPage()) { existing?.remove(); return; }
+        const anchor = document.querySelector('[data-testid="title-action-pageRefresh"]');
+        if (!anchor || anchor.offsetParent === null) { existing?.remove(); return; }
+        if (existing && existing.nextElementSibling === anchor) return;
+        existing?.remove();
+        const btn = document.createElement('button');
+        btn.id = TX_BUTTON_ID;
+        btn.type = 'button';
+        // Looks like the page's own "Save as..." button when it is there
+        const like = document.querySelector('[data-testid="saved-filters-save-as"]');
+        if (like) btn.className = like.className;
+        btn.textContent = TX_LABEL;
+        btn.title = TX_TITLE;
+        // !important, so the console's own layered rules cannot bend it
+        const look = { 'margin-right': '12px', 'white-space': 'nowrap', cursor: 'pointer', 'font-weight': 'bold', 'font-size': '13px',
+            padding: '4px 10px', border: '1px solid #0073e6', 'border-radius': '4px', background: '#fff', color: '#0073e6' };
+        for (const [k, v] of Object.entries(look)) btn.style.setProperty(k, v, 'important');
+        btn.addEventListener('mouseenter', () => btn.style.setProperty('background', '#e8f1fc', 'important'));
+        btn.addEventListener('mouseleave', () => btn.style.setProperty('background', '#fff', 'important'));
+        btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); txOpen(); });
+        anchor.insertAdjacentElement('beforebegin', btn);
+    }
+
+    function initTxExport() {
+        if (!getSetting('txExport') || tx.timer) return;
+        tx.timer = setInterval(txSyncButton, 1000);
+        txSyncButton();
+    }
+
+    function cleanupTxExport() {
+        clearInterval(tx.timer);
+        tx.timer = null;
+        removeAll(`#${TX_BUTTON_ID}, #${TX_HOST_ID}`);
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -43701,6 +44207,7 @@ Version 1.16:
         initPolicyCopy();
         initBulkGroups();
         initSslExport();
+        initTxExport();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
