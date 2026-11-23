@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.50.0
+// @version      2.51.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.50.0';
-    const CHANGELOG = `Version 2.50.0:
+   const SCRIPT_VERSION = '2.51.0';
+    const CHANGELOG = `Version 2.51.0:
+- Change Tracker: the Newly Registered Domains review and the Policies to delete card now show 👤 who added each domain or disabled each policy, so it is clear who would usually handle it. Anyone in the team can still handle it.
+
+Version 2.50.0:
 - Destination Profile Editor: log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
 - NS Policies Toolkit: log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
 
@@ -19086,9 +19089,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.14.3';
+    const SCRIPT_VERSION = '2.15.0';
 
-    const CHANGELOG = `Version 2.14.3:
+    const CHANGELOG = `Version 2.15.0:
+- The Newly Registered Domains review and the Policies to delete card now show 👤 who added each domain or disabled each policy, so it is clear who would usually handle it. Anyone in the team can still handle it.
+
+Version 2.14.3:
 - The sidebar now shows above everything on the page, while the ticket stays usable next to it and entries are still written into it. Its windows (edit, entry details, confirmations, paste, conflicts, setup, NRD review and profiles) open above it, and Esc closes them like Cancel or a click outside. The window that asks which version to keep after an edit conflict still needs a choice.
 
 Version 2.14.2:
@@ -26451,7 +26457,7 @@ Version 1.4.3:
                     Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', overflow: 'hidden', margin: '10px 0 4px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(hrow([span('EMA · tenant.goskope.com', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
                         chip('↗ Open Netskope', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { padding: '6px 10px', margin: '0', background: '#f8f8ff', justifyContent: 'space-between' }));
-                    [['old-domain.com', '33 days · RITM0012345'], ['new-shop.net', '31 days · RITM0012399']].forEach(([d, meta]) => {
+                    [['old-domain.com', '33 days · RITM0012345 · 👤 Jane Doe'], ['new-shop.net', '31 days · RITM0012399 · 👤 John Smith']].forEach(([d, meta]) => {
                         card.appendChild(hrow([span('☐', { fontSize: '13px' }), span(d, { fontFamily: 'monospace', fontSize: '12px' }), span(meta, { fontSize: '11px', color: '#777' }),
                             chip('🔍 Check category', 'transparent', { color: '#667eea', border: '1px solid #c0c8f0' })], { padding: '4px 10px', margin: '0' }));
                     });
@@ -26461,6 +26467,7 @@ Version 1.4.3:
                     bullets(body, [
                         'Check each category, take the domains that are no longer Newly Registered Domains out of the profile in Netskope, then tick them and click "Mark as removed". It is logged in the ticket where they were added.',
                         'Still categorized as NRD: tick them and click "Keep 7 more days". They come back after that.',
+                        '👤 shows who added the domain in the change log: that person would usually review it. Anyone in the team can still do it.',
                         'Profiles whose name contains "Newly Registered Domain" or "Newly Registered Domains" count by themselves. Others can be added in the Manage Reminders tab, "🛠 Profiles", a list shared by the whole team.',
                         '"↺ Check now" in the Newly Registered Domains card looks for domains right away, without waiting for the next automatic check. "↺ Check all" at the top of the tab, and "↺ Check now" in the banner, look for every kind of reminder.',
                         'The API can be set up from the review ("Set up the API") or in the profiles window: "🔑 Manage key" opens the API Keys of the toolbar, then test it and turn it on per tenant.',
@@ -26477,8 +26484,8 @@ Version 1.4.3:
                     const card = document.createElement('div');
                     Object.assign(card.style, { border: '1px solid #e8e8f0', borderRadius: '6px', overflow: 'hidden', margin: '0 0 4px', fontFamily: 'Arial, sans-serif' });
                     card.appendChild(hrow([span('🗑 Policies to delete', { fontSize: '12px', fontWeight: 'bold', color: '#333' })], { padding: '6px 10px', margin: '0', background: '#f8f8ff' }));
-                    [['☑', '⚠ Allow-OldApp', 'Policies · EMA · RITM0012345', 'Disabled 01/10 · delete by 31/10 (overdue 3 days)', '#b02a37'],
-                     ['', '● Block-Test', 'DLP Policies · AME · RITM0012399', 'Disabled 20/10 · delete by 19/11 (16 days left)', '#666']].forEach(([box, name, meta, when, color]) => {
+                    [['☑', '⚠ Allow-OldApp', 'Policies · EMA · RITM0012345 · 👤 Jane Doe', 'Disabled 01/10 · delete by 31/10 (overdue 3 days)', '#b02a37'],
+                     ['', '● Block-Test', 'DLP Policies · AME · RITM0012399 · 👤 John Smith', 'Disabled 20/10 · delete by 19/11 (16 days left)', '#666']].forEach(([box, name, meta, when, color]) => {
                         const r = hrow([span(box || ' ', { fontSize: '13px', width: '14px' }), span(name, { fontSize: '12px', fontWeight: 'bold' }), span(meta, { fontSize: '11px', color: '#777' }),
                             chip('↩ Re-enabled', 'transparent', { color: '#28a745', border: '1px solid #28a745' })], { padding: '4px 10px 0', margin: '0' });
                         card.appendChild(r);
@@ -26490,6 +26497,7 @@ Version 1.4.3:
                         'Nothing to fill in: logging "Policy Deleted" or "DLP Policy Deleted" in a ticket is enough. The policy name and the ticket tenant are taken from that entry.',
                         'Once deleted in Netskope, tick the policies and click "🗑 Mark as deleted". It is logged in the ticket where they were disabled. Policies already marked by a colleague are reported instead of saved twice.',
                         'Deleted policies cannot be postponed: they stay on the list, in red, until they are marked as deleted.',
+                        '👤 shows who logged the policy as deleted (disabled it): that person would usually delete it in Netskope. Anyone in the team can still do it.',
                         'Another ticket asks to bring one back within the 30 days: click "↩ Re-enabled", type that ticket number and confirm. It logs "Policy Re-enabled" in that ticket and the reminder ends. The new "Policy Re-enabled" types in the change log do the same.',
                         'Disabled again later: a new "Policy Deleted" starts a new 30 day reminder.',
                         'The orange dot, the banner and the tab counter count these together with the Newly Registered Domains. "↺ Check now" in this card looks for policies only; "↺ Check all" at the top of the tab looks for every kind of reminder.',
@@ -26693,7 +26701,7 @@ Version 1.4.3:
                 if (NRD_ADD_TYPES.includes(entry.type)) {
                     matches.forEach(([k]) => open.delete(k));
                     open.set(`${tenantType}\n${profile}\n${d}`, { tenantType, host: (entry.tenant && entry.tenant.host) || '', profile, domain,
-                        ticket, addedTs: entry.ts, dueAt: at + NRD_EXPIRY_DAYS * NRD_DAY });
+                        ticket, addedTs: entry.ts, by: entry.author_label || '', dueAt: at + NRD_EXPIRY_DAYS * NRD_DAY });
                 } else if (entry.type === 'Destination Profile — Destinations Removed' || (entry.type === NRD_REVIEW_TYPE && f.outcome === 'removed')) {
                     matches.forEach(([k]) => open.delete(k));
                 } else if (entry.type === NRD_REVIEW_TYPE && f.outcome === 'kept') {
@@ -26763,7 +26771,7 @@ Version 1.4.3:
                 const at = nrdTime(entry.ts);
                 open.set(`${group}\n${tenantType}\n${name}`, { key: `${group}\n${tenantType}\n${name}`, group, deletedType: entry.type,
                     policyName: name, tenantType, host: (entry.tenant && entry.tenant.host) || '', ticket,
-                    disabledTs: entry.ts, dueAt: at + POLICY_DELETE_DAYS * NRD_DAY });
+                    disabledTs: entry.ts, by: entry.author_label || '', dueAt: at + POLICY_DELETE_DAYS * NRD_DAY });
             } else if (types.reenabled.has(entry.type)) {
                 closeAll(types.reenabled.get(entry.type));
             } else if (entry.type === POLICY_REVIEW_TYPE && f.outcome === 'deleted') {
@@ -27150,6 +27158,13 @@ Version 1.4.3:
             const link = css(mk('a', { href:`/nav_to.do?uri=task.do?sysparm_query=number=${encodeURIComponent(it.ticket)}`, target:'_blank', rel:'noopener' }), { color:'#667eea' });
             link.textContent = it.ticket;
             meta.appendChild(link);
+            if (it.by) {
+                const by = mk('span');
+                by.dataset.policyBy = '1';
+                by.textContent = ` · 👤 ${it.by}`;
+                by.title = 'Disabled by this person, who would usually delete it. Anyone in the team can still do it.';
+                meta.appendChild(by);
+            }
             const reBtn = css(mk('button', { type:'button' }), { marginLeft:'auto', padding:'2px 8px', fontSize:'11px', cursor:'pointer',
                 border:'1px solid #28a745', color:'#28a745', background:'#fff', borderRadius:'3px', fontWeight:'bold' });
             reBtn.dataset.policyReenable = '1';
@@ -27332,6 +27347,13 @@ Version 1.4.3:
                     tk.textContent = it.ticket;
                     tk.onclick = (e) => e.stopPropagation();
                     meta.appendChild(tk);
+                    if (it.by) {
+                        const by = mk('span');
+                        by.dataset.nrdBy = '1';
+                        by.textContent = ` · 👤 ${it.by}`;
+                        by.title = 'Added by this person, who would usually review it. Anyone in the team can still do it.';
+                        meta.appendChild(by);
+                    }
                     const cat = css(mk('button', { type:'button', title:'Opens the Netskope URL lookup for this domain' }), Object.assign(btnStyle(false), { padding:'2px 8px', fontSize:'11px' }));
                     cat.dataset.nrdCategory = '1';
                     cat.textContent = '🔍 Check category';
@@ -27351,7 +27373,7 @@ Version 1.4.3:
             r.dataset.nrdItem = '1';
             r.dataset.domain = it.domain;
             r.dataset.state = 'upcoming';
-            r.textContent = `${nrdDate(it.dueAt)} · ${it.domain} · ${it.profile}${it.tenantType ? ' (' + it.tenantType + ')' : ''} · ${it.ticket}`;
+            r.textContent = `${nrdDate(it.dueAt)} · ${it.domain} · ${it.profile}${it.tenantType ? ' (' + it.tenantType + ')' : ''} · ${it.ticket}${it.by ? ' · 👤 ' + it.by : ''}`;
             up.appendChild(r);
         });
         modal.appendChild(up);
