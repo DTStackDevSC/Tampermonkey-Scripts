@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.5.3
+// @version      4.6.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.3';
-    const CHANGELOG = `Version 4.5.3:
+    const SCRIPT_VERSION = '4.6.0';
+    const CHANGELOG = `Version 4.6.0:
+- Choose your tools and the Tools list of ⚙ Suite are grouped by platform, ServiceNow and Netskope. Each helper shows what it does, where it appears, what it needs, and a "When to use" note. A search box finds a helper by its name, its old name or what it does.
+- Five helpers have new names that say what they do: Short Description Helper is now Short Description Builder, Ticket Response Helper is now Response Templates, Formatted Text Helper is now Formatted Text Editor, Policy Naming Helper is now Policy Name Builder, and Ticket Subject Helper is now Support Case Subject Builder. Your settings and data stay as they were.
+
+Version 4.5.3:
 - The Tampermonkey description of the suite now says what its helpers are for.
 
 Version 4.5.2:
@@ -134,28 +138,45 @@ Version 4.0.0:
         { id: 'suite', name: 'Ticket Helpers', site: 'all', script: '|| Ticket Helpers ||',
           pages: ['https://*.service-now.com/*', 'https://*.goskope.com/*', 'https://*.netskope.com/*'],
           exact: ['shortDescTeam'], prefixes: ['ticketHelpers', 'tenantURL_'] },
-        { id: 'shortDescription', name: 'Short Description Helper', site: 'servicenow', script: '|| Ticket Helpers ||',
-          description: 'Build and update the short description in the team format',
+        { id: 'shortDescription', name: 'Short Description Builder', site: 'servicenow', script: '|| Ticket Helpers ||',
+          description: 'Builds the short description in the team format, with tenant, member firm and complexity.',
+          category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'your team',
+          whenToUse: 'On every new ticket, before working it.',
+          formerly: 'Short Description Helper',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*'],
           exact: [], prefixes: ['shortDesc'], setupKeys: ['shortDescTeam'] },
-        { id: 'ticketResponse', name: 'Ticket Response Helper', site: 'servicenow', script: 'Ticket Response Helper',
-          description: 'Insert team response templates with @mentions',
+        { id: 'ticketResponse', name: 'Response Templates', site: 'servicenow', script: 'Ticket Response Helper',
+          description: 'Inserts team reply templates into comments or work notes, with the requester @mentioned.',
+          category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'your team',
+          whenToUse: 'When you reply to the requester or close a ticket.',
+          formerly: 'Ticket Response Helper',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/sc_task.do*'],
           exact: [], prefixes: ['ticketResponse'], setupKeys: ['ticketResponseCustomResponses', 'ticketResponsePinned', 'ticketResponseFooterText'] },
-        { id: 'formattedText', name: 'Formatted Text Helper', site: 'servicenow', script: 'Formatted Text Helper',
-          description: 'Rich text editor for comments and work notes',
+        { id: 'formattedText', name: 'Formatted Text Editor', site: 'servicenow', script: 'Formatted Text Helper',
+          description: 'Writes comments and work notes with colors, tables, links and pasted images.',
+          category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: '',
+          whenToUse: 'When a reply needs a table, a screenshot or highlighted steps.',
+          formerly: 'Formatted Text Helper',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*'],
           exact: [], prefixes: ['formattedTextHelper'] },
         { id: 'slaBanner', name: 'SLA Alert Banner', site: 'servicenow', script: 'ServiceNow SLA Alert Banner',
-          description: 'Colored banner when the SLA due date is close',
+          description: 'Shows a colored banner on the ticket when its SLA due date is close.',
+          category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: '',
+          whenToUse: 'Nothing to do: it appears by itself on open tickets.',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*'],
           exact: [], prefixes: ['sla_banner_'], setupKeys: ['sla_banner_date_format'] },
-        { id: 'policyNaming', name: 'Policy Naming Helper', site: 'netskope', script: 'Real-time Protection Policy Naming Helper',
-          description: 'Build policy names in the team format, with presets',
+        { id: 'policyNaming', name: 'Policy Name Builder', site: 'netskope', script: 'Real-time Protection Policy Naming Helper',
+          description: 'Builds Netskope policy names in the team format, with saved presets.',
+          category: 'netskope', where: 'Appears on: Netskope console', setup: '',
+          whenToUse: 'When you create or rename a Real-time Protection or DLP policy.',
+          formerly: 'Policy Naming Helper',
           pages: ['https://*.goskope.com/*', 'https://*.netskope.com/*'],
           exact: ['netskopePresets'], prefixes: ['netskopeHelper'], setupKeys: ['netskopePresets'] },
-        { id: 'ticketSubject', name: 'Ticket Subject Helper', site: 'support', script: 'Netskope Ticket Subject Helper',
-          description: 'Subject line builder for Netskope support cases',
+        { id: 'ticketSubject', name: 'Support Case Subject Builder', site: 'support', script: 'Netskope Ticket Subject Helper',
+          description: 'Builds the subject line of a Netskope support case in the team format.',
+          category: 'netskope', where: 'Appears on: Netskope support portal', setup: '',
+          whenToUse: 'When you open a case on support.netskope.com.',
+          formerly: 'Ticket Subject Helper',
           pages: ['https://support.netskope.com/*'],
           exact: [], prefixes: ['nsTkt', 'nsTenant'] }
     ];
@@ -165,7 +186,7 @@ Version 4.0.0:
     const DT_TEAM_TOOLS = ['shortDescription', 'ticketResponse'];
 
     function dtCheckValues(tool, values) {
-        // The Ticket Response Helper keeps its custom responses as a list, not as JSON text.
+        // Response Templates keeps its custom responses as a list, not as JSON text.
         if (tool.id === 'ticketResponse' && values.ticketResponseCustomResponses !== undefined &&
             !Array.isArray(values.ticketResponseCustomResponses)) {
             return 'the custom responses are not in the expected format';
@@ -190,7 +211,7 @@ Version 4.0.0:
         if (values.ticketResponseTeam) {
             const current = GM_getValue('shortDescTeam', null);
             if (!current) GM_setValue('shortDescTeam', values.ticketResponseTeam);
-            else if (current !== values.ticketResponseTeam) note = 'The Ticket Response Helper used another team. Your Short Description Helper team is kept: change it in ⚙ Suite if needed.';
+            else if (current !== values.ticketResponseTeam) note = 'Response Templates used another team. Your Short Description Builder team is kept: change it in ⚙ Suite if needed.';
         }
         const map = { nsTenantEMA: 'tenantURL_EMA', nsTenantEU: 'tenantURL_EU', nsTenantCE: 'tenantURL_CE', nsTenantAPA: 'tenantURL_APA', nsTenantAME: 'tenantURL_AME' };
         for (const [from, to] of Object.entries(map)) {
@@ -621,7 +642,7 @@ Version 4.0.0:
             if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflictNames + '.');
             const savedTeam = GM_getValue('shortDescTeam', '');
             if (todo.some(a => a.values.ticketResponseTeam && savedTeam && a.values.ticketResponseTeam !== savedTeam)) {
-                lines.push('Team: your Ticket Response Helper used another team. The Short Description Helper team is kept.');
+                lines.push('Team: Response Templates used another team. The Short Description Builder team is kept.');
             }
             if (kept.length) lines.push('Already set up in Ticket Helpers, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
             lines.push('Import it into Ticket Helpers?');
@@ -662,24 +683,60 @@ Version 4.0.0:
     }
 
 
-    // A checkbox list of tools grouped by site. Used by the picker and by Settings > Tools.
+    // Sections of the tool list: the platform each tool works on, not the page it runs on.
+    const DT_CATEGORIES = [{ id: 'servicenow', label: 'ServiceNow' }, { id: 'netskope', label: 'Netskope' }];
+
+    // The tool list of the picker and of Settings > Tools: a search box, then one section per
+    // platform the tools work on, each tool as a card with what it does, where it shows up, what
+    // it needs, and a "When to use" note.
     function dtBuildToolList(ids, ticked) {
         const wrap = document.createElement('div');
         const boxes = new Map();
-        for (const site of ['servicenow', 'netskope', 'support']) {
-            const group = DATA_REGISTRY.filter(t => ids.includes(t.id) && t.site === site);
+        const groups = [];
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.placeholder = 'Search tools';
+        search.setAttribute('aria-label', 'Search tools');
+        Object.assign(search.style, {
+            width: '100%', boxSizing: 'border-box', padding: '6px 10px', margin: '2px 0 2px 0',
+            border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px',
+            background: '#fff', color: '#333', fontFamily: 'Arial, sans-serif'
+        });
+        wrap.appendChild(search);
+        const chip = (text, warn) => {
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                display: 'inline-block', padding: '1px 8px', borderRadius: '10px', fontSize: '11px',
+                lineHeight: '1.6', whiteSpace: 'nowrap', color: '#444',
+                background: warn ? '#fff4e0' : '#f3f4f8', border: warn ? '1px solid #f0c36d' : '1px solid #d8dae5'
+            });
+            return c;
+        };
+        for (const cat of DT_CATEGORIES) {
+            const group = DATA_REGISTRY.filter(t => ids.includes(t.id) && t.category === cat.id);
             if (!group.length) continue;
+            const section = document.createElement('div');
             const head = document.createElement('div');
-            head.textContent = DT_SITE_LABELS[site];
+            head.textContent = `${cat.label} · ${group.length} ${group.length === 1 ? 'tool' : 'tools'}`;
             Object.assign(head.style, {
                 fontSize: '10px', fontWeight: 'bold', color: '#888', letterSpacing: '.6px',
-                textTransform: 'uppercase', margin: '10px 0 4px 0'
+                textTransform: 'uppercase', margin: '12px 0 6px 0'
             });
-            wrap.appendChild(head);
+            section.appendChild(head);
+            const rows = [];
             for (const tool of group) {
+                const card = document.createElement('div');
+                card.dataset.toolCard = tool.id;
+                Object.assign(card.style, {
+                    border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 10px',
+                    margin: '0 0 6px 0', background: '#fff', transition: 'border-color 0.15s ease'
+                });
+                card.addEventListener('mouseenter', () => { card.style.borderColor = '#c0c8f0'; });
+                card.addEventListener('mouseleave', () => { card.style.borderColor = '#e5e7eb'; });
                 const row = document.createElement('label');
                 Object.assign(row.style, {
-                    display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '4px 0',
+                    display: 'flex', alignItems: 'flex-start', gap: '8px',
                     cursor: 'pointer', fontSize: '13px', lineHeight: '1.4', color: '#333'
                 });
                 const cb = document.createElement('input');
@@ -691,15 +748,68 @@ Version 4.0.0:
                 const name = document.createElement('strong');
                 name.textContent = tool.name;
                 text.appendChild(name);
+                if (tool.formerly) {
+                    const was = document.createElement('span');
+                    was.textContent = ` (formerly ${tool.formerly})`;
+                    Object.assign(was.style, { color: '#999', fontSize: '11px' });
+                    text.appendChild(was);
+                }
                 const desc = document.createElement('span');
-                desc.textContent = ' ' + tool.description;
-                desc.style.color = '#666';
+                desc.textContent = tool.description;
+                Object.assign(desc.style, { display: 'block', color: '#555', fontSize: '12px' });
                 text.appendChild(desc);
                 row.append(cb, text);
-                wrap.appendChild(row);
+                card.appendChild(row);
+                const chips = document.createElement('div');
+                Object.assign(chips.style, { display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '6px 0 0 24px' });
+                if (tool.where) chips.appendChild(chip(tool.where, false));
+                if (tool.setup) chips.appendChild(chip('Setup: ' + tool.setup, true));
+                if (chips.childNodes.length) card.appendChild(chips);
+                if (tool.includes && tool.includes.length) {
+                    const inc = document.createElement('div');
+                    inc.textContent = 'Includes: ' + tool.includes.join(', ') + '.';
+                    Object.assign(inc.style, { margin: '6px 0 0 24px', fontSize: '11px', color: '#666', lineHeight: '1.4' });
+                    card.appendChild(inc);
+                }
+                if (tool.whenToUse) {
+                    // A native disclosure: keyboard ready, and its text is found by the browser's Find.
+                    const when = document.createElement('details');
+                    when.style.margin = '4px 0 0 24px';
+                    const sum = document.createElement('summary');
+                    sum.textContent = 'When to use';
+                    Object.assign(sum.style, { cursor: 'pointer', fontSize: '11px', color: '#667eea', fontWeight: 'bold' });
+                    const p = document.createElement('div');
+                    p.textContent = tool.whenToUse;
+                    Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.4', margin: '3px 0 0 0' });
+                    when.append(sum, p);
+                    card.appendChild(when);
+                }
+                section.appendChild(card);
                 boxes.set(tool.id, cb);
+                rows.push({ card, text: [tool.name, tool.formerly, tool.description, tool.whenToUse, (tool.includes || []).join(' ')].join(' ').toLowerCase() });
             }
+            groups.push({ section, rows });
+            wrap.appendChild(section);
         }
+        const empty = document.createElement('div');
+        empty.textContent = 'No tool matches your search.';
+        Object.assign(empty.style, { display: 'none', fontSize: '12px', color: '#888', margin: '10px 0' });
+        wrap.appendChild(empty);
+        search.addEventListener('input', () => {
+            const q = search.value.trim().toLowerCase();
+            let any = false;
+            for (const g of groups) {
+                let shown = 0;
+                for (const r of g.rows) {
+                    const show = !q || r.text.includes(q);
+                    r.card.style.display = show ? '' : 'none';
+                    if (show) shown++;
+                }
+                g.section.style.display = shown ? '' : 'none';
+                if (shown) any = true;
+            }
+            empty.style.display = any ? 'none' : 'block';
+        });
         return {
             element: wrap,
             choices: () => {
@@ -733,7 +843,7 @@ Version 4.0.0:
         let teamRow = null, teamError = null;
         if (!GM_getValue('shortDescTeam', '') && ids.some(id => DT_TEAM_TOOLS.includes(id))) {
             const head = document.createElement('div');
-            head.textContent = 'Your team (used by the Short Description and Ticket Response helpers):';
+            head.textContent = 'Your team (used by the Short Description Builder and Response Templates):';
             Object.assign(head.style, { fontSize: '12px', fontWeight: 'bold', color: '#555', margin: '10px 0 4px 0' });
             teamRow = dtTeamRow('th-picker-team');
             teamError = document.createElement('div');
@@ -1382,8 +1492,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.3';
-    const CHANGELOG = `Version 4.5.3:
+    const SCRIPT_VERSION = '4.6.0';
+    const CHANGELOG = `Version 4.6.0:
+- Choose your tools and the Tools list of ⚙ Suite are grouped by platform, ServiceNow and Netskope. Each helper shows what it does, where it appears, what it needs, and a "When to use" note. A search box finds a helper by its name, its old name or what it does.
+- Five helpers have new names that say what they do: Short Description Helper is now Short Description Builder, Ticket Response Helper is now Response Templates, Formatted Text Helper is now Formatted Text Editor, Policy Naming Helper is now Policy Name Builder, and Ticket Subject Helper is now Support Case Subject Builder. Your settings and data stay as they were.
+
+Version 4.5.3:
 - The Tampermonkey description of the suite now says what its helpers are for.
 
 Version 4.5.2:
@@ -1654,7 +1768,7 @@ Version 3.0.8.1:
         modal.appendChild(title);
 
         const subtitle = document.createElement('p');
-        subtitle.textContent = 'Short Description Helper Script — First-time setup';
+        subtitle.textContent = 'Short Description Builder: first time setup';
         Object.assign(subtitle.style, {
             margin: '0 0 14px 0',
             color: '#666', fontSize: '13px', fontStyle: 'italic'
@@ -1672,7 +1786,7 @@ Version 3.0.8.1:
             color: '#5a4200',
             lineHeight: '1.5'
         });
-        note.innerHTML = '📄 <strong>Where to find the tenant URLs:</strong> they are listed on the script installer page. Enter them with https:// in front. They are shared with the Ticket Subject Helper.';
+        note.innerHTML = '📄 <strong>Where to find the tenant URLs:</strong> they are listed on the script installer page. Enter them with https:// in front. They are shared with the Support Case Subject Builder.';
         modal.appendChild(note);
 
         // Warning note
@@ -2195,7 +2309,7 @@ Version 3.0.8.1:
         selectorContainer.appendChild(title);
 
         const subtitle = document.createElement('p');
-        subtitle.textContent = 'Short Description Helper Script';
+        subtitle.textContent = 'Short Description Builder';
         subtitle.style.marginTop = '0';
         subtitle.style.marginBottom = '20px';
         subtitle.style.color = '#007bff';
@@ -3177,7 +3291,7 @@ Version 3.0.8.1:
         tenantSection.appendChild(tenantSectionTitle);
 
         const tenantSectionDesc = document.createElement('div');
-        tenantSectionDesc.textContent = 'Used for tenant detection and the Open Tenant button. The URLs are listed on the script installer page and are shared with the Ticket Subject Helper.';
+        tenantSectionDesc.textContent = 'Used for tenant detection and the Open Tenant button. The URLs are listed on the script installer page and are shared with the Support Case Subject Builder.';
         Object.assign(tenantSectionDesc.style, {
             fontSize: '12px', color: '#777', lineHeight: '1.4',
             marginBottom: '10px', fontFamily: 'Arial, sans-serif'
@@ -3553,7 +3667,7 @@ Version 3.0.8.1:
                     body.appendChild(toggle('Searchable dropdowns', true, 'Type to filter every dropdown of the panel. Applies after a reload.'));
                     kvGrid(body, [
                         ['👥 Switch Team', 'Changes your team (EMEA, AME or APAC). Each team has its own lists. The page reloads.'],
-                        ['🔗 Tenant URLs', 'Configure Tenant URLs: the Netskope tenant address for each region, with https://, as listed on the script installer page. Shared with the Ticket Subject Helper.']
+                        ['🔗 Tenant URLs', 'Configure Tenant URLs: the Netskope tenant address for each region, with https://, as listed on the script installer page. Shared with the Support Case Subject Builder.']
                     ]);
                 }
             }
@@ -3584,7 +3698,7 @@ Version 3.0.8.1:
             fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif'
         });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Short Description Helper • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Short Description Builder • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, {
             fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif'
         });
@@ -4309,7 +4423,7 @@ Version 3.0.8.1:
         container.appendChild(fieldsContainer);
         document.body.appendChild(container);
         // Native modal dialog with its overlay, shown with the panel's display; Esc closes it like a click outside
-        helpersModalByClass(container, { before: [overlay], label: 'Short Description Helper', isShown: () => container.style.display !== 'none', close: closeMainPanel });
+        helpersModalByClass(container, { before: [overlay], label: 'Short Description Builder', isShown: () => container.style.display !== 'none', close: closeMainPanel });
 
         window.shortDescCurrentTenantURL = null;
 
@@ -4333,8 +4447,8 @@ Version 3.0.8.1:
             helperButton.tabIndex = '-1';
             helperButton.role = 'button';
             helperButton.className = 'btn btn-default btn-ref';
-            helperButton.title = 'Short Description Helper';
-            helperButton.setAttribute('data-original-title', 'Short Description Helper');
+            helperButton.title = 'Short Description Builder';
+            helperButton.setAttribute('data-original-title', 'Short Description Builder');
 
             helperButton.onclick = (e) => {
                 e.preventDefault();
@@ -4630,9 +4744,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.8';
+    const SCRIPT_VERSION = '2.21.9';
 
-    const CHANGELOG = `Version 2.21.8:
+    const CHANGELOG = `Version 2.21.9:
+- Ticket Response Helper is now called Response Templates. Your templates, pins and settings stay as they were.
+
+Version 2.21.8:
 - Settings, Edit footer and Custom responses open above everything on the page. Esc closes them like a click outside.
 
 Version 2.21.7:
@@ -7217,7 +7334,7 @@ Regards.`,
      * ==========================================================*/
 
     function getCurrentTeamKey() {
-        const stored = GM_getValue('shortDescTeam', null);   // shared with the Short Description Helper
+        const stored = GM_getValue('shortDescTeam', null);   // shared with the Short Description Builder
         return stored && RESPONSE_TEAMS[stored] ? stored : null;
     }
 
@@ -7774,7 +7891,7 @@ Regards.`,
                     lead(body, 'The list header holds these buttons.');
                     badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Settings', desc: 'Opens the settings below.' });
                     badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' });
-                    badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Suite', desc: 'Opens the Ticket Helpers settings: tools, team, tenant URLs and backups. The team is shared with the Short Description Helper.' });
+                    badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Suite', desc: 'Opens the Ticket Helpers settings: tools, team, tenant URLs and backups. The team is shared with the Short Description Builder.' });
                     badgeRow(body, { bg: 'transparent', color: '#0066cc', label: "🔵 What's New", desc: 'Beside the version after an update. Opens the changelog.' });
                     body.appendChild(span('Inside Settings', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '8px 0 6px 0' }));
                     body.appendChild(toggle('Auto-update date on insert', true, 'Sets the short description date to today whenever you insert a response.'));
@@ -7813,7 +7930,7 @@ Regards.`,
             fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif'
         });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Ticket Response Helper • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Response Templates • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, {
             fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif'
         });
@@ -8351,7 +8468,7 @@ Regards.`,
         selectorContainer.appendChild(title);
 
         const subtitle = document.createElement('p');
-        subtitle.textContent = 'Ticket Response Helper Script';
+        subtitle.textContent = 'Response Templates';
         subtitle.style.marginTop = '0';
         subtitle.style.marginBottom = '20px';
         subtitle.style.color = '#667eea';
@@ -9129,8 +9246,8 @@ Regards.`,
      * ==========================================================*/
 
     async function initialize() {
-        if (isInitialized) { console.log('Ticket Response Helper already initialized'); return; }
-        console.log('Initializing Ticket Response Helper v' + SCRIPT_VERSION + '...');
+        if (isInitialized) { console.log('Response Templates already initialized'); return; }
+        console.log('Initializing Response Templates v' + SCRIPT_VERSION + '...');
         isInitialized = true;
 
         cacheOpenedByName();
@@ -9150,7 +9267,7 @@ Regards.`,
         initialize();
     }
 
-    console.log('✓ Ticket Response Helper v' + SCRIPT_VERSION + ' loaded');
+    console.log('✓ Response Templates v' + SCRIPT_VERSION + ' loaded');
     console.log('💡 Press Ctrl+Shift+D to debug mention system');
 
     })();
@@ -9168,9 +9285,12 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.7';
+    const SCRIPT_VERSION = '1.4.8';
 
-    const CHANGELOG = `Version 1.4.7:
+    const CHANGELOG = `Version 1.4.8:
+- Formatted Text Helper is now called Formatted Text Editor. Your settings stay as they were.
+
+Version 1.4.7:
 - The Preview HTML window opens above everything on the page, and Esc closes it.
 
 Version 1.4.6:
@@ -9413,7 +9533,7 @@ Version 1.0.3:
         headerContainer.appendChild(closeX);
 
         const versionInfo = document.createElement('div');
-        versionInfo.textContent = `Formatted Text Helper has been updated to version ${SCRIPT_VERSION}!`;
+        versionInfo.textContent = `Formatted Text Editor has been updated to version ${SCRIPT_VERSION}!`;
         Object.assign(versionInfo.style, {
             backgroundColor: '#f8f9fa',
             padding: '10px',
@@ -11053,7 +11173,7 @@ Version 1.0.3:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Formatted Text Helper • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Formatted Text Editor • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -12576,7 +12696,7 @@ Version 1.0.3:
                 buttonAttempts++;
                 setTimeout(addFormattedTextButton, 500);
             } else {
-                console.log('Formatted Text Helper: no anchor element found, button not added.');
+                console.log('Formatted Text Editor: no anchor element found, button not added.');
             }
             return;
         }
@@ -12910,11 +13030,11 @@ Version 1.0.3:
 
     function initialize() {
         if (isInitialized) {
-            console.log('Formatted Text Helper already initialized');
+            console.log('Formatted Text Editor already initialized');
             return;
         }
 
-        console.log('Initializing Formatted Text Helper v' + SCRIPT_VERSION + '...');
+        console.log('Initializing Formatted Text Editor v' + SCRIPT_VERSION + '...');
         isInitialized = true;
 
         // Check if this is a new version
@@ -12934,7 +13054,7 @@ Version 1.0.3:
         initialize();
     }
 
-    console.log('✓ Formatted Text Helper v' + SCRIPT_VERSION + ' loaded');
+    console.log('✓ Formatted Text Editor v' + SCRIPT_VERSION + ' loaded');
 
     })();
 
@@ -13903,9 +14023,12 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.12';
+    const SCRIPT_VERSION = '1.5.13';
 
-    const CHANGELOG = `Version 1.5.12:
+    const CHANGELOG = `Version 1.5.13:
+- Policy Naming Helper is now called Policy Name Builder. Your presets stay as they were.
+
+Version 1.5.12:
 - The panel now shows above everything on the Netskope page, while the page stays usable next to it. Manage presets and Quick Setup open above the panel, and Esc closes them like a click outside. The Geo lists open above them.
 
 Version 1.5.11:
@@ -14683,7 +14806,7 @@ Version 1.2.0:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Policy Naming Helper • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Policy Name Builder • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -16793,9 +16916,12 @@ Version 1.2.0:
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.1.2';
+    const SCRIPT_VERSION = '1.1.3';
 
-    const CHANGELOG = `Version 1.1.2:
+    const CHANGELOG = `Version 1.1.3:
+- Ticket Subject Helper is now called Support Case Subject Builder. Your settings stay as they were.
+
+Version 1.1.2:
 - The panel opens above everything on the page. Esc closes it like a click outside.
 
 Version 1.1.1:
@@ -16889,7 +17015,7 @@ Version 1.0.0:
     const PRODUCT_OPTIONS = ['-- Select Product --', 'SWG', 'DLP', 'CASB'];
 
     // Maps MF dropdown value -> Netskope tenant URL
-    // The 5 logical tenant groups. The URLs are shared with the Short Description Helper (⚙ Suite).
+    // The 5 logical tenant groups. The URLs are shared with the Short Description Builder (⚙ Suite).
     const TENANT_GROUPS = [
         { key: 'tenantURL_EMA', label: 'EMA',  mfs: ['Africa', 'DKU', 'GLB', 'ES', 'SLAT'] },
         { key: 'tenantURL_EU',  label: 'EU',   mfs: ['AT','BE','DCM','CY','DK','FI','IS','IE','LU','DME','NL','Nordics','NSE','NO','SE','CH','UK'] },
@@ -17671,7 +17797,7 @@ Version 1.0.0:
                     ]);
                     bullets(body, [
                         'The five tenant URLs are saved in your browser the first time you set them up.',
-                        'Enter them with https:// in front, as listed on the script installer page. They are shared with the Short Description Helper.'
+                        'Enter them with https:// in front, as listed on the script installer page. They are shared with the Short Description Builder.'
                     ]);
                 }
             },
@@ -17723,7 +17849,7 @@ Version 1.0.0:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Ticket Subject Helper • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Support Case Subject Builder • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -17877,7 +18003,7 @@ Version 1.0.0:
         panel.id = 'nsTktPanel';
         document.body.appendChild(panel);
         // Native modal dialog with its overlay, shown with the panel's display; Esc closes it like a click outside
-        helpersModalByClass(panel, { before: [overlay], label: 'Ticket Subject Helper', isShown: () => panel.style.display === 'block', close: closePanel });
+        helpersModalByClass(panel, { before: [overlay], label: 'Support Case Subject Builder', isShown: () => panel.style.display === 'block', close: closePanel });
 
         /* Close button */
         const closeBtn = document.createElement('button');
@@ -18101,7 +18227,7 @@ Version 1.0.0:
         modal.innerHTML = `
             <h2>&#x1F527; Tenant URL Setup</h2>
             <div class="ns-setup-note">
-                &#x26A0;&#xFE0F; <strong>Where to find the tenant URLs:</strong> they are listed on the script installer page. Enter them with https:// in front. They are shared with the Short Description Helper.</div>`;
+                &#x26A0;&#xFE0F; <strong>Where to find the tenant URLs:</strong> they are listed on the script installer page. Enter them with https:// in front. They are shared with the Short Description Builder.</div>`;
 
         // Warning note
         const warning = document.createElement('div');

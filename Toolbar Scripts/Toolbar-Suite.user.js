@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.52.3
+// @version      2.53.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.52.3';
-    const CHANGELOG = `Version 2.52.3:
+   const SCRIPT_VERSION = '2.53.0';
+    const CHANGELOG = `Version 2.53.0:
+- Choose your tools and Settings > Tools are grouped by the platform each tool works on: ServiceNow, Netskope and General. Each tool shows what it does, where it appears, what it needs before you use it, and a "When to use" note. A search box finds a tool by its name, its old name or what it does.
+- Six tools have new names that say what they do: General Toolkit is now General Web Toolkit, Mini Summary Sidebar is now Ticket Summary Panel, Enhancement Request Logger is now Enhancement Request Launcher, Row Highlighter is now List Highlighter, Domain Tools is now Domain Checker, and NS Policies Toolkit is now Netskope Console Toolkit. Your settings and data stay as they were.
+
+Version 2.52.3:
 - The Tampermonkey description of the toolbar now says what it is for, and no longer gives an outdated number of tools.
 - Choose your tools and Settings > Tools now describe everything the NS Policies Toolkit does, including Policy tools and the Excel and CSV exports.
 - Ticket Assignment: the toolbar button and the Feature Guide now use the same name as Choose your tools, "Ticket Assignment".
@@ -610,7 +614,7 @@ Version 1.0.0:
             color: #333333 !important;
         }
         #erl-modal input[readonly] { background-color: #efefef !important; color: #555555 !important; }
-        /* Mini Summary Sidebar (harvested from its theme-independence style block) */
+        /* Ticket Summary Panel (harvested from its theme-independence style block) */
         /* Z-INDEX HIERARCHY
          * Main Sidebar: 999997
          * SPM Modal: 999998
@@ -772,7 +776,7 @@ Version 1.0.0:
             background-color: #ffffff !important;
             color: #333333 !important;
         }
-        /* Row Highlighter */
+        /* List Highlighter */
         #highlighter-config-modal, #highlighterChangelogModal, #rowHighlighterHelpModal { color: #333333 !important; }
         #highlighter-config-modal input, #highlighter-config-modal select, #highlighter-config-modal textarea { background-color: #ffffff !important; color: #333333 !important; }
         /* Change Tracker */
@@ -944,25 +948,54 @@ Version 1.0.0:
           exact: ['compact-mode', 'auto-close', 'show-tooltips', 'button-size', 'tool-size',
                   'animation-speed', 'menu-gap', 'show-labels', 'label-position'],
           prefixes: ['toolbar-', 'toolbarSuite'] },
-        { id: 'ticketQuickOpen', pages: ['*://*/*'], name: 'General Toolkit', description: 'Open any ticket or case number you select', site: 'all', script: '|Toolbar| General Toolkit',
+        { id: 'ticketQuickOpen', pages: ['*://*/*'], name: 'General Web Toolkit', description: 'Small helpers that work on any website. Today: select a ticket or case number and open it with one click.',
+          category: 'general', where: 'Appears on: every page', setup: '',
+          whenToUse: 'Keep it on everywhere. Today: whenever a RITM, INC, SCTASK or Netskope case number shows up outside ServiceNow.',
+          includes: ['Ticket Quick Open'],
+          formerly: 'General Toolkit', site: 'all', script: '|Toolbar| General Toolkit',
           exact: [], prefixes: ['tqo_'] },
-        { id: 'domainTools', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Domain Tools', description: 'Extract domains from tickets and check their reputation', site: 'servicenow', script: '|Toolbar| Domain Tools',
+        { id: 'domainTools', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Domain Checker', description: 'Pulls the domains out of the ticket and checks their category and reputation.',
+          category: 'netskope', where: 'Opens from: ServiceNow ticket', setup: 'API keys (optional)',
+          whenToUse: 'On unblock, category or reputation requests.',
+          formerly: 'Domain Tools', site: 'servicenow', script: '|Toolbar| Domain Tools',
           exact: [], prefixes: ['domainTools'] },
-        { id: 'enhancementRequestLogger', pages: ['https://*.service-now.com/*'], name: 'Enhancement Request Logger', description: 'Open a pre filled enhancement request form', site: 'servicenow',
+        { id: 'enhancementRequestLogger', pages: ['https://*.service-now.com/*'], name: 'Enhancement Request Launcher', description: 'Opens the enhancement request form already filled with the ticket data.',
+          category: 'servicenow', where: 'Appears on: ServiceNow', setup: '',
+          whenToUse: 'When a ticket needs an enhancement request logged.',
+          formerly: 'Enhancement Request Logger', site: 'servicenow',
           script: '|Toolbar| Enhancement Request Logger', exact: [], prefixes: ['erl'] },
-        { id: 'miniSummary', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Mini Summary Sidebar', description: 'Key ticket fields at a glance', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
+        { id: 'miniSummary', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Ticket Summary Panel', description: 'Shows the key fields of the open ticket in a side panel, ready to copy.',
+          category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: '',
+          whenToUse: 'When you first read a ticket or prepare an SPM request.',
+          formerly: 'Mini Summary Sidebar', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
           exact: [], prefixes: ['miniSummarySidebar'] },
-        { id: 'rowHighlighter', pages: ['https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'Row Highlighter', description: 'Highlight list rows updated by you, with SLA colors', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
+        { id: 'rowHighlighter', pages: ['https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'List Highlighter', description: 'Colors list rows you updated and shows how close each SLA is.',
+          category: 'servicenow', where: 'Appears on: ServiceNow lists', setup: 'your ServiceNow name',
+          whenToUse: 'While you work from ServiceNow lists and queues.',
+          formerly: 'Row Highlighter', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
           exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
-        { id: 'changeTracker', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Change Tracker', description: 'Shared change log per ticket in your team\'s SharePoint list, written to the ticket', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
+        { id: 'changeTracker', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Change Tracker', description: 'Logs each change you make for a ticket in the team\'s SharePoint list and writes it in the ticket.',
+          category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'team SharePoint list',
+          whenToUse: 'Every time you change Netskope for a ticket, and when the reminders tab shows items due.', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
           exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerSpSiteUrl'] },
-        { id: 'serviceNowToolkit', pages: ['https://*.service-now.com/*'], name: 'ServiceNow Toolkit', description: 'Draft autosave, SCTASK auto open and the SPM Germany reminder', site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
+        { id: 'serviceNowToolkit', pages: ['https://*.service-now.com/*'], name: 'ServiceNow Toolkit', description: 'Saves drafts of your comments and work notes, opens SCTASKs for you and reminds the Germany rule on SPM requests.',
+          category: 'servicenow', where: 'Appears on: ServiceNow', setup: '',
+          whenToUse: 'Keep it on while you work in ServiceNow.',
+          includes: ['Saved Drafts', 'SCTASK auto open', 'SPM Germany reminder'], site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
-        { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assign tickets and fill the fields in one step', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
+        { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assigns the ticket and writes the team comment with @mentions in one step.',
+          category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'team members and leaders',
+          whenToUse: 'When you triage a new ticket and hand it to a team member.', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
-        { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Destination Profile Editor', description: 'Find, create and edit Netskope Destination Profiles from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+        { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Destination Profile Editor', description: 'Finds, creates, edits and deletes the ticket\'s Destination Profiles from ServiceNow, then deploys them.',
+          category: 'netskope', where: 'Opens from: ServiceNow ticket', setup: 'tenant hosts and API key',
+          whenToUse: 'When a ticket asks to add or remove values in a Destination Profile.', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
-        { id: 'nsDlpToolkit', pages: ['https://*.goskope.com/*'], name: 'NS Policies Toolkit', description: 'Copy and open buttons, change logs, bulk policy and steering tools, and Excel and CSV exports in the Netskope console', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
+        { id: 'nsDlpToolkit', pages: ['https://*.goskope.com/*'], name: 'Netskope Console Toolkit', description: 'Adds copy buttons, change logs, bulk tools and exports to the Netskope console.',
+          category: 'netskope', where: 'Appears on: Netskope console', setup: 'your name for log lines',
+          whenToUse: 'Keep it on in the console. Open its bulk tools when a change touches many policies or steering configurations, and its exports for audits or troubleshooting.',
+          includes: ['Policy tools', 'Steering Exception tools', 'Copy policy', 'SSL Decryption export', 'Transaction Events export', 'Source tools', 'copy, open and log buttons'],
+          formerly: 'NS Policies Toolkit', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
           exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
     ];
 
@@ -1487,24 +1520,60 @@ Version 1.0.0:
 
     const DT_SITE_LABELS = { servicenow: 'ServiceNow', netskope: 'Netskope tenant', all: 'All pages' };
 
-    // A checkbox list of tools grouped by site. Used by the picker and by Settings > Tools.
+    // Sections of the tool list: the platform each tool works on, not the page it runs on.
+    const DT_CATEGORIES = [{ id: 'servicenow', label: 'ServiceNow' }, { id: 'netskope', label: 'Netskope' }, { id: 'general', label: 'General' }];
+
+    // The tool list of the picker and of Settings > Tools: a search box, then one section per
+    // platform the tools work on, each tool as a card with what it does, where it shows up, what
+    // it needs, and a "When to use" note.
     function dtBuildToolList(ids, ticked) {
         const wrap = document.createElement('div');
         const boxes = new Map();
-        for (const site of ['servicenow', 'netskope', 'all']) {
-            const group = DATA_REGISTRY.filter(t => ids.includes(t.id) && t.site === site);
+        const groups = [];
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.placeholder = 'Search tools';
+        search.setAttribute('aria-label', 'Search tools');
+        Object.assign(search.style, {
+            width: '100%', boxSizing: 'border-box', padding: '6px 10px', margin: '2px 0 2px 0',
+            border: '1px solid #ccc', borderRadius: '6px', fontSize: '13px',
+            background: '#fff', color: '#333', fontFamily: 'Arial, sans-serif'
+        });
+        wrap.appendChild(search);
+        const chip = (text, warn) => {
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                display: 'inline-block', padding: '1px 8px', borderRadius: '10px', fontSize: '11px',
+                lineHeight: '1.6', whiteSpace: 'nowrap', color: '#444',
+                background: warn ? '#fff4e0' : '#f3f4f8', border: warn ? '1px solid #f0c36d' : '1px solid #d8dae5'
+            });
+            return c;
+        };
+        for (const cat of DT_CATEGORIES) {
+            const group = DATA_REGISTRY.filter(t => ids.includes(t.id) && t.category === cat.id);
             if (!group.length) continue;
+            const section = document.createElement('div');
             const head = document.createElement('div');
-            head.textContent = DT_SITE_LABELS[site];
+            head.textContent = `${cat.label} · ${group.length} ${group.length === 1 ? 'tool' : 'tools'}`;
             Object.assign(head.style, {
                 fontSize: '10px', fontWeight: 'bold', color: '#888', letterSpacing: '.6px',
-                textTransform: 'uppercase', margin: '10px 0 4px 0'
+                textTransform: 'uppercase', margin: '12px 0 6px 0'
             });
-            wrap.appendChild(head);
+            section.appendChild(head);
+            const rows = [];
             for (const tool of group) {
+                const card = document.createElement('div');
+                card.dataset.toolCard = tool.id;
+                Object.assign(card.style, {
+                    border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 10px',
+                    margin: '0 0 6px 0', background: '#fff', transition: 'border-color 0.15s ease'
+                });
+                card.addEventListener('mouseenter', () => { card.style.borderColor = '#c0c8f0'; });
+                card.addEventListener('mouseleave', () => { card.style.borderColor = '#e5e7eb'; });
                 const row = document.createElement('label');
                 Object.assign(row.style, {
-                    display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '4px 0',
+                    display: 'flex', alignItems: 'flex-start', gap: '8px',
                     cursor: 'pointer', fontSize: '13px', lineHeight: '1.4', color: '#333'
                 });
                 const cb = document.createElement('input');
@@ -1516,23 +1585,75 @@ Version 1.0.0:
                 const name = document.createElement('strong');
                 name.textContent = tool.name;
                 text.appendChild(name);
+                if (tool.formerly) {
+                    const was = document.createElement('span');
+                    was.textContent = ` (formerly ${tool.formerly})`;
+                    Object.assign(was.style, { color: '#999', fontSize: '11px' });
+                    text.appendChild(was);
+                }
                 const desc = document.createElement('span');
-                desc.textContent = ' ' + tool.description;
-                desc.style.color = '#666';
+                desc.textContent = tool.description;
+                Object.assign(desc.style, { display: 'block', color: '#555', fontSize: '12px' });
                 text.appendChild(desc);
                 row.append(cb, text);
-                wrap.appendChild(row);
+                card.appendChild(row);
+                const chips = document.createElement('div');
+                Object.assign(chips.style, { display: 'flex', flexWrap: 'wrap', gap: '6px', margin: '6px 0 0 24px' });
+                if (tool.where) chips.appendChild(chip(tool.where, false));
+                if (tool.setup) chips.appendChild(chip('Setup: ' + tool.setup, true));
+                if (chips.childNodes.length) card.appendChild(chips);
+                if (tool.includes && tool.includes.length) {
+                    const inc = document.createElement('div');
+                    inc.textContent = 'Includes: ' + tool.includes.join(', ') + '.';
+                    Object.assign(inc.style, { margin: '6px 0 0 24px', fontSize: '11px', color: '#666', lineHeight: '1.4' });
+                    card.appendChild(inc);
+                }
+                if (tool.whenToUse) {
+                    // A native disclosure: keyboard ready, and its text is found by the browser's Find.
+                    const when = document.createElement('details');
+                    when.style.margin = '4px 0 0 24px';
+                    const sum = document.createElement('summary');
+                    sum.textContent = 'When to use';
+                    Object.assign(sum.style, { cursor: 'pointer', fontSize: '11px', color: '#667eea', fontWeight: 'bold' });
+                    const p = document.createElement('div');
+                    p.textContent = tool.whenToUse;
+                    Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.4', margin: '3px 0 0 0' });
+                    when.append(sum, p);
+                    card.appendChild(when);
+                }
+                section.appendChild(card);
                 boxes.set(tool.id, cb);
-
+                rows.push({ card, text: [tool.name, tool.formerly, tool.description, tool.whenToUse, (tool.includes || []).join(' ')].join(' ').toLowerCase() });
             }
+            groups.push({ section, rows });
+            wrap.appendChild(section);
         }
+        const empty = document.createElement('div');
+        empty.textContent = 'No tool matches your search.';
+        Object.assign(empty.style, { display: 'none', fontSize: '12px', color: '#888', margin: '10px 0' });
+        wrap.appendChild(empty);
+        search.addEventListener('input', () => {
+            const q = search.value.trim().toLowerCase();
+            let any = false;
+            for (const g of groups) {
+                let shown = 0;
+                for (const r of g.rows) {
+                    const show = !q || r.text.includes(q);
+                    r.card.style.display = show ? '' : 'none';
+                    if (show) shown++;
+                }
+                g.section.style.display = shown ? '' : 'none';
+                if (shown) any = true;
+            }
+            empty.style.display = any ? 'none' : 'block';
+        });
         return {
             element: wrap,
             choices: () => {
                 const c = {};
                 boxes.forEach((cb, id) => { c[id] = cb.checked; });
                 return c;
-            },
+            }
         };
     }
 
@@ -1905,25 +2026,44 @@ Version 1.0.0:
                 icon: '🧩',
                 title: 'Tools',
                 buildContent: (body) => {
-                    lead(body, 'Choose which tools run. Tools you turn off leave the menu and keep their data.');
+                    lead(body, 'Choose which tools run. Tools are grouped by the platform they work on, and tools you turn off leave the menu and keep their data.');
                     const list = document.createElement('div');
                     Object.assign(list.style, {
                         border: '1px solid #e8e8f0', borderRadius: '6px', padding: '8px 12px',
-                        maxWidth: '380px', background: '#fff', margin: '0 0 8px 0'
+                        maxWidth: '440px', background: '#fff', margin: '0 0 8px 0'
                     });
-                    [['Ticket Assignment', true, false], ['Change Tracker', false, false], ['General Toolkit', true, false]].forEach(([name, on, beta]) => {
+                    const mockChip = (text, warn) => span(text, {
+                        fontSize: '10px', color: '#444', borderRadius: '10px', padding: '0 7px', whiteSpace: 'nowrap',
+                        background: warn ? '#fff4e0' : '#f3f4f8', border: warn ? '1px solid #f0c36d' : '1px solid #d8dae5'
+                    });
+                    [
+                        ['ServiceNow · 6 tools', 'Change Tracker', true, '', 'Logs each change you make for a ticket in the team list and writes it in the ticket.', 'Appears on: ServiceNow ticket', 'team SharePoint list'],
+                        ['Netskope · 3 tools', 'Netskope Console Toolkit', true, 'NS Policies Toolkit', 'Adds copy buttons, change logs, bulk tools and exports to the Netskope console.', 'Appears on: Netskope console', 'your name for log lines'],
+                        ['General · 1 tool', 'General Web Toolkit', false, 'General Toolkit', 'Small helpers that work on any website.', 'Appears on: every page', '']
+                    ].forEach(([section, name, on, was, desc, where, setup]) => {
+                        list.appendChild(span(section, { display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#888', letterSpacing: '.6px', textTransform: 'uppercase', margin: '6px 0 4px 0' }));
+                        const card = document.createElement('div');
+                        Object.assign(card.style, { border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 8px', margin: '0 0 4px 0' });
                         const box = span(on ? '✓' : '', {
                             width: '15px', height: '15px', borderRadius: '3px', display: 'inline-block', textAlign: 'center',
                             lineHeight: '15px', fontSize: '11px', color: '#fff', background: on ? '#667eea' : '#fff',
                             border: on ? 'none' : '1px solid #b0b0b0', flexShrink: '0', boxSizing: 'border-box'
                         });
                         const items = [box, span(name, { fontSize: '12px', fontWeight: 'bold', color: '#333' })];
-                        if (beta) items.push(span('BETA', { background: '#ff8c00', color: '#fff', fontSize: '10px', fontWeight: 'bold', borderRadius: '8px', padding: '0 6px' }));
-                        list.appendChild(hrow(items, { margin: '3px 0', gap: '8px', flexWrap: 'nowrap' }));
+                        if (was) items.push(span(`(formerly ${was})`, { fontSize: '10px', color: '#999' }));
+                        card.appendChild(hrow(items, { margin: '0', gap: '6px' }));
+                        card.appendChild(span(desc, { display: 'block', fontSize: '11px', color: '#555', margin: '2px 0 4px 21px' }));
+                        const chips = [mockChip(where, false)];
+                        if (setup) chips.push(mockChip('Setup: ' + setup, true));
+                        chips.push(span('▸ When to use', { fontSize: '10px', color: '#667eea', fontWeight: 'bold' }));
+                        card.appendChild(hrow(chips, { margin: '0 0 0 21px', gap: '6px' }));
+                        list.appendChild(card);
                     });
                     body.appendChild(list);
                     bullets(body, [
                         'The first time, a "Choose your tools" window asks which tools you want. No tool runs before that.',
+                        'Each card says what the tool does, where it shows up and what it needs before you use it (orange chip). Open "When to use" for when it helps.',
+                        'Type in Search tools to find a tool by name, old name or what it does.',
                         'Change it any time in Settings, under Tools. The page reloads to apply the change.'
                     ]);
                 }
@@ -2096,7 +2236,7 @@ Version 1.0.0:
                     body.appendChild(prompt);
                     bullets(body, [
                         'Each tenant has its own key and its own passphrase. Keys are encrypted in this browser and each one is only sent to its own service.',
-                        'VirusTotal and IBM X-Force tabs: optional keys for the API checks of Domain Tools. X-Force needs the API key and the API password. VirusTotal has a requests per minute field: 4 for the free key, 0 for no limit.',
+                        'VirusTotal and IBM X-Force tabs: optional keys for the API checks of Domain Checker. X-Force needs the API key and the API password. VirusTotal has a requests per minute field: 4 for the free key, 0 for no limit.',
                         'The passphrase is asked once per browser session and per site, in a window that always shows above everything else, even other open panels.',
                         'Forgot it? deletes that key (it cannot be read without the passphrase) so you can save it again with a new one.',
                         'This works whatever tools you chose: it is part of the toolbar itself.',
@@ -4075,7 +4215,7 @@ Version 1.0.0:
         'AME': 'netskopeHost_AME',
     };
 
-    // Change Tracker name catalog: the NS Policies Toolkit registers one reader per kind here
+    // Change Tracker name catalog: the Netskope Console Toolkit registers one reader per kind here
     // (each returns the names Netskope holds), the Change Tracker calls them on tenant pages.
     const nsCatalogReaders = {};
 
@@ -4655,18 +4795,18 @@ Version 1.0.0:
                 <div class="body">
                     <p>Each key is encrypted in this browser with its own passphrase. Tools ask for the passphrase once per browser session.${caller ? ` Opened for <b>${esc(caller)}</b>.` : ''}</p>
                     <div data-pane="netskope">
-                        <p class="help">One key per tenant, used by the Destination Profile Editor, the Change Tracker and Domain Tools.</p>
+                        <p class="help">One key per tenant, used by the Destination Profile Editor, the Change Tracker and Domain Checker.</p>
                         <div id="nsapi-rows">${list.length ? list.map(rowHtml).join('') : '<p class="help">No Netskope tenant hosts are set up yet. Set them in the Destination Profile Editor (⚙ Tenant Hosts).</p>'}</div>
                     </div>
                     <div data-pane="virustotal" hidden>
-                        <p class="help">Optional. Domain Tools uses it to read the VirusTotal score of a URL or IP, when its API check is turned on.</p>
+                        <p class="help">Optional. Domain Checker uses it to read the VirusTotal score of a URL or IP, when its API check is turned on.</p>
                         ${rowHtml(SERVICES.virustotal)}
                         <label class="help" style="display:flex;align-items:center;gap:8px">Requests per minute
                             <input type="number" id="nsapi-vt-rpm" min="0" step="1" style="width:80px" value="${vtRpm()}">
                             <span>4 for the free key, 0 for no limit (premium key).</span></label>
                     </div>
                     <div data-pane="xforce" hidden>
-                        <p class="help">Optional. Domain Tools uses it to read the IBM X-Force risk score of a URL or IP, when its API check is turned on. It needs the API key and the API password.</p>
+                        <p class="help">Optional. Domain Checker uses it to read the IBM X-Force risk score of a URL or IP, when its API check is turned on. It needs the API key and the API password.</p>
                         ${rowHtml(SERVICES.xforce)}
                     </div>
                 </div>
@@ -5106,8 +5246,11 @@ Version 1.0.0:
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.4.2';
-    const CHANGELOG = `Version 1.4.2:
+    const SCRIPT_VERSION = '1.4.3';
+    const CHANGELOG = `Version 1.4.3:
+- General Toolkit is now called General Web Toolkit. It is the place for helpers that work on any website; today it opens the ticket or case number you select. Your settings stay as they were.
+
+Version 1.4.2:
 - The settings panel opens above everything on the page. Esc closes it like a click outside, the page behind waits until you close it, and the keyboard goes back to the toolbar.
 
 Version 1.4.1:
@@ -5520,7 +5663,7 @@ Version 1.2:
         });
         const titleEl = document.createElement('div');
         Object.assign(titleEl.style, { fontSize: '12px', fontWeight: 'bold', color: '#333' });
-        titleEl.textContent = '🎫 General Toolkit — Settings';
+        titleEl.textContent = '🎫 General Web Toolkit — Settings';
         header.appendChild(titleEl);
 
         const closeBtn = document.createElement('button');
@@ -5634,7 +5777,7 @@ Version 1.2:
         backdrop.appendChild(modal);
         document.body.appendChild(backdrop);
         // Native modal dialog, shown and hidden with the backdrop's display; Esc closes it like a click outside
-        suiteModalByClass(backdrop, { label: 'General Toolkit', isShown: () => backdrop.style.display !== 'none', close: hideSettingsModal });
+        suiteModalByClass(backdrop, { label: 'General Web Toolkit', isShown: () => backdrop.style.display !== 'none', close: hideSettingsModal });
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -5786,7 +5929,7 @@ Version 1.2:
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent(body) {
-                    lead(body, 'Click the ticket icon in the floating toolbar to open the General Toolkit settings panel.');
+                    lead(body, 'Click the ticket icon in the floating toolbar to open the General Web Toolkit settings panel.');
 
                     body.appendChild(hrow([
                         menuMock([
@@ -6082,7 +6225,7 @@ Version 1.2:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `General Toolkit • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `General Web Toolkit • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -6289,7 +6432,7 @@ Version 1.2:
 
         return function register() {
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'General Toolkit', position: TOOL_POSITION }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'General Web Toolkit', position: TOOL_POSITION }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
@@ -8227,15 +8370,18 @@ Version 1.1.4:
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
     if (!isToolEnabled('miniSummary') || !dtToolRunsHere('miniSummary')) return function register() {};
 
-    console.log('📊 Mini Summary Sidebar loading...');
+    console.log('📊 Ticket Summary Panel loading...');
 
     /* ==========================================================
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.6';
+    const SCRIPT_VERSION = '1.1.7';
 
-    const CHANGELOG = `Version 1.1.6:
+    const CHANGELOG = `Version 1.1.7:
+- Mini Summary Sidebar is now called Ticket Summary Panel. Your settings stay as they were.
+
+Version 1.1.6:
 - The summary sidebar now comes on top each time you open it.
 
 Version 1.1.5:
@@ -8789,7 +8935,7 @@ Version 1.0.2:
                     const pinStyle = { bg: '#e8f0fe', border: '2px solid #667eea' };
                     [toolSquare('📊', pinStyle), menuSep(), toolSquare('📝'), toolSquare('🔗'), menuSep(), toolSquare('⚙️')].forEach(el => menu.appendChild(el));
                     body.appendChild(hrow([menu], { margin: '0 0 12px 0' }));
-                    caption(body, 'The 📊 icon is the Mini Summary Sidebar tool in the toolbar.');
+                    caption(body, 'The 📊 icon is the Ticket Summary Panel tool in the toolbar.');
                     bullets(body, [
                         'The sidebar slides in from the right edge of the ticket page.',
                         'Fields are read automatically when the panel opens.',
@@ -8974,7 +9120,7 @@ Version 1.0.2:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Mini Summary Sidebar • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Ticket Summary Panel • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -9677,7 +9823,7 @@ Version 1.0.2:
 
     document.addEventListener('toolbarToolClicked', function(e) {
         if (e.detail.id === 'miniSummary') {
-            console.log('📊 Mini Summary Sidebar clicked!');
+            console.log('📊 Ticket Summary Panel clicked!');
             toggleSidebar();
         }
     });
@@ -9686,7 +9832,7 @@ Version 1.0.2:
             initializeSidebar();
             initializeSPMModal();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Mini Summary Sidebar', position: 6 }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Ticket Summary Panel', position: 6 }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
@@ -9700,15 +9846,18 @@ Version 1.0.2:
     // Turned off in Settings > Tools, not chosen yet, or not meant for this page: this tool does nothing at all.
     if (!isToolEnabled('enhancementRequestLogger') || !dtToolRunsHere('enhancementRequestLogger')) return function register() {};
 
-    console.log('📋 Enhancement Request Logger loading...');
+    console.log('📋 Enhancement Request Launcher loading...');
 
     /* ==========================================================
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.2';
+    const SCRIPT_VERSION = '1.2.3';
 
-    const CHANGELOG = `Version 1.2.2:
+    const CHANGELOG = `Version 1.2.3:
+- Enhancement Request Logger is now called Enhancement Request Launcher, since it opens the request form already filled in. Your settings stay as they were.
+
+Version 1.2.2:
 - The form window now shows above everything on the page, while the ticket stays usable next to it, for example to copy text from it.
 
 Version 1.2.1:
@@ -9783,7 +9932,7 @@ Version 1.1.1:
      * ==========================================================*/
 
     const TOOL_ID       = 'enhancementRequestLogger';
-    const TOOL_TOOLTIP  = 'Enhancement Request Logger';
+    const TOOL_TOOLTIP  = 'Enhancement Request Launcher';
     const TOOL_POSITION = 11;
 
     const toolIcon = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -10156,7 +10305,7 @@ Version 1.1.1:
                     lead(body, 'Open a RITM in ServiceNow and click the lightbulb in the floating toolbar.');
                     const pin = { bg: '#e8f0fe', border: '2px solid #667eea' };
                     body.appendChild(hrow([ menuMock([ toolSquare('💡', pin), menuSep(), toolSquare('👥'), toolSquare('📝') ]) ], { margin: '0 0 10px 0' }));
-                    caption(body, 'The 💡 icon is the Enhancement Request Logger button in the toolbar.');
+                    caption(body, 'The 💡 icon is the Enhancement Request Launcher button in the toolbar.');
                     bullets(body, [
                         'The form opens with the RITM number of the ticket already filled in.',
                         'Fill in the other fields and click Open Pre-filled Form.',
@@ -10241,7 +10390,7 @@ Version 1.1.1:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Enhancement Request Logger • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Enhancement Request Launcher • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -10404,7 +10553,7 @@ Version 1.1.1:
 
         const titleText = document.createElement('span');
         Object.assign(titleText.style, { fontSize: '12px', color: '#333', fontWeight: 'bold' });
-        titleText.textContent = '📋 Enhancement Request Logger';
+        titleText.textContent = '📋 Enhancement Request Launcher';
         titleBar.appendChild(titleText);
 
         const versionBadge = document.createElement('span');
@@ -10603,7 +10752,7 @@ Version 1.1.1:
     function showModal() {
         const modal = document.getElementById('erl-modal');
         if (!modal) {
-            console.error('❌ Enhancement Request Logger modal not found!');
+            console.error('❌ Enhancement Request Launcher modal not found!');
             return;
         }
 
@@ -10703,7 +10852,7 @@ Version 1.1.1:
 
     document.addEventListener('toolbarToolClicked', function (e) {
         if (e.detail.id === TOOL_ID) {
-            console.log('📋 Enhancement Request Logger clicked!');
+            console.log('📋 Enhancement Request Launcher clicked!');
             showModal();
         }
     });
@@ -16608,15 +16757,18 @@ Version 1.4.1:
     // Progress messages only when asked for: GM value servicenow_highlighter_debug = true.
     const rhLog = GM_getValue('servicenow_highlighter_debug', false) ? console.log.bind(console) : () => {};
 
-    rhLog('🎨 ServiceNow Row Highlighter loading...');
+    rhLog('🎨 ServiceNow List Highlighter loading...');
 
     /* ==========================================================
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.7';
+    const SCRIPT_VERSION = '2.4.8';
 
-    const CHANGELOG = `Version 2.4.7:
+    const CHANGELOG = `Version 2.4.8:
+- Row Highlighter is now called List Highlighter. Your settings stay as they were.
+
+Version 2.4.7:
 - The toolbar button now shows "Row Highlighter", the same name as in Choose your tools.
 
 Version 2.4.6:
@@ -16765,7 +16917,7 @@ Version 2.3.1:
 
         const versionInfo = document.createElement('div');
         versionInfo.className = 'highlighter-version-info';
-        versionInfo.textContent = `Row Highlighter has been updated to version ${SCRIPT_VERSION}!`;
+        versionInfo.textContent = `List Highlighter has been updated to version ${SCRIPT_VERSION}!`;
 
         const closeButton = document.createElement('button');
         closeButton.className = 'highlighter-close-changelog';
@@ -16964,7 +17116,7 @@ Version 2.3.1:
         iconSpan.style.fontSize = '24px';
 
         const titleText = document.createElement('h2');
-        titleText.textContent = 'Row Highlighter Setup';
+        titleText.textContent = 'List Highlighter Setup';
         Object.assign(titleText.style, {
             margin: '0',
             fontSize: '17px',
@@ -17191,7 +17343,7 @@ Version 2.3.1:
             fontWeight: 'bold',
             fontFamily: 'Arial, Helvetica, sans-serif'
         });
-        titleContainer.textContent = '🎨 Row Highlighter Settings';
+        titleContainer.textContent = '🎨 List Highlighter Settings';
         modal.appendChild(titleContainer);
 
         // Description
@@ -17803,9 +17955,9 @@ Version 2.3.1:
                     lead(body, 'Open the settings from the floating toolbar, then set your ServiceNow username.');
                     const pin = { bg: '#e8f0fe', border: '2px solid #667eea' };
                     body.appendChild(hrow([ menuMock([ toolSquare('🖌️', pin), menuSep(), toolSquare('📊'), toolSquare('📝') ]) ]));
-                    caption(body, 'The Row Highlighter icon lives in the toolbar. Click it to open settings.');
+                    caption(body, 'The List Highlighter icon lives in the toolbar. Click it to open settings.');
                     bullets(body, [
-                        'Click the Row Highlighter icon to open the settings panel.',
+                        'Click the List Highlighter icon to open the settings panel.',
                         'On first use, a prompt asks for your ServiceNow username.',
                         'In that prompt, "Import from a backup file" restores your settings from a toolbar backup.',
                         'Open any ticket list and the colors apply automatically.'
@@ -17914,7 +18066,7 @@ Version 2.3.1:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Row Highlighter • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `List Highlighter • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleTextWrap.appendChild(titleMain);
         titleTextWrap.appendChild(titleSub);
@@ -18316,7 +18468,7 @@ Version 2.3.1:
             'Check the <strong>Due Date</strong> field on any ticket, or go to your ' +
             '<strong>Profile</strong> (top-right → <em>Profile</em>) and look for ' +
             '<strong>Date format</strong>. If it shows <strong>None</strong>, your format is ' +
-            '<strong>yyyy-MM-dd</strong>.<br><br>This can be changed later in the Row Highlighter settings.';
+            '<strong>yyyy-MM-dd</strong>.<br><br>This can be changed later in the List Highlighter settings.';
 
         const btnGroup = document.createElement('div');
         Object.assign(btnGroup.style, { display: 'flex', flexDirection: 'column', gap: '10px' });
@@ -18733,7 +18885,7 @@ Version 2.3.1:
 
     document.addEventListener('toolbarToolClicked', function(e) {
         if (e.detail.id === 'rowHighlighter') {
-            rhLog('🎨 Row Highlighter clicked!');
+            rhLog('🎨 List Highlighter clicked!');
             showConfigModal();
         }
     });
@@ -18803,11 +18955,11 @@ Version 2.3.1:
         }
 
         if (isInitialized) {
-            rhLog('Row Highlighter already initialized');
+            rhLog('List Highlighter already initialized');
             return;
         }
 
-        rhLog(`Initializing Row Highlighter v${SCRIPT_VERSION}...`);
+        rhLog(`Initializing List Highlighter v${SCRIPT_VERSION}...`);
         isInitialized = true;
 
         // Load stored settings
@@ -18841,7 +18993,7 @@ Version 2.3.1:
         // Add CSS and modal
         updateCustomCSS();
         initializeModal();
-        rhLog('✅ Row Highlighter modal ready!');
+        rhLog('✅ List Highlighter modal ready!');
 
         // Show first-run prompt if no username is stored
         if (!targetUsername) {
@@ -19079,12 +19231,12 @@ Version 2.3.1:
         rhLog('💡 TIP: If auto-highlighting fails, type "manualHighlightRows()" in console to trigger manually');
     }
 
-    rhLog(`✅ Row Highlighter v${SCRIPT_VERSION} script loaded!`);
+    rhLog(`✅ List Highlighter v${SCRIPT_VERSION} script loaded!`);
 
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Row Highlighter', position: 1 }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'List Highlighter', position: 1 }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
@@ -19110,9 +19262,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.15.0';
+    const SCRIPT_VERSION = '2.15.1';
 
-    const CHANGELOG = `Version 2.15.0:
+    const CHANGELOG = `Version 2.15.1:
+- Texts that pointed to the NS Policies Toolkit now use its new name, Netskope Console Toolkit.
+
+Version 2.15.0:
 - The Newly Registered Domains review and the Policies to delete card now show 👤 who added each domain or disabled each policy, so it is clear who would usually handle it. Anyone in the team can still handle it.
 
 Version 2.14.3:
@@ -20250,7 +20405,7 @@ Version 1.4.3:
         #ct-sidebar [data-ct-cat-update], #ct-edit-modal [data-ct-cat-update] { background-color: #ffffff !important; color: #667eea !important; }
         #ct-sidebar .ct-cat-status, #ct-edit-modal .ct-cat-status { background-color: #ffffff !important; color: #444444 !important; }
         /* ── Z-INDEX NOTES ──────────────────────────────────────
-         * Toolbar / Mini Summary Sidebar : 999997–999998
+         * Toolbar / Ticket Summary Panel : 999997–999998
          * Change Tracker sidebar         : 999997  (peer)
          * Edit / Setup modal             : 1050000
          * Confirm modal                  : 1100000
@@ -21657,7 +21812,7 @@ Version 1.4.3:
 
         // ── Short description date + status ──────────────────────
         // Format: DD-MM-YYYY | MF | Product | Status | ...
-        // Same rules as the Ticket Response Helper: replace a leading date
+        // Same rules as the Response Templates: replace a leading date
         // with today's (or prepend one), then set the status segment.
 
         const SHORT_DESC_STATUS_INDEX = 3;
@@ -23540,7 +23695,7 @@ Version 1.4.3:
 
     /* ==========================================================
      *  PASTE POLICY
-     *  Fills Policy and DLP Policy entries from the last NS Policies Toolkit
+     *  Fills Policy and DLP Policy entries from the last Netskope Console Toolkit
      *  "Copy policy" (handed over through the suite's shared storage), or from
      *  a pasted Copy policy text.
      * ==========================================================*/
@@ -23692,7 +23847,7 @@ Version 1.4.3:
         });
         btn.dataset.ctPaste = '1';
         btn.textContent = h ? '📋 Paste policy' : '📋 Paste policy text';
-        btn.title = h ? 'Fill these fields from the last Copy policy of NS Policies Toolkit' : 'Paste the text of a Copy policy to fill these fields';
+        btn.title = h ? 'Fill these fields from the last Copy policy of Netskope Console Toolkit' : 'Paste the text of a Copy policy to fill these fields';
         btn.onclick = (e) => { e.preventDefault(); ctPasteFromHandoff(type, prefix, container); };
         row.appendChild(btn);
         if (h) {
@@ -23910,7 +24065,7 @@ Version 1.4.3:
         const title = css(mk('div'), { fontSize: '15px', fontWeight: 'bold', color: '#333', marginBottom: '6px' });
         title.textContent = 'Paste policy text';
         const intro = css(mk('p'), { margin: '0 0 10px', fontSize: '12px', color: '#555', lineHeight: '1.5' });
-        intro.textContent = 'Paste the text of Copy policy (NS Policies Toolkit) with Ctrl+V, then click Fill.';
+        intro.textContent = 'Paste the text of Copy policy (Netskope Console Toolkit) with Ctrl+V, then click Fill.';
         const ta = css(mk('textarea'), { width: '100%', height: '200px', boxSizing: 'border-box', padding: '8px', fontSize: '12px',
             fontFamily: '"Courier New", Courier, monospace', border: '1px solid #ccc', borderRadius: '4px', resize: 'vertical' });
         ta.placeholder = 'Netskope Real-time Protection policy: …';
@@ -25796,7 +25951,7 @@ Version 1.4.3:
 
     /* ==========================================================
      *  SUMMARY REQUESTS FROM OTHER SCRIPTS
-     *  The Ticket Response Helper asks for the grouped change summary
+     *  The Response Templates asks for the grouped change summary
      *  when inserting "Solved Closure". Scripts do not share GM storage,
      *  so they talk through page events carrying JSON strings:
      *    request : 'changeTracker:summaryRequest'  { requestId, ticket }
@@ -26251,7 +26406,7 @@ Version 1.4.3:
                 icon: '📋',
                 title: 'Paste policy',
                 buildContent: (body) => {
-                    lead(body, 'On Policy and DLP Policy entries, fill every field at once from the policy you copied with Copy policy (NS Policies Toolkit, on Netskope).');
+                    lead(body, 'On Policy and DLP Policy entries, fill every field at once from the policy you copied with Copy policy (Netskope Console Toolkit, on Netskope).');
                     const card = panel({ border: '1px solid #d6daf5', borderRadius: '4px', background: '#f3f4ff' });
                     card.appendChild(hrow([
                         chip('📋 Paste policy', '#667eea', { fontSize: '11px', padding: '3px 9px', radius: '4px' }),
@@ -28552,9 +28707,12 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.4';
+    const SCRIPT_VERSION = '1.7.5';
 
-    const CHANGELOG = `Version 1.7.4:
+    const CHANGELOG = `Version 1.7.5:
+- Domain Tools is now called Domain Checker. Your settings and API keys stay as they were.
+
+Version 1.7.4:
 - The Domain Tools window now shows above everything on the page, while the page stays usable next to it, for example to select more domains.
 
 Version 1.7.3:
@@ -28686,7 +28844,7 @@ Version 1.0:
         });
 
         const versionInfo = document.createElement('div');
-        versionInfo.textContent = `Domain Tools updated to v${SCRIPT_VERSION}!`;
+        versionInfo.textContent = `Domain Checker updated to v${SCRIPT_VERSION}!`;
         Object.assign(versionInfo.style, {
             background: '#f8f9fa', borderLeft: '4px solid #667eea',
             padding: '10px', borderRadius: '5px', marginBottom: '15px',
@@ -28793,7 +28951,7 @@ Version 1.0:
      * ==========================================================*/
 
     const TOOL_ID       = 'domainTools';
-    const TOOL_TOOLTIP  = 'Domain Tools';
+    const TOOL_TOOLTIP  = 'Domain Checker';
     const TOOL_POSITION = 3;
 
     const toolIcon = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -28910,7 +29068,7 @@ Version 1.0:
 
     // Looks up every target with the services given. onResult(target, svc, value|null, why) fires as answers arrive.
     async function dtLookup(targets, services, { onResult, onProgress, onWait } = {}) {
-        const caller = 'Domain Tools';
+        const caller = 'Domain Checker';
         if (services.includes('netskope')) {
             const host = dtTenant();
             for (let i = 0; i < targets.length; i += 50) {
@@ -29002,7 +29160,7 @@ Version 1.0:
                 if (res.tabs) parts.push(`${res.tabs} tab${res.tabs !== 1 ? 's' : ''} opened for the services without an API`);
                 note(`✓ Scanned again: ${parts.join(', ')}.`);
             } catch (err) {
-                console.error('[Domain Tools] Scan again:', err);
+                console.error('[Domain Checker] Scan again:', err);
                 note(`⚠ Scan again stopped: ${err.message}`);
             } finally {
                 wheel.stop();
@@ -29115,7 +29273,7 @@ Version 1.0:
         Object.assign(headerLeft.style, { display: 'flex', alignItems: 'center', gap: '10px' });
 
         const headerTitle = document.createElement('span');
-        headerTitle.textContent = '🌐 Domain Tools';
+        headerTitle.textContent = '🌐 Domain Checker';
         Object.assign(headerTitle.style, { fontWeight: 'bold', fontSize: '13px', color: '#333' });
 
         const versionBadge = document.createElement('span');
@@ -29232,7 +29390,7 @@ Version 1.0:
                 keys.textContent = '🔑 API Keys';
                 keys.title = `Set, test or replace the ${conf.short} key`;
                 Object.assign(keys.style, { marginLeft: 'auto', fontSize: '11px', padding: '2px 8px', border: '1px solid #c0c8f0', borderRadius: '4px', background: '#fff', color: '#667eea', cursor: 'pointer' });
-                keys.onclick = (e) => { e.preventDefault(); netskopeApi.openManager(svc === 'netskope' ? { host: tenant, caller: 'Domain Tools' } : { service: svc, caller: 'Domain Tools' }); };
+                keys.onclick = (e) => { e.preventDefault(); netskopeApi.openManager(svc === 'netskope' ? { host: tenant, caller: 'Domain Checker' } : { service: svc, caller: 'Domain Checker' }); };
                 row.append(cb, name, state, keys);
                 if (cb.checked && !has) {
                     const warn = document.createElement('span');
@@ -29647,7 +29805,7 @@ Version 1.0:
                 onWait: (text) => wheel.setLabel(text),
             });
             return Promise.all([tabsDone, looked]).then(() => finish(`Values from ${services.map(x => DT_API[x].short).join(', ')}${missing ? `; ${missing} not obtained, shown empty: type them or they copy as #` : ''}`))
-                .catch(err => { console.error('[Domain Tools] API check:', err); finish(`The API check stopped: ${err.message}`); });
+                .catch(err => { console.error('[Domain Checker] API check:', err); finish(`The API check stopped: ${err.message}`); });
         }
 
         const { row: multiSpmRow, checkbox: multiSpmCheckbox } = makeSPMRow('dt-multi-spm-checkbox', 'Open SPM Request Form (one for the whole batch)');
@@ -30062,7 +30220,7 @@ Version 1.0:
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent(body) {
-                    lead(body, 'Click the globe icon in the floating toolbar to open Domain Tools.');
+                    lead(body, 'Click the globe icon in the floating toolbar to open Domain Checker.');
                     const menu = document.createElement('div');
                     Object.assign(menu.style, {
                         display: 'inline-flex', alignItems: 'center', gap: '8px',
@@ -30072,7 +30230,7 @@ Version 1.0:
                     const pinStyle = { bg: '#e8f0fe', border: '2px solid #667eea' };
                     [toolSquare('🌐', pinStyle), menuSep(), toolSquare('📊'), toolSquare('📝'), menuSep(), toolSquare('⚙️')].forEach(el => menu.appendChild(el));
                     body.appendChild(hrow([menu], { margin: '0 0 12px 0' }));
-                    caption(body, 'The 🌐 icon is the Domain Tools button in the toolbar.');
+                    caption(body, 'The 🌐 icon is the Domain Checker button in the toolbar.');
                     const tabBar = document.createElement('div');
                     Object.assign(tabBar.style, { display: 'inline-flex', borderBottom: '2px solid #ddd', marginBottom: '8px' });
                     const t1 = document.createElement('span');
@@ -30164,7 +30322,7 @@ Version 1.0:
                 icon: '🔌',
                 title: 'API checks (optional)',
                 buildContent(body) {
-                    lead(body, 'With API keys, the scores come straight into Domain Tools, ready to paste into the ticket.');
+                    lead(body, 'With API keys, the scores come straight into Domain Checker, ready to paste into the ticket.');
                     const panel = document.createElement('div');
                     Object.assign(panel.style, { background: '#f5f6ff', border: '1px solid #dde', borderRadius: '6px', padding: '8px 10px', marginBottom: '10px' });
                     [['Netskope category', '✓ Key set (ema.goskope.com)', true], ['VirusTotal score', '✓ Key set', true], ['IBM X-Force score', 'No key', false]].forEach(([n, st, on]) => {
@@ -30265,7 +30423,7 @@ Version 1.0:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Domain Tools • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Domain Checker • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.append(titleMain, titleSub);
         titleEl.append(titleIcon, titleText);
@@ -30434,7 +30592,7 @@ Version 1.0:
     if (!/\.goskope\.com$/.test(location.hostname)) return function register() {};
 
 
-    console.log('🔧 NS Policies Toolkit loading...');
+    console.log('🔧 Netskope Console Toolkit loading...');
 
     // ─────────────────────────────────────────────────────────────
     // SETTINGS  (persisted via GM storage)
@@ -30466,9 +30624,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.2';
+    const SCRIPT_VERSION = '1.49.3';
 
-    const CHANGELOG = `Version 1.49.2:
+    const CHANGELOG = `Version 1.49.3:
+- NS Policies Toolkit is now called Netskope Console Toolkit, since it adds tools to the whole console and not only to policies. Your settings and backups stay as they were.
+
+Version 1.49.2:
 - "📥 Export to CSV" on Transaction Events is back next to the refresh button, top right. In 1.49.1 it had moved next to the page title.
 
 Version 1.49.1:
@@ -31168,7 +31329,7 @@ Version 1.16:
 
         const titleEl = document.createElement('div');
         Object.assign(titleEl.style, { fontSize: '12px', fontWeight: 'bold', color: '#333' });
-        titleEl.textContent = '🛡 NS Policies Toolkit — Feature Settings';
+        titleEl.textContent = '🛡 Netskope Console Toolkit — Feature Settings';
         headerRow.appendChild(titleEl);
 
         /* ── Close button ── */
@@ -31555,7 +31716,7 @@ Version 1.16:
         // Append to document.body — same as working Ticket Assignment script
         document.body.appendChild(backdrop);
         // Native modal dialog, shown and hidden with the backdrop's display; Esc closes it like a click outside
-        suiteModalByClass(backdrop, { label: 'NS Policies Toolkit', isShown: () => backdrop.style.display !== 'none', close: hideSettingsModal });
+        suiteModalByClass(backdrop, { label: 'Netskope Console Toolkit', isShown: () => backdrop.style.display !== 'none', close: hideSettingsModal });
     }
 
     function updateRowStyle(row, enabled) {
@@ -31713,7 +31874,7 @@ Version 1.16:
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent(body) {
-                    lead(body, 'Click the shield icon in the floating toolbar to open the NS Policies Toolkit settings panel.');
+                    lead(body, 'Click the shield icon in the floating toolbar to open the Netskope Console Toolkit settings panel.');
 
                     body.appendChild(hrow([
                         menuMock([
@@ -32878,7 +33039,7 @@ Version 1.16:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `NS Policies Toolkit • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Netskope Console Toolkit • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleText.appendChild(titleMain);
         titleText.appendChild(titleSub);
@@ -39042,9 +39203,9 @@ Version 1.16:
         if (!anchor) return;
 
         btn = seMakePageButton(SE_BUTTON_ID, '🧹 Bulk remove',
-            'Find domains or categories in steering exceptions and remove them (NS Policies Toolkit)', 'ns-color-red', place, 'remove');
+            'Find domains or categories in steering exceptions and remove them (Netskope Console Toolkit)', 'ns-color-red', place, 'remove');
         addBtn = seMakePageButton(SE_ADD_BUTTON_ID, '➕ Bulk add',
-            'Add domains or categories as exceptions to several steering configurations (NS Policies Toolkit)', 'ns-color-green', place, 'add');
+            'Add domains or categories as exceptions to several steering configurations (Netskope Console Toolkit)', 'ns-color-green', place, 'add');
         addBtn.style.color = '#26890d';
         // Both buttons share one row, so the page layout can never split them apart
         const row = document.createElement('span');
@@ -39297,7 +39458,7 @@ Version 1.16:
             policyRows.push(row);
         });
         const about = [['Tenant', meta.host], ['Exported', meta.at], ['Policies', list.length],
-            ['Exported by', 'NS Policies Toolkit ' + SCRIPT_VERSION]];
+            ['Exported by', 'Netskope Console Toolkit ' + SCRIPT_VERSION]];
         names.failed.forEach(f => about.push(['Names that could not be read', `${f}: their ids are shown instead`]));
         return [
             { name: 'Policies', rows: policyRows, header: true },
@@ -39374,7 +39535,7 @@ Version 1.16:
         btn.type = 'button';
         btn.className = anchor.className;
         btn.textContent = SX_LABEL;
-        btn.title = 'Download every SSL Decryption policy as an Excel file (NS Policies Toolkit). Nothing is changed in Netskope.';
+        btn.title = 'Download every SSL Decryption policy as an Excel file (Netskope Console Toolkit). Nothing is changed in Netskope.';
         Object.assign(btn.style, { marginLeft: '8px', whiteSpace: 'nowrap' });
         btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); sxExport(); });
         anchor.insertAdjacentElement('afterend', btn);
@@ -39403,7 +39564,7 @@ Version 1.16:
     const TX_BUTTON_ID = 'nstk-tx-export-btn';
     const TX_HOST_ID   = 'nstk-tx-export-host';
     const TX_LABEL     = '📥 Export to CSV';
-    const TX_TITLE     = 'Download the events matching the time range and filters of this page as a CSV file (NS Policies Toolkit). Nothing is changed in Netskope.';
+    const TX_TITLE     = 'Download the events matching the time range and filters of this page as a CSV file (Netskope Console Toolkit). Nothing is changed in Netskope.';
     const TX_PATH      = '/api/v2/events/datasearch/txnlog';
     const TX_PAGE      = 500;      // the largest page the console itself asks for
     const TX_MAX_ROWS  = 100000;
@@ -39575,7 +39736,7 @@ Version 1.16:
                 `# Filters: ${meta.c.query || 'none'}`,
                 `# Fields: ${meta.allFields ? 'all fields' : 'the columns shown on the page'}`,
                 `# Sorted by: ${meta.c.orderbys || 'timestamp desc'}`,
-                `# Exported: ${new Date(meta.at).toISOString().replace('T', ' ').slice(0, 19)} UTC by NS Policies Toolkit ${SCRIPT_VERSION}`,
+                `# Exported: ${new Date(meta.at).toISOString().replace('T', ' ').slice(0, 19)} UTC by Netskope Console Toolkit ${SCRIPT_VERSION}`,
                 `# Rows: ${rows.length}${meta.stopped ? ' (stopped by you, more events exist)' : meta.more ? ` (limit of ${meta.limit} reached, more events exist: narrow the time range or the filters)` : ''}`,
             ].forEach(l => lines.push(txCsvField(l, false)));
             lines.push('');
@@ -39920,7 +40081,7 @@ Version 1.16:
         b.type = 'button';
         b.className = 'ns-btn ns-btn-secondary';
         b.textContent = '👥 Manage Source';
-        b.title = 'Check, add, remove or export users and groups in Source (NS Policies Toolkit)';
+        b.title = 'Check, add, remove or export users and groups in Source (Netskope Console Toolkit)';
         Object.assign(b.style, { marginTop: '6px', whiteSpace: 'nowrap' });
         b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); smOpen(); });
         found.picker.insertAdjacentElement('afterend', b);
@@ -40780,7 +40941,7 @@ Version 1.16:
         const run = bgLoadRun();
         const paused = run && run.state === 'paused';
         const label = paused ? '🧰 Policy tools (paused)' : '🧰 Policy tools';
-        const title = paused ? `Groups run paused at ${run.index + 1} of ${run.jobs.length}` : 'Bulk actions on policies: add groups, enable or disable, delete (NS Policies Toolkit)';
+        const title = paused ? `Groups run paused at ${run.index + 1} of ${run.jobs.length}` : 'Bulk actions on policies: add groups, enable or disable, delete (Netskope Console Toolkit)';
         if (btn && btn.previousElementSibling === apply) {
             if (btn.textContent !== label) btn.textContent = label;
             if (btn.title !== title) btn.title = title;
@@ -43252,7 +43413,7 @@ Version 1.16:
         b.id = PC_BUTTON_ID;
         b.type = 'button';
         b.className = 'ns-btn ns-btn-secondary ns-left';
-        b.title = 'Copy the policy as readable text: the saved version, or after your next Save (NS Policies Toolkit)';
+        b.title = 'Copy the policy as readable text: the saved version, or after your next Save (Netskope Console Toolkit)';
         b.appendChild(document.createTextNode('📋 Copy policy'));
         pcButtonLabel(b);
         b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); pcToggleMenu(); });
@@ -44105,7 +44266,7 @@ Version 1.16:
         });
 
         const title = document.createElement('div');
-        title.textContent = '👋 Welcome to NS Policies Toolkit';
+        title.textContent = '👋 Welcome to Netskope Console Toolkit';
         Object.assign(title.style, {
             fontSize: '15px', fontWeight: 'bold',
             color: '#0073e6', marginBottom: '8px', fontFamily: 'Arial, sans-serif',
@@ -44227,7 +44388,7 @@ Version 1.16:
         if (isInitialized) return;
 
         isInitialized = true;
-        console.log('Initializing NS Policies Toolkit…');
+        console.log('Initializing Netskope Console Toolkit…');
 
         observer.observe(document.body, { childList: true, subtree: true });
         buildSettingsModal();
@@ -44246,13 +44407,13 @@ Version 1.16:
             if (!GM_getValue('toolkit_username', '')) setTimeout(() => showUsernamePromptModal(), 800);
         });
 
-        console.log('✅ NS Policies Toolkit v' + SCRIPT_VERSION + ' ready');
+        console.log('✅ Netskope Console Toolkit v' + SCRIPT_VERSION + ' ready');
     }
 
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'NS Policies Toolkit', position: 5 }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Netskope Console Toolkit', position: 5 }
             }));
             addToolbarNotificationDot();
         };
@@ -44281,7 +44442,7 @@ Version 1.16:
         dtAutoMigrate();
     }
     // The floating toolbar only shows on ServiceNow and Netskope, like the old Toolbar script.
-    // Elsewhere only General Toolkit runs (its ticket number button works on any site).
+    // Elsewhere only General Web Toolkit runs (its ticket number button works on any site).
     function startSuite() {
         if (dtToolRunsHere('toolbar')) initToolbar();
         else if (!document.getElementById('custom-toolbar-suite-marker')) {
