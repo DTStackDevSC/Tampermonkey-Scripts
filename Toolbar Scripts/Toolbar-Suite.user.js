@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.49.0
+// @version      2.50.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.49.0';
-    const CHANGELOG = `Version 2.49.0:
+   const SCRIPT_VERSION = '2.50.0';
+    const CHANGELOG = `Version 2.50.0:
+- Destination Profile Editor: log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
+- NS Policies Toolkit: log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
+
+Version 2.49.0:
 - NS Policies Toolkit: the settings window and the reminder shown before saving a policy now open above everything on the Netskope page. Esc closes them like a click outside or Go back.
 - Toolbar: windows that close and then write into the page (a policy description, a ticket comment) now leave the page usable at once.
 
@@ -4809,6 +4813,27 @@ Version 1.0.0:
                 if (madeRelative && !target.querySelector(':scope > .suite-busy')) target.style.position = '';
             },
         };
+    }
+
+    /* ==========================================================
+     *  WHERE A LOG LINE GOES (core)
+     *  Log buttons write at the end of the text by default, and at the
+     *  cursor only when the user put it there: a real click or key in
+     *  that field (or in a CodeMirror editor) marks it.
+     * ==========================================================*/
+
+    const suiteCaretFields = new WeakSet();
+    ['mouseup', 'keyup'].forEach(type => document.addEventListener(type, (e) => {
+        if (!e.isTrusted) return;
+        const t = e.composedPath()[0];
+        const field = t && t.closest && (t.closest('.cm-content') || (/^(TEXTAREA|INPUT)$/.test(t.tagName) ? t : null));
+        if (field) suiteCaretFields.add(field);
+    }, true));
+    // True when the user placed the cursor in this field (a textarea, or the CodeMirror wrapper's editor)
+    function suiteCaretPlaced(field) {
+        if (!field) return false;
+        if (field.isCodeMirror) return !!field.content && suiteCaretFields.has(field.content);
+        return suiteCaretFields.has(field);
     }
 
     async function suiteBusy(target, work, label) {
@@ -13493,9 +13518,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.1';
+    const SCRIPT_VERSION = '2.1.2';
 
-    const CHANGELOG = `Version 2.1.1:
+    const CHANGELOG = `Version 2.1.2:
+- Log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
+
+Version 2.1.1:
 - Deleting a profile that a policy still uses now says so in plain words: remove it from the policy first, then delete it again.
 - The Create Destination Profile form now also leaves room under its buttons at the bottom of the window.
 
@@ -15801,9 +15829,11 @@ Version 1.4.1:
     }
 
     function insertAtCursor(textarea, text) {
-        const start  = textarea.selectionStart;
-        const end    = textarea.selectionEnd;
         const value  = textarea.value;
+        // At the end of the text, unless the user put the cursor somewhere in it
+        const placed = suiteCaretPlaced(textarea);
+        const start  = placed ? textarea.selectionStart : value.length;
+        const end    = placed ? textarea.selectionEnd : value.length;
         const before = value.slice(0, start);
         const after  = value.slice(end);
         textarea.value = before + text + after;
@@ -30392,9 +30422,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.48.3';
+    const SCRIPT_VERSION = '1.48.4';
 
-    const CHANGELOG = `Version 1.48.3:
+    const CHANGELOG = `Version 1.48.4:
+- Log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
+
+Version 1.48.3:
 - The settings window and the reminder shown before saving a policy now open above everything on the Netskope page. Esc closes them like a click outside or Go back.
 
 Version 1.48.2:
@@ -33887,8 +33920,8 @@ Version 1.16:
             }
 
             const logLine = `${ritm} | ${date} | ${user || 'Unknown'} | ${desc}`;
-            const current = textarea.value;
-            setAngularValue(textarea, current ? current + '\n' + logLine : logLine);
+            if (suiteCaretPlaced(textarea)) insertAtCursor(textarea, logLine);
+            else { const current = textarea.value; setAngularValue(textarea, current ? current + '\n' + logLine : logLine); }
 
             overlay.remove();
             modal.remove();
@@ -34687,14 +34720,22 @@ Version 1.16:
 
     /* ── Insert text at cursor position in a textarea ── */
     function insertAtCursor(textarea, text) {
+        // At the end of the text, unless the user put the cursor somewhere in it
+        const placed = suiteCaretPlaced(textarea);
         if (textarea.isCodeMirror && !textarea.view) {
+            if (!placed && textarea.content) {
+                const r = document.createRange();
+                r.selectNodeContents(textarea.content);
+                r.collapse(false);
+                textarea.savedRange = r;
+            }
             // The editor keeps the caret on a line of its own when the header is typed with line breaks around it
             textarea.typeOverSelection('\n' + text + '\n');
             return;
         }
-        const start  = textarea.selectionStart;
-        const end    = textarea.selectionEnd;
         const value  = textarea.value;
+        const start  = placed ? textarea.selectionStart : value.length;
+        const end    = placed ? textarea.selectionEnd : value.length;
         const before = value.slice(0, start);
         const after  = value.slice(end);
         const prefix = (before && !before.endsWith('\n')) ? '\n' : '';
