@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.53.1
+// @version      2.54.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -29,11 +29,40 @@
     'use strict';
 
     /* ==========================================================
+     *  DIAGNOSTICS LOG
+     *  Every console.error and console.warn of this script (never
+     *  the page's own) is also kept in a short list, so 🩺 Copy
+     *  diagnostics in Settings can show the latest problems.
+     * ==========================================================*/
+
+    const suiteDiagLog = [];
+    function suiteDiagNote(level, args) {
+        const text = args.map(a => a instanceof Error ? `${a.name}: ${a.message}`
+            : typeof a === 'string' ? a : (() => { try { return JSON.stringify(a); } catch (e) { return String(a); } })()).join(' ');
+        suiteDiagLog.push(`${new Date().toISOString().slice(11, 19)} ${level} ${text.slice(0, 300)}`);
+        if (suiteDiagLog.length > 20) suiteDiagLog.shift();
+    }
+    // Shadows the global console inside this script only
+    const console = Object.assign(Object.create(window.console), {
+        error: (...a) => { suiteDiagNote('error', a); window.console.error(...a); },
+        warn:  (...a) => { suiteDiagNote('warn', a); window.console.warn(...a); },
+    });
+
+    /* ==========================================================
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.53.1';
-    const CHANGELOG = `Version 2.53.1:
+   const SCRIPT_VERSION = '2.54.0';
+    const CHANGELOG = `Version 2.54.0:
+- Toolbar: New 🩺 Copy diagnostics button in Settings, under Support: it copies the versions, the tools that are on, the page you are on and the latest errors, so you can paste them when you report a problem. Keys, passphrases and ticket contents are never included.
+- Toolbar: Once you enter an API key passphrase, it now works in every ServiceNow and Netskope tab, also in tabs you open later, and is asked again only after one hour without using the key. The web page can no longer read it. 🔒 Lock still forgets it at once.
+- Toolbar: The toolbar uses less of the computer on ServiceNow pages, and its page watchers rest while the tab is in the background.
+- ServiceNow Toolkit: finding the open ticket takes less work, and the SPM Germany reminder check rests while the tab is in the background.
+- Ticket Assignment: finding the open ticket takes less work for the browser.
+- Destination Profile Editor: the Feature Guide explains that the passphrase stays unlocked for one hour after its last use.
+- Netskope Console Toolkit: its buttons in the Netskope console rest while the tab is in the background.
+
+Version 2.53.1:
 - Ticket Assignment: the "✉️ Send mail" button now separates the email addresses with a semicolon, so Outlook recognizes every recipient in CC.
 
 Version 2.53.0:
@@ -891,9 +920,30 @@ Version 1.0.0:
         return entries;
     }
 
+    // The ServiceNow Polaris shell element (<macroponent-…>, a child of <body>) that holds the ticket iframe.
+    // Kept once found, so the many per second checks never walk the whole page; elsewhere the full search
+    // runs at most every 2 seconds.
+    let suiteMacroCache = null, suiteMacroMissAt = 0;
+    function suiteMacroponent() {
+        if (suiteMacroCache && suiteMacroCache.isConnected) return suiteMacroCache;
+        suiteMacroCache = null;
+        const isMacro = el => el.tagName.toLowerCase().startsWith('macroponent-');
+        const top = document.body ? document.body.children : [];
+        for (const el of top) if (isMacro(el)) return (suiteMacroCache = el);
+        if (Date.now() - suiteMacroMissAt < 2000) return null;
+        suiteMacroMissAt = Date.now();
+        for (const el of document.querySelectorAll('*')) if (isMacro(el)) return (suiteMacroCache = el);
+        return null;
+    }
+
+    // A watcher that only updates what is on screen: skipped while the tab is hidden, back on the next
+    // tick once it shows. Returns the interval id, so clearInterval stops it as before.
+    function suiteWhileVisible(fn, ms) {
+        return setInterval(() => { if (!document.hidden) fn(); }, ms);
+    }
+
     function getTicketContext() {
-        const macro = Array.from(document.querySelectorAll('*'))
-            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        const macro = suiteMacroponent();
         if (macro && macro.shadowRoot) {
             const iframe = macro.shadowRoot.querySelector('#gsft_main');
             if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
@@ -1005,6 +1055,10 @@ Version 1.0.0:
     const DT_MIGRATED_KEY = 'toolbarSuiteMigratedTools';
     const DT_DECLINED_KEY = 'toolbarSuiteMigrationDeclined';
     const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'toolbarSuiteDetectedTools', 'toolbarSuitePickerLater'];
+    // Keys that only mean something on this browser right now: never exported, imported or counted as data.
+    // netskope_unlocked_<host> holds an unlocked API key passphrase for one hour (NETSKOPE API).
+    const DT_PRIVATE_RE = /^netskope_unlocked_/;
+    const dtIsPrivateKey = key => DT_PRIVATE_KEYS.includes(key) || DT_PRIVATE_RE.test(key);
     // Version and "changelog seen" keys are written on every load, so they never count as data.
     const DT_META_RE = /(version|changelog[-_]?seen)$/i;
 
@@ -1017,7 +1071,7 @@ Version 1.0.0:
     function dtFilterValues(tool, values) {
         const kept = {}, dropped = [];
         for (const [key, value] of Object.entries(values)) {
-            if (dtOwns(tool, key) && !DT_PRIVATE_KEYS.includes(key)) kept[key] = value;
+            if (dtOwns(tool, key) && !dtIsPrivateKey(key)) kept[key] = value;
             else dropped.push(key);
         }
         return { values: kept, dropped };
@@ -1054,7 +1108,7 @@ Version 1.0.0:
     // True when the user already set this tool up inside the suite.
     function dtSuiteHasData(tool) {
         return GM_listValues().some(key => {
-            if (!dtOwns(tool, key) || DT_PRIVATE_KEYS.includes(key) || DT_META_RE.test(key)) return false;
+            if (!dtOwns(tool, key) || dtIsPrivateKey(key) || DT_META_RE.test(key)) return false;
             return !tool.setupKeys || tool.setupKeys.some(s => key === s || key.startsWith(s));
         });
     }
@@ -1063,7 +1117,7 @@ Version 1.0.0:
     function dtCollectAll() {
         const tools = {};
         for (const key of GM_listValues()) {
-            if (DT_PRIVATE_KEYS.includes(key)) continue;
+            if (dtIsPrivateKey(key)) continue;
             const tool = dtOwnerOf(key);
             if (!tool) continue;
             if (!tools[tool.id]) tools[tool.id] = { name: tool.name, values: {} };
@@ -2240,7 +2294,7 @@ Version 1.0.0:
                     bullets(body, [
                         'Each tenant has its own key and its own passphrase. Keys are encrypted in this browser and each one is only sent to its own service.',
                         'VirusTotal and IBM X-Force tabs: optional keys for the API checks of Domain Checker. X-Force needs the API key and the API password. VirusTotal has a requests per minute field: 4 for the free key, 0 for no limit.',
-                        'The passphrase is asked once per browser session and per site, in a window that always shows above everything else, even other open panels.',
+                        'Once entered, the passphrase stays unlocked in every ServiceNow and Netskope tab and is asked again only after one hour without using the key. It is asked in a window that always shows above everything else, even other open panels.',
                         'Forgot it? deletes that key (it cannot be read without the passphrase) so you can save it again with a new one.',
                         'This works whatever tools you chose: it is part of the toolbar itself.',
                     ]);
@@ -2287,6 +2341,12 @@ Version 1.0.0:
                         'Import everything restores that file, for example on a new computer. Each tool\'s first setup can also import it.',
                         'Import from old scripts brings in the data of the separate toolbar scripts you used before. The toolbar also offers it by itself once a day until it is done.'
                     ]);
+
+                    body.appendChild(hrow([
+                        chip('🩺 Copy diagnostics', '#f3f4f6', { color: '#374151' }),
+                        span('📋 Copied', { fontSize: '11px', color: '#2a7d4f', fontWeight: 'bold' })
+                    ], { margin: '10px 0 0 0' }));
+                    caption(body, 'Under Support. Copies the versions, the tools that are on, this page\'s mode and the latest errors of the toolbar, never keys, passphrases or ticket contents. Paste it when you report a problem.');
 
                     const dot = document.createElement('span');
                     Object.assign(dot.style, { width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', display: 'inline-block' });
@@ -3421,16 +3481,15 @@ Version 1.0.0:
     // shell's one, which sits on the same spot and only has the page wide tools. Shown again on
     // pages without that iframe, such as dashboards.
     function snShellFrameHasToolbar() {
-        for (const el of document.querySelectorAll('*')) {
-            if (!el.tagName.toLowerCase().startsWith('macroponent-') || !el.shadowRoot) continue;
-            const frame = el.shadowRoot.querySelector('#gsft_main');
-            if (!frame) continue;
-            const r = frame.getBoundingClientRect();
-            if (r.width < 50 || r.height < 50) continue;
-            try {
-                if (frame.contentDocument && frame.contentDocument.getElementById('custom-toolbar-container')) return true;
-            } catch (e) { /* not same origin */ }
-        }
+        const el = suiteMacroponent();
+        if (!el || !el.shadowRoot) return false;
+        const frame = el.shadowRoot.querySelector('#gsft_main');
+        if (!frame) return false;
+        const r = frame.getBoundingClientRect();
+        if (r.width < 50 || r.height < 50) return false;
+        try {
+            if (frame.contentDocument && frame.contentDocument.getElementById('custom-toolbar-container')) return true;
+        } catch (e) { /* not same origin */ }
         return false;
     }
     function snShellWatch() {
@@ -3451,7 +3510,7 @@ Version 1.0.0:
             }
         };
         check();
-        setInterval(check, 1000);
+        suiteWhileVisible(check, 1000);
     }
 
     function initToolbar() {
@@ -3789,6 +3848,16 @@ Version 1.0.0:
                             </div>
                         </div>
 
+                        <!-- Support -->
+                        <div class="settings-section">
+                            <h3>Support</h3>
+                            <div class="setting-item">
+                                <button type="button" id="suite-copy-diagnostics" class="btn-secondary">🩺 Copy diagnostics</button>
+                                <span id="suite-diag-status" role="status" class="setting-description"></span>
+                                <span class="setting-description">Copies versions, the tools that are on, this page's mode and the latest errors (no keys, passphrases or ticket contents). Paste it when you report a problem.</span>
+                            </div>
+                        </div>
+
                         <!-- Data -->
                         <div class="settings-section">
                             <h3>Data</h3>
@@ -3833,11 +3902,59 @@ Version 1.0.0:
         dtRenderSettingsTools();
     }
 
+    // 🩺 Copy diagnostics: what support needs to see, never keys, passphrases, hosts' data or ticket contents.
+    function suiteDiagnosticsText() {
+        const lines = [];
+        const tm = (typeof GM_info !== 'undefined' && GM_info) || {};
+        lines.push(`Tools Toolbar ${SCRIPT_VERSION} (${tm.scriptHandler || 'userscript manager'} ${tm.version || ''})`.trim());
+        lines.push(`Install: ${DT_INSTALL_KIND}`);
+        lines.push(`Browser: ${navigator.userAgent}`);
+        let mode = 'other site';
+        if (/\.service-now\.com$/.test(location.hostname)) {
+            if (SN_SHELL) mode = 'ServiceNow shell (Polaris)';
+            else if (window !== window.top) mode = 'ServiceNow ticket frame';
+            else mode = 'ServiceNow classic page';
+            const ctx = getTicketContext();
+            mode += ctx ? `, ticket form found (${ctx.mode})` : ', no ticket form';
+        } else if (/\.goskope\.com$/.test(location.hostname)) mode = 'Netskope tenant';
+        lines.push(`Page: ${location.hostname}${location.pathname} [${mode}]`);
+        lines.push('Tools:');
+        for (const t of DATA_REGISTRY) {
+            if (t.id === 'toolbar') continue;
+            lines.push(`  ${isToolEnabled(t.id) ? 'on ' : 'off'} ${t.name}${isToolEnabled(t.id) && dtToolRunsHere(t.id) ? ' (runs here)' : ''}`);
+        }
+        try {
+            const keys = netskopeApi.tenants().map(t => { const st = netskopeApi.status(t.host);
+                return `${t.type}: ${st.hasKey ? (st.expired ? 'key expired' : st.unlocked ? 'key unlocked' : 'key locked') : 'no key'}`; });
+            lines.push(`Netskope tenants: ${keys.length ? keys.join(', ') : 'none set'}`);
+        } catch (e) { lines.push('Netskope tenants: could not be read'); }
+        lines.push(`Change Tracker SharePoint: ${GM_getValue('changeTrackerSpSiteUrl', '') ? 'set up' : 'not set up'}`);
+        lines.push(`Latest errors (${suiteDiagLog.length}):`);
+        if (suiteDiagLog.length) suiteDiagLog.forEach(l => lines.push('  ' + l)); else lines.push('  none since this page loaded');
+        return lines.join('\n');
+    }
+
+    let suiteDiagTimer = 0;
+    function suiteCopyDiagnostics(btn) {
+        const status = document.getElementById('suite-diag-status');
+        let ok = true;
+        try { GM_setClipboard(suiteDiagnosticsText(), 'text'); }
+        catch (e) { ok = false; console.error('[Toolbar] Copy diagnostics:', e); }
+        clearTimeout(suiteDiagTimer);
+        btn.textContent = ok ? '📋 Copied' : '⚠️ Copy failed';
+        if (status) status.textContent = ok ? 'Diagnostics copied. Paste them in your message.' : 'Could not copy. Try again, or reload the page first.';
+        suiteDiagTimer = setTimeout(() => {
+            btn.textContent = '🩺 Copy diagnostics';
+            if (status) status.textContent = '';
+        }, 2500);
+    }
+
     function setupSettingsEventListeners() {
         const modal = document.getElementById('toolbar-settings-modal');
         const closeBtn = modal.querySelector('.settings-close');
         const cancelBtn = document.getElementById('cancel-settings');
         document.getElementById('netskope-api-keys')?.addEventListener('click', () => netskopeApi.openManager({ caller: 'Toolbar settings' }));
+        document.getElementById('suite-copy-diagnostics')?.addEventListener('click', e => suiteCopyDiagnostics(e.currentTarget));
         const saveBtn = document.getElementById('save-settings');
         const overlay = modal.querySelector('.settings-overlay');
 
@@ -4268,8 +4385,11 @@ Version 1.0.0:
             token:  host => `netskope_token_${host}`,
             hash:   host => `netskope_passphrase_hash_${host}`,
             expiry: host => `netskope_token_expiry_${host}`,
-            session: host => `netskope_session_key_${host}`,
+            session: host => `netskope_session_key_${host}`,   // before 2.53: the page's sessionStorage, read once to move it
+            unlocked: host => `netskope_unlocked_${host}`,
         };
+        // An unlocked passphrase stays usable in every tab for one hour after the last API call that used it.
+        const UNLOCK_MS = 3600000;
         const EXPIRY_SCALES = [
             { label: 'Hours', value: 1 }, { label: 'Days', value: 24 },
             { label: 'Weeks', value: 168 }, { label: 'Months', value: 720 },
@@ -4277,7 +4397,6 @@ Version 1.0.0:
         const TEST_PATH = '/api/v2/profiles/destinations?limit=1';
         const DEPLOY_PATH = '/api/v2/profiles/destinations/deploy';
         const NOTE_MAX = 100;   // Netskope's limit for change_note
-        const memory = {};             // host → passphrase, for this tab
         const unlocking = {};          // host → the prompt already waiting, shared by every call
         const listeners = new Set();
 
@@ -4346,25 +4465,36 @@ Version 1.0.0:
             },
         };
 
-        /* ── Session passphrase: this tab, and the site's session storage ── */
+        /* ── Unlocked passphrase: the script's own storage, one hour after the last use ── */
 
-        // The site's session storage is readable and writable by the page, so a passphrase found there is only
-        // trusted once it matches the saved hash (checked by sessionLoad before any use)
-        function sessionGet(host) { return memory[host] || null; }
+        // Kept in the script's storage, which the page can never read (the page's sessionStorage could),
+        // so it is shared by every ServiceNow and Netskope tab. Every API call that uses it renews the hour;
+        // Lock, a removed key or a wrong decrypt forget it at once.
+        function sessionGet(host) {
+            const v = GM_getValue(K.unlocked(host), null);
+            if (!v || typeof v.p !== 'string' || !v.p) return null;
+            if (!(v.until > Date.now())) { GM_deleteValue(K.unlocked(host)); return null; }
+            return v.p;
+        }
+        function sessionTouch(host) {
+            const v = GM_getValue(K.unlocked(host), null);
+            if (!v || !(v.until > Date.now())) return;
+            // Written at most once a minute, not on every call of a long run
+            if (v.until - Date.now() < UNLOCK_MS - 60000) GM_setValue(K.unlocked(host), { p: v.p, until: Date.now() + UNLOCK_MS });
+        }
         async function sessionLoad(host) {
-            if (memory[host]) return true;
+            if (sessionGet(host)) return true;
+            // Before 2.53 the passphrase sat in the page's sessionStorage: move it once (if it still matches), then remove it
             let v = null;
-            try { v = sessionStorage.getItem(K.session(host)); } catch (e) { v = null; }
-            if (v && await verify(host, v)) { memory[host] = v; return true; }
-            if (v) sessionClear(host);
+            try { v = sessionStorage.getItem(K.session(host)); sessionStorage.removeItem(K.session(host)); } catch (e) { v = null; }
+            if (v && await verify(host, v)) { sessionSet(host, v); return true; }
             return false;
         }
         function sessionSet(host, passphrase) {
-            memory[host] = passphrase;
-            try { sessionStorage.setItem(K.session(host), passphrase); } catch (e) { /* memory only */ }
+            GM_setValue(K.unlocked(host), { p: passphrase, until: Date.now() + UNLOCK_MS });
         }
         function sessionClear(host) {
-            delete memory[host];
+            GM_deleteValue(K.unlocked(host));
             try { sessionStorage.removeItem(K.session(host)); } catch (e) { /* nothing stored */ }
         }
 
@@ -4423,7 +4553,8 @@ Version 1.0.0:
             if (isLegacy(host)) return crypt.legacy(data);
             const passphrase = sessionGet(host);
             if (!passphrase) return null;
-            try { return await crypt.decrypt(data, passphrase); } catch (e) { sessionClear(host); emit(); return null; }
+            try { const key = await crypt.decrypt(data, passphrase); sessionTouch(host); return key; }
+            catch (e) { sessionClear(host); emit(); return null; }
         }
 
         function emit() { listeners.forEach(fn => { try { fn(); } catch (e) { console.error('[Netskope API] listener:', e); } }); }
@@ -4517,7 +4648,7 @@ Version 1.0.0:
                 const d = openDialog('nsapi-unlock', `
                     <div class="head"><h2>🔐 Unlock the ${esc(t.type)} API key</h2></div>
                     <div class="body">
-                        <p>${caller ? `<b>${esc(caller)}</b> needs` : 'A tool needs'} the ${t.base ? '' : 'Netskope '}API key of <b>${esc(t.type)}</b> (<span class="host">${esc(t.host)}</span>). Enter its passphrase to unlock it for this browser session.</p>
+                        <p>${caller ? `<b>${esc(caller)}</b> needs` : 'A tool needs'} the ${t.base ? '' : 'Netskope '}API key of <b>${esc(t.type)}</b> (<span class="host">${esc(t.host)}</span>). Enter its passphrase to unlock it. It stays unlocked in every tab until one hour passes without using it.</p>
                         <input type="password" id="nsapi-pass" placeholder="Passphrase" autocomplete="off" style="width:100%">
                         <div class="err" id="nsapi-unlock-err"></div>
                     </div>
@@ -4796,7 +4927,7 @@ Version 1.0.0:
                     <button type="button" role="tab" data-tab="xforce">IBM X-Force</button>
                 </div>
                 <div class="body">
-                    <p>Each key is encrypted in this browser with its own passphrase. Tools ask for the passphrase once per browser session.${caller ? ` Opened for <b>${esc(caller)}</b>.` : ''}</p>
+                    <p>Each key is encrypted in this browser with its own passphrase. Tools ask for the passphrase once, then again only after one hour without using the key. 🔒 Lock forgets it at once.${caller ? ` Opened for <b>${esc(caller)}</b>.` : ''}</p>
                     <div data-pane="netskope">
                         <p class="help">One key per tenant, used by the Destination Profile Editor, the Change Tracker and Domain Checker.</p>
                         <div id="nsapi-rows">${list.length ? list.map(rowHtml).join('') : '<p class="help">No Netskope tenant hosts are set up yet. Set them in the Destination Profile Editor (⚙ Tenant Hosts).</p>'}</div>
@@ -6455,8 +6586,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.4';
-    const CHANGELOG = `Version 1.6.4:
+    const SCRIPT_VERSION = '1.6.5';
+    const CHANGELOG = `Version 1.6.5:
+- Finding the open ticket on ServiceNow pages takes less work for the browser, and the SPM Germany reminder check rests while the tab is in the background.
+
+Version 1.6.4:
 - The Settings panel (also the Saved Drafts view) opens above everything on the page. Esc closes it like ✕, the page behind waits until you close it, and the keyboard goes back to the toolbar.
 
 Version 1.6.3:
@@ -7837,8 +7971,7 @@ Version 1.1.4:
     }
 
     function getToolkitTicketContext() {
-        const macro = Array.from(document.querySelectorAll('*'))
-            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        const macro = suiteMacroponent();
         if (macro && macro.shadowRoot) {
             const iframe = macro.shadowRoot.querySelector('#gsft_main');
             if (iframe && iframe.contentDocument) {
@@ -7902,8 +8035,7 @@ Version 1.1.4:
         delegateClicks(document);
 
         // Also cover the gsft_main iframe (Polaris and classic nav-frame mode)
-        const macro = Array.from(document.querySelectorAll('*'))
-            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        const macro = suiteMacroponent();
         const iframeDoc = (macro && macro.shadowRoot && macro.shadowRoot.querySelector('#gsft_main')?.contentDocument) ||
                           document.getElementById('gsft_main')?.contentDocument;
         if (iframeDoc && iframeDoc !== document) delegateClicks(iframeDoc);
@@ -8325,7 +8457,7 @@ Version 1.1.4:
     }
 
     function initSpmGermanyReminder() {
-        setInterval(() => { spmGermanyCheck(false).catch(err => console.error('[ServiceNow Toolkit] SPM reminder:', err)); }, 1000);
+        suiteWhileVisible(() => { spmGermanyCheck(false).catch(err => console.error('[ServiceNow Toolkit] SPM reminder:', err)); }, 1000);
     }
 
     function initialize() {
@@ -10885,9 +11017,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.7';
+    const SCRIPT_VERSION = '1.7.8';
 
-    const CHANGELOG = `Version 1.7.7:
+    const CHANGELOG = `Version 1.7.8:
+- Finding the open ticket on ServiceNow pages takes less work for the browser.
+
+Version 1.7.7:
 - The "✉️ Send mail" button now separates the email addresses with a semicolon, so Outlook recognizes every recipient in CC.
 
 Version 1.7.6:
@@ -13233,8 +13368,7 @@ Version 1.2.1:
     // g_form is directly reachable, but this tool must still resolve the ticket
     // document via a top level #gsft_main iframe or the classic top document.
     function getTicketContext() {
-        const macro = Array.from(document.querySelectorAll('*'))
-            .find(el => el.tagName.toLowerCase().startsWith('macroponent-'));
+        const macro = suiteMacroponent();
         if (macro && macro.shadowRoot) {
             const iframe = macro.shadowRoot.querySelector('#gsft_main');
             if (iframe && iframe.contentDocument) {
@@ -13694,9 +13828,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.2';
+    const SCRIPT_VERSION = '2.1.3';
 
-    const CHANGELOG = `Version 2.1.2:
+    const CHANGELOG = `Version 2.1.3:
+- The API key passphrase now stays unlocked in every tab until one hour passes without using the key. The Feature Guide says so.
+
+Version 2.1.2:
 - Log lines (+ Log Entry and the other log buttons) now go at the end of the text by default, and at the cursor only when you clicked or typed in the field to put it somewhere.
 
 Version 2.1.1:
@@ -14583,7 +14720,7 @@ Version 1.4.1:
                     caption(body, 'Yellow when the tenant has no key, the key is locked or it expired.');
                     bullets(body, [
                         '🔑 Manage keys opens the API Keys window on top: set, replace, test, lock or remove the key of each tenant.',
-                        'When the tool needs the key, the toolbar asks for its passphrase once per browser session, in a window that always shows above everything.',
+                        'When the tool needs the key, the toolbar asks for its passphrase in a window that always shows above everything. It stays unlocked in every tab until one hour passes without using the key.',
                         'The same keys serve the Change Tracker Newly Registered Domains reviews and any other tool that needs the Netskope API.',
                     ]);
                 }
@@ -30630,9 +30767,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.3';
+    const SCRIPT_VERSION = '1.49.4';
 
-    const CHANGELOG = `Version 1.49.3:
+    const CHANGELOG = `Version 1.49.4:
+- The buttons this toolkit adds to the Netskope console rest while the tab is in the background and come back as soon as you return to it.
+
+Version 1.49.3:
 - NS Policies Toolkit is now called Netskope Console Toolkit, since it adds tools to the whole console and not only to policies. Your settings and backups stay as they were.
 
 Version 1.49.2:
@@ -39229,7 +39369,7 @@ Version 1.16:
 
     function initSteeringRemover() {
         if (!getSetting('steeringRemover') || se.timer) return;
-        se.timer = setInterval(seSyncButton, 1000);
+        se.timer = suiteWhileVisible(seSyncButton, 1000);
         seSyncButton();
     }
 
@@ -39549,7 +39689,7 @@ Version 1.16:
 
     function initSslExport() {
         if (!getSetting('sslExport') || sx.timer) return;
-        sx.timer = setInterval(sxSyncButton, 1000);
+        sx.timer = suiteWhileVisible(sxSyncButton, 1000);
         sxSyncButton();
     }
 
@@ -40001,7 +40141,7 @@ Version 1.16:
 
     function initTxExport() {
         if (!getSetting('txExport') || tx.timer) return;
-        tx.timer = setInterval(txSyncButton, 1000);
+        tx.timer = suiteWhileVisible(txSyncButton, 1000);
         txSyncButton();
     }
 
@@ -40095,7 +40235,7 @@ Version 1.16:
 
     function initSourceManager() {
         if (!getSetting('sourceManager') || sm.timer) return;
-        sm.timer = setInterval(smSyncButton, 1000);
+        sm.timer = suiteWhileVisible(smSyncButton, 1000);
         smSyncButton();
     }
 
@@ -40967,7 +41107,7 @@ Version 1.16:
 
     function initBulkGroups() {
         if (!getSetting('bulkGroupAdd') || bg.timer) return;
-        bg.timer = setInterval(bgSyncButton, 1000);
+        bg.timer = suiteWhileVisible(bgSyncButton, 1000);
         // A hidden tab is slowed down by the browser: pause rather than risk a policy half done
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState !== 'hidden') return;
@@ -44345,8 +44485,8 @@ Version 1.16:
         if (++burst < 5) setTimeout(burstRun, 1000);
     })();
 
-    setInterval(checkSmtp, 800);
-    setInterval(interceptSaveButtons, 1200);
+    suiteWhileVisible(checkSmtp, 800);
+    suiteWhileVisible(interceptSaveButtons, 1200);
 
     // On SPA navigation, clear intercepted flags so new Save buttons get picked up
     let lastHash = window.location.hash;
