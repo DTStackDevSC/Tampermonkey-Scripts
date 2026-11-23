@@ -20,4 +20,15 @@ public class TemplateTextTests
         Assert.False(TemplateText.IsEditable("a ${x.y} b"));
         Assert.True(TemplateText.IsEditable("a ${vars.pageType} \\${not} b"));
     }
+
+    [Fact]
+    public void NewPlaceholdersRoundTrip()
+    {
+        const string friendly = "Hi {Requested for}, {Ticket number} ({Short description}) is done in {Tenant} on {Today}. {My name}";
+        var raw = TemplateText.FromFriendly(friendly);
+        Assert.Equal("Hi ${vars.requestedForName}, ${vars.ticketNumber} (${vars.shortDescription}) is done in ${vars.tenant} on ${vars.today}. ${vars.myName}", raw);
+        Assert.True(TemplateText.IsEditable(raw));
+        Assert.Equal(friendly, TemplateText.ToFriendly(raw));
+        Assert.Equal("Hi Jane Smith, RITM0123456 (Allow access to example.com) is done in EMA on 2026-11-23. Alex Garcia", TemplateText.Preview(friendly));
+    }
 }

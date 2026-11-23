@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.8.0
+// @version      4.9.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.8.0';
-    const CHANGELOG = `Version 4.8.0:
+    const SCRIPT_VERSION = '4.9.0';
+    const CHANGELOG = `Version 4.9.0:
+- Response Templates: six new variables for your own responses and the team's: Ticket Number, Requested For, My Name, Today, Short Description and Tenant. Each takes its value from the open ticket, and shows as [ticket number], [tenant] and so on when the ticket has none, so you can fill it in.
+
+Version 4.8.0:
 - When an update adds a new helper, a ✨ New helper added window presents it once, on a page where it works. Its switch starts off, so nothing new runs until you turn it on. Ask me later asks again the next day.
 
 Version 4.7.0:
@@ -1681,6 +1684,61 @@ Version 4.0.0:
         return holder;
     }
 
+    /* ==========================================================
+     *  SHARED: TENANT OF A TICKET
+     *  Requesting Member Firm "Deloitte <region>" to Netskope tenant.
+     *  Used by the Short Description Builder and by the {{tenant}}
+     *  variable of Response Templates.
+     * ==========================================================*/
+
+    const HELPERS_TENANT_MAPPING = {
+        'Africa': 'EMA Tenant',
+        //'Asia Pacific': 'APAC Tenant', -- Uncomment when Tenant is confirmed
+        'Australia': 'APAC Tenant',
+        'Austria': 'EU Tenant',
+        'Belgium': 'EU Tenant',
+        'Brazil': 'AME Tenant',
+        'Canada': 'AME Tenant',
+        'Caribbean and Bermuda Countries': 'AME Tenant',
+        'Central Europe': 'CE Tenant',
+        'Central Mediterranean': 'EU Tenant',
+        'Chile': 'EMA Tenant',
+        //'China': 'APAC Tenant', -- Uncomment when Tenant is confirmed
+        'Cyprus': 'EU Tenant',
+        'Denmark': 'EU Tenant',
+        'DKU': 'EMA Tenant',
+        'Finland': 'EU Tenant',
+        'France': 'CE Tenant',
+        'Germany': 'CE Tenant',
+        //'Hong Kong': 'APAC Tenant', -- Uncomment when Tenant is confirmed
+        'Iceland': 'EU Tenant',
+        'Ireland': 'EU Tenant',
+        'Israel': 'EMA Tenant',
+        'Japan': 'APAC Tenant',
+        'Korea': 'APAC Tenant',
+        'Luxembourg': 'EU Tenant',
+        'Mauritius': 'APAC Tenant',
+        'Mexico': 'EMA Tenant',
+        'Middle East': 'EU Tenant',
+        'Netherlands': 'EU Tenant',
+        'New Zealand': 'APAC Tenant',
+        'Nordics': 'EU Tenant',
+        'North and South Europe': 'EU Tenant',
+        'Norway': 'EU Tenant',
+        'Portugal': 'CE Tenant',
+        'S-LATAM': 'EMA Tenant',
+        'South Asia(India)': 'APAC Tenant',
+        'Southeast Asia': 'APAC Tenant',
+        'Spain': 'EMA Tenant',
+        'Sweden': 'EU Tenant',
+        'Switzerland': 'EU Tenant',
+        'Taiwan': 'APAC Tenant',
+        'Touche Tohmatsu Limited': 'AME Tenant',
+        'Turkey': 'CE Tenant',
+        'United Kingdom': 'EU Tenant',
+        'United States': 'AME Tenant',
+    };
+
     /* === TOOL: SHORT DESCRIPTION HELPER === */
     (() => {
         'use strict';
@@ -1692,8 +1750,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.8.0';
-    const CHANGELOG = `Version 4.8.0:
+    const SCRIPT_VERSION = '4.9.0';
+    const CHANGELOG = `Version 4.9.0:
+- Response Templates: six new variables for your own responses and the team's: Ticket Number, Requested For, My Name, Today, Short Description and Tenant. Each takes its value from the open ticket, and shows as [ticket number], [tenant] and so on when the ticket has none, so you can fill it in.
+
+Version 4.8.0:
 - When an update adds a new helper, a ✨ New helper added window presents it once, on a page where it works. Its switch starts off, so nothing new runs until you turn it on. Ask me later asks again the next day.
 
 Version 4.7.0:
@@ -1848,53 +1909,8 @@ Version 3.0.8.1:
      *  TENANT MAPPING
      * ==========================================================*/
 
-    const tenantMapping = {
-        'Africa': 'EMA Tenant',
-        //'Asia Pacific': 'APAC Tenant', -- Uncomment when Tenant is confirmed
-        'Australia': 'APAC Tenant',
-        'Austria': 'EU Tenant',
-        'Belgium': 'EU Tenant',
-        'Brazil': 'AME Tenant',
-        'Canada': 'AME Tenant',
-        'Caribbean and Bermuda Countries': 'AME Tenant',
-        'Central Europe': 'CE Tenant',
-        'Central Mediterranean': 'EU Tenant',
-        'Chile': 'EMA Tenant',
-        //'China': 'APAC Tenant', -- Uncomment when Tenant is confirmed
-        'Cyprus': 'EU Tenant',
-        'Denmark': 'EU Tenant',
-        'DKU': 'EMA Tenant',
-        'Finland': 'EU Tenant',
-        'France': 'CE Tenant',
-        'Germany': 'CE Tenant',
-        //'Hong Kong': 'APAC Tenant', -- Uncomment when Tenant is confirmed
-        'Iceland': 'EU Tenant',
-        'Ireland': 'EU Tenant',
-        'Israel': 'EMA Tenant',
-        'Japan': 'APAC Tenant',
-        'Korea': 'APAC Tenant',
-        'Luxembourg': 'EU Tenant',
-        'Mauritius': 'APAC Tenant',
-        'Mexico': 'EMA Tenant',
-        'Middle East': 'EU Tenant',
-        'Netherlands': 'EU Tenant',
-        'New Zealand': 'APAC Tenant',
-        'Nordics': 'EU Tenant',
-        'North and South Europe': 'EU Tenant',
-        'Norway': 'EU Tenant',
-        'Portugal': 'CE Tenant',
-        'S-LATAM': 'EMA Tenant',
-        'South Asia(India)': 'APAC Tenant',
-        'Southeast Asia': 'APAC Tenant',
-        'Spain': 'EMA Tenant',
-        'Sweden': 'EU Tenant',
-        'Switzerland': 'EU Tenant',
-        'Taiwan': 'APAC Tenant',
-        'Touche Tohmatsu Limited': 'AME Tenant',
-        'Turkey': 'CE Tenant',
-        'United Kingdom': 'EU Tenant',
-        'United States': 'AME Tenant',
-    };
+    // Shared with the Response Templates {{tenant}} variable: kept in the suite core (HELPERS_TENANT_MAPPING)
+    const tenantMapping = HELPERS_TENANT_MAPPING;
 
     /* ==========================================================
      *  TENANT URL KEYS & DEFAULTS
@@ -4951,9 +4967,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.21.9';
+    const SCRIPT_VERSION = '2.22.0';
 
-    const CHANGELOG = `Version 2.21.9:
+    const CHANGELOG = `Version 2.22.0:
+- Six new variables for your own responses and the team's: Ticket Number, Requested For, My Name, Today, Short Description and Tenant. Each takes its value from the open ticket, and shows as [ticket number], [tenant] and so on when the ticket has none, so you can fill it in.
+
+Version 2.21.9:
 - Ticket Response Helper is now called Response Templates. Your templates, pins and settings stay as they were.
 
 Version 2.21.8:
@@ -6559,10 +6578,100 @@ Regards.`,
         return 'custom_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
     }
 
+    // Every {{name}} a response can use. A value the ticket does not have shows as [label], to fill in by hand.
+    const RESPONSE_VARIABLES = [
+        { key: 'ticketNumber',     label: 'ticket number',     button: 'Ticket Number',     tooltip: 'The ticket number, such as RITM0123456' },
+        { key: 'requestedForName', label: 'requested for',     button: 'Requested For',     tooltip: 'The person the request is for (on incidents: the caller)' },
+        { key: 'myName',           label: 'your name',         button: 'My Name',           tooltip: 'Your own name, as ServiceNow knows it' },
+        { key: 'today',            label: 'today',             button: 'Today',             tooltip: 'Today\'s date, such as 2026-11-23' },
+        { key: 'shortDescription', label: 'short description', button: 'Short Description', tooltip: 'The short description (title) of the ticket' },
+        { key: 'tenant',           label: 'tenant',            button: 'Tenant',            tooltip: 'The Netskope tenant of the ticket\'s member firm, such as EMA' },
+    ];
+
+    // A value from the ticket inserted as plain text: one line, and no control syntax of the templates
+    // ("@[" mentions, "{{" variables, a leading ">" that the clipboard paste would fill)
+    function responsePlain(value) {
+        return String(value).replace(/[\r\n]+/g, ' ').replace(/@\s*\[/g, '@ (').replace(/\{\{/g, '{ {').replace(/^\s*>/, '›');
+    }
+
     function resolveCustomResponseText(rawText, vars) {
-        return rawText
+        let out = rawText
             .replace(/\{\{openedByName\}\}/g, vars.openedByName || 'User')
             .replace(/\{\{pageType\}\}/g, vars.pageType || 'ticket');
+        for (const v of RESPONSE_VARIABLES) out = out.split(`{{${v.key}}}`).join(vars[v.key] ? responsePlain(vars[v.key]) : `[${v.label}]`);
+        return out;
+    }
+
+    // The ticket's form: this page in classic mode, the ticket frame in Polaris (the helper runs inside it)
+    function responseForm() {
+        const w = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
+        return w.g_form ? { win: w, gf: w.g_form } : null;
+    }
+    function responseField(gf, names) {
+        let number = '';
+        try { number = String(gf.getValue('number') || ''); } catch (e) { /* no number field */ }
+        for (const n of names) {
+            try {
+                const v = String(gf.getDisplayValue(n) || '').trim();
+                // getDisplayValue of a field that is not on the form answers the record number
+                if (v && v !== number) return v;
+            } catch (e) { /* field not on this form */ }
+        }
+        return '';
+    }
+    async function responseRequestedFor(form) {
+        let table = '';
+        try { table = (form.gf.getTableName && form.gf.getTableName()) || ''; } catch (e) { table = ''; }
+        if (table !== 'sc_req_item') return responseField(form.gf, ['caller_id']);
+        // A RITM's "Requested for" belongs to its request (its own column can hold the opener): read it with the Table API
+        try {
+            const id = form.gf.getUniqueValue && form.gf.getUniqueValue();
+            if (id && form.win.g_ck) {
+                const r = await fetch(`/api/now/table/sc_req_item/${encodeURIComponent(id)}?sysparm_fields=request.requested_for&sysparm_display_value=true`,
+                    { headers: { Accept: 'application/json', 'X-UserToken': form.win.g_ck }, credentials: 'same-origin' });
+                if (r.ok) {
+                    const j = await r.json();
+                    const v = j && j.result && j.result['request.requested_for'];
+                    const name = String((v && typeof v === 'object' ? v.display_value : v) || '').trim();
+                    if (name) return name;
+                }
+            }
+        } catch (e) { console.warn('[Response Templates] Requested for:', e); }
+        return responseField(form.gf, ['request.requested_for']);
+    }
+
+    async function getResponseVars() {
+        const vars = { pageType: getPageType() };
+        vars.openedByName = (await getOpenedByName()) || 'User';
+        const d = new Date();
+        vars.today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const form = responseForm();
+        if (form) {
+            try { vars.ticketNumber = String(form.gf.getValue('number') || '').trim(); } catch (e) { /* no number */ }
+            try { vars.shortDescription = String(form.gf.getValue('short_description') || '').trim(); } catch (e) { /* no field */ }
+            vars.requestedForName = await responseRequestedFor(form);
+            const u = form.win.g_user;
+            if (u) vars.myName = String((typeof u.getFullName === 'function' && u.getFullName()) || [u.firstName, u.lastName].filter(Boolean).join(' ') || '').trim();
+        }
+        if (!vars.ticketNumber) {
+            const el = document.getElementById('sc_req_item.number') || document.getElementById('incident.number');
+            if (el && el.value) vars.ticketNumber = el.value.trim();
+        }
+        if (!vars.shortDescription) {
+            const el = document.getElementById('sc_req_item.short_description') || document.getElementById('incident.short_description');
+            if (el && el.value) vars.shortDescription = el.value.trim();
+        }
+        for (const input of document.querySelectorAll('input.form-control.element_reference_input')) {
+            const value = input.value.trim();
+            if (!value.startsWith('Deloitte')) continue;
+            const t = HELPERS_TENANT_MAPPING[value.replace('Deloitte', '').trim()];
+            if (t) { vars.tenant = t.replace(/\s*Tenant$/, ''); break; }
+        }
+        // Ticket text is written by the requester: "@[Name]" in it must never become a real @mention
+        for (const v of RESPONSE_VARIABLES) if (vars[v.key]) vars[v.key] = responsePlain(vars[v.key]);
+        // Built in team responses read vars directly: give them the same visible fallback
+        for (const v of RESPONSE_VARIABLES) if (!vars[v.key]) vars[v.key] = `[${v.label}]`;
+        return vars;
     }
 
     /* ==========================================================
@@ -7400,7 +7509,8 @@ Regards.`,
 
             const variables = [
                 { label: '@Mention Opened By', value: '@[{{openedByName}}]', tooltip: '@ mention the ticket opener (triggers ServiceNow mention picker)' },
-                { label: 'Page Type',           value: '{{pageType}}',        tooltip: 'Inserts "request" or "incident" based on ticket type' }
+                { label: 'Page Type',           value: '{{pageType}}',        tooltip: 'Inserts "request" or "incident" based on ticket type' },
+                ...RESPONSE_VARIABLES.map(v => ({ label: v.button, value: `{{${v.key}}}`, tooltip: `${v.tooltip}. Shows [${v.label}] when the ticket has none.` }))
             ];
 
             variables.forEach(v => {
@@ -7466,7 +7576,9 @@ Regards.`,
             contentArea.appendChild(previewBox);
 
             function updatePreview() {
-                const sampleVars = { openedByName: cachedOpenedByName || 'John Doe', pageType: getPageType() };
+                const sampleVars = { openedByName: cachedOpenedByName || 'John Doe', pageType: getPageType(),
+                    ticketNumber: 'RITM0123456', requestedForName: 'Jane Smith', myName: 'Alex Garcia', today: '2026-11-23',
+                    shortDescription: 'Allow access to example.com', tenant: 'EMA' };
                 previewBox.textContent = resolveCustomResponseText(bodyTextarea.value, sampleVars) || '(empty)';
             }
             bodyTextarea.addEventListener('input', updatePreview);
@@ -8065,11 +8177,17 @@ Regards.`,
                         hrow([
                             span('Insert variable:', { fontSize: '11px', color: '#666' }),
                             chip('@Mention Opened By', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
-                            chip('Page Type', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' })
-                        ], { margin: '0 0 4px 0', gap: '6px' }),
+                            chip('Page Type', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
+                            ...['Ticket Number', 'Requested For', 'My Name', 'Today', 'Short Description', 'Tenant'].map(l => chip(l, '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }))
+                        ], { margin: '0 0 4px 0', gap: '6px', flexWrap: 'wrap' }),
                         span('Hi @[{{openedByName}}], your {{pageType}} has been escalated.', { display: 'block', fontSize: '11px', fontFamily: 'monospace', border: '1px solid #ccc', borderRadius: '4px', padding: '6px 8px', color: '#333' })
                     ]));
                     caption(body, 'A preview below the body shows the text with sample values.');
+                    beforeAfter(body, [
+                        ['Template', 'Hi {{requestedForName}}, {{ticketNumber}} ({{shortDescription}}) is done in the {{tenant}} tenant as of {{today}}. {{myName}}', false],
+                        ['Inserted', 'Hi Jane Smith, RITM0123456 (Allow access to example.com) is done in the EMA tenant as of 2026-11-23. Alex Garcia', true]
+                    ]);
+                    caption(body, 'Each variable takes the value from the open ticket. When the ticket has none, it shows as [ticket number], [tenant] and so on, so you can fill it in.');
                     body.appendChild(hrow([
                         chip('▲', '#6c757d'), chip('▼', '#6c757d'), chip('✎', '#007bff'), chip('🗑', '#dc3545'),
                         span('Reorder, edit or delete a saved response.', { fontSize: '12px', color: '#555' })
@@ -8901,7 +9019,7 @@ Regards.`,
                 } else {
                     const option = buildMenuOption(entry.label, ft, async () => {
                         trackRecentlyUsed(entry);
-                        const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                        const vars = await getResponseVars();
                         const textarea = getTargetTextarea(ft);
                         if (textarea) {
                             const text = entry.isCustom
@@ -8949,7 +9067,7 @@ Regards.`,
                 const ft = entry.fieldType || 'comments';
                 const option = buildMenuOption(entry.label, ft, async () => {
                     trackRecentlyUsed(entry);
-                    const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                    const vars = await getResponseVars();
                     const textarea = getTargetTextarea(ft);
                     if (textarea) {
                         const text = entry.isCustom
@@ -9011,7 +9129,7 @@ Regards.`,
                 if (item.isCustom) {
                     const option = buildMenuOption(item.label, item.fieldType || 'comments', async () => {
                         trackRecentlyUsed({ key: item.value, label: item.label, fieldType: item.fieldType || 'comments', isCustom: true, customText: item.customText });
-                        const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                        const vars = await getResponseVars();
                         const textarea = getTargetTextarea(item.fieldType || 'comments');
                         if (textarea) {
                             await insertTextWithMention(textarea, await applyClipboardPaste(resolveCustomResponseText(item.customText, vars)), item.fieldType || 'comments');
@@ -9034,7 +9152,7 @@ Regards.`,
                 } else if (!metadata || !metadata.parentItem) {
                     const option = buildMenuOption(item.label, fieldType, async () => {
                         trackRecentlyUsed({ key: item.value, label: item.label, fieldType });
-                        const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                        const vars = await getResponseVars();
                         const textarea = getTargetTextarea(fieldType);
                         if (textarea) {
                             await insertTextWithMention(textarea, await applyClipboardPaste(await applySolvedChangeSummary(item.value, team.responses[item.value](vars))), fieldType);
@@ -9200,7 +9318,7 @@ Regards.`,
             const subOption = buildMenuOption(subItem.label, subItem.fieldType, async (e) => {
                 e.stopPropagation();
                 trackRecentlyUsed({ key: subItem.value, label: subItem.label, fieldType: subItem.fieldType });
-                const vars = { openedByName: (await getOpenedByName()) || 'User', pageType: getPageType() };
+                const vars = await getResponseVars();
                 const textarea = getTargetTextarea(subItem.fieldType);
                 if (textarea) {
                     await insertTextWithMention(textarea, await applyClipboardPaste(team.responses[subItem.value](vars)), subItem.fieldType);

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using ConfigEditor.Core.Js;
@@ -55,7 +56,7 @@ public sealed class ResponseRow : ObservableObject
         }
     }
 
-    public string Preview => Body.Replace(TemplateText.OpenedByName, "Jane Doe").Replace(TemplateText.TicketType, "Request");
+    public string Preview => TemplateText.Preview(Body);
 }
 
 /// <summary>The Response Templates menu of one team.</summary>
@@ -79,7 +80,7 @@ public sealed partial class ResponsesPage : PageBase
         new Choice("comments", "Comment (the requester sees it)"),
         new Choice("work_notes", "Work note (internal only)")
     };
-    public string PlaceholderHint => $"Type {{ to insert a placeholder: {TemplateText.OpenedByName} or {TemplateText.TicketType}. The script fills them in for each ticket.";
+    public string PlaceholderHint => $"Type {{ to insert a placeholder: {string.Join(", ", TemplateText.Placeholders.Select(p => p.Friendly))}. The script fills them in for each ticket, and shows [ticket number] and so on when the ticket has no value.";
 
     void Write(IReadOnlyList<ResponseRow> rows)
     {

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -18,7 +19,7 @@ public partial class TemplateEditor : UserControl
     public TemplateEditor()
     {
         InitializeComponent();
-        Options.ItemsSource = new[] { TemplateText.OpenedByName, TemplateText.TicketType };
+        Options.ItemsSource = TemplateText.Placeholders.Select(p => p.Friendly).ToArray();
     }
 
     public string Text { get => (string)GetValue(TextProperty); set => SetValue(TextProperty, value); }
