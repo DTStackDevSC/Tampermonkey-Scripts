@@ -45,7 +45,6 @@ public class GitHubPublisherTests
     {
         [SuitePaths.TicketHelpers] = "// @version      4.3.5\nth",
         [SuitePaths.Toolbar] = "// @version      2.29.3\ntb",
-        [SuitePaths.ToolbarCopy] = "// @version      2.29.3\ntb",
     };
 
     static PrepareResult Prepared() => new(true, null, Array.Empty<ChangeItem>(), Files, null);
@@ -60,15 +59,15 @@ public class GitHubPublisherTests
         var r = await Publisher(gh).PublishAsync(Always(Prepared));
         Assert.True(r.Ok, r.Error);
         Assert.Equal("https://github.com/x/commit/c2", r.CommitUrl);
-        Assert.Equal(3, gh.Requests.Count(q => q.Path == "git/blobs"));
+        Assert.Equal(2, gh.Requests.Count(q => q.Path == "git/blobs"));
 
         var blob = JsonDocument.Parse(gh.Requests.First(q => q.Path == "git/blobs").Body).RootElement;
         Assert.Equal("base64", blob.GetProperty("encoding").GetString());
 
         var tree = JsonDocument.Parse(gh.Requests.Single(q => q.Path == "git/trees").Body).RootElement;
         Assert.Equal("tree1", tree.GetProperty("base_tree").GetString());
-        Assert.Equal(3, tree.GetProperty("tree").GetArrayLength());
-        Assert.Contains(tree.GetProperty("tree").EnumerateArray(), e => e.GetProperty("path").GetString() == SuitePaths.ToolbarCopy);
+        Assert.Equal(2, tree.GetProperty("tree").GetArrayLength());
+        Assert.DoesNotContain(tree.GetProperty("tree").EnumerateArray(), e => e.GetProperty("path").GetString() == "Toolbar Scripts/Toolbar.user.js");
 
         var commit = JsonDocument.Parse(gh.Requests.Single(q => q.Path == "git/commits").Body).RootElement;
         Assert.Equal("Ticket Helpers 4.3.5 and Tools Toolbar 2.29.3: configuration update", commit.GetProperty("message").GetString());

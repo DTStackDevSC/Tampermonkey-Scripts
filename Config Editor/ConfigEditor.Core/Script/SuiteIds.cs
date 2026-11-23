@@ -6,7 +6,6 @@ public static class SuitePaths
 {
     public const string TicketHelpers = "Standalone Scripts/ServiceNowShortDescriptionHelper.user.js";
     public const string Toolbar = "Toolbar Scripts/Toolbar-Suite.user.js";
-    public const string ToolbarCopy = "Toolbar Scripts/Toolbar.user.js";
 
     public static string Of(SuiteId suite) => suite == SuiteId.TicketHelpers ? TicketHelpers : Toolbar;
 

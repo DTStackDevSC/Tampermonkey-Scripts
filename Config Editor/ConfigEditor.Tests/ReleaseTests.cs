@@ -49,16 +49,18 @@ public class ReleaseTests
         Assert.StartsWith("Updated the text of the EMEA Team response \"", item.Bullet);
 
         var text = ReleaseWriter.Apply(SuiteId.TicketHelpers, edited.Render().ticketHelpers, items);
-        Assert.Equal("4.3.5", HeaderVersion(text));
-        Assert.Equal("4.3.5", VersionIn(text, null));
-        Assert.Equal("4.3.5", VersionIn(text, "SHORT DESCRIPTION HELPER"));
-        Assert.Equal("2.21.5", VersionIn(text, "TICKET RESPONSE HELPER"));
-        Assert.Equal("1.5.6", VersionIn(text, "POLICY NAMING HELPER"));
-        Assert.StartsWith("Version 4.3.5:\n- Ticket Response Helper: Updated the text", ChangelogStart(text, null));
-        Assert.StartsWith("Version 4.3.5:\n- Ticket Response Helper: Updated the text", ChangelogStart(text, "SHORT DESCRIPTION HELPER"));
-        Assert.StartsWith("Version 2.21.5:\n- Updated the text", ChangelogStart(text, "TICKET RESPONSE HELPER"));
-        Assert.Contains("\n\nVersion 2.21.4:", ChangelogStart(text, "TICKET RESPONSE HELPER"));
-        Assert.Contains("// @version      4.3.5\n", text);
+        var suite = TestRepo.Next(SuiteId.TicketHelpers);
+        var helper = TestRepo.Next(SuiteId.TicketHelpers, "TICKET RESPONSE HELPER");
+        Assert.Equal(suite, HeaderVersion(text));
+        Assert.Equal(suite, VersionIn(text, null));
+        Assert.Equal(suite, VersionIn(text, "SHORT DESCRIPTION HELPER"));
+        Assert.Equal(helper, VersionIn(text, "TICKET RESPONSE HELPER"));
+        Assert.Equal(TestRepo.Version(SuiteId.TicketHelpers, "POLICY NAMING HELPER"), VersionIn(text, "POLICY NAMING HELPER"));
+        Assert.StartsWith($"Version {suite}:\n- Ticket Response Helper: Updated the text", ChangelogStart(text, null));
+        Assert.StartsWith($"Version {suite}:\n- Ticket Response Helper: Updated the text", ChangelogStart(text, "SHORT DESCRIPTION HELPER"));
+        Assert.StartsWith($"Version {helper}:\n- Updated the text", ChangelogStart(text, "TICKET RESPONSE HELPER"));
+        Assert.Contains($"\n\nVersion {TestRepo.Version(SuiteId.TicketHelpers, "TICKET RESPONSE HELPER")}:", ChangelogStart(text, "TICKET RESPONSE HELPER"));
+        Assert.Contains($"// @version      {suite}\n", text);
         Assert.True(JsValidator.Check(text).Ok);
     }
 
@@ -73,12 +75,14 @@ public class ReleaseTests
         var items = ChangeSummary.Build(original, edited);
 
         var text = ReleaseWriter.Apply(SuiteId.Toolbar, edited.Render().toolbar, items);
-        Assert.Equal("2.29.3", HeaderVersion(text));
-        Assert.Equal("2.29.3", VersionIn(text, null));
-        Assert.Equal("2.13.2", VersionIn(text, "SERVICENOW TICKET HISTORY"));
-        Assert.StartsWith("Version 2.29.3:\n- Change Tracker: ", ChangelogStart(text, null));
-        Assert.StartsWith("Version 2.13.2:\n- Updated", ChangelogStart(text, "SERVICENOW TICKET HISTORY"));
-        Assert.Equal("1.5.3", VersionIn(text, "TICKET ASSIGNMENT TOOL"));
+        var suite = TestRepo.Next(SuiteId.Toolbar);
+        var tool = TestRepo.Next(SuiteId.Toolbar, "SERVICENOW TICKET HISTORY");
+        Assert.Equal(suite, HeaderVersion(text));
+        Assert.Equal(suite, VersionIn(text, null));
+        Assert.Equal(tool, VersionIn(text, "SERVICENOW TICKET HISTORY"));
+        Assert.StartsWith($"Version {suite}:\n- Change Tracker: ", ChangelogStart(text, null));
+        Assert.StartsWith($"Version {tool}:\n- Updated", ChangelogStart(text, "SERVICENOW TICKET HISTORY"));
+        Assert.Equal(TestRepo.Version(SuiteId.Toolbar, "TICKET ASSIGNMENT TOOL"), VersionIn(text, "TICKET ASSIGNMENT TOOL"));
         Assert.True(JsValidator.Check(text).Ok);
         Assert.Equal(TestRepo.Read(SuiteId.TicketHelpers), ReleaseWriter.Apply(SuiteId.TicketHelpers, edited.Render().ticketHelpers, items));
     }
@@ -94,12 +98,13 @@ public class ReleaseTests
         Assert.Equal(2, items.Count);
 
         var text = ReleaseWriter.Apply(SuiteId.TicketHelpers, edited.Render().ticketHelpers, items);
-        Assert.Equal("4.3.5", VersionIn(text, null));
-        Assert.Equal("2.21.5", VersionIn(text, "TICKET RESPONSE HELPER"));
-        Assert.Equal("1.5.7", VersionIn(text, "POLICY NAMING HELPER"));
+        var suite = TestRepo.Next(SuiteId.TicketHelpers);
+        Assert.Equal(suite, VersionIn(text, null));
+        Assert.Equal(TestRepo.Next(SuiteId.TicketHelpers, "TICKET RESPONSE HELPER"), VersionIn(text, "TICKET RESPONSE HELPER"));
+        Assert.Equal(TestRepo.Next(SuiteId.TicketHelpers, "POLICY NAMING HELPER"), VersionIn(text, "POLICY NAMING HELPER"));
         var core = ChangelogStart(text, null);
         Assert.Contains("- Policy Naming Helper: Added the region option \"Test (XX)\".", core);
-        Assert.Single(Regex.Matches(text[..BlockLocator.SectionBounds(text, "SHORT DESCRIPTION HELPER").Start], "Version 4.3.5:"));
+        Assert.Single(Regex.Matches(text[..BlockLocator.SectionBounds(text, "SHORT DESCRIPTION HELPER").Start], $"Version {suite}:"));
     }
 
     [Fact]
@@ -140,7 +145,7 @@ public class ReleaseTests
         var crlf = edited.Render().ticketHelpers.Replace("\n", "\r\n");
         var text = ReleaseWriter.Apply(SuiteId.TicketHelpers, crlf, items);
         Assert.DoesNotMatch("[^\r]\n", text);
-        Assert.Contains("Version 4.3.5:\r\n- Ticket Response Helper: ", text);
+        Assert.Contains($"Version {TestRepo.Next(SuiteId.TicketHelpers)}:\r\n- Ticket Response Helper: ", text);
     }
 
     [Fact]

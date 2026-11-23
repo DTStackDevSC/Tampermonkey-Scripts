@@ -43,8 +43,8 @@ public class EditSessionTests
 
         var latest = new FakeSource();
         var tb = latest.Files[SuitePaths.Toolbar]
-            .Replace("// @version      2.29.2", "// @version      2.29.3")
-            .Replace("const SCRIPT_VERSION = '2.29.2';", "const SCRIPT_VERSION = '2.29.3';");
+            .Replace($"// @version      {TestRepo.Version(SuiteId.Toolbar)}", $"// @version      {TestRepo.Next(SuiteId.Toolbar)}")
+            .Replace($"const SCRIPT_VERSION = '{TestRepo.Version(SuiteId.Toolbar)}';", $"const SCRIPT_VERSION = '{TestRepo.Next(SuiteId.Toolbar)}';");
         var marker = "/* === TOOL: DOMAIN TOOLS === */";
         tb = tb.Replace(marker, marker + "\n    // upstream line");
         latest.Files[SuitePaths.Toolbar] = tb;
@@ -52,7 +52,7 @@ public class EditSessionTests
         var r = await session.PrepareAsync(latest, default);
         Assert.True(r.Ok, r.Error);
         var text = r.Files[SuitePaths.Toolbar];
-        Assert.Contains("// @version      2.29.4", text);
+        Assert.Contains($"// @version      {TestRepo.Next(SuiteId.Toolbar, steps: 2)}", text);
         Assert.Contains(marker + "\n    // upstream line", text);
         Assert.Contains(" Thanks.", text);
         Assert.False(r.Files.ContainsKey(SuitePaths.TicketHelpers));
@@ -78,15 +78,14 @@ public class EditSessionTests
     }
 
     [Fact]
-    public async Task Toolbar_change_writes_both_toolbar_files_identical()
+    public async Task Toolbar_change_writes_only_the_suite_file()
     {
         var src = new FakeSource();
         var session = await EditSession.OpenAsync(src, default);
         EditNote(session.Edited);
         var r = await session.PrepareAsync(src, default);
         Assert.True(r.Ok, r.Error);
-        Assert.Equal(2, r.Files.Count);
-        Assert.Equal(r.Files[SuitePaths.Toolbar], r.Files[SuitePaths.ToolbarCopy]);
+        Assert.Equal(SuitePaths.Toolbar, Assert.Single(r.Files).Key);
         Assert.NotEmpty(r.Items);
     }
 
@@ -106,7 +105,7 @@ public class EditSessionTests
             var r = await session.PrepareAsync(new FakeSource { Offline = true }, default);
             Assert.True(r.Ok, r.Error);
             Assert.Equal("Could not check GitHub for newer versions.", r.Warning);
-            Assert.Contains("// @version      4.3.5", r.Files[SuitePaths.TicketHelpers]);
+            Assert.Contains($"// @version      {TestRepo.Next(SuiteId.TicketHelpers)}", r.Files[SuitePaths.TicketHelpers]);
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -130,7 +129,7 @@ public class EditSessionTests
             var rel = SuitePaths.Toolbar;
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(dir, rel))!);
             File.WriteAllText(Path.Combine(dir, rel), "old");
-            await EditSession.SaveAsync(dir, new Dictionary<string, string> { [rel] = "new ✅", [SuitePaths.ToolbarCopy] = "new ✅" });
+            await EditSession.SaveAsync(dir, new Dictionary<string, string> { [rel] = "new ✅" });
 
             var bytes = File.ReadAllBytes(Path.Combine(dir, rel));
             Assert.Equal("new ✅", Encoding.UTF8.GetString(bytes));
@@ -138,7 +137,6 @@ public class EditSessionTests
             var backup = Assert.Single(Directory.GetFiles(Path.Combine(dir, "backups")));
             Assert.Matches(@"Toolbar-Suite\.user\.js\.\d{8}-\d{6}\.bak$", backup);
             Assert.Equal("old", File.ReadAllText(backup));
-            Assert.True(File.Exists(Path.Combine(dir, SuitePaths.ToolbarCopy)));
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -192,7 +190,7 @@ public class EditSessionTests
 
         var r = await session.PrepareAsync(new FakeSource(), default, onlyTicketHelpers);
         Assert.True(r.Ok, r.Error);
-        Assert.Contains("// @version      2.29.3", r.Files[SuitePaths.Toolbar]);
+        Assert.Contains($"// @version      {TestRepo.Next(SuiteId.Toolbar)}", r.Files[SuitePaths.Toolbar]);
         Assert.Contains(r.Items, i => i.Block.Suite == SuiteId.Toolbar);
     }
 
@@ -210,7 +208,7 @@ public class EditSessionTests
         EditNote(session.Edited);
         var second = await session.PrepareAsync(github, default);
         Assert.True(second.Ok, second.Error ?? second.ConflictSection);
-        Assert.Contains("// @version      2.29.4", second.Files[SuitePaths.Toolbar]);
+        Assert.Contains($"// @version      {TestRepo.Next(SuiteId.Toolbar, steps: 2)}", second.Files[SuitePaths.Toolbar]);
         Assert.Contains(" Thanks. Thanks.", second.Files[SuitePaths.Toolbar]);
     }
 
@@ -227,12 +225,12 @@ public class EditSessionTests
         var second = await session.PrepareAsync(github, default);
         Assert.True(second.Ok, second.Error ?? second.ConflictSection);
         Assert.Equal(first.Files[SuitePaths.Toolbar], second.Files.TryGetValue(SuitePaths.Toolbar, out var tb) ? tb : first.Files[SuitePaths.Toolbar]);
-        Assert.Contains("// @version      4.3.5", second.Files[SuitePaths.TicketHelpers]);
+        Assert.Contains($"// @version      {TestRepo.Next(SuiteId.TicketHelpers)}", second.Files[SuitePaths.TicketHelpers]);
 
         EditNote(session.Edited);
         var third = await session.PrepareAsync(github, default);
         Assert.True(third.Ok, third.Error ?? third.ConflictSection);
-        Assert.Contains("// @version      2.29.4", third.Files[SuitePaths.Toolbar]);
+        Assert.Contains($"// @version      {TestRepo.Next(SuiteId.Toolbar, steps: 2)}", third.Files[SuitePaths.Toolbar]);
         Assert.Contains(" Thanks. Thanks.", third.Files[SuitePaths.Toolbar]);
     }
 }

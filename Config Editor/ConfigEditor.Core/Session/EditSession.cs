@@ -5,7 +5,7 @@ using ConfigEditor.Core.Sections;
 
 namespace ConfigEditor.Core.Session;
 
-/// <param name="Files">Relative path to new full text; includes the Toolbar.user.js copy when the Toolbar changed.</param>
+/// <param name="Files">Relative path to new full text.</param>
 public sealed record PrepareResult(bool Ok, string? ConflictSection, IReadOnlyList<ChangeItem> Items,
     IReadOnlyDictionary<string, string> Files, string? Warning, string? Error = null)
 {
@@ -91,9 +91,7 @@ public sealed class EditSession
             files[SuitePaths.TicketHelpers] = ReleaseWriter.Apply(SuiteId.TicketHelpers, newTh, items);
         if (changed.Any(b => b.Suite == SuiteId.Toolbar))
         {
-            var text = ReleaseWriter.Apply(SuiteId.Toolbar, newTb, items);
-            files[SuitePaths.Toolbar] = text;
-            files[SuitePaths.ToolbarCopy] = text;
+            files[SuitePaths.Toolbar] = ReleaseWriter.Apply(SuiteId.Toolbar, newTb, items);
         }
 
         foreach (var (path, text) in files)

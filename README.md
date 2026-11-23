@@ -19,19 +19,7 @@ Scripts are split into two categories: standalone scripts that run independently
 | Policy Naming Helper | Netskope tenant | Builds policy names in the team format, with presets. |
 | Ticket Subject Helper | Netskope support portal | Builds the subject line of Netskope support cases. |
 
-The **⚙ Suite** button next to Help in every helper (and **⚙ Ticket Helpers settings** in the Tampermonkey menu) opens the shared settings: tools, team, tenant URLs and backups. The other script files are kept only so existing installs can hand their saved data to the suite.
-
-## Moving to the Ticket Helpers Suite
-
-**If you have || Ticket Helpers || (or the Short Description Helper) installed**
-1. Let Tampermonkey update it (or use "Check for userscript updates"). Tampermonkey may open a tab to confirm the update, because the script now also runs on Netskope pages: click **Update**. Do the same for the other helper scripts if tabs open for them.
-2. Open a ServiceNow ticket. When asked "Bring your data into Ticket Helpers", click **Import**, then **Reload now**. Then tick your helpers in "Choose your tools" and click **Save**.
-3. If you used the Policy Naming Helper, open a Netskope tenant; if you used the Ticket Subject Helper, open the Netskope support portal. Import there too.
-4. When everything works, uninstall the old helper scripts that show version 99.0.0 or 99.0.1.
-
-Do not uninstall the old scripts before importing: their saved data is deleted with them.
-
-**If you did not have the Short Description Helper:** install || Ticket Helpers || from the script installer page (card "Ticket Helpers Suite"), then follow steps 2 to 4.
+The **⚙ Suite** button next to Help in every helper (and **⚙ Ticket Helpers settings** in the Tampermonkey menu) opens the shared settings: tools, team, tenant URLs and backups.
 
 ### Config Editor (Windows app)
 
@@ -68,25 +56,14 @@ The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `conf
 | Change Tracker | ServiceNow | Shared change log per ticket, kept in your team's SharePoint list and written to work notes and comments. |
 | ServiceNow Toolkit | ServiceNow | Draft autosave for work notes and comments, SCTASK auto open. |
 | Ticket Assignment | ServiceNow | Assigns tickets and fills the related fields in one step. |
-| URL List Editor | ServiceNow | Creates and updates Netskope URL lists through the API. |
-| Policy Deletion Reminder | Netskope tenant | Registers a reminder to delete a temporary policy. |
+| Destination Profile Editor | ServiceNow | Finds, creates, edits and deletes Netskope Destination Profiles from a ticket through the API. |
 | NS Policies Toolkit | Netskope tenant | Copy and open buttons, log entries, steering exception tools and more. |
 
-The old `Toolbar-*.user.js` files are kept only so existing installs can hand their saved data to the Tools Toolbar.
+## Old scripts
 
-## Moving to the Tools Toolbar
+The separate scripts used before the two suites (the old toolbar tools, the old helpers and their redirect files) have been retired and are no longer in this repository. Only `Toolbar-Suite.user.js` and `ServiceNowShortDescriptionHelper.user.js` are published and updated.
 
-All toolbar tools now live inside one script, the **Tools Toolbar**. Your old toolbar scripts update by themselves and hand their saved data to it.
-
-**If you have the Toolbar and some toolbar tools installed**
-1. Do nothing: Tampermonkey updates the scripts by itself (or use "Check for userscript updates" in the Tampermonkey menu).
-2. Open ServiceNow. When asked "Bring your data into the toolbar", click **Import**, then **Reload now**.
-3. Open a Netskope tenant page and do the same.
-4. When the toolbar lists old scripts you can uninstall, uninstall them in Tampermonkey.
-
-Do not uninstall the old scripts before importing: their saved data is deleted with them.
-
-**If you only have some toolbar tools, without the Toolbar:** a message tells you to install the Tools Toolbar. Install it from the script installer page, then follow steps 2 to 4.
+If Tampermonkey still lists an old script (for example one showing version 99.0.x), open ServiceNow and Netskope once with the suite installed so it can bring that script's data in when it asks, then uninstall the old script. An old script no longer gets updates.
 
 **New users:** install only the Tools Toolbar. Each tool's first setup offers **Import from a backup file** if you have one.
 

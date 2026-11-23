@@ -208,6 +208,6 @@ public class MainViewModelTests
 
         Assert.StartsWith("✅", vm.Status);
         Assert.Contains(" Thanks. Thanks.", File.ReadAllText(path));
-        Assert.Contains("// @version      4.3.6", File.ReadAllText(path));
+        Assert.Contains($"// @version      {TestRepo.Next(SuiteId.TicketHelpers, steps: 2)}", File.ReadAllText(path));
     }
 }
