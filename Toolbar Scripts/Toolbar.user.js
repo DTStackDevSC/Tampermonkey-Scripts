@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.47.1
+// @version      2.48.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.47.1';
-    const CHANGELOG = `Version 2.47.1:
+   const SCRIPT_VERSION = '2.48.0';
+    const CHANGELOG = `Version 2.48.0:
+- Change Tracker: the sidebar now shows above everything on the page, while the ticket stays usable next to it and entries are still written into it. Its windows (edit, entry details, confirmations, paste, conflicts, setup, NRD review and profiles) open above it, and Esc closes them like Cancel or a click outside. The window that asks which version to keep after an edit conflict still needs a choice.
+- Mini Summary: the summary sidebar now comes on top each time you open it.
+
+Version 2.47.1:
 - Destination Profile Editor: deleting a profile that a policy still uses now says so in plain words: remove it from the policy first, then delete it again.
 - Destination Profile Editor: the Create Destination Profile form now also leaves room under its buttons at the bottom of the window.
 
@@ -4927,6 +4931,8 @@ Version 1.0.0:
     function suitePanel(el, opts = {}) {
         if (!el || el.__suitePanel || !('popover' in HTMLElement.prototype)) return el && el.__suitePanel || null;
         const isShown = opts.isShown || (() => getComputedStyle(el).display !== 'none');
+        // raise: for a panel that stays shown and slides in and out, says when it came in, to bring it on top again
+        const raised = opts.raise || isShown;
         const holder = document.createElement('div');
         holder.className = 'suite-panel';
         holder.setAttribute('popover', 'manual');
@@ -4939,19 +4945,27 @@ Version 1.0.0:
         holder.appendChild(el);
         if (!el.style.getPropertyValue('pointer-events')) el.style.setProperty('pointer-events', 'auto', 'important');
         el.__suitePanel = holder;
-        let wasShown = false;
+        let wasRaised = false;
         const sync = () => {
+            if (!holder.contains(el)) {   // the panel was removed: the holder goes too
+                try { if (holder.matches(':popover-open')) holder.hidePopover(); } catch (e) { /* gone */ }
+                holder.remove();
+                return;
+            }
             const shown = el.isConnected && isShown();
+            const up = shown && raised();
             try {
-                if (shown && !wasShown) {
+                if (up && !wasRaised) {
                     // Shown again: back on top of the other top layer windows
                     if (holder.matches(':popover-open')) holder.hidePopover();
                     holder.showPopover();
-                } else if (!shown && holder.matches(':popover-open')) holder.hidePopover();
+                } else if (shown && !holder.matches(':popover-open')) holder.showPopover();
+                else if (!shown && holder.matches(':popover-open')) holder.hidePopover();
             } catch (e) { /* not connected: the panel stays where it is */ }
-            wasShown = shown;
+            wasRaised = up;
         };
         new MutationObserver(sync).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+        new MutationObserver(sync).observe(holder, { childList: true });
         suiteKeptAdd(sync);
         sync();
         return holder;
@@ -8165,9 +8179,12 @@ Version 1.1.4:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.5';
+    const SCRIPT_VERSION = '1.1.6';
 
-    const CHANGELOG = `Version 1.1.5:
+    const CHANGELOG = `Version 1.1.6:
+- The summary sidebar now comes on top each time you open it.
+
+Version 1.1.5:
 - The summary sidebar and the SPM copy window now show above everything on the page, while the ticket stays usable next to them.
 
 Version 1.1.4:
@@ -9164,7 +9181,7 @@ Version 1.0.2:
 
         document.body.appendChild(sidebar);
         // Top layer panel: above the page and other windows, the ticket stays usable next to it
-        suitePanel(sidebar, { isShown: () => true });
+        suitePanel(sidebar, { isShown: () => true, raise: () => sidebar.style.right === '0px' });
         return sidebar;
     }
 
@@ -19028,8 +19045,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.14.2';
-    const CHANGELOG = `Version 2.14.2:
+    const SCRIPT_VERSION = '2.14.3';
+
+    const CHANGELOG = `Version 2.14.3:
+- The sidebar now shows above everything on the page, while the ticket stays usable next to it and entries are still written into it. Its windows (edit, entry details, confirmations, paste, conflicts, setup, NRD review and profiles) open above it, and Esc closes them like Cancel or a click outside. The window that asks which version to keep after an edit conflict still needs a choice.
+
+Version 2.14.2:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 2.14.1:
@@ -21724,6 +21745,9 @@ Version 1.4.3:
                               `<span style="color:#fca5a5;margin-left:10px;font-size:12px">⛔ do not click</span>`;
             document.body.appendChild(overlay);
             document.body.appendChild(toast);
+            // Above the tracker's own panel too (top layer), so a click on it cannot steal the focus meanwhile
+            suitePanel(overlay, { isShown: () => true });
+            suitePanel(toast, { isShown: () => true });
         }
 
         function hideBlocker() {
@@ -23697,7 +23721,7 @@ Version 1.4.3:
             btnRow.appendChild(b);
         });
         md.append(title, intro, table, btnRow);
-        document.body.append(ov, md);
+        suiteModal(ov, md, { label: 'Policy conflicts', close });
     }
 
     // Reads the text of a Copy policy into entry field values (fallback when there is no handoff).
@@ -23837,7 +23861,7 @@ Version 1.4.3:
             row.appendChild(b);
         });
         md.append(title, intro, ta, err, row);
-        document.body.append(ov, md);
+        suiteModal(ov, md, { label: 'Paste a copied policy', close });
         ta.focus();
     }
 
@@ -24291,7 +24315,7 @@ Version 1.4.3:
         no.textContent = 'Cancel';
         no.onclick = () => { ov.remove(); md.remove(); };
         row.append(yes, no); md.append(msg, row);
-        document.body.append(ov, md);
+        suiteModal(ov, md, { label: 'Confirm' });
         ov.onclick = () => no.click();
     }
 
@@ -24363,7 +24387,7 @@ Version 1.4.3:
         md.append(msg);
         if (content) md.appendChild(content);
         md.append(row);
-        document.body.append(ov, md);
+        suiteModal(ov, md, { label: 'Choose', close: () => {} });
     }
 
     // Field by field rows of two versions of one entry, in the order of the entry type's form.
@@ -24652,7 +24676,7 @@ Version 1.4.3:
         overlay.onclick = close;
         document.addEventListener('keydown', onKey);
 
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal, { label: 'Change entry' });
     }
 
     /* ==========================================================
@@ -25021,7 +25045,7 @@ Version 1.4.3:
         btnRow.append(cancelBtn, saveBtn);
         modal.appendChild(btnRow);
 
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal, { label: 'Edit entry' });
         overlay.onclick = () => cancelBtn.click();
     }
 
@@ -25342,6 +25366,9 @@ Version 1.4.3:
         sidebar.append(buildCtTabs(), logPane, buildRemindersPane());
 
         document.body.appendChild(sidebar);
+        // Top layer panel: above the page and other windows, the ticket stays usable and is written next to it.
+        // Never a modal: the tracker writes comments and @mentions into the ticket while it is open.
+        suitePanel(sidebar, { isShown: () => true, raise: () => sidebar.style.right === '0px' });
         ctShowTab('log');
 
         // Reflect current connectivity state into the freshly-built DOM
@@ -26118,7 +26145,8 @@ Version 1.4.3:
                     bullets(body, [
                         'Pick the change type, fill in its fields, then click "+ Add Entry" (Ctrl+Enter also works).',
                         'Every entry is saved to your team\'s SharePoint list, so anyone opening this ticket sees the same history.',
-                        'Turn the Change Tracker on or off in the toolbar Settings, under Tools.'
+                        'Turn the Change Tracker on or off in the toolbar Settings, under Tools.',
+                        'The sidebar shows above everything on the page while the ticket stays usable next to it. Its windows (edit, details, confirmations, setup, NRD) open above it and close with Esc like Cancel.'
                     ]);
                 }
             },
@@ -27196,7 +27224,7 @@ Version 1.4.3:
         });
         const close = () => { overlay.remove(); modal.remove(); };
         overlay.onclick = close;
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal, { label: 'Newly Registered Domains review' });
         if (!nrdCache()) {
             modal.style.minHeight = '140px';
             await withBusy(modal, () => nrdCheck({ force: true }), 'Reading the domains due for review…');
@@ -27693,7 +27721,7 @@ Version 1.4.3:
             apiBox.appendChild(row);
         });
         modal.append(hdr, help, rows, addBtn, saveBtn, msg, ruleTitle, ruleList, apiTitle, apiHelp, apiBox);
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal, { label: 'NRD profiles' });
         if (focus === 'api') setTimeout(() => apiTitle.scrollIntoView({ block: 'start' }), 0);
 
         let current = null;   // the settings item as loaded: { nrdProfiles, id, spId, etag }
@@ -28247,7 +28275,7 @@ Version 1.4.3:
         overlay.onclick   = cancel;
         saveBtn.onclick   = save;
 
-        document.body.append(overlay, modal);
+        suiteModal(overlay, modal, { label: 'Change Tracker setup' });
         siteInput.focus();
     }
 
