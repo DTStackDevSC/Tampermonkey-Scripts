@@ -227,6 +227,8 @@ public sealed class HelpWindow : Window
         pop.Children.Add(new TextBlock { Text = "Insert a placeholder", FontSize = 11, Foreground = MockHint, Margin = new Thickness(0, 0, 0, 4) });
         pop.Children.Add(Cell("{Opened by name}", AccentSoft, false));
         pop.Children.Add(Cell("{Ticket type}", MockBg, false));
+        pop.Children.Add(Cell("{Ticket number}", MockBg, false));
+        pop.Children.Add(Cell("{Requested for}  {My name}  {Today}  {Short description}  {Tenant}", MockBg, false));
         box.Children.Add(new Border { Child = pop, Background = MockBg, BorderBrush = MockLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Padding = new Thickness(6), Width = 200, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(56, 2, 0, 0), Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 8, ShadowDepth = 2, Opacity = 0.25 } });
         b.Children.Add(MockPanel(box));
         b.Children.Add(BeforeAfter("Template", "Hello {Opened by name}, your {Ticket type} is done.", "Inserted", "Hello Jane, your Request is done."));
