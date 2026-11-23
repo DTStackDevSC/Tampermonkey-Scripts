@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.55.0
+// @version      2.56.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.55.0';
-    const CHANGELOG = `Version 2.55.0:
+   const SCRIPT_VERSION = '2.56.0';
+    const CHANGELOG = `Version 2.56.0:
+- Toolbar: new search. Press Alt+K on any page with the toolbar, or click 🔍 in the menu, and type what you want to do: it lists the tools of the page and the toolbar's own actions (Settings, Feature Guide, API Keys, Copy diagnostics). Arrows choose, Enter opens, Esc closes.
+
+Version 2.55.0:
 - Toolbar: when an update adds a new tool, a ✨ New tool added window presents it once, on a page where it works: what it does, where it appears and what it needs. Its switch starts off, so nothing new runs until you turn it on. Ask me later asks again the next day.
 - Change Tracker: an entry that was changed after it was saved shows 🕘 History, with who changed it, when, and every changed field before and after.
 
@@ -2180,7 +2183,7 @@ Version 1.0.0:
                 buildContent: (body) => {
                     lead(body, 'Every tool in the suite adds its own icon to the menu automatically. The toolbar provides the container and the gear.');
                     body.appendChild(hrow([
-                        menuMock([ toolSquare('📊'), toolSquare('📝', { dot: true }), toolSquare('🔗'), menuSep(), toolSquare('⚙️') ])
+                        menuMock([ toolSquare('📊'), toolSquare('📝', { dot: true }), toolSquare('🔗'), menuSep(), toolSquare('🔍'), toolSquare('⚙️') ])
                     ]));
                     body.appendChild(hrow([
                         toolSquare('📝', { dot: true }),
@@ -2190,6 +2193,32 @@ Version 1.0.0:
                         'Hover an icon to see the tool name.',
                         'Tools only appear on the pages they support.',
                         'If the menu only shows the gear, no tools match the current page.'
+                    ]);
+                }
+            },
+            {
+                icon: '🔍',
+                title: 'Search (Alt+K)',
+                buildContent: (body) => {
+                    lead(body, 'Press Alt+K on any page with the toolbar, or click 🔍 in the menu, and type what you want to do.');
+                    const box = document.createElement('div');
+                    Object.assign(box.style, { border: '1px solid #d0d0f0', borderRadius: '10px', maxWidth: '420px', overflow: 'hidden', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', background: '#fff' });
+                    const bar = document.createElement('div');
+                    Object.assign(bar.style, { display: 'flex', gap: '8px', alignItems: 'center', padding: '8px 10px', borderBottom: '2px solid #667eea' });
+                    bar.append(span('🔍', { fontSize: '13px' }), span('domain', { fontSize: '13px', color: '#333', flex: '1' }), span('↑↓ choose · Enter open · Esc close', { fontSize: '10px', color: '#888' }));
+                    box.appendChild(bar);
+                    [['Domain Checker', 'Pulls the domains out of the ticket and checks their category and reputation.', true],
+                     ['Destination Profile Editor', 'Find, create, edit and delete Netskope Destination Profiles.', false]].forEach(([n, h, on]) => {
+                        const row = document.createElement('div');
+                        Object.assign(row.style, { padding: '7px 10px', margin: '4px', borderRadius: '6px', background: on ? '#eef0ff' : '#fff', outline: on ? '1px solid #c0c8f0' : 'none' });
+                        row.append(span(n, { fontWeight: 'bold', fontSize: '12px', color: '#333', display: 'block' }), span(h, { fontSize: '11px', color: '#777', display: 'block' }));
+                        box.appendChild(row);
+                    });
+                    body.appendChild(box);
+                    bullets(body, [
+                        'It lists the tools of this page and a few toolbar actions: Settings, this guide, API Keys and Copy diagnostics.',
+                        'Type any part of a name or of what a tool does. Arrows choose, Enter or a click opens, Esc or a click outside closes.',
+                        'Alt+K again closes it. The page stays usable while it is open.'
                     ]);
                 }
             },
@@ -2658,6 +2687,7 @@ Version 1.0.0:
         if (!menu) return;
 
         const settingsEl = menu.querySelector('[data-tool="settings"]');
+        const searchEl = menu.querySelector('[data-tool="search"]');
 
         const pinnedConfig  = loadPinnedConfig();
         const pinnedIds     = pinnedConfig.map(p => p.id);
@@ -2748,6 +2778,7 @@ Version 1.0.0:
         rightEls.forEach(el => menu.appendChild(el));
         if (hasAny) menu.appendChild(makeSep());
 
+        if (searchEl) menu.appendChild(searchEl);
         if (settingsEl) menu.appendChild(settingsEl);
     }
 
@@ -3576,13 +3607,20 @@ Version 1.0.0:
     const toolbarHTML = `
         <div id="custom-toolbar-container" data-toolbar-v2="true">
             <div id="custom-toolbar-toggle-wrap">
-                <button id="custom-toolbar-toggle" title="Toggle Toolbar">
+                <button id="custom-toolbar-toggle" title="Toggle Toolbar (Alt+K searches every tool)">
                     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/>
                     </svg>
                 </button>
             </div>
             <div id="custom-toolbar-menu">
+                <!-- Search (Alt+K) -->
+                <div class="toolbar-item" data-tool="search">
+                    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                    <div class="toolbar-item-tooltip">Search tools (Alt+K)</div>
+                </div>
                 <!-- Settings -->
                 <div class="toolbar-item" data-tool="settings">
                     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -3753,6 +3791,16 @@ Version 1.0.0:
                 }
             }
         });
+
+        // Search button: the same search as Alt+K
+        const searchBtn = menu.querySelector('[data-tool="search"]');
+        if (searchBtn) {
+            searchBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (!menu.classList.contains('pinned-open')) menu.classList.remove('active');
+                suitePaletteOpen();
+            });
+        }
 
         // Settings button
         const settingsBtn = menu.querySelector('[data-tool="settings"]');
@@ -4392,6 +4440,205 @@ Version 1.0.0:
         toolRegistry.set(config.id, config);
         scheduleRerender();
     }
+
+
+    /* ==========================================================
+     *  COMMAND PALETTE (Alt+K)
+     *  A search box over every tool of this page and a few toolbar
+     *  actions, opened with Alt+K from anywhere on the page or with
+     *  the 🔍 item of the menu. A tool section can add its own actions
+     *  with suitePaletteAddAction({ id, tool, label, keywords, run }).
+     *  Not through a page event: the page could then add fake entries.
+     * ==========================================================*/
+
+    const suitePaletteActions = new Map();   // id -> { tool, label, keywords, run }
+    function suitePaletteAddAction(d) {
+        if (d && d.id && d.label && typeof d.run === 'function' && DATA_REGISTRY.some(t => t.id === d.tool)) suitePaletteActions.set(d.id, d);
+    }
+
+    function suitePaletteItems() {
+        const items = [];
+        for (const c of toolRegistry.values()) {
+            const reg = DATA_REGISTRY.find(t => t.id === c.id) || {};
+            items.push({ key: 'tool:' + c.id, label: reg.name || c.tooltip || c.id, hint: reg.description || '',
+                words: [c.tooltip, reg.formerly, ...(reg.includes || [])].filter(Boolean).join(' '),
+                run: () => document.dispatchEvent(new CustomEvent('toolbarToolClicked', { detail: { id: c.id } })) });
+        }
+        for (const [id, a] of suitePaletteActions) {
+            const tool = (DATA_REGISTRY.find(t => t.id === a.tool) || {}).name || '';
+            items.push({ key: 'action:' + id, label: a.label, hint: tool, words: [a.keywords, tool].filter(Boolean).join(' '), run: a.run });
+        }
+        items.push({ key: 'core:settings', label: '⚙ Toolbar settings', hint: 'Tools, look, data and support', words: 'options preferences tools', run: () => showSettings() });
+        items.push({ key: 'core:guide', label: '📖 Toolbar Feature Guide', hint: 'How the toolbar works', words: 'help guide', run: () => showHelpModal() });
+        items.push({ key: 'core:keys', label: '🔑 API Keys', hint: 'Netskope, VirusTotal and IBM X-Force keys', words: 'token passphrase lock unlock api', run: () => netskopeApi.openManager({ caller: 'Search' }) });
+        items.push({ key: 'core:diag', label: '🩺 Copy diagnostics', hint: 'Versions, tools and latest errors for a problem report', words: 'support problem error report',
+            run: () => { try { GM_setClipboard(suiteDiagnosticsText(), 'text'); suitePaletteToast('📋 Diagnostics copied'); } catch (e) { suitePaletteToast('⚠️ Could not copy the diagnostics'); } } });
+        return items;
+    }
+
+    // Every typed word must appear somewhere; a match at the start of the name ranks first
+    function suitePaletteFilter(items, query) {
+        const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+        if (!words.length) return items;
+        const scored = [];
+        for (const it of items) {
+            const name = it.label.toLowerCase();
+            const all = `${name} ${it.hint} ${it.words}`.toLowerCase();
+            if (!words.every(w => all.includes(w))) continue;
+            const score = name.replace(/^[^a-z0-9]+/, '').startsWith(words[0]) ? 0 : name.includes(words[0]) ? 1 : 2;
+            scored.push([score, it]);
+        }
+        return scored.sort((a, b) => a[0] - b[0]).map(x => x[1]);
+    }
+
+    let suitePalette = null;   // { host, dialog, input, list, status }
+    function suitePaletteBuild() {
+        if (suitePalette && suitePalette.host.isConnected) return suitePalette;
+        const host = document.createElement('div');
+        host.id = 'toolbar-suite-palette-host';
+        const root = dtAttachShadow.call(host, { mode: 'closed' });
+        const css = `
+            :host { all: initial; }
+            dialog { position: fixed; inset: 12vh auto auto 50%; transform: translateX(-50%); margin: 0; padding: 0;
+                width: min(560px, calc(100vw - 32px)); border: 1px solid #d0d0f0; border-radius: 12px;
+                background: #ffffff; color: #333333; font: 13px Arial, sans-serif; box-shadow: 0 12px 40px rgba(0,0,0,.35); overflow: hidden; }
+            .bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 2px solid #667eea; }
+            .bar span { font-size: 15px; }
+            input { flex: 1; border: none; outline: none; font: 15px Arial, sans-serif; color: #333333; background: #ffffff; padding: 4px 0; }
+            .bar .keys { font-size: 10px; color: #888; white-space: nowrap; }
+            ul { list-style: none; margin: 0; padding: 6px; max-height: min(52vh, 420px); overflow-y: auto; }
+            li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
+            li[aria-selected="true"] { background: #eef0ff; outline: 1px solid #c0c8f0; }
+            li:hover { background: #f5f6ff; }
+            .name { font-weight: bold; color: #333; }
+            .hint { font-size: 11px; color: #777; }
+            .empty { padding: 14px 10px; color: #888; font-style: italic; cursor: default; }
+            .status { padding: 6px 12px; font-size: 11px; color: #2a7d4f; min-height: 14px; border-top: 1px solid #eee; }
+        `;
+        try { const sheet = new CSSStyleSheet(); sheet.replaceSync(css); root.adoptedStyleSheets = [sheet]; }
+        catch (e) { const st = document.createElement('style'); st.textContent = css; root.appendChild(st); }   // Netskope blocks <style>: adopted sheet first
+        const dialog = document.createElement('dialog');
+        dialog.setAttribute('popover', 'auto');   // light dismiss and Esc, in the top layer; the page stays usable
+        dialog.setAttribute('aria-label', 'Search the toolbar');
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        const glass = document.createElement('span');
+        glass.textContent = '🔍';
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.placeholder = 'Search tools and actions…';
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-label', 'Search tools and actions');
+        input.setAttribute('aria-controls', 'tsp-list');
+        input.setAttribute('aria-expanded', 'true');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.autocomplete = 'off';
+        const keys = document.createElement('span');
+        keys.className = 'keys';
+        keys.textContent = '↑↓ choose · Enter open · Esc close';
+        bar.append(glass, input, keys);
+        const list = document.createElement('ul');
+        list.id = 'tsp-list';
+        list.setAttribute('role', 'listbox');
+        list.setAttribute('aria-label', 'Results');
+        const status = document.createElement('div');
+        status.className = 'status';
+        status.setAttribute('role', 'status');
+        dialog.append(bar, list, status);
+        root.appendChild(dialog);
+        document.documentElement.appendChild(host);
+        suitePalette = { host, root, dialog, input, list, status, results: [], active: 0 };
+
+        const render = () => {
+            const P = suitePalette;
+            P.results = suitePaletteFilter(suitePaletteItems(), P.input.value);
+            P.active = Math.min(P.active, Math.max(0, P.results.length - 1));
+            P.list.replaceChildren();
+            if (!P.results.length) {
+                const li = document.createElement('li');
+                li.className = 'empty';
+                li.textContent = 'Nothing matches. Try another word, such as a tool name.';
+                P.list.appendChild(li);
+                P.input.removeAttribute('aria-activedescendant');
+                return;
+            }
+            P.results.forEach((it, i) => {
+                const li = document.createElement('li');
+                li.id = 'tsp-opt-' + i;
+                li.setAttribute('role', 'option');
+                li.setAttribute('aria-selected', String(i === P.active));
+                li.dataset.paletteKey = it.key;
+                const name = document.createElement('span');
+                name.className = 'name';
+                name.textContent = it.label;
+                li.appendChild(name);
+                if (it.hint) { const h = document.createElement('span'); h.className = 'hint'; h.textContent = it.hint; li.appendChild(h); }
+                li.addEventListener('mousemove', () => { if (P.active !== i) { P.active = i; paint(); } });
+                li.addEventListener('click', (e) => { if (e.isTrusted) choose(i); });
+                P.list.appendChild(li);
+            });
+            paint();
+        };
+        const paint = () => {
+            const P = suitePalette;
+            [...P.list.children].forEach((li, i) => li.setAttribute('aria-selected', String(i === P.active)));
+            const cur = P.list.children[P.active];
+            if (cur && cur.id) { P.input.setAttribute('aria-activedescendant', cur.id); cur.scrollIntoView({ block: 'nearest' }); }
+        };
+        const choose = (i) => {
+            const it = suitePalette.results[i];
+            if (!it) return;
+            const keepOpen = it.key === 'core:diag';
+            if (!keepOpen) suitePaletteClose();
+            try { it.run(); }
+            catch (e) { console.error('[Toolbar] Search:', e); suitePaletteToast('⚠️ Could not open it: ' + (e.message || 'error')); }
+        };
+        input.addEventListener('input', () => { suitePalette.active = 0; suitePalette.status.textContent = ''; render(); });
+        input.addEventListener('keydown', (e) => {
+            const P = suitePalette;
+            if (e.key === 'ArrowDown') { e.preventDefault(); if (P.results.length) { P.active = (P.active + 1) % P.results.length; paint(); } }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); if (P.results.length) { P.active = (P.active - 1 + P.results.length) % P.results.length; paint(); } }
+            else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.isComposing || e.keyCode === 229) return;   // confirming a character of a Japanese, Chinese or Korean keyboard
+                if (P.results.length) choose(P.active);
+            }
+            e.stopPropagation();   // keys typed here never reach the page's own shortcuts
+        });
+        suitePalette.render = render;
+        return suitePalette;
+    }
+
+    function suitePaletteToast(text) {
+        if (suitePalette) suitePalette.status.textContent = text;
+    }
+
+    function suitePaletteOpen() {
+        const P = suitePaletteBuild();
+        P.input.value = '';
+        P.active = 0;
+        P.status.textContent = '';
+        P.render();
+        try { if (!P.dialog.matches(':popover-open')) P.dialog.showPopover(); }
+        catch (e) { P.dialog.setAttribute('open', ''); }   // without popover support: shown in place
+        P.input.focus();
+    }
+
+    function suitePaletteClose() {
+        if (!suitePalette) return;
+        try { if (suitePalette.dialog.matches(':popover-open')) suitePalette.dialog.hidePopover(); } catch (e) { /* not a popover */ }
+        suitePalette.dialog.removeAttribute('open');
+    }
+
+    // Alt+K anywhere on a page with the toolbar; again closes it
+    document.addEventListener('keydown', (e) => {
+        if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.code !== 'KeyK' || e.isComposing) return;
+        if (!document.getElementById('custom-toolbar-container')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (suitePalette && suitePalette.dialog.matches(':popover-open')) suitePaletteClose();
+        else suitePaletteOpen();
+    }, true);
 
     /* ==========================================================
      *  SUITE TENANTS
