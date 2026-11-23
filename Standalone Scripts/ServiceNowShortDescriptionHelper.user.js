@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.5.2
-// @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
+// @version      4.5.3
+// @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
 // @match        https://*.goskope.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.2';
-    const CHANGELOG = `Version 4.5.2:
+    const SCRIPT_VERSION = '4.5.3';
+    const CHANGELOG = `Version 4.5.3:
+- The Tampermonkey description of the suite now says what its helpers are for.
+
+Version 4.5.2:
 - Formatted Text Helper: the Preview HTML window opens above everything on the page, and Esc closes it.
 
 Version 4.5.1:
@@ -1379,8 +1382,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.2';
-    const CHANGELOG = `Version 4.5.2:
+    const SCRIPT_VERSION = '4.5.3';
+    const CHANGELOG = `Version 4.5.3:
+- The Tampermonkey description of the suite now says what its helpers are for.
+
+Version 4.5.2:
 - Formatted Text Helper: the Preview HTML window opens above everything on the page, and Esc closes it.
 
 Version 4.5.1:

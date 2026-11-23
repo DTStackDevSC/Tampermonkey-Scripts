@@ -3,8 +3,8 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.52.2
-// @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
+// @version      2.52.3
+// @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
 // @grant        GM_setValue
@@ -32,8 +32,14 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.52.2';
-    const CHANGELOG = `Version 2.52.2:
+   const SCRIPT_VERSION = '2.52.3';
+    const CHANGELOG = `Version 2.52.3:
+- The Tampermonkey description of the toolbar now says what it is for, and no longer gives an outdated number of tools.
+- Choose your tools and Settings > Tools now describe everything the NS Policies Toolkit does, including Policy tools and the Excel and CSV exports.
+- Ticket Assignment: the toolbar button and the Feature Guide now use the same name as Choose your tools, "Ticket Assignment".
+- Row Highlighter: the toolbar button now shows "Row Highlighter", the same name as Choose your tools.
+
+Version 2.52.2:
 - NS Policies Toolkit: "📥 Export to CSV" on Transaction Events is back next to the refresh button, top right. In 2.52.1 it had moved next to the page title.
 
 Version 2.52.1:
@@ -956,7 +962,7 @@ Version 1.0.0:
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
         { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Destination Profile Editor', description: 'Find, create and edit Netskope Destination Profiles from a ticket', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
-        { id: 'nsDlpToolkit', pages: ['https://*.goskope.com/*'], name: 'NS Policies Toolkit', description: 'Copy and open buttons, logs and steering exception tools', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
+        { id: 'nsDlpToolkit', pages: ['https://*.goskope.com/*'], name: 'NS Policies Toolkit', description: 'Copy and open buttons, change logs, bulk policy and steering tools, and Excel and CSV exports in the Netskope console', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
           exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
     ];
 
@@ -10727,9 +10733,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.5';
+    const SCRIPT_VERSION = '1.7.6';
 
-    const CHANGELOG = `Version 1.7.5:
+    const CHANGELOG = `Version 1.7.6:
+- The toolbar button and the Feature Guide now show the tool's name, "Ticket Assignment", the same name as in Choose your tools.
+
+Version 1.7.5:
 - Fixed assigning and @mentions, which stopped working in the previous version. The assignment form is back to how it was before, so the ticket can be filled in while the form shows its progress. Manage Team and the missing details window still open above it.
 
 Version 1.7.4:
@@ -12108,10 +12117,10 @@ Version 1.2.1:
                     lead(body, 'Open the tool from the floating toolbar while you have a ServiceNow ticket open.');
                     const pin = { bg: '#e8f0fe', border: '2px solid #667eea' };
                     body.appendChild(hrow([ menuMock([ toolSquare('👥', pin), menuSep(), toolSquare('📊'), toolSquare('📝') ]) ]));
-                    caption(body, 'The Assign Ticket icon lives in the toolbar. Click it to open the form.');
+                    caption(body, 'The Ticket Assignment icon lives in the toolbar. Click it to open the form.');
                     bullets(body, [
                         'Open a RITM or incident in ServiceNow, either in a new tab or from the dashboard.',
-                        'Click the Assign Ticket icon to open the assignment form.',
+                        'Click the Ticket Assignment icon to open the assignment form.',
                         'The very first time, you set up your team list before the form appears.'
                     ]);
                 }
@@ -12313,7 +12322,7 @@ Version 1.2.1:
         titleMain.textContent = 'Feature Guide';
         Object.assign(titleMain.style, { fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif' });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Ticket Assignment Tool • v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Ticket Assignment • v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, { fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif' });
         titleTextWrap.appendChild(titleMain);
         titleTextWrap.appendChild(titleSub);
@@ -13510,7 +13519,7 @@ Thank you for your cooperation.` : '';
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Assign Ticket', position: 5 }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Ticket Assignment', position: 5 }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
@@ -16605,9 +16614,12 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.6';
+    const SCRIPT_VERSION = '2.4.7';
 
-    const CHANGELOG = `Version 2.4.6:
+    const CHANGELOG = `Version 2.4.7:
+- The toolbar button now shows "Row Highlighter", the same name as in Choose your tools.
+
+Version 2.4.6:
 - The settings window now shows above everything on the page, while the list stays usable next to it.
 
 Version 2.4.5:
@@ -19072,7 +19084,7 @@ Version 2.3.1:
         return function register() {
             initialize();
             document.dispatchEvent(new CustomEvent('addToolbarTool', {
-                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Row Highlighter Settings', position: 1 }
+                detail: { id: TOOL_ID, icon: toolIcon, tooltip: 'Row Highlighter', position: 1 }
             }));
             if (typeof isNewVersion === 'function' && isNewVersion() && !hasSeenChangelog()) addToolbarNotificationDot();
         };
