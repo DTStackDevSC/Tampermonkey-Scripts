@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.48.0
+// @version      2.49.0
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.48.0';
-    const CHANGELOG = `Version 2.48.0:
+   const SCRIPT_VERSION = '2.49.0';
+    const CHANGELOG = `Version 2.49.0:
+- NS Policies Toolkit: the settings window and the reminder shown before saving a policy now open above everything on the Netskope page. Esc closes them like a click outside or Go back.
+- Toolbar: windows that close and then write into the page (a policy description, a ticket comment) now leave the page usable at once.
+
+Version 2.48.0:
 - Change Tracker: the sidebar now shows above everything on the page, while the ticket stays usable next to it and entries are still written into it. Its windows (edit, entry details, confirmations, paste, conflicts, setup, NRD review and profiles) open above it, and Esc closes them like Cancel or a click outside. The window that asks which version to keep after an edit conflict still needs a choice.
 - Mini Summary: the summary sidebar now comes on top each time you open it.
 
@@ -4878,6 +4882,13 @@ Version 1.0.0:
         const finish = () => { obs.disconnect(); if (dlg.open) dlg.close(); dlg.remove(); };
         const obs = new MutationObserver(() => { if (!dlg.contains(watch)) finish(); });
         obs.observe(dlg, { childList: true, subtree: true });
+        // remove() on the window or its overlay closes the dialog at once, not a moment later: code that writes into
+        // the page right after closing the window (a description field, a comment) finds it usable, not inert
+        [overlay, modal].forEach(node => {
+            if (!node) return;
+            const own = node.remove;
+            node.remove = function () { own.call(this); if (dlg.isConnected && !dlg.contains(watch)) finish(); };
+        });
         // Esc: the window's own close, so a window that asks before closing still asks
         dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
         // The browser may close the dialog anyway (repeated Esc): run the close, or show it again
@@ -30381,8 +30392,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.48.2';
-    const CHANGELOG = `Version 1.48.2:
+    const SCRIPT_VERSION = '1.48.3';
+
+    const CHANGELOG = `Version 1.48.3:
+- The settings window and the reminder shown before saving a policy now open above everything on the Netskope page. Esc closes them like a click outside or Go back.
+
+Version 1.48.2:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.48.1:
@@ -31447,6 +31462,8 @@ Version 1.16:
         backdrop.appendChild(modal);
         // Append to document.body — same as working Ticket Assignment script
         document.body.appendChild(backdrop);
+        // Native modal dialog, shown and hidden with the backdrop's display; Esc closes it like a click outside
+        suiteModalByClass(backdrop, { label: 'NS Policies Toolkit', isShown: () => backdrop.style.display !== 'none', close: hideSettingsModal });
     }
 
     function updateRowStyle(row, enabled) {
@@ -31621,6 +31638,7 @@ Version 1.16:
                         'The first time you use the toolkit you will be prompted to enter your name. It is saved and auto-filled in all log entry modals.',
                         'In that prompt, "Import from a backup file" restores your name, settings and steering backups from a toolbar backup.',
                         'Toggle each feature on or off in the settings panel. Changes take effect after reloading the page.',
+                        'The settings window opens above the page: Esc or a click outside closes it. The reminder before saving a policy also closes with Esc, like Go back.',
                     ]);
                 },
             },
@@ -33565,8 +33583,8 @@ Version 1.16:
         modal.appendChild(tip);
         modal.appendChild(btnRow);
 
-        document.body.appendChild(overlay);
-        document.body.appendChild(modal);
+        // Native modal dialog; Esc does what Go back does (the Netskope Save is only clicked by Save anyway)
+        suiteModal(overlay, modal, { label: 'Before you save' });
 
         overlay.onclick = (e) => { if (e.target === overlay) goBackBtn.click(); };
     }

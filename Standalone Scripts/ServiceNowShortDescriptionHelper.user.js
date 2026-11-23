@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.5.0
+// @version      4.5.1
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.0';
-    const CHANGELOG = `Version 4.5.0:
+    const SCRIPT_VERSION = '4.5.1';
+    const CHANGELOG = `Version 4.5.1:
+- Windows that close and then write into the page now leave the page usable at once.
+
+Version 4.5.0:
 - Short Description, Ticket Response, SLA Alert Banner, Policy Naming and Ticket Subject: their panels and settings windows open above everything on the page. Windows with a dark background close with Esc like a click outside; the Policy Naming panel leaves the Netskope page usable next to it.
 - ⚙ Suite and the backup windows open above every other window of the helpers.
 
@@ -1272,6 +1275,13 @@ Version 4.0.0:
         const finish = () => { obs.disconnect(); if (dlg.open) dlg.close(); dlg.remove(); };
         const obs = new MutationObserver(() => { if (!dlg.contains(watch)) finish(); });
         obs.observe(dlg, { childList: true, subtree: true });
+        // remove() on the window or its overlay closes the dialog at once, not a moment later: code that writes into
+        // the page right after closing the window (a description field, a comment) finds it usable, not inert
+        [overlay, modal].forEach(node => {
+            if (!node) return;
+            const own = node.remove;
+            node.remove = function () { own.call(this); if (dlg.isConnected && !dlg.contains(watch)) finish(); };
+        });
         // Esc: the window's own close, so a window that asks before closing still asks
         dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
         // The browser may close the dialog anyway (repeated Esc): run the close, or show it again
@@ -1366,8 +1376,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.0';
-    const CHANGELOG = `Version 4.5.0:
+    const SCRIPT_VERSION = '4.5.1';
+    const CHANGELOG = `Version 4.5.1:
+- Windows that close and then write into the page now leave the page usable at once.
+
+Version 4.5.0:
 - The panel, Settings and the tenant URL window (when opened from Settings) open above everything on the page. Esc closes them like a click outside; the tenant URL window still needs Save.
 
 Version 4.4.3:
