@@ -162,7 +162,7 @@ public class MainViewModelTests
         f.Current = latest;
 
         await vm.SaveCommand.ExecuteAsync(null);
-        Assert.Contains("Ticket Response Helper", vm.Status);
+        Assert.Contains("Response Templates", vm.Status);
         Assert.Equal(0, d.SaveShown);
         Assert.False(vm.IsBusy);
     }

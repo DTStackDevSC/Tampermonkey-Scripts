@@ -4,7 +4,7 @@ using ConfigEditor.Core.Sections;
 
 namespace ConfigEditor.ViewModels.Pages;
 
-/// <summary>The member firm and product lists of the Ticket Subject Helper, and which tenant each member firm uses.</summary>
+/// <summary>The member firm and product lists of the Support Case Subject Builder, and which tenant each member firm uses.</summary>
 public sealed class TicketSubjectPage : PageBase
 {
     bool loading;

@@ -2,7 +2,7 @@ using ConfigEditor.Core.Js;
 
 namespace ConfigEditor.Core.Sections;
 
-/// <summary>One team of the Short Description Helper (TEAMS). Properties the editor does not know are kept.</summary>
+/// <summary>One team of the Short Description Builder (TEAMS). Properties the editor does not know are kept.</summary>
 public sealed class ShortDescriptionTeam
 {
     JsObject? source;

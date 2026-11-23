@@ -2,7 +2,7 @@ using ConfigEditor.Core.Sections;
 
 namespace ConfigEditor.ViewModels.Pages;
 
-/// <summary>Member firm names and short codes used by the Ticket Assignment Tool.</summary>
+/// <summary>Member firm names and short codes used by the Ticket Assignment tool.</summary>
 public sealed class MfCodesPage : PageBase
 {
     public MfCodesPage(MainViewModel main) : base(main, false)

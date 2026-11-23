@@ -2,7 +2,7 @@ using ConfigEditor.Core.Js;
 
 namespace ConfigEditor.Core.Sections;
 
-/// <summary>One member firm name and its short code in the Ticket Assignment Tool (MF_CODE_MAP).</summary>
+/// <summary>One member firm name and its short code in the Ticket Assignment tool (MF_CODE_MAP).</summary>
 public sealed class MfCodeEntry
 {
     JsProperty? source;

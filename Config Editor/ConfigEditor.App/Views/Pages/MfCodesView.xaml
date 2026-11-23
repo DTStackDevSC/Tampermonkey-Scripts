@@ -6,7 +6,7 @@
         <TextBlock Text="{Binding EmptyText}" Style="{StaticResource HintText}" Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVis}}"/>
         <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
             <StackPanel Margin="0,0,12,12">
-                <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="🏢 Member firm codes" Style="{StaticResource CardTitle}"/><TextBlock Text="The Ticket Assignment Tool reads the member firm name from the ticket and uses this code to pick the group." Style="{StaticResource HintText}" Margin="0,0,0,6"/><c:ListEditor DataContext="{Binding Entries}"/></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel><TextBlock Text="🏢 Member firm codes" Style="{StaticResource CardTitle}"/><TextBlock Text="The Ticket Assignment reads the member firm name from the ticket and uses this code to pick the group." Style="{StaticResource HintText}" Margin="0,0,0,6"/><c:ListEditor DataContext="{Binding Entries}"/></StackPanel></Border>
             </StackPanel>
         </ScrollViewer>
     </Grid>

@@ -33,24 +33,24 @@ public static class BlockCatalog
     /// <summary>Section marker of a tool name from <see cref="ToolName"/>, or null when unknown.</summary>
     public static string? SectionOf(string toolName) => toolName switch
     {
-        "Short Description Helper" => Sd,
-        "Ticket Response Helper" => Resp,
-        "Policy Naming Helper" => Pn,
-        "Ticket Subject Helper" => Ts,
+        "Short Description Builder" => Sd,
+        "Response Templates" => Resp,
+        "Policy Name Builder" => Pn,
+        "Support Case Subject Builder" => Ts,
         "Change Tracker" => "SERVICENOW TICKET HISTORY",
-        "Ticket Assignment Tool" => "TICKET ASSIGNMENT TOOL",
+        "Ticket Assignment" => "TICKET ASSIGNMENT TOOL",
         _ => null
     };
 
     /// <summary>User facing tool name of the section a block belongs to.</summary>
     public static string ToolName(BlockRef b) => b.Section switch
     {
-        Sd => "Short Description Helper",
-        Resp => "Ticket Response Helper",
-        Pn => "Policy Naming Helper",
-        Ts => "Ticket Subject Helper",
+        Sd => "Short Description Builder",
+        Resp => "Response Templates",
+        Pn => "Policy Name Builder",
+        Ts => "Support Case Subject Builder",
         "SERVICENOW TICKET HISTORY" => "Change Tracker",
-        "TICKET ASSIGNMENT TOOL" => "Ticket Assignment Tool",
+        "TICKET ASSIGNMENT TOOL" => "Ticket Assignment",
         null => "Teams",
         _ => b.Section
     };

@@ -243,7 +243,7 @@ public sealed class HelpWindow : Window
         dialog.Children.Add(new TextBlock { Text = "Save changes", FontWeight = FontWeights.SemiBold, Foreground = MockText, Margin = new Thickness(0, 0, 0, 4) });
         dialog.Children.Add(new TextBlock { Text = "What's new (shown to users in the changelog). You can reword each line:", TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = MockHint, Margin = new Thickness(0, 0, 0, 4) });
         var line = new Border { BorderBrush = MockLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(4), Padding = new Thickness(6, 3, 6, 3), Margin = new Thickness(0, 0, 0, 6) };
-        line.Child = new TextBlock { Text = "Ticket Response Helper: Updated the EMEA Team replies.", TextWrapping = TextWrapping.Wrap, Foreground = MockText, FontSize = 12 };
+        line.Child = new TextBlock { Text = "Response Templates: Updated the EMEA Team replies.", TextWrapping = TextWrapping.Wrap, Foreground = MockText, FontSize = 12 };
         dialog.Children.Add(line);
         dialog.Children.Add(MockRow(MockButton("💾 Save", Accent), MockButton("Close")));
         var result = new StackPanel();

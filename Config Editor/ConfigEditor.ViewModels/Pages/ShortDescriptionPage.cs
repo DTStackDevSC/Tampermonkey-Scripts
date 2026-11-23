@@ -3,7 +3,7 @@ using ConfigEditor.Core.Sections;
 
 namespace ConfigEditor.ViewModels.Pages;
 
-/// <summary>The Short Description Helper options of one team.</summary>
+/// <summary>The Short Description Builder options of one team.</summary>
 public sealed partial class ShortDescriptionPage : PageBase
 {
     ShortDescriptionTeam? team;

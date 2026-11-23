@@ -73,7 +73,7 @@ public class EditSessionTests
 
         var r = await session.PrepareAsync(latest, default);
         Assert.False(r.Ok);
-        Assert.Equal("Ticket Response Helper", r.ConflictSection);
+        Assert.Equal("Response Templates", r.ConflictSection);
         Assert.Empty(r.Files);
     }
 

@@ -41,7 +41,7 @@ public static class ChangeSummary
                 var dt = new List<string>();
                 DtTeams(original, edited, dt);
                 if (dt.Count == 0) dt.Add("Updated the team list.");
-                foreach (var t in new[] { "Short Description Helper", "Ticket Response Helper" })
+                foreach (var t in new[] { "Short Description Builder", "Response Templates" })
                     items.AddRange(dt.Select(x => new ChangeItem(b, t, x)));
                 continue;
             }

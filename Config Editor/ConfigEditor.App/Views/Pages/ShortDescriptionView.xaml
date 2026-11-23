@@ -6,7 +6,7 @@
         <TextBlock Text="{Binding EmptyText}" Style="{StaticResource HintText}" Visibility="{Binding HasData, Converter={StaticResource InverseBoolToVis}}"/>
         <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}">
             <StackPanel Margin="0,0,12,12">
-                <TextBlock Text="What the Short Description Helper offers this team. Changes show in the ticket dropdowns after the update." Style="{StaticResource HintText}" Margin="0,0,0,12"/>
+                <TextBlock Text="What the Short Description Builder offers this team. Changes show in the ticket dropdowns after the update." Style="{StaticResource HintText}" Margin="0,0,0,12"/>
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <TextBlock Text="⚙️ General" Style="{StaticResource CardTitle}"/>

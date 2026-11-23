@@ -45,7 +45,7 @@ public class ReleaseTests
         var (original, edited) = EditResponse();
         var items = ChangeSummary.Build(original, edited);
         var item = Assert.Single(items);
-        Assert.Equal("Ticket Response Helper", item.ToolName);
+        Assert.Equal("Response Templates", item.ToolName);
         Assert.StartsWith("Updated the text of the EMEA Team response \"", item.Bullet);
 
         var text = ReleaseWriter.Apply(SuiteId.TicketHelpers, edited.Render().ticketHelpers, items);
@@ -56,8 +56,8 @@ public class ReleaseTests
         Assert.Equal(suite, VersionIn(text, "SHORT DESCRIPTION HELPER"));
         Assert.Equal(helper, VersionIn(text, "TICKET RESPONSE HELPER"));
         Assert.Equal(TestRepo.Version(SuiteId.TicketHelpers, "POLICY NAMING HELPER"), VersionIn(text, "POLICY NAMING HELPER"));
-        Assert.StartsWith($"Version {suite}:\n- Ticket Response Helper: Updated the text", ChangelogStart(text, null));
-        Assert.StartsWith($"Version {suite}:\n- Ticket Response Helper: Updated the text", ChangelogStart(text, "SHORT DESCRIPTION HELPER"));
+        Assert.StartsWith($"Version {suite}:\n- Response Templates: Updated the text", ChangelogStart(text, null));
+        Assert.StartsWith($"Version {suite}:\n- Response Templates: Updated the text", ChangelogStart(text, "SHORT DESCRIPTION HELPER"));
         Assert.StartsWith($"Version {helper}:\n- Updated the text", ChangelogStart(text, "TICKET RESPONSE HELPER"));
         Assert.Contains($"\n\nVersion {TestRepo.Version(SuiteId.TicketHelpers, "TICKET RESPONSE HELPER")}:", ChangelogStart(text, "TICKET RESPONSE HELPER"));
         Assert.Contains($"// @version      {suite}\n", text);
@@ -103,7 +103,7 @@ public class ReleaseTests
         Assert.Equal(TestRepo.Next(SuiteId.TicketHelpers, "TICKET RESPONSE HELPER"), VersionIn(text, "TICKET RESPONSE HELPER"));
         Assert.Equal(TestRepo.Next(SuiteId.TicketHelpers, "POLICY NAMING HELPER"), VersionIn(text, "POLICY NAMING HELPER"));
         var core = ChangelogStart(text, null);
-        Assert.Contains("- Policy Naming Helper: Added the region option \"Test (XX)\".", core);
+        Assert.Contains("- Policy Name Builder: Added the region option \"Test (XX)\".", core);
         Assert.Single(Regex.Matches(text[..BlockLocator.SectionBounds(text, "SHORT DESCRIPTION HELPER").Start], $"Version {suite}:"));
     }
 
@@ -121,10 +121,10 @@ public class ReleaseTests
         MfCodeEntry.Save(edited, map);
 
         var items = ChangeSummary.Build(original, edited);
-        Assert.Contains(items, i => i.ToolName == "Short Description Helper" && i.Bullet == "Added the North America Team.");
-        Assert.Contains(items, i => i.ToolName == "Ticket Response Helper" && i.Bullet == "Added the North America Team.");
+        Assert.Contains(items, i => i.ToolName == "Short Description Builder" && i.Bullet == "Added the North America Team.");
+        Assert.Contains(items, i => i.ToolName == "Response Templates" && i.Bullet == "Added the North America Team.");
         Assert.Contains(items, i => i.Bullet == "Added the status option \"On Hold\" for the EMEA Team.");
-        Assert.Contains(items, i => i.ToolName == "Ticket Assignment Tool");
+        Assert.Contains(items, i => i.ToolName == "Ticket Assignment");
         Assert.Equal(items.Count, items.Distinct().Count());
         Assert.All(items, i => Assert.DoesNotMatch(" - |—|–", i.Bullet));
     }
@@ -145,7 +145,7 @@ public class ReleaseTests
         var crlf = edited.Render().ticketHelpers.Replace("\n", "\r\n");
         var text = ReleaseWriter.Apply(SuiteId.TicketHelpers, crlf, items);
         Assert.DoesNotMatch("[^\r]\n", text);
-        Assert.Contains($"Version {TestRepo.Next(SuiteId.TicketHelpers)}:\r\n- Ticket Response Helper: ", text);
+        Assert.Contains($"Version {TestRepo.Next(SuiteId.TicketHelpers)}:\r\n- Response Templates: ", text);
     }
 
     [Fact]

@@ -157,9 +157,9 @@ public class GitHubPublisherTests
     {
         var gh = new FakeGitHub();
         var r = await Publisher(gh).PublishAsync(Always(() =>
-            new PrepareResult(false, "Ticket Response Helper", Array.Empty<ChangeItem>(), new Dictionary<string, string>(), null)));
+            new PrepareResult(false, "Response Templates", Array.Empty<ChangeItem>(), new Dictionary<string, string>(), null)));
         Assert.False(r.Ok);
-        Assert.Contains("Ticket Response Helper", r.Error);
+        Assert.Contains("Response Templates", r.Error);
         Assert.DoesNotContain(gh.Requests, q => q.Method != "GET");
     }
 }

@@ -3,7 +3,7 @@ using ConfigEditor.Core.Sections;
 
 namespace ConfigEditor.ViewModels.Pages;
 
-/// <summary>The option lists of the Policy Naming Helper.</summary>
+/// <summary>The option lists of the Policy Name Builder.</summary>
 public sealed class PolicyNamingPage : PageBase
 {
     public PolicyNamingPage(MainViewModel main) : base(main, false)

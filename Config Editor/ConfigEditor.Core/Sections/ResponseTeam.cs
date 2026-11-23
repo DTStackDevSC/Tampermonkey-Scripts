@@ -75,7 +75,7 @@ public sealed class ResponseItem
     }
 }
 
-/// <summary>One team of the Ticket Response Helper (RESPONSE_TEAMS).</summary>
+/// <summary>One team of the Response Templates (RESPONSE_TEAMS).</summary>
 public sealed class ResponseTeam
 {
     JsObject? source;

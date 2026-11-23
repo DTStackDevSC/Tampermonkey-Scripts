@@ -58,7 +58,7 @@ public sealed class ResponseRow : ObservableObject
     public string Preview => Body.Replace(TemplateText.OpenedByName, "Jane Doe").Replace(TemplateText.TicketType, "Request");
 }
 
-/// <summary>The Ticket Response Helper menu of one team.</summary>
+/// <summary>The Response Templates menu of one team.</summary>
 public sealed partial class ResponsesPage : PageBase
 {
     ResponseTeam? team;

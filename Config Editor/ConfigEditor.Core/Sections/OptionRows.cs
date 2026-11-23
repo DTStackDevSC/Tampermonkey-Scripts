@@ -63,7 +63,7 @@ public static class StringList
         doc.Set(b, JsEdit.StringArray(JsEdit.RequireArray(doc, b), values));
 }
 
-/// <summary>One Netskope tenant group of the Ticket Subject Helper. The key is the shared storage key and never changes.</summary>
+/// <summary>One Netskope tenant group of the Support Case Subject Builder. The key is the shared storage key and never changes.</summary>
 public sealed class TenantGroup
 {
     internal JsObject? Source;
