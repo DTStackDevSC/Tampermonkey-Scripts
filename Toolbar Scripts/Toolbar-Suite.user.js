@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.47.0
+// @version      2.47.1
 // @description  Single-install suite bundling eleven toolbar tools for ServiceNow and Netskope
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.47.0';
-    const CHANGELOG = `Version 2.47.0:
+   const SCRIPT_VERSION = '2.47.1';
+    const CHANGELOG = `Version 2.47.1:
+- Destination Profile Editor: deleting a profile that a policy still uses now says so in plain words: remove it from the policy first, then delete it again.
+- Destination Profile Editor: the Create Destination Profile form now also leaves room under its buttons at the bottom of the window.
+
+Version 2.47.0:
 - Destination Profile Editor: added 🗑 Delete profile in the profile editor. It takes two clicks, keeps a copy of the profile first, and applies the delete with a change note like any other change.
 - Destination Profile Editor: new 🗃 Deleted profiles link next to Tenant Hosts: it lists the profiles deleted in the last 90 days, and ♻ Recreate creates one again.
 - Destination Profile Editor: more room under the buttons at the bottom of the window.
@@ -13461,9 +13465,13 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.0';
+    const SCRIPT_VERSION = '2.1.1';
 
-    const CHANGELOG = `Version 2.1.0:
+    const CHANGELOG = `Version 2.1.1:
+- Deleting a profile that a policy still uses now says so in plain words: remove it from the policy first, then delete it again.
+- The Create Destination Profile form now also leaves room under its buttons at the bottom of the window.
+
+Version 2.1.0:
 - Added 🗑 Delete profile in the profile editor. It takes two clicks, keeps a copy of the profile first, and applies the delete with a change note like any other change.
 - New 🗃 Deleted profiles link next to Tenant Hosts: it lists the profiles deleted in the last 90 days, and ♻ Recreate creates one again.
 - More room under the buttons at the bottom of the window.
@@ -14599,7 +14607,7 @@ Version 1.4.1:
                         'Apply now (it needs a change note, usually the RITM, and 🎫 Insert RITM fills it in) applies the change in Netskope. Leave pending keeps it pending and opens the console to apply it there.',
                         'Renaming warns first: other parts of the scripts find profiles by their exact name, such as the Change Tracker Newly Registered Domains check.',
                         'When opened from a Category by ID result, "← Back to Category" restores the category view without re-fetching.',
-                        '🗑 Delete profile takes two clicks (the button turns red and says Click again). A copy of the profile is kept first, then it is deleted and applied with a change note like any other change. If Netskope refuses, for example because a policy still uses the profile, nothing is deleted and its answer is shown.',
+                        '🗑 Delete profile takes two clicks (the button turns red and says Click again). A copy of the profile is kept first, then it is deleted and applied with a change note like any other change. If a policy or another Netskope object still uses the profile, nothing is deleted and the window says so: remove it from there first.',
                     ]);
                 }
             },
@@ -15208,12 +15216,14 @@ Version 1.4.1:
         resetModal();
         const container = document.getElementById('create-form-container');
         if (!container) return;
-        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' });
+        // Grows with its content (the window scrolls), so the buttons keep the room under them
+        Object.assign(container.style, { display: 'flex', flexDirection: 'column', flex: '0 0 auto' });
         container.innerHTML = '<h3 style="font-size: 14px; font-weight: bold; color: #333; margin: 15px 0 10px 0;">Create Destination Profile</h3>';
         container.appendChild(dpField('Name', dpInput('dp-create-name', 100, 'e.g. ES - Newly Registered Domains - Allow'), true));
         container.appendChild(dpField('Description', dpInput('dp-create-desc', 200, 'Optional, e.g. the RITM'), true));
         container.appendChild(dpField('Match type', dpTypeSelect('dp-create-type', 'insensitive')));
         const { wrap, ta } = dpValuesArea('dp-create-values');
+        wrap.style.flex = '0 0 auto';
         container.appendChild(wrap);
         if (ta) container.appendChild(createUrlListLogButtons(ta));
         const btns = UI.createElement('div', { display: 'flex', gap: '10px', marginTop: '15px' });
@@ -15645,7 +15655,10 @@ Version 1.4.1:
                 if (!r.ok) {
                     if (r.handled) return;
                     dpForgetDeletedCopy(fresh.tenant, now.id);
-                    return UI.showStatus(`❌ Netskope did not delete "${now.name}" (${r.status}): ${r.error}. It may still be used by a policy. Nothing was deleted. The full answer is also in the browser console.`, 'error');
+                    // 409 err_code 50309 "resource is referenced": a policy or another object still uses the profile (seen on a real tenant 2026-11-23)
+                    const referenced = r.status === 409 || /referenced|50309/i.test(String(r.error || ''));
+                    if (referenced) return UI.showStatus(`⚠️ "${now.name}" was not deleted: a policy or another Netskope object still uses it. Remove it from there first, then delete it again. Nothing was changed.`, 'warning');
+                    return UI.showStatus(`❌ Netskope did not delete "${now.name}" (${r.status}): ${r.error}. Nothing was deleted. The full answer is also in the browser console.`, 'error');
                 }
                 currentProfiles = [];
                 const applied = await dpApply(r.tenant, { id: now.id, name: now.name }, `Deleted "${now.name}"`);
