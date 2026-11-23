@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.5.1
+// @version      4.5.2
 // @description  Ticket Helpers Suite (formerly Short Description Helper): Short Description, Ticket Response, Formatted Text, SLA Alert Banner, Policy Naming and Ticket Subject helpers in one install
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -24,8 +24,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.1';
-    const CHANGELOG = `Version 4.5.1:
+    const SCRIPT_VERSION = '4.5.2';
+    const CHANGELOG = `Version 4.5.2:
+- Formatted Text Helper: the Preview HTML window opens above everything on the page, and Esc closes it.
+
+Version 4.5.1:
 - Windows that close and then write into the page now leave the page usable at once.
 
 Version 4.5.0:
@@ -1376,8 +1379,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.5.1';
-    const CHANGELOG = `Version 4.5.1:
+    const SCRIPT_VERSION = '4.5.2';
+    const CHANGELOG = `Version 4.5.2:
+- Formatted Text Helper: the Preview HTML window opens above everything on the page, and Esc closes it.
+
+Version 4.5.1:
 - Windows that close and then write into the page now leave the page usable at once.
 
 Version 4.5.0:
@@ -9156,8 +9162,12 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.6';
-    const CHANGELOG = `Version 1.4.6:
+    const SCRIPT_VERSION = '1.4.7';
+
+    const CHANGELOG = `Version 1.4.7:
+- The Preview HTML window opens above everything on the page, and Esc closes it.
+
+Version 1.4.6:
 - Feature Guide and What's New open above everything on the page. Esc closes them, the page behind waits until you close them, and the keyboard goes back to the button you used.
 
 Version 1.4.5:
@@ -10550,7 +10560,10 @@ Version 1.0.3:
         modal.appendChild(bodyWrap);
         modal.appendChild(footer);
         overlay.appendChild(modal);
-        document.body.appendChild(overlay);
+        // Native modal dialog above the editor (it only shows and copies, it never writes into the editor or the ticket).
+        // The editor and its Image, Link, Table and target windows stay as they are: they write into the editor or the
+        // ticket while shown, which a modal would make inert.
+        helpersModal(overlay, modal, { label: 'Preview', close: () => cleanup() });
 
         overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(); });
 
@@ -10971,7 +10984,7 @@ Version 1.0.3:
             {
                 icon: '👁', title: 'Preview',
                 buildContent: (body) => {
-                    lead(body, 'Preview HTML shows how the text will look and exactly what gets inserted.');
+                    lead(body, 'Preview HTML shows how the text will look and exactly what gets inserted. It opens above the editor and Esc closes it.');
                     body.appendChild(span('Rendered preview', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', margin: '0 0 3px 0' }));
                     body.appendChild(panelMock([ span('Hello Jane, the policy is now live.', { fontSize: '12px', color: '#333' }) ], { maxWidth: '520px' }));
                     body.appendChild(span('Source (this is what gets inserted)', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', margin: '4px 0 3px 0' }));
