@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.53.0
+// @version      2.53.1
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -32,8 +32,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.53.0';
-    const CHANGELOG = `Version 2.53.0:
+   const SCRIPT_VERSION = '2.53.1';
+    const CHANGELOG = `Version 2.53.1:
+- Ticket Assignment: the "✉️ Send mail" button now separates the email addresses with a semicolon, so Outlook recognizes every recipient in CC.
+
+Version 2.53.0:
 - Choose your tools and Settings > Tools are grouped by the platform each tool works on: ServiceNow, Netskope and General. Each tool shows what it does, where it appears, what it needs before you use it, and a "When to use" note. A search box finds a tool by its name, its old name or what it does.
 - Six tools have new names that say what they do: General Toolkit is now General Web Toolkit, Mini Summary Sidebar is now Ticket Summary Panel, Enhancement Request Logger is now Enhancement Request Launcher, Row Highlighter is now List Highlighter, Domain Tools is now Domain Checker, and NS Policies Toolkit is now Netskope Console Toolkit. Your settings and data stay as they were.
 
@@ -10882,9 +10885,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.6';
+    const SCRIPT_VERSION = '1.7.7';
 
-    const CHANGELOG = `Version 1.7.6:
+    const CHANGELOG = `Version 1.7.7:
+- The "✉️ Send mail" button now separates the email addresses with a semicolon, so Outlook recognizes every recipient in CC.
+
+Version 1.7.6:
 - The toolbar button and the Feature Guide now show the tool's name, "Ticket Assignment", the same name as in Choose your tools.
 
 Version 1.7.5:
@@ -11767,7 +11773,7 @@ Version 1.2.1:
     const URGENT_MAIL_BODY = (ref) => `Hello team,\r\n\r\nWe need this request to be reviewed urgently.\r\n\r\nJustification for the urgency:\r\n\r\n\r\n\r\n${ref}`;
 
     function buildUrgentMailHref({ to, cc, subject, body }) {
-        const addr = list => list.filter(Boolean).map(a => a.replace(/[^A-Za-z0-9@._+-]/g, '')).join(',');
+        const addr = list => list.filter(Boolean).map(a => a.replace(/[^A-Za-z0-9@._+-]/g, '')).join(';');
         return `mailto:${addr(to)}?cc=${addr(cc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     }
 
