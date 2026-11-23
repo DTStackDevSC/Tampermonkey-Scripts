@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.54.0
+// @version      2.55.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.54.0';
-    const CHANGELOG = `Version 2.54.0:
+   const SCRIPT_VERSION = '2.55.0';
+    const CHANGELOG = `Version 2.55.0:
+- Toolbar: when an update adds a new tool, a ✨ New tool added window presents it once, on a page where it works: what it does, where it appears and what it needs. Its switch starts off, so nothing new runs until you turn it on. Ask me later asks again the next day.
+- Change Tracker: an entry that was changed after it was saved shows 🕘 History, with who changed it, when, and every changed field before and after.
+
+Version 2.54.0:
 - Toolbar: New 🩺 Copy diagnostics button in Settings, under Support: it copies the versions, the tools that are on, the page you are on and the latest errors, so you can paste them when you report a problem. Keys, passphrases and ticket contents are never included.
 - Toolbar: Once you enter an API key passphrase, it now works in every ServiceNow and Netskope tab, also in tabs you open later, and is asked again only after one hour without using the key. The web page can no longer read it. 🔒 Lock still forgets it at once.
 - Toolbar: The toolbar uses less of the computer on ServiceNow pages, and its page watchers rest while the tab is in the background.
@@ -1054,7 +1058,7 @@ Version 1.0.0:
 
     const DT_MIGRATED_KEY = 'toolbarSuiteMigratedTools';
     const DT_DECLINED_KEY = 'toolbarSuiteMigrationDeclined';
-    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'toolbarSuiteDetectedTools', 'toolbarSuitePickerLater'];
+    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'toolbarSuiteDetectedTools', 'toolbarSuitePickerLater', 'toolbarSuiteKnownTools', 'toolbarSuiteAnnounceLater'];
     // Keys that only mean something on this browser right now: never exported, imported or counted as data.
     // netskope_unlocked_<host> holds an unlocked API key passphrase for one hour (NETSKOPE API).
     const DT_PRIVATE_RE = /^netskope_unlocked_/;
@@ -1198,6 +1202,8 @@ Version 1.0.0:
     function isToolEnabled(id) {
         const choices = dtChoices();
         if (Object.prototype.hasOwnProperty.call(choices, id)) return choices[id] === true;
+        // A tool added by an update stays off until the user answers its "New tool added" window
+        if (dtIsNewTool(id)) return false;
         // Undecided: the Change Tracker stays as before 2.0.0, on only for people who could use it then.
         if (id === 'changeTracker') return DT_INSTALL_KIND === 'upgrade' && dtCtUnlocked();
         return DT_INSTALL_KIND === 'upgrade';
@@ -1733,19 +1739,127 @@ Version 1.0.0:
     }
 
     // Shows the picker on ServiceNow and Netskope tenant pages while tools of this site are undecided.
+    /* New tools added by an update. The first run of this version stores every tool it has as
+       "known"; a tool that is not in that list came with a later update: it stays off until the
+       user answers the one time "✨ New tool added" window, shown on a page where it works.
+       Fresh installs never see that window, because their first run knows every tool already. */
+    const DT_KNOWN_KEY = 'toolbarSuiteKnownTools';
+    const DT_ANNOUNCE_LATER_KEY = 'toolbarSuiteAnnounceLater';
+    function dtKnownTools() {
+        const saved = GM_getValue(DT_KNOWN_KEY, null);
+        if (Array.isArray(saved)) return saved;
+        const all = DATA_REGISTRY.map(t => t.id);
+        GM_setValue(DT_KNOWN_KEY, all);
+        return all;
+    }
+    function dtIsNewTool(id) {
+        return id !== 'toolbar' && !dtKnownTools().includes(id) && !Object.prototype.hasOwnProperty.call(dtChoices(), id);
+    }
+
+    // The "✨ New tool added" window: one card and one switch per new tool, switches start off.
+    function dtShowNewTools(tools) {
+        const switches = new Map();
+        const intro = document.createElement('div');
+        intro.textContent = tools.length === 1
+            ? 'A new tool is now part of the Tools Toolbar. Choose whether you want to use it.'
+            : 'New tools are now part of the Tools Toolbar. Turn on the ones you want.';
+        Object.assign(intro.style, { fontSize: '13px', lineHeight: '1.5', margin: '0 0 10px 0', color: '#555' });
+        const cards = [intro];
+        for (const t of tools) {
+            const card = document.createElement('div');
+            card.dataset.newTool = t.id;
+            Object.assign(card.style, { border: '1px solid #e0e0f0', borderRadius: '8px', padding: '10px 12px', margin: '0 0 8px 0', background: '#fafaff' });
+            const head = document.createElement('div');
+            Object.assign(head.style, { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' });
+            const name = document.createElement('span');
+            name.textContent = t.name;
+            Object.assign(name.style, { fontWeight: 'bold', fontSize: '14px', color: '#333' });
+            const pill = document.createElement('span');
+            pill.textContent = 'NEW';
+            Object.assign(pill.style, { background: '#667eea', color: '#fff', borderRadius: '10px', padding: '1px 7px', fontSize: '10px', fontWeight: 'bold' });
+            const where = document.createElement('span');
+            where.textContent = String(t.where || '').replace(/^(Appears on|Opens from):\s*/i, '') || 'Where it works';
+            Object.assign(where.style, { background: '#eef0ff', color: '#4a55a2', borderRadius: '4px', padding: '1px 7px', fontSize: '11px' });
+            head.append(name, pill, where);
+            const desc = document.createElement('div');
+            desc.textContent = t.description || '';
+            Object.assign(desc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 6px 0' });
+            const setup = document.createElement('div');
+            setup.textContent = t.setup ? `⚙ First use: ${t.setup}.` : '✓ Nothing to set up.';
+            Object.assign(setup.style, { fontSize: '11px', color: t.setup ? '#8a5a00' : '#2a7d4f', margin: '0 0 8px 0' });
+            // The switch: a real button with role switch, so keyboards and screen readers can use it
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.setAttribute('role', 'switch');
+            sw.setAttribute('aria-label', `Turn on ${t.name}`);
+            sw.dataset.newToolSwitch = t.id;
+            const knob = document.createElement('span');
+            const label = document.createElement('span');
+            const paint = () => {
+                const on = switches.get(t.id);
+                sw.setAttribute('aria-checked', String(on));
+                Object.assign(sw.style, { background: on ? '#667eea' : '#ccc' });
+                knob.style.transform = on ? 'translateX(16px)' : 'translateX(0)';
+                label.textContent = on ? 'On' : 'Off';
+                label.style.color = on ? '#4a55a2' : '#888';
+            };
+            Object.assign(sw.style, { position: 'relative', width: '36px', height: '20px', borderRadius: '10px', border: 'none', padding: '0', cursor: 'pointer', flexShrink: '0', transition: 'background .15s' });
+            Object.assign(knob.style, { position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'transform .15s', boxShadow: '0 1px 2px rgba(0,0,0,.3)' });
+            sw.appendChild(knob);
+            switches.set(t.id, false);
+            sw.onclick = (e) => { if (!e.isTrusted) return; switches.set(t.id, !switches.get(t.id)); paint(); };
+            const row = document.createElement('label');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: '#444', cursor: 'pointer' });
+            const text = document.createElement('span');
+            text.textContent = 'Turn it on';
+            row.append(sw, text, label);
+            paint();
+            card.append(head, desc, setup, row);
+            cards.push(card);
+        }
+        const hint = document.createElement('div');
+        hint.textContent = 'You can change this any time in Settings > Tools.';
+        Object.assign(hint.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '4px 0 0 0' });
+        cards.push(hint);
+        dtDialog(tools.length === 1 ? '✨ New tool added' : `✨ ${tools.length} new tools added`, cards, [
+            { label: 'Ask me later', onClick: () => GM_setValue(DT_ANNOUNCE_LATER_KEY, dtToday()) },
+            { label: 'Save', primary: true, onClick: () => {
+                const update = {};
+                for (const t of tools) update[t.id] = switches.get(t.id) === true;
+                dtSaveChoices(update);
+                if (Object.values(update).some(Boolean)) location.reload();   // a tool turned on starts with the page
+            } }
+        ]);
+    }
+
+    // New tools that work on this page and wait for an answer. True when the window opened.
+    function dtMaybeAnnounceNewTools() {
+        if (GM_getValue(DT_ANNOUNCE_LATER_KEY, '') === dtToday()) return false;
+        const fresh = DATA_REGISTRY.filter(t => dtIsNewTool(t.id) && dtToolRunsHere(t.id));
+        if (!fresh.length) return false;
+        // Never on top of another window: wait until it is closed (checked every 5 s, for up to a minute)
+        let tries = 0;
+        const show = () => {
+            if (document.querySelector('dialog[open]')) { if (++tries < 12) setTimeout(show, 5000); return; }
+            dtShowNewTools(fresh);
+        };
+        show();
+        return true;
+    }
+
     function dtMaybeShowPicker() {
         const site = dtMigrationSite();
         if (!site || document.getElementById('toolbarSuiteDataHost')) return;
         const choices = dtChoices();
-        const all = DATA_REGISTRY.filter(t => t.id !== 'toolbar');
+        const all = DATA_REGISTRY.filter(t => t.id !== 'toolbar' && !dtIsNewTool(t.id));
         if (DT_INSTALL_KIND === 'new') {
-            if (Object.keys(choices).length) return;
+            if (Object.keys(choices).length) { dtMaybeAnnounceNewTools(); return; }
             dtShowToolPicker(all.map(t => t.id), new Set(['ticketQuickOpen']));
             return;
         }
-        if (GM_getValue(DT_PICKER_LATER_KEY, '') === dtToday()) return;
+        if (GM_getValue(DT_PICKER_LATER_KEY, '') === dtToday()) { dtMaybeAnnounceNewTools(); return; }
         const undecided = all.filter(t => (t.site === site || t.site === 'all') && !Object.prototype.hasOwnProperty.call(choices, t.id));
-        if (!undecided.length) return;
+        if (!undecided.length) { dtMaybeAnnounceNewTools(); return; }
         const detected = GM_getValue(DT_DETECTED_KEY, []);
         const ticked = new Set(undecided
             .filter(t => (Array.isArray(detected) && detected.includes(t.id)) || dtSuiteHasData(t))
@@ -2347,6 +2461,13 @@ Version 1.0.0:
                         span('📋 Copied', { fontSize: '11px', color: '#2a7d4f', fontWeight: 'bold' })
                     ], { margin: '10px 0 0 0' }));
                     caption(body, 'Under Support. Copies the versions, the tools that are on, this page\'s mode and the latest errors of the toolbar, never keys, passphrases or ticket contents. Paste it when you report a problem.');
+                    body.appendChild(hrow([
+                        span('✨ New tool added', { fontSize: '12px', fontWeight: 'bold', color: '#333' }),
+                        chip('NEW', '#667eea'),
+                        chip('Ask me later', '#fff', { color: '#333', border: '1px solid #ccc' }),
+                        chip('Save', '#667eea')
+                    ], { margin: '12px 0 0 0' }));
+                    caption(body, 'When an update adds a tool, a window presents it once on a page where it works. Its switch starts off, so nothing new runs until you turn it on. Ask me later asks again the next day.');
 
                     const dot = document.createElement('span');
                     Object.assign(dot.style, { width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', display: 'inline-block' });
@@ -19405,9 +19526,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.15.1';
+    const SCRIPT_VERSION = '2.16.0';
 
-    const CHANGELOG = `Version 2.15.1:
+    const CHANGELOG = `Version 2.16.0:
+- An entry that was changed after it was saved shows 🕘 History, with who changed it, when, and every changed field before and after.
+
+Version 2.15.1:
 - Texts that pointed to the NS Policies Toolkit now use its new name, Netskope Console Toolkit.
 
 Version 2.15.0:
@@ -20664,6 +20788,7 @@ Version 1.4.3:
         #ct-edit-modal { background-color: #f9f9f9 !important; color: #333333 !important; }
         #ct-setup-modal { background-color: #f9f9f9 !important; color: #333333 !important; }
         #ct-entry-modal { background-color: #ffffff !important; color: #333333 !important; }
+        #ct-history-modal { background-color: #ffffff !important; color: #333333 !important; }
         #ct-sidebar input, #ct-sidebar select, #ct-sidebar textarea,
         #ct-edit-modal input, #ct-edit-modal select, #ct-edit-modal textarea,
         #ct-setup-modal input, #ct-setup-modal select, #ct-setup-modal textarea {
@@ -25167,6 +25292,21 @@ Version 1.4.3:
         const footer = css(Object.assign(mk('div'), { textContent: `${entry.ts}  ·  by ${author}${importedBy}${editedBy}` }), {
             fontSize:'10px', color:'#bbb', marginTop:'6px', fontFamily:'monospace'
         });
+        // 🕘 History: every saved version of an entry someone edited, read from SharePoint
+        // SharePoint's etag ends with the row's version ("{guid},3"): above 1 means it was saved again
+        const spVersion = Number((String(entry.etag || '').match(/(\d+)"?$/) || [])[1] || 0);
+        if (entry.spId && (editedBy || spVersion > 1)) {
+            const hb = css(mk('button', { type:'button', className:'ct-history-btn' }), {
+                marginLeft:'8px', padding:'0 6px', fontSize:'10px', fontWeight:'bold', fontFamily:'Arial, sans-serif',
+                color:'#667eea', background:'#fff', border:'1px solid #c0c8f0', borderRadius:'3px', cursor:'pointer'
+            });
+            hb.textContent = '🕘 History';
+            hb.title = 'See who changed this entry, when, and what changed';
+            hb.onmouseover = () => { hb.style.background = '#eef0ff'; };
+            hb.onmouseout  = () => { hb.style.background = '#fff'; };
+            hb.onclick = (e) => { e.stopPropagation(); openHistoryModal(entry, card, hb); };
+            footer.appendChild(hb);
+        }
         if (isEntryPending(ticket, entry.id)) {
             const tag = css(mk('span'), {
                 marginLeft:'8px', padding:'1px 6px', borderRadius:'8px',
@@ -25223,6 +25363,147 @@ Version 1.4.3:
         card.appendChild(footer);
 
         return card;
+    }
+
+
+    /* ==========================================================
+     *  ENTRY HISTORY  (🕘 History: SharePoint keeps every version
+     *  of a row; each version's CTPayload is compared with the one
+     *  before it, field by field)
+     * ==========================================================*/
+
+    function historyFieldLabel(type, key) {
+        const walk = (fields) => {
+            for (const f of fields || []) {
+                if (f.key === key) return f.label;
+                const inner = walk(f.extraFields);
+                if (inner) return inner;
+            }
+            return null;
+        };
+        return walk(getSchema(type)) || key;
+    }
+
+    // What changed from one saved version to the next, as rows of label, before and after
+    function historyDiff(prev, cur) {
+        const rows = [];
+        if (prev.type !== cur.type) rows.push({ label: 'Change type', before: prev.type || '', after: cur.type || '' });
+        const keys = [...new Set([...Object.keys(prev.fields || {}), ...Object.keys(cur.fields || {})])];
+        for (const k of keys) {
+            const a = String((prev.fields || {})[k] ?? ''), b = String((cur.fields || {})[k] ?? '');
+            if (a !== b) rows.push({ label: historyFieldLabel(cur.type || prev.type, k), before: a, after: b });
+        }
+        if ((prev.note || '') !== (cur.note || '')) rows.push({ label: 'Note', before: prev.note || '', after: cur.note || '' });
+        if ((prev.ts || '') !== (cur.ts || '')) rows.push({ label: 'Date', before: prev.ts || '', after: cur.ts || '' });
+        return rows;
+    }
+
+    async function loadEntryVersions(entry) {
+        const res = await spClient.call({ method: 'GET', path: `${spClient.listPath()}/items(${Number(entry.spId)})/versions` });
+        if (!res.ok) return { ok: false, res };
+        const list = (res.data && (res.data.value || (res.data.d && res.data.d.results))) || [];
+        const versions = list.map(v => {
+            let p = null;
+            try { p = JSON.parse(v.CTPayload || ''); } catch (e) { p = null; }
+            const editor = v.Editor && (v.Editor.LookupValue || v.Editor.Title) || '';
+            return { label: v.VersionLabel || '', at: v.Created || v.Modified || '', by: editor, payload: p };
+        }).filter(v => v.payload);
+        // Oldest first, so each version is compared with the one saved before it
+        versions.sort((a, b) => parseFloat(a.label) - parseFloat(b.label));
+        return { ok: true, versions };
+    }
+
+    async function openHistoryModal(entry, card, btn) {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const label = btn.textContent;
+        btn.textContent = '⏳ Loading…';
+        let out;
+        try {
+            out = await withBusy(card, () => loadEntryVersions(entry), 'Loading the history…');
+        } catch (e) {
+            console.error('[Change Tracker] History:', e);
+            out = { ok: false, res: { kind: 'network' } };
+        } finally {
+            btn.disabled = false;
+            btn.textContent = label;
+        }
+        if (!out.ok) {
+            const k = out.res && out.res.kind;
+            flashStatus(k === 'session' ? '✗ SharePoint sign in needed to read the history. Open the SharePoint site, then try again.'
+                : k === 'notfound' ? '✗ This entry is no longer in SharePoint, so it has no history.'
+                : k === 'forbidden' ? '✗ You do not have access to the history of this list.'
+                : '✗ Could not read the history from SharePoint. Try again in a moment.', '#dc3545', 6000);
+            return;
+        }
+
+        document.getElementById('ct-history-overlay')?.remove();
+        document.getElementById('ct-history-modal')?.remove();
+        const overlay = css(mk('div', { id:'ct-history-overlay' }), { position:'fixed', inset:'0', background:'rgba(0,0,0,.45)', zIndex:'1055000' });
+        const modal = css(mk('div', { id:'ct-history-modal' }), {
+            position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:'1055001',
+            background:'#fff', border:'1px solid #ccc', borderRadius:'10px', width:'640px', maxWidth:'92vw', maxHeight:'82vh',
+            display:'flex', flexDirection:'column', boxShadow:'0 6px 24px rgba(0,0,0,.3)', fontFamily:'Arial, sans-serif', boxSizing:'border-box'
+        });
+        const header = css(mk('div'), { display:'flex', alignItems:'center', gap:'8px', padding:'12px 16px', borderBottom:'2px solid #667eea', flexShrink:'0' });
+        const title = css(mk('span'), { fontWeight:'bold', fontSize:'15px', color:'#333', flex:'1' });
+        title.textContent = `🕘 History of this ${entry.type} entry`;
+        const closeX = css(mk('button', { type:'button', title:'Close' }), { background:'none', border:'none', fontSize:'18px', color:'#999', cursor:'pointer', lineHeight:'1' });
+        closeX.textContent = '✕';
+        header.append(title, closeX);
+
+        const body = css(mk('div'), { padding:'12px 16px', overflowY:'auto', flex:'1' });
+        const versions = out.versions;
+        if (!versions.length) {
+            body.appendChild(css(Object.assign(mk('div'), { textContent: 'SharePoint has no saved versions of this entry. Version history may be turned off for this list.' }),
+                { fontSize:'12px', color:'#888', fontStyle:'italic', padding:'12px 0' }));
+        }
+        // Newest first on screen
+        for (let i = versions.length - 1; i >= 0; i--) {
+            const v = versions[i];
+            const box = css(mk('div', { className:'ct-history-version' }), { border:'1px solid #e8e8f0', borderRadius:'6px', marginBottom:'8px', overflow:'hidden' });
+            const head = css(mk('div'), { display:'flex', gap:'8px', alignItems:'center', padding:'6px 10px', background:'#f8f8ff', fontSize:'11px', color:'#555' });
+            const when = v.at ? new Date(v.at).toLocaleString() : '';
+            head.textContent = `${i === 0 ? 'Created' : 'Changed'}  ·  ${when}  ·  by ${v.by || '(unknown)'}`;
+            if (i === versions.length - 1) {
+                const now = css(mk('span'), { marginLeft:'auto', background:'#667eea', color:'#fff', borderRadius:'8px', padding:'1px 7px', fontSize:'10px', fontWeight:'bold' });
+                now.textContent = 'Current';
+                head.appendChild(now);
+            }
+            box.appendChild(head);
+            const content = css(mk('div'), { padding:'8px 10px', fontSize:'12px', color:'#333' });
+            if (i === 0) {
+                content.textContent = 'First saved version.';
+                content.style.color = '#888';
+            } else {
+                const rows = historyDiff(versions[i - 1].payload, v.payload);
+                if (!rows.length) { content.textContent = 'Saved again with no visible change.'; content.style.color = '#888'; }
+                for (const r of rows) {
+                    const row = css(mk('div', { className:'ct-history-change' }), { margin:'0 0 6px 0' });
+                    const lab = css(mk('div'), { fontWeight:'bold', fontSize:'11px', color:'#667eea', marginBottom:'2px' });
+                    lab.textContent = r.label;
+                    const before = css(mk('div'), { whiteSpace:'pre-wrap', fontFamily:'monospace', fontSize:'11px', background:'#fff5f5', color:'#8a1c1c', padding:'3px 6px', borderRadius:'3px', textDecoration:'line-through' });
+                    before.textContent = r.before || '(empty)';
+                    const after = css(mk('div'), { whiteSpace:'pre-wrap', fontFamily:'monospace', fontSize:'11px', background:'#f2fff7', color:'#1d6b3f', padding:'3px 6px', borderRadius:'3px', marginTop:'2px' });
+                    after.textContent = r.after || '(empty)';
+                    row.append(lab, before, after);
+                    content.appendChild(row);
+                }
+            }
+            box.appendChild(content);
+            body.appendChild(box);
+        }
+
+        const footer = css(mk('div'), { display:'flex', justifyContent:'flex-end', padding:'10px 16px', borderTop:'1px solid #e8e8e8', flexShrink:'0' });
+        const closeBtn = css(mk('button', { type:'button' }), { background:'#667eea', color:'#fff', border:'none', borderRadius:'4px', padding:'6px 14px', fontSize:'12px', fontWeight:'bold', cursor:'pointer' });
+        closeBtn.textContent = 'Close';
+        footer.appendChild(closeBtn);
+        modal.append(header, body, footer);
+        const close = () => { overlay.remove(); modal.remove(); };
+        closeX.onclick = close;
+        closeBtn.onclick = close;
+        overlay.onclick = close;
+        suiteModal(overlay, modal, { label: 'Entry history', close });
     }
 
     /* ==========================================================
@@ -26535,6 +26816,11 @@ Version 1.4.3:
                     card.appendChild(span('Domains: example.com, test.com', { fontSize: '12px', color: '#333', display: 'block' }));
                     card.appendChild(span('2026-10-13 14:05', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace', display: 'block', marginTop: '6px' }));
                     body.appendChild(card);
+                    body.appendChild(hrow([
+                        span('2026-10-13 14:05  ·  by Jane  ·  edited by Tom', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace' }),
+                        chip('🕘 History', '#fff', { color: '#667eea', border: '1px solid #c0c8f0' })
+                    ], { margin: '6px 0 0 0' }));
+                    caption(body, 'An entry that was changed after it was saved shows 🕘 History: who changed it, when, and each changed field before (struck through) and after.');
                     bullets(body, [
                         '✎ Edit changes the type or any field of the entry.',
                         '↪ Write writes this entry into the ticket again. It only shows on types that have a ticket note.',

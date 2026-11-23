@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.7.0
+// @version      4.8.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.7.0';
-    const CHANGELOG = `Version 4.7.0:
+    const SCRIPT_VERSION = '4.8.0';
+    const CHANGELOG = `Version 4.8.0:
+- When an update adds a new helper, a ✨ New helper added window presents it once, on a page where it works. Its switch starts off, so nothing new runs until you turn it on. Ask me later asks again the next day.
+
+Version 4.7.0:
 - New 🩺 Copy diagnostics button in the ⚙ Suite window, under Support: it copies the versions, the helpers that are on, the page you are on and the latest errors, so you can paste them when you report a problem. Ticket contents and tenant addresses are never included.
 - SLA Alert Banner: The last day countdown of the banner reads "SLA EXPIRES SOON: 05:12:30 remaining".
 
@@ -251,6 +254,8 @@ Version 4.0.0:
     function isToolEnabled(id) {
         const choices = dtChoices();
         if (Object.prototype.hasOwnProperty.call(choices, id)) return choices[id] === true;
+        // A helper added by an update stays off until the user answers its "New helper added" window
+        if (dtIsNewTool(id)) return false;
         if (DT_INSTALL_KIND !== 'upgrade') return false;
         if (id === 'shortDescription') return true;   // its file is the suite, so it was installed
         const detected = GM_getValue(DT_DETECTED_KEY, []);
@@ -268,7 +273,7 @@ Version 4.0.0:
 
     const DT_MIGRATED_KEY = 'ticketHelpersMigratedTools';
     const DT_DECLINED_KEY = 'ticketHelpersMigrationDeclined';
-    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'ticketHelpersDetectedTools', 'ticketHelpersPickerLater'];
+    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'ticketHelpersDetectedTools', 'ticketHelpersPickerLater', 'ticketHelpersKnownTools', 'ticketHelpersAnnounceLater'];
     // Version and "changelog seen" keys are written on every load, so they never count as data.
     const DT_META_RE = /(version|changelog[-_]?seen)$/i;
 
@@ -902,19 +907,127 @@ Version 4.0.0:
 
 
     // Shows the picker on ServiceNow, Netskope tenant and support pages while tools there are undecided.
+    /* New helpers added by an update. The first run of this version stores every helper it has as
+       "known"; a helper that is not in that list came with a later update: it stays off until the
+       user answers the one time "✨ New helper added" window, shown on a page where it works.
+       Fresh installs never see that window, because their first run knows every helper already. */
+    const DT_KNOWN_KEY = 'ticketHelpersKnownTools';
+    const DT_ANNOUNCE_LATER_KEY = 'ticketHelpersAnnounceLater';
+    function dtKnownTools() {
+        const saved = GM_getValue(DT_KNOWN_KEY, null);
+        if (Array.isArray(saved)) return saved;
+        const all = DATA_REGISTRY.map(t => t.id);
+        GM_setValue(DT_KNOWN_KEY, all);
+        return all;
+    }
+    function dtIsNewTool(id) {
+        return id !== 'suite' && !dtKnownTools().includes(id) && !Object.prototype.hasOwnProperty.call(dtChoices(), id);
+    }
+
+    // The "✨ New helper added" window: one card and one switch per new helper, switches start off.
+    function dtShowNewTools(tools) {
+        const switches = new Map();
+        const intro = document.createElement('div');
+        intro.textContent = tools.length === 1
+            ? 'A new helper is now part of Ticket Helpers. Choose whether you want to use it.'
+            : 'New helpers are now part of Ticket Helpers. Turn on the ones you want.';
+        Object.assign(intro.style, { fontSize: '13px', lineHeight: '1.5', margin: '0 0 10px 0', color: '#555' });
+        const cards = [intro];
+        for (const t of tools) {
+            const card = document.createElement('div');
+            card.dataset.newTool = t.id;
+            Object.assign(card.style, { border: '1px solid #e0e0f0', borderRadius: '8px', padding: '10px 12px', margin: '0 0 8px 0', background: '#fafaff' });
+            const head = document.createElement('div');
+            Object.assign(head.style, { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' });
+            const name = document.createElement('span');
+            name.textContent = t.name;
+            Object.assign(name.style, { fontWeight: 'bold', fontSize: '14px', color: '#333' });
+            const pill = document.createElement('span');
+            pill.textContent = 'NEW';
+            Object.assign(pill.style, { background: '#667eea', color: '#fff', borderRadius: '10px', padding: '1px 7px', fontSize: '10px', fontWeight: 'bold' });
+            const where = document.createElement('span');
+            where.textContent = String(t.where || '').replace(/^(Appears on|Opens from):\s*/i, '') || 'Where it works';
+            Object.assign(where.style, { background: '#eef0ff', color: '#4a55a2', borderRadius: '4px', padding: '1px 7px', fontSize: '11px' });
+            head.append(name, pill, where);
+            const desc = document.createElement('div');
+            desc.textContent = t.description || '';
+            Object.assign(desc.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 6px 0' });
+            const setup = document.createElement('div');
+            setup.textContent = t.setup ? `⚙ First use: ${t.setup}.` : '✓ Nothing to set up.';
+            Object.assign(setup.style, { fontSize: '11px', color: t.setup ? '#8a5a00' : '#2a7d4f', margin: '0 0 8px 0' });
+            // The switch: a real button with role switch, so keyboards and screen readers can use it
+            const sw = document.createElement('button');
+            sw.type = 'button';
+            sw.setAttribute('role', 'switch');
+            sw.setAttribute('aria-label', `Turn on ${t.name}`);
+            sw.dataset.newToolSwitch = t.id;
+            const knob = document.createElement('span');
+            const label = document.createElement('span');
+            const paint = () => {
+                const on = switches.get(t.id);
+                sw.setAttribute('aria-checked', String(on));
+                Object.assign(sw.style, { background: on ? '#667eea' : '#ccc' });
+                knob.style.transform = on ? 'translateX(16px)' : 'translateX(0)';
+                label.textContent = on ? 'On' : 'Off';
+                label.style.color = on ? '#4a55a2' : '#888';
+            };
+            Object.assign(sw.style, { position: 'relative', width: '36px', height: '20px', borderRadius: '10px', border: 'none', padding: '0', cursor: 'pointer', flexShrink: '0', transition: 'background .15s' });
+            Object.assign(knob.style, { position: 'absolute', top: '2px', left: '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', transition: 'transform .15s', boxShadow: '0 1px 2px rgba(0,0,0,.3)' });
+            sw.appendChild(knob);
+            switches.set(t.id, false);
+            sw.onclick = (e) => { if (!e.isTrusted) return; switches.set(t.id, !switches.get(t.id)); paint(); };
+            const row = document.createElement('label');
+            Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: '#444', cursor: 'pointer' });
+            const text = document.createElement('span');
+            text.textContent = 'Turn it on';
+            row.append(sw, text, label);
+            paint();
+            card.append(head, desc, setup, row);
+            cards.push(card);
+        }
+        const hint = document.createElement('div');
+        hint.textContent = 'You can change this any time with the ⚙ Suite button of any helper.';
+        Object.assign(hint.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '4px 0 0 0' });
+        cards.push(hint);
+        dtDialog(tools.length === 1 ? '✨ New helper added' : `✨ ${tools.length} new helpers added`, cards, [
+            { label: 'Ask me later', onClick: () => GM_setValue(DT_ANNOUNCE_LATER_KEY, dtToday()) },
+            { label: 'Save', primary: true, onClick: () => {
+                const update = {};
+                for (const t of tools) update[t.id] = switches.get(t.id) === true;
+                dtSaveChoices(update);
+                if (Object.values(update).some(Boolean)) location.reload();   // a helper turned on starts with the page
+            } }
+        ]);
+    }
+
+    // New helpers that work on this page and wait for an answer. True when the window opened.
+    function dtMaybeAnnounceNewTools() {
+        if (GM_getValue(DT_ANNOUNCE_LATER_KEY, '') === dtToday()) return false;
+        const fresh = DATA_REGISTRY.filter(t => dtIsNewTool(t.id) && dtToolRunsHere(t.id));
+        if (!fresh.length) return false;
+        // Never on top of another window: wait until it is closed (checked every 5 s, for up to a minute)
+        let tries = 0;
+        const show = () => {
+            if (document.querySelector('dialog[open]')) { if (++tries < 12) setTimeout(show, 5000); return; }
+            dtShowNewTools(fresh);
+        };
+        show();
+        return true;
+    }
+
     function dtMaybeShowPicker() {
         const site = dtMigrationSite();
         if (!site || document.getElementById('ticketHelpersDataHost')) return;
         const choices = dtChoices();
-        const all = DATA_REGISTRY.filter(t => t.id !== 'suite');
+        const all = DATA_REGISTRY.filter(t => t.id !== 'suite' && !dtIsNewTool(t.id));
         if (DT_INSTALL_KIND === 'new') {
-            if (Object.keys(choices).length) return;
+            if (Object.keys(choices).length) { dtMaybeAnnounceNewTools(); return; }
             dtShowToolPicker(all.map(t => t.id), new Set(['shortDescription']));
             return;
         }
-        if (GM_getValue(DT_PICKER_LATER_KEY, '') === dtToday()) return;
+        if (GM_getValue(DT_PICKER_LATER_KEY, '') === dtToday()) { dtMaybeAnnounceNewTools(); return; }
         const undecided = all.filter(t => t.site === site && !Object.prototype.hasOwnProperty.call(choices, t.id));
-        if (!undecided.length) return;
+        if (!undecided.length) { dtMaybeAnnounceNewTools(); return; }
         const detected = GM_getValue(DT_DETECTED_KEY, []);
         const ticked = new Set(undecided
             .filter(t => t.id === 'shortDescription' || (Array.isArray(detected) && detected.includes(t.id)) || dtSuiteHasData(t))
@@ -1579,8 +1692,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.7.0';
-    const CHANGELOG = `Version 4.7.0:
+    const SCRIPT_VERSION = '4.8.0';
+    const CHANGELOG = `Version 4.8.0:
+- When an update adds a new helper, a ✨ New helper added window presents it once, on a page where it works. Its switch starts off, so nothing new runs until you turn it on. Ask me later asks again the next day.
+
+Version 4.7.0:
 - New 🩺 Copy diagnostics button in the ⚙ Suite window, under Support: it copies the versions, the helpers that are on, the page you are on and the latest errors, so you can paste them when you report a problem. Ticket contents and tenant addresses are never included.
 - SLA Alert Banner: The last day countdown of the banner reads "SLA EXPIRES SOON: 05:12:30 remaining".
 
@@ -3752,7 +3868,7 @@ Version 3.0.8.1:
                     lead(body, 'The top right of the panel holds these controls.');
                     badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Settings', desc: 'Opens the Settings window described below.' });
                     badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' });
-                    badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Suite', desc: 'Opens the Ticket Helpers settings: tools, team, tenant URLs, backups and 🩺 Copy diagnostics (versions, tools and latest errors to paste when you report a problem). The team and tenant URLs are shared with the other helpers.' });
+                    badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Suite', desc: 'Opens the Ticket Helpers settings: tools, team, tenant URLs, backups and 🩺 Copy diagnostics (versions, tools and latest errors to paste when you report a problem). When an update adds a helper, a ✨ New helper added window presents it once, switched off until you turn it on. The team and tenant URLs are shared with the other helpers.' });
                     badgeRow(body, { bg: 'transparent', color: '#0066cc', label: "🔵 What's New", desc: 'Appears beside the version after an update. Opens the changelog.' });
                     body.appendChild(span('Inside Settings', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '8px 0 6px 0' }));
                     body.appendChild(toggle('Searchable dropdowns', true, 'Type to filter every dropdown of the panel. Applies after a reload.'));
