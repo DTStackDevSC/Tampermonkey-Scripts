@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.6.0
+// @version      4.7.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -21,11 +21,35 @@
     'use strict';
 
     /* ==========================================================
+     *  DIAGNOSTICS LOG
+     *  Every console.error and console.warn of this script (never
+     *  the page's own) is also kept in a short list, so 🩺 Copy
+     *  diagnostics in the ⚙ Suite window can show the latest problems.
+     * ==========================================================*/
+
+    const helpersDiagLog = [];
+    function helpersDiagNote(level, args) {
+        const text = args.map(a => a instanceof Error ? `${a.name}: ${a.message}`
+            : typeof a === 'string' ? a : (() => { try { return JSON.stringify(a); } catch (e) { return String(a); } })()).join(' ');
+        helpersDiagLog.push(`${new Date().toISOString().slice(11, 19)} ${level} ${text.slice(0, 300)}`);
+        if (helpersDiagLog.length > 20) helpersDiagLog.shift();
+    }
+    // Shadows the global console inside this script only
+    const console = Object.assign(Object.create(window.console), {
+        error: (...a) => { helpersDiagNote('error', a); window.console.error(...a); },
+        warn:  (...a) => { helpersDiagNote('warn', a); window.console.warn(...a); },
+    });
+
+    /* ==========================================================
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.6.0';
-    const CHANGELOG = `Version 4.6.0:
+    const SCRIPT_VERSION = '4.7.0';
+    const CHANGELOG = `Version 4.7.0:
+- New 🩺 Copy diagnostics button in the ⚙ Suite window, under Support: it copies the versions, the helpers that are on, the page you are on and the latest errors, so you can paste them when you report a problem. Ticket contents and tenant addresses are never included.
+- SLA Alert Banner: The last day countdown of the banner reads "SLA EXPIRES SOON: 05:12:30 remaining".
+
+Version 4.6.0:
 - Choose your tools and the Tools list of ⚙ Suite are grouped by platform, ServiceNow and Netskope. Each helper shows what it does, where it appears, what it needs, and a "When to use" note. A search box finds a helper by its name, its old name or what it does.
 - Five helpers have new names that say what they do: Short Description Helper is now Short Description Builder, Ticket Response Helper is now Response Templates, Formatted Text Helper is now Formatted Text Editor, Policy Naming Helper is now Policy Name Builder, and Ticket Subject Helper is now Support Case Subject Builder. Your settings and data stay as they were.
 
@@ -899,6 +923,68 @@ Version 4.0.0:
     }
 
     // "⚙ Suite": the shared settings window. Opened from every tool header and the Tampermonkey menu.
+    // 🩺 Copy diagnostics: what support needs to see, never ticket contents or tenant addresses.
+    function helpersDiagnosticsText() {
+        const tm = (typeof GM_info !== 'undefined' && GM_info) || {};
+        const lines = [`Ticket Helpers ${SCRIPT_VERSION} (${tm.scriptHandler || 'userscript manager'} ${tm.version || ''})`.trim(),
+            `Install: ${DT_INSTALL_KIND}`, `Browser: ${navigator.userAgent}`];
+        let mode = 'other page';
+        if (/\.service-now\.com$/.test(location.hostname)) {
+            mode = window !== window.top ? 'ServiceNow ticket frame' : location.pathname.startsWith('/now/') ? 'ServiceNow shell (Polaris)' : 'ServiceNow classic page';
+            mode += (window.g_form || (typeof unsafeWindow !== 'undefined' && unsafeWindow.g_form)) ? ', ticket form found' : ', no ticket form';
+        } else if (/goskope\.com$|netskope\.com$/.test(location.hostname)) mode = 'Netskope';
+        lines.push(`Page: ${location.hostname}${location.pathname} [${mode}]`);
+        lines.push(`Team: ${GM_getValue('shortDescTeam', '') || 'not chosen'}`);
+        lines.push(`Tenant URLs set: ${DT_TENANTS.filter(([, key]) => GM_getValue(key, '')).map(([label]) => label).join(', ') || 'none'}`);
+        lines.push('Tools:');
+        for (const t of DATA_REGISTRY) {
+            if (t.id === 'suite') continue;
+            lines.push(`  ${isToolEnabled(t.id) ? 'on ' : 'off'} ${t.name}${isToolEnabled(t.id) && dtToolRunsHere(t.id) ? ' (runs here)' : ''}`);
+        }
+        lines.push(`Latest errors (${helpersDiagLog.length}):`);
+        if (helpersDiagLog.length) helpersDiagLog.forEach(l => lines.push('  ' + l)); else lines.push('  none since this page loaded');
+        return lines.join('\n');
+    }
+
+    // Clipboard write with the old copy command as fallback (pages where the Clipboard API is refused)
+    async function helpersCopyText(text) {
+        try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back below */ }
+        const previousFocus = document.activeElement;
+        const field = Object.assign(document.createElement('textarea'), { value: text });
+        field.setAttribute('readonly', '');
+        field.style.cssText = 'position:fixed;top:0;opacity:0';
+        document.body.append(field);
+        field.select();
+        try { return document.execCommand('copy'); }
+        catch (e) { return false; }
+        finally { field.remove(); previousFocus?.focus({ preventScroll: true }); }
+    }
+
+    function dtDiagnosticsRow() {
+        const row = document.createElement('div');
+        Object.assign(row.style, { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' });
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = '🩺 Copy diagnostics'; b.id = 'th-copy-diagnostics';
+        b.title = 'Copies versions, the tools that are on, this page and the latest errors (no ticket contents). Paste it when you report a problem.';
+        Object.assign(b.style, { padding: '6px 10px', border: '1px solid #ccc', borderRadius: '5px', background: '#f3f4f6', color: '#333', cursor: 'pointer', fontSize: '12px' });
+        b.onmouseover = () => { b.style.background = '#e5e7eb'; };
+        b.onmouseout  = () => { b.style.background = '#f3f4f6'; };
+        const status = document.createElement('span'); status.setAttribute('role', 'status');
+        Object.assign(status.style, { fontSize: '11px', color: '#555' });
+        let timer = 0;
+        b.onclick = async (e) => {
+            if (!e.isTrusted) return;
+            let ok = false;
+            try { ok = await helpersCopyText(helpersDiagnosticsText()); }
+            catch (err) { console.error('[Ticket Helpers] Copy diagnostics:', err); }
+            clearTimeout(timer);
+            b.textContent = ok ? '📋 Copied' : '⚠️ Copy failed';
+            status.textContent = ok ? 'Diagnostics copied. Paste them in your message.' : 'Could not copy. Try again, or reload the page first.';
+            timer = setTimeout(() => { b.textContent = '🩺 Copy diagnostics'; status.textContent = ''; }, 2500);
+        };
+        row.append(b, status);
+        return row;
+    }
+
     function dtShowSuiteWindow() {
         const ids = DATA_REGISTRY.filter(t => t.id !== 'suite').map(t => t.id);
         const list = dtBuildToolList(ids, new Set(ids.filter(isToolEnabled)));
@@ -929,7 +1015,8 @@ Version 4.0.0:
             section('Tools'), list.element,
             section('Team'), teamRow,
             section('Tenant URLs'), tenantRows,
-            section('Data'), dataRow
+            section('Data'), dataRow,
+            section('Support'), dtDiagnosticsRow()
         ], [
             { label: 'Cancel' },
             { label: 'Save', primary: true, onClick: () => {
@@ -1492,8 +1579,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.6.0';
-    const CHANGELOG = `Version 4.6.0:
+    const SCRIPT_VERSION = '4.7.0';
+    const CHANGELOG = `Version 4.7.0:
+- New 🩺 Copy diagnostics button in the ⚙ Suite window, under Support: it copies the versions, the helpers that are on, the page you are on and the latest errors, so you can paste them when you report a problem. Ticket contents and tenant addresses are never included.
+- SLA Alert Banner: The last day countdown of the banner reads "SLA EXPIRES SOON: 05:12:30 remaining".
+
+Version 4.6.0:
 - Choose your tools and the Tools list of ⚙ Suite are grouped by platform, ServiceNow and Netskope. Each helper shows what it does, where it appears, what it needs, and a "When to use" note. A search box finds a helper by its name, its old name or what it does.
 - Five helpers have new names that say what they do: Short Description Helper is now Short Description Builder, Ticket Response Helper is now Response Templates, Formatted Text Helper is now Formatted Text Editor, Policy Naming Helper is now Policy Name Builder, and Ticket Subject Helper is now Support Case Subject Builder. Your settings and data stay as they were.
 
@@ -3661,7 +3752,7 @@ Version 3.0.8.1:
                     lead(body, 'The top right of the panel holds these controls.');
                     badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Settings', desc: 'Opens the Settings window described below.' });
                     badgeRow(body, { bg: 'transparent', color: '#667eea', border: '1px solid #c0c8f0', label: '? Help', desc: 'Opens this Feature Guide.' });
-                    badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Suite', desc: 'Opens the Ticket Helpers settings: tools, team, tenant URLs and backups. The team and tenant URLs are shared with the other helpers.' });
+                    badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Suite', desc: 'Opens the Ticket Helpers settings: tools, team, tenant URLs, backups and 🩺 Copy diagnostics (versions, tools and latest errors to paste when you report a problem). The team and tenant URLs are shared with the other helpers.' });
                     badgeRow(body, { bg: 'transparent', color: '#0066cc', label: "🔵 What's New", desc: 'Appears beside the version after an update. Opens the changelog.' });
                     body.appendChild(span('Inside Settings', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '8px 0 6px 0' }));
                     body.appendChild(toggle('Searchable dropdowns', true, 'Type to filter every dropdown of the panel. Applies after a reload.'));
@@ -13065,10 +13156,13 @@ Version 1.0.3:
         if (!isToolEnabled('slaBanner') || !dtToolRunsHere('slaBanner')) return;
 
 
-    const SCRIPT_VERSION = '1.4.3';
+    const SCRIPT_VERSION = '1.4.4';
 
 
-    const CHANGELOG = `Version 1.4.3:
+    const CHANGELOG = `Version 1.4.4:
+- The last day countdown of the banner reads "SLA EXPIRES SOON: 05:12:30 remaining".
+
+Version 1.4.3:
 - Changing the date format opens above everything on the page. Esc works like Cancel.
 
 Version 1.4.2:
@@ -13951,7 +14045,7 @@ Version 1.3:
 
         if      (total < 0)   banner.textContent = `⚠️ SLA EXPIRED ${Math.abs(days)} day(s) ago!`;
         else if (isToday)     banner.textContent = `🚨 SLA EXPIRES TODAY — ${countdown} remaining`;
-        else if (days === 0)  banner.textContent = `🚨 SLA EXPIRES SOON — ${countdown} remaining`;
+        else if (days === 0)  banner.textContent = `🚨 SLA EXPIRES SOON: ${countdown} remaining`;
         else if (days === 1)  banner.textContent = `⚠️ SLA WARNING: 1 day remaining (Expires: ${expiryStr})`;
         else if (days === 2)  banner.textContent = `⚠️ SLA NOTICE: 2 days remaining (Expires: ${expiryStr})`;
         else if (days === 3)  banner.textContent = `⚠️ SLA NOTICE: 3 days remaining (Expires: ${expiryStr})`;
