@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.57.1
+// @version      2.57.2
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.57.1';
-    const CHANGELOG = `Version 2.57.1:
+   const SCRIPT_VERSION = '2.57.2';
+    const CHANGELOG = `Version 2.57.2:
+- Change Tracker: on tickets with one journal field that switches between Work notes and Additional comments, the tracker now asks ServiceNow which one is selected, so each text goes to the right journal more reliably.
+- Change Tracker and Ticket Assignment Tool: the journal fields and the Short description are found by one shared piece of the toolbar, so both tools write to the same fields the same way.
+
+Version 2.57.1:
 - Ticket Assignment Tool: on incidents the greeting mentions the caller when the form has no Opened by field, instead of the placeholder Requester Name.
 - ServiceNow Toolkit, Enhancement Request Launcher, Ticket Assignment Tool, Destination Profile Editor and Change Tracker: the ticket and its requester are read by one shared piece of the toolbar, so every tool finds the same ticket the same way.
 
@@ -1050,11 +1054,87 @@ Version 1.0.0:
         return null;
     }
 
+    // The ticket's Short description field (the input on the form), or null
+    function suiteShortDescriptionInput(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext({ allowNoForm: true });
+        const doc = (ctx && ctx.doc) || document;
+        return doc.getElementById('sc_req_item.short_description') ||
+               doc.getElementById('incident.short_description') ||
+               doc.getElementById('sc_task.short_description');
+    }
+    // Its current text ('' when the form has none)
+    function suiteShortDescription(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext({ allowNoForm: true });
+        let v = '';
+        try { v = (ctx && ctx.gForm && ctx.gForm.getValue('short_description')) || ''; } catch (e) { /* not on this form */ }
+        if (!v) { const input = suiteShortDescriptionInput(ctx); v = (input && input.value) || ''; }
+        return String(v).trim();
+    }
+    // Writes it the way ServiceNow expects (g_form, else the input with its events). False when there is no field.
+    function suiteSetShortDescription(ctx, value) {
+        if (ctx === undefined || ctx === null) ctx = suiteTicketContext({ allowNoForm: true });
+        try { if (ctx && ctx.gForm) { ctx.gForm.setValue('short_description', value); return true; } }
+        catch (e) { /* fall through to the input */ }
+        const input = suiteShortDescriptionInput(ctx);
+        if (!input) return false;
+        input.value = value;
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    // The activity stream (Work notes and Additional comments). ServiceNow shows either two textareas
+    // (dual mode) or one that the user switches between the two journals (single mode), next to hidden copies.
+    const suiteIsShown = el => !!(el && el.offsetParent !== null);
+    // Which journal a textarea writes to now: 'work_notes', 'comments' or null
+    function suiteJournalShows(textarea, doc) {
+        if (!textarea) return null;
+        doc = doc || textarea.ownerDocument;
+        const attr = textarea.getAttribute('data-stream-text-input');
+        if (attr === 'work_notes' || attr === 'comments') return attr;
+        const ph = (textarea.placeholder || '').toLowerCase();
+        if (ph.includes('work note')) return 'work_notes';
+        if (ph.includes('comment')) return 'comments';
+        const pressed = type => doc.querySelector(`[id*="show-${type}"].active, button[data-input-stream-type="${type}"].active, ` +
+            `button[data-input-stream-type="${type}"][aria-pressed="true"], button[data-input-stream-type="${type}"][aria-selected="true"]`);
+        if (pressed('work_notes')) return 'work_notes';
+        if (pressed('comments')) return 'comments';
+        const box = textarea.closest('[id*="activity-stream"]') || textarea.parentElement;
+        const cls = String((box && box.className) || '');
+        if (/work[_-]?notes/i.test(cls)) return 'work_notes';
+        if (/comments/i.test(cls)) return 'comments';
+        return null;
+    }
+    // The journal fields shown now:
+    //   { mode: 'both' | 'workNotesOnly' | 'commentsOnly' | 'unknown' | 'none', workNotes, comments, single }
+    // 'unknown' is a single textarea whose journal could not be told (it is given as comments).
+    function suiteJournalFields(doc) {
+        doc = doc || (suiteTicketContext({ allowNoForm: true }) || {}).doc || document;
+        const wn = doc.getElementById('activity-stream-work_notes-textarea');
+        const cm = doc.getElementById('activity-stream-comments-textarea');
+        const dual = doc.getElementById('multiple-input-journal-entry');
+        if (dual && dual.getAttribute('aria-hidden') === 'false' && wn && cm) return { mode: 'both', workNotes: wn, comments: cm, single: null };
+        const wnShown = suiteIsShown(wn), cmShown = suiteIsShown(cm);
+        if (wnShown && cmShown) return { mode: 'both', workNotes: wn, comments: cm, single: null };
+        if (wnShown) return { mode: 'workNotesOnly', workNotes: wn, comments: null, single: null };
+        if (cmShown) return { mode: 'commentsOnly', workNotes: null, comments: cm, single: null };
+        const single = doc.getElementById('activity-stream-textarea') || doc.querySelector('[data-stream-text-input]');
+        if (single) {
+            const which = suiteJournalShows(single, doc);
+            if (which === 'work_notes') return { mode: 'workNotesOnly', workNotes: single, comments: null, single };
+            if (which === 'comments') return { mode: 'commentsOnly', workNotes: null, comments: single, single };
+            return { mode: 'unknown', workNotes: null, comments: single, single };
+        }
+        return { mode: 'none', workNotes: null, comments: null, single: null };
+    }
+
     // Test only: the automated tests switch this on in their own storage
     if (GM_getValue('toolbarSuiteTestHooks', false) === true) {
         (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__suiteTicket = {
             context: (o) => { const c = suiteTicketContext(o); return c && { mode: c.mode, hasForm: !!c.gForm, inFrame: c.doc !== document }; },
-            number: () => suiteTicketNumber(), openedBy: () => suiteOpenedByName() };
+            number: () => suiteTicketNumber(), openedBy: () => suiteOpenedByName(),
+            journal: () => { const j = suiteJournalFields(); return { mode: j.mode, workNotes: j.workNotes && j.workNotes.id, comments: j.comments && j.comments.id }; },
+            shortDescription: () => suiteShortDescription(), setShortDescription: (v) => suiteSetShortDescription(undefined, v) };
     }
 
     /* ==========================================================
@@ -11670,9 +11750,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.11';
+    const SCRIPT_VERSION = '1.7.12';
 
-    const CHANGELOG = `Version 1.7.11:
+    const CHANGELOG = `Version 1.7.12:
+- The comment field and the Short description are found by the toolbar's shared ticket code. Nothing changes in how the assignment works.
+
+Version 1.7.11:
 - On incidents the greeting mentions the caller when the form has no Opened by field, instead of the placeholder Requester Name.
 
 Version 1.7.10:
@@ -14061,9 +14144,8 @@ Version 1.2.1:
     function updateShortDescription() {
         return new Promise((resolve, reject) => {
             try {
-                const ticketDoc = _ctx ? _ctx.doc : document;
-                const shortDescInput = ticketDoc.getElementById('sc_req_item.short_description') ||
-                                      ticketDoc.getElementById('incident.short_description');
+                // The input itself, as before: the template goes in as typed text
+                const shortDescInput = suiteShortDescriptionInput(_ctx || suiteTicketContext({ allowNoForm: true }));
                 if (!shortDescInput) throw new Error('Could not find "Short Description" field');
                 shortDescInput.value = SHORT_DESC_TEMPLATE;
                 shortDescInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -14107,21 +14189,19 @@ Version 1.2.1:
         if (ctxDoc !== document) docsToSearch.push(document);
 
         for (const doc of docsToSearch) {
-            // Find the visible textarea already showing comments mode.
-            // data-stream-text-input="comments" matches:
-            //   - #activity-stream-textarea in single mode (when comments is selected)
-            //   - #activity-stream-comments-textarea in dual mode
-            // Checking offsetParent skips the hidden counterpart that lives in the ng-hide container.
+            // The visible field writing Additional comments (dual mode, or single mode on comments)
             for (const el of doc.querySelectorAll('textarea[data-stream-text-input="comments"]')) {
-                if (el.offsetParent !== null) return el;
+                if (suiteIsShown(el)) return el;
             }
+            const j = suiteJournalFields(doc);
+            if (j.mode !== 'unknown' && suiteIsShown(j.comments)) return j.comments;
 
             // Single mode with work_notes currently selected: toggle to comments then return.
             const singleTA = doc.getElementById('activity-stream-textarea');
-            if (singleTA && singleTA.offsetParent !== null) {
+            if (suiteIsShown(singleTA)) {
                 const toggle = doc.querySelector('input[name="comments-journal-checkbox"]');
-                if (toggle) { toggle.click(); await sleep(300); }
-                if (singleTA.getAttribute('data-stream-text-input') === 'comments') return singleTA;
+                if (toggle && suiteJournalShows(singleTA, doc) !== 'comments') { toggle.click(); await sleep(300); }
+                if (suiteJournalShows(singleTA, doc) === 'comments') return singleTA;
             }
         }
         return null;
@@ -19901,9 +19981,13 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.1';
+    const SCRIPT_VERSION = '2.17.2';
 
-    const CHANGELOG = `Version 2.17.1:
+    const CHANGELOG = `Version 2.17.2:
+- On tickets with one journal field that switches between Work notes and Additional comments, the tracker asks ServiceNow which one is selected, so each text goes to the right journal more reliably.
+- The Short description date and status are written through the toolbar's shared ticket code. Nothing changes in how they look.
+
+Version 2.17.1:
 - The ticket number is read by the toolbar's shared ticket reader. Nothing changes in how the tracker works.
 
 Version 2.17.0:
@@ -22328,94 +22412,10 @@ Version 1.4.3:
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         // ── Field visibility detection ────────────────────────────
-
-        function isDualInputMode() {
-            const ticketDoc = getTicketDoc();
-            const container = ticketDoc.getElementById('multiple-input-journal-entry');
-            if (container && container.getAttribute('aria-hidden') === 'false') {
-                const wn = ticketDoc.getElementById('activity-stream-work_notes-textarea');
-                const cm = ticketDoc.getElementById('activity-stream-comments-textarea');
-                return !!(wn && cm);
-            }
-            return false;
-        }
-
-        function isVisible(el) {
-            return !!(el && el.offsetParent !== null);
-        }
-
-        /**
-         * In single-input mode SNow shows ONE textarea (#activity-stream-textarea)
-         * and lets the analyst toggle it between Work Notes and Additional
-         * Comments. We detect the active journal type from multiple signals:
-         *   1. The textarea's placeholder (most reliable across SNow versions)
-         *   2. An "active"/"selected"/"pressed" toggle button in the journal bar
-         *   3. A class hint on the textarea's container
-         * Returns 'work_notes' | 'comments' | null.
-         */
-        function detectSingleInputJournal(textarea) {
-            const ph = ((textarea && textarea.placeholder) || '').toLowerCase();
-            if (ph.includes('work note')) return 'work_notes';
-            if (ph.includes('additional comment') || ph.includes('comment')) return 'comments';
-
-            const ticketDoc = getTicketDoc();
-            const activeBtn = ticketDoc.querySelector(
-                '[id*="show-work_notes"].active, ' +
-                'button[data-input-stream-type="work_notes"].active, ' +
-                'button[data-input-stream-type="work_notes"][aria-pressed="true"], ' +
-                'button[data-input-stream-type="work_notes"][aria-selected="true"]'
-            );
-            if (activeBtn) return 'work_notes';
-
-            const activeCmBtn = ticketDoc.querySelector(
-                '[id*="show-comments"].active, ' +
-                'button[data-input-stream-type="comments"].active, ' +
-                'button[data-input-stream-type="comments"][aria-pressed="true"], ' +
-                'button[data-input-stream-type="comments"][aria-selected="true"]'
-            );
-            if (activeCmBtn) return 'comments';
-
-            const container = textarea && (textarea.closest('[id*="activity-stream"]') || textarea.parentElement);
-            const cls = (container && container.className) || '';
-            if (/work[_-]?notes/i.test(cls)) return 'work_notes';
-            if (/comments/i.test(cls))       return 'comments';
-
-            return null;
-        }
-
-        /**
-         * Returns one of:
-         *   { mode: 'both',          workNotes, comments }
-         *   { mode: 'workNotesOnly', workNotes, comments: null }
-         *   { mode: 'commentsOnly',  workNotes: null, comments }
-         *   { mode: 'unknown',       workNotes: null, comments: <generic textarea> }
-         *   { mode: 'none',          workNotes: null, comments: null }
-         */
+        // The core tells which journal fields are shown (both, one, or the single switchable one):
+        //   { mode: 'both' | 'workNotesOnly' | 'commentsOnly' | 'unknown' | 'none', workNotes, comments }
         function detectVisibility() {
-            const ticketDoc = getTicketDoc();
-            const wn = ticketDoc.getElementById('activity-stream-work_notes-textarea');
-            const cm = ticketDoc.getElementById('activity-stream-comments-textarea');
-
-            if (isDualInputMode()) return { mode: 'both', workNotes: wn, comments: cm };
-
-            const wnVisible = isVisible(wn);
-            const cmVisible = isVisible(cm);
-            if (wnVisible && cmVisible) return { mode: 'both',          workNotes: wn, comments: cm };
-            if (wnVisible)              return { mode: 'workNotesOnly', workNotes: wn, comments: null };
-            if (cmVisible)              return { mode: 'commentsOnly',  workNotes: null, comments: cm };
-
-            const generic = ticketDoc.querySelector('#activity-stream-textarea')
-                         || ticketDoc.querySelector('[data-stream-text-input]');
-            if (generic) {
-                // Single-input mode — figure out which journal it is currently
-                // showing so we pick the right template.
-                const which = detectSingleInputJournal(generic);
-                if (which === 'work_notes') return { mode: 'workNotesOnly', workNotes: generic, comments: null };
-                if (which === 'comments')   return { mode: 'commentsOnly',  workNotes: null,    comments: generic };
-                return { mode: 'unknown', workNotes: null, comments: generic };
-            }
-
-            return { mode: 'none', workNotes: null, comments: null };
+            return suiteJournalFields(getTicketDoc());
         }
 
         // ── "Opened by" name detection (for @mention target) ──────
@@ -22462,15 +22462,8 @@ Version 1.4.3:
         }
 
         function updateShortDescription(status) {
-            const gf  = getTicketWin().g_form;
-            const doc = getTicketDoc();
-            let current = '';
-            try { current = (gf && gf.getValue('short_description')) || ''; } catch (e) { /* not on this form */ }
-            const input = doc.getElementById('sc_req_item.short_description') ||
-                          doc.getElementById('incident.short_description') ||
-                          doc.getElementById('sc_task.short_description');
-            if (!current && input) current = input.value || '';
-            current = current.trim();
+            const ctx = { win: getTicketWin(), doc: getTicketDoc(), gForm: getTicketWin().g_form || null };
+            const current = suiteShortDescription(ctx);
             if (!current) return;
 
             const today       = formattedToday();
@@ -22486,15 +22479,7 @@ Version 1.4.3:
                 }
             }
             if (next === current) return;
-
-            try {
-                if (gf) { gf.setValue('short_description', next); return; }
-            } catch (e) { /* fall through to the DOM input */ }
-            if (input) {
-                input.value = next;
-                input.dispatchEvent(new Event('input',  { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+            suiteSetShortDescription(ctx, next);
         }
 
         // ── @mention insertion ───────────────────────────────────
