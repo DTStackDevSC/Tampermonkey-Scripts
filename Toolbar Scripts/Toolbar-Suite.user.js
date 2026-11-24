@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.57.2
+// @version      2.58.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.57.2';
-    const CHANGELOG = `Version 2.57.2:
+   const SCRIPT_VERSION = '2.58.0';
+    const CHANGELOG = `Version 2.58.0:
+- All tools: every What's New window now looks the same: the title, the line with the new version, one card per version with the newest open, and Got it!. It also reads well under the ServiceNow dark theme and on Netskope.
+- All tools: the What's New windows and the pulsing dot on the toolbar icons are shared by every tool. What you have already seen does not show again.
+
+Version 2.57.2:
 - Change Tracker: on tickets with one journal field that switches between Work notes and Additional comments, the tracker now asks ServiceNow which one is selected, so each text goes to the right journal more reliably.
 - Change Tracker and Ticket Assignment Tool: the journal fields and the Short description are found by one shared piece of the toolbar, so both tools write to the same fields the same way.
 
@@ -599,26 +603,15 @@ Version 1.1.0:
 Version 1.0.0:
 - Combined the eleven separate toolbar tools into a single install. Every tool keeps its own settings and its own "what's new" notification.`;
 
-    function getStoredVersion() {
-        return GM_getValue('toolbarSuiteVersion', null);
-    }
-
-    function saveVersion(version) {
-        GM_setValue('toolbarSuiteVersion', version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue('toolbarSuiteChangelogSeen', null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue('toolbarSuiteChangelogSeen', SCRIPT_VERSION);
-    }
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
+    // The suite's own What's New (the toolbar's "What's new" link); the window is the core one every tool uses
+    const SUITE_VERSIONING = suiteToolVersion({ name: 'Tools Toolbar', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'toolbarSuiteVersion', seenKey: 'toolbarSuiteChangelogSeen',
+        modalId: 'toolbarChangelogModal', overlayId: 'toolbarChangelogOverlay', notifIds: ['toolbarChangelogNotification'] });
+    function getStoredVersion()     { return SUITE_VERSIONING.stored(); }
+    function saveVersion(version)   { SUITE_VERSIONING.save(version); }
+    function hasSeenChangelog()     { return SUITE_VERSIONING.seen(); }
+    function markChangelogAsSeen()  { SUITE_VERSIONING.markSeen(); }
+    function isNewVersion()         { return SUITE_VERSIONING.isNew(); }
 
     /* ==========================================================
      *  DARK MODE ISOLATION
@@ -2281,135 +2274,171 @@ Version 1.0.0:
      * ==========================================================*/
 
     /* ==========================================================
-     *  CHANGELOG MODAL
+     *  SHARED: TOOL VERSION AND WHAT'S NEW (core, used by the suite
+     *  and every tool)
+     *  Each tool keeps its own stored keys, so nobody sees again a
+     *  What's New they already closed. Every What's New window looks
+     *  the same: title, the "updated" line, one card per version (the
+     *  newest open, the others folded) and Got it!. Its styles are
+     *  inline and !important, so it looks right under ServiceNow's dark
+     *  theme and under Netskope's CSP.
      * ==========================================================*/
 
-    function showChangelogModal() {
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'toolbarChangelogOverlay';
+    // cfg: { name, version, changelog, versionKey, seenKey, modalId, overlayId,
+    //        toolId (toolbar button that gets the pulsing dot), dotClass, notifIds (in tool "What's new" marks to remove) }
+    function suiteToolVersion(cfg) {
+        const stored = () => GM_getValue(cfg.versionKey, null);
+        const save = (v) => GM_setValue(cfg.versionKey, v === undefined ? cfg.version : v);
+        const seen = () => GM_getValue(cfg.seenKey, null) === cfg.version;
+        const markSeen = () => GM_setValue(cfg.seenKey, cfg.version);
+        const isNew = () => compareVersions(stored(), cfg.version);
+        const dotClass = cfg.dotClass || 'suite-tool-notif-dot';
 
-        // Create modal
-        const modal = document.createElement('div');
-        modal.id = 'toolbarChangelogModal';
+        function addDot() {
+            if (!cfg.toolId || !isNew() || seen()) return;
+            const tryAdd = (attempts) => {
+                const toolEl = document.querySelector(`[data-tool="${cfg.toolId}"]`);
+                if (!toolEl) { if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300); return; }
+                if (toolEl.querySelector('.' + dotClass)) return;
+                toolEl.style.position = 'relative';
+                const dot = document.createElement('div');
+                dot.className = dotClass;
+                suiteBusyStyle(dot, { position: 'absolute', top: '2px', right: '2px', width: '8px', height: '8px',
+                    'border-radius': '50%', background: '#007bff', 'pointer-events': 'none', 'z-index': '10' });
+                let blue = true;
+                const intervalId = setInterval(() => {
+                    blue = !blue;
+                    dot.style.setProperty('background', blue ? '#007bff' : '#ff8c00', 'important');
+                }, 500);
+                dot.dataset.intervalId = intervalId;
+                toolEl.appendChild(dot);
+            };
+            setTimeout(() => tryAdd(0), 500);
+        }
+        function removeDot() {
+            if (!cfg.toolId) return;
+            const dot = document.querySelector(`[data-tool="${cfg.toolId}"] .${dotClass}`);
+            if (dot) { clearInterval(Number(dot.dataset.intervalId)); dot.remove(); }
+        }
 
-        const title = document.createElement('h2');
-        title.textContent = `What's New: Version ${SCRIPT_VERSION}`;
+        function showWhatsNew() {
+            if (document.getElementById(cfg.modalId)) return;
+            const st = suiteBusyStyle;
+            const font = 'Arial, sans-serif';
+            const overlay = document.createElement('div');
+            overlay.id = cfg.overlayId;
+            st(overlay, { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+                background: 'rgba(0, 0, 0, 0.5)', 'z-index': '100000011', margin: '0', padding: '0', border: '0' });
+            const modal = document.createElement('div');
+            modal.id = cfg.modalId;
+            modal.className = 'suite-whats-new';
+            st(modal, { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', 'z-index': '100000012',
+                background: '#ffffff', color: '#333333', border: '2px solid #333333', padding: '20px', margin: '0',
+                'box-shadow': '0 4px 12px rgba(0,0,0,0.3)', 'font-family': font, 'border-radius': '10px',
+                width: 'min(600px, calc(100vw - 32px))', 'max-height': '80vh', 'overflow-y': 'auto', 'box-sizing': 'border-box', 'text-align': 'left' });
 
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'toolbar-version-info';
-        versionInfo.textContent = `Tools Toolbar Suite has been updated to version ${SCRIPT_VERSION}!`;
+            const title = document.createElement('h2');
+            title.textContent = `What's New: Version ${cfg.version}`;
+            st(title, { margin: '0 0 15px 0', color: '#333333', 'border-bottom': '2px solid #667eea', 'padding-bottom': '10px',
+                'font-size': '1.5em', 'font-weight': 'bold', 'font-family': font, background: 'transparent', 'line-height': '1.3' });
+            const info = document.createElement('div');
+            info.className = 'suite-whats-new-info';
+            info.textContent = `${cfg.name} has been updated to version ${cfg.version}!`;
+            st(info, { background: '#f8f9fa', color: '#333333', padding: '10px', 'border-radius': '5px', 'margin-bottom': '15px',
+                'border-left': '4px solid #667eea', 'font-family': font, 'font-size': '14px', 'font-weight': 'normal' });
 
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+            const cards = document.createElement('div');
+            parseChangelog(cfg.changelog).forEach((entry, index) => {
+                const latest = index === 0;
+                const card = document.createElement('div');
+                st(card, { border: '1px solid ' + (latest ? '#667eea' : '#e0e0e0'), 'border-radius': '6px', 'margin-bottom': '8px',
+                    overflow: 'hidden', background: '#ffffff' });
+                const header = document.createElement('div');
+                header.setAttribute('role', 'button');
+                header.tabIndex = 0;
+                st(header, { display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', padding: '9px 12px',
+                    background: latest ? '#f0f0ff' : '#f8f8f8', cursor: 'pointer', 'user-select': 'none' });
+                const label = document.createElement('span');
+                st(label, { display: 'inline-flex', 'align-items': 'center' });
+                const versionLabel = document.createElement('span');
+                versionLabel.textContent = `Version ${entry.version}`;
+                st(versionLabel, { 'font-weight': 'bold', 'font-size': '13px', color: latest ? '#667eea' : '#555555', 'font-family': font });
+                label.appendChild(versionLabel);
+                if (latest) {
+                    const tag = document.createElement('span');
+                    tag.textContent = 'Latest';
+                    st(tag, { 'font-size': '10px', 'font-weight': 'bold', background: '#667eea', color: '#ffffff', 'border-radius': '3px',
+                        padding: '1px 6px', 'margin-left': '8px', 'font-family': font });
+                    label.appendChild(tag);
+                }
+                const chevron = document.createElement('span');
+                chevron.textContent = '▾';
+                st(chevron, { 'font-size': '12px', color: '#999999', transition: 'transform 0.2s', display: 'inline-block',
+                    transform: latest ? 'rotate(0deg)' : 'rotate(-90deg)' });
+                header.append(label, chevron);
+                const body = document.createElement('div');
+                st(body, { padding: '10px 14px', display: latest ? 'block' : 'none', background: '#ffffff' });
+                entry.bullets.forEach(bullet => {
+                    const row = document.createElement('div');
+                    st(row, { display: 'flex', gap: '8px', padding: '3px 0', 'font-size': '13px', 'font-family': font,
+                        color: '#444444', 'line-height': '1.5' });
+                    const dot = document.createElement('span');
+                    dot.textContent = '•';
+                    st(dot, { color: '#667eea', 'flex-shrink': '0', 'font-weight': 'bold' });
+                    const text = document.createElement('span');
+                    text.textContent = bullet;
+                    row.append(dot, text);
+                    body.appendChild(row);
                 });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+                let open = latest;
+                header.setAttribute('aria-expanded', String(open));
+                const toggle = () => {
+                    open = !open;
+                    body.style.setProperty('display', open ? 'block' : 'none', 'important');
+                    chevron.style.setProperty('transform', open ? 'rotate(0deg)' : 'rotate(-90deg)', 'important');
+                    header.setAttribute('aria-expanded', String(open));
+                };
+                header.addEventListener('click', toggle);
+                header.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && !e.isComposing) { e.preventDefault(); toggle(); } });
+                header.addEventListener('mouseenter', () => header.style.setProperty('background', latest ? '#e6e6ff' : '#f0f0f0', 'important'));
+                header.addEventListener('mouseleave', () => header.style.setProperty('background', latest ? '#f0f0ff' : '#f8f8f8', 'important'));
+                card.append(header, body);
+                cards.appendChild(card);
             });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
 
-        const closeButton = document.createElement('button');
-        closeButton.className = 'toolbar-close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
+            const gotIt = document.createElement('button');
+            gotIt.type = 'button';
+            gotIt.className = 'suite-whats-new-close';
+            gotIt.textContent = 'Got it!';
+            st(gotIt, { 'margin-top': '15px', padding: '10px 20px', background: '#667eea', color: '#ffffff', border: 'none',
+                'border-radius': '5px', cursor: 'pointer', 'font-weight': 'bold', width: '100%', 'font-family': font, 'font-size': '14px' });
+            gotIt.addEventListener('mouseenter', () => gotIt.style.setProperty('background', '#5568d3', 'important'));
+            gotIt.addEventListener('mouseleave', () => gotIt.style.setProperty('background', '#667eea', 'important'));
+            gotIt.onclick = () => {
+                overlay.remove();
+                modal.remove();
+                markSeen();
+                save();
+                removeDot();
+                (cfg.notifIds || []).forEach(id => document.getElementById(id)?.remove());
+                if (cfg.onSeen) { try { cfg.onSeen(); } catch (e) { console.warn('What\'s New: after closing', e); } }
+            };
+            overlay.onclick = () => gotIt.click();
 
-            // Remove the notification dot
-            const notification = document.getElementById('toolbarChangelogNotification');
-            if (notification) {
-                notification.remove();
-            }
-        };
+            modal.append(title, info, cards, gotIt);
+            suiteModal(overlay, modal);
+        }
 
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        // Close on overlay click
-        overlay.onclick = () => {
-            closeButton.click();
-        };
+        const api = { stored, save, seen, markSeen, isNew, addDot, removeDot, showWhatsNew };
+        if (GM_getValue('toolbarSuiteTestHooks', false) === true) {
+            const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            (w.__suiteWhatsNew = w.__suiteWhatsNew || {})[cfg.toolId || 'suite'] = {
+                open: () => showWhatsNew(), isNew: () => isNew(), seen: () => seen(), modalId: cfg.modalId };
+        }
+        return api;
     }
+
+    function showChangelogModal() { SUITE_VERSIONING.showWhatsNew(); }
 
     /* ==========================================================
      *  HELP / FEATURE GUIDE MODAL
@@ -6122,8 +6151,11 @@ Version 1.0.0:
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.4.3';
-    const CHANGELOG = `Version 1.4.3:
+    const SCRIPT_VERSION = '1.4.4';
+    const CHANGELOG = `Version 1.4.4:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.4.3:
 - General Toolkit is now called General Web Toolkit. It is the place for helpers that work on any website; today it opens the ticket or case number you select. Your settings stay as they were.
 
 Version 1.4.2:
@@ -6153,13 +6185,19 @@ Version 1.3:
 Version 1.2:
 - Added INC (Incident) ticket type support. Highlight any INC number on any page to open it in ServiceNow alongside RITM and PER.`;
 
-    function getStoredVersion()    { return GM_getValue('tqo_version', null); }
-    function saveVersion(v)        { GM_setValue('tqo_version', v); }
-    function hasSeenChangelog()    { return GM_getValue('tqo_changelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue('tqo_changelogSeen', SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'General Web Toolkit', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'tqo_version', seenKey: 'tqo_changelogSeen', modalId: 'tqo-changelog-modal', overlayId: 'tqo-changelog-overlay',
+        toolId: 'ticketQuickOpen', dotClass: 'tqo-notif-dot', notifIds: ['tqo-changelog-notif'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
 
     // ─────────────────────────────────────────────────────────────
     // CONFIGURATION
@@ -6207,48 +6245,6 @@ Version 1.2:
 
 
     // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'tqo-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
 
@@ -6264,143 +6260,6 @@ Version 1.2:
     document.addEventListener('toolbarToolClicked', (e) => {
         if (e.detail.id === TOOL_ID) showSettingsModal();
     });
-
-    // ─────────────────────────────────────────────────────────────
-    // CHANGELOG MODAL
-    // ─────────────────────────────────────────────────────────────
-
-
-    function showChangelogModal() {
-        if (document.getElementById('tqo-changelog-modal')) return;
-
-        const overlay = document.createElement('div');
-        overlay.id = 'tqo-changelog-overlay';
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.5)', zIndex: '1000000',
-        });
-
-        const modal = document.createElement('div');
-        modal.id = 'tqo-changelog-modal';
-        Object.assign(modal.style, {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            zIndex: '1000001', background: '#ffffff', border: '2px solid #333',
-            padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            fontFamily: 'Arial, sans-serif', borderRadius: '10px',
-            maxWidth: '520px', width: '90vw', maxHeight: '80vh', overflowY: 'auto',
-            color: '#333', boxSizing: 'border-box',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New — v${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            marginTop: '0', marginBottom: '12px', fontSize: '16px', fontWeight: 'bold',
-            color: '#333', borderBottom: '2px solid #0073e6', paddingBottom: '8px',
-        });
-
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'Got it!';
-        Object.assign(closeBtn.style, {
-            display: 'block', marginTop: '14px', padding: '10px 20px',
-            background: '#0073e6', color: '#fff', border: 'none',
-            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
-            width: '100%', fontSize: '14px', boxSizing: 'border-box',
-        });
-        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#005bb5'; });
-        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#0073e6'; });
-        closeBtn.onclick = () => {
-            overlay.remove(); modal.remove();
-            markChangelogAsSeen(); saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            document.getElementById('tqo-changelog-notif')?.remove();
-        };
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        modal.append(title, cardsWrap, closeBtn);
-        suiteModal(overlay, modal);
-        overlay.onclick = () => closeBtn.click();
-    }
 
     // ─────────────────────────────────────────────────────────────
     // SETTINGS MODAL
@@ -7328,8 +7187,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.6';
-    const CHANGELOG = `Version 1.6.6:
+    const SCRIPT_VERSION = '1.6.7';
+    const CHANGELOG = `Version 1.6.7:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.6.6:
 - The ticket number for Saved Drafts is read by the toolbar's shared ticket reader. Nothing changes in how drafts work.
 
 Version 1.6.5:
@@ -7425,22 +7287,19 @@ Version 1.1.4:
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
 
-    function getStoredVersion()  { return GM_getValue(GM_KEY_VERSION, null); }
-    function saveVersion(v)      { GM_setValue(GM_KEY_VERSION, v); }
-    function hasSeenChangelog()  { return GM_getValue(GM_KEY_CHANGELOG_SEEN, null) === SCRIPT_VERSION; }
-    function markChangelogSeen() { GM_setValue(GM_KEY_CHANGELOG_SEEN, SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'ServiceNow Toolkit', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'snToolkitVersion', seenKey: 'snToolkitChangelogSeen', modalId: 'snToolkitChangelogModal', overlayId: 'snToolkitChangelogOverlay',
+        toolId: 'serviceNowToolkit', dotClass: 'snToolkit-notif-dot', notifIds: [] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogSeen()            { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function isNewVersion() {
-        const stored = getStoredVersion();
-        if (!stored) return true;
-        const a = stored.split('.').map(Number);
-        const b = SCRIPT_VERSION.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
 
     /* ==========================================================
      *  CONFIGURATION
@@ -8855,185 +8714,6 @@ Version 1.1.4:
         tryInit();
     }
 
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed', inset: '0',
-            background: 'rgba(0,0,0,0.55)',
-            zIndex: '999999',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-        });
-
-        const modal = document.createElement('div');
-        Object.assign(modal.style, {
-            background: '#fff', borderRadius: '8px',
-            padding: '24px', width: '420px', maxWidth: '90vw',
-            maxHeight: '80vh', overflowY: 'auto',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-            fontFamily: 'Arial, sans-serif',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, { margin: '0 0 6px', fontSize: '16px', color: '#1d1d1d' });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `ServiceNow Toolkit updated to v${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, { fontSize: '13px', color: '#666', marginBottom: '16px' });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '16px';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            display: 'block', margin: '0 auto',
-            padding: '8px 28px', borderRadius: '6px',
-            background: '#667eea', color: '#fff',
-            border: 'none', cursor: 'pointer',
-            fontSize: '14px', fontFamily: 'Arial, sans-serif',
-        });
-        closeButton.onclick = () => {
-            overlay.remove();
-            markChangelogSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-        overlay.appendChild(modal);
-        suiteModal(overlay, modal);
-        overlay.addEventListener('click', e => { if (e.target === overlay) closeButton.click(); });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'snToolkit-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
     document.addEventListener('toolbarToolClicked', e => {
         if (e.detail.id === TOOL_ID) showModal();
     });
@@ -9253,9 +8933,12 @@ Version 1.1.4:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.7';
+    const SCRIPT_VERSION = '1.1.8';
 
-    const CHANGELOG = `Version 1.1.7:
+    const CHANGELOG = `Version 1.1.8:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.1.7:
 - Mini Summary Sidebar is now called Ticket Summary Panel. Your settings stay as they were.
 
 Version 1.1.6:
@@ -9311,161 +8994,18 @@ Version 1.0.2:
      *  VERSION MANAGEMENT FUNCTIONS
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue('miniSummarySidebarVersion', null);
-    }
-
-    function saveVersion(version) {
-        GM_setValue('miniSummarySidebarVersion', version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue('miniSummarySidebarChangelogSeen', null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue('miniSummarySidebarChangelogSeen', SCRIPT_VERSION);
-    }
-
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'miniSummaryChangelogOverlay';
-
-        // Create modal
-        const modal = document.createElement('div');
-        modal.id = 'miniSummaryChangelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'version-info';
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-
-            // Remove the notification dot from sidebar
-            const notification = document.getElementById('miniSummaryChangelogNotification');
-            if (notification) {
-                notification.remove();
-            }
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        // Close on overlay click
-        overlay.onclick = () => {
-            closeButton.click();
-        };
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Ticket Summary Panel', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'miniSummarySidebarVersion', seenKey: 'miniSummarySidebarChangelogSeen', modalId: 'miniSummaryChangelogModal', overlayId: 'miniSummaryChangelogOverlay',
+        toolId: 'miniSummary', dotClass: 'miniSummary-notif-dot', notifIds: ['miniSummaryChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
 
     /* ==========================================================
@@ -10651,49 +10191,6 @@ Version 1.0.2:
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'miniSummary-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -10729,9 +10226,12 @@ Version 1.0.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.4';
+    const SCRIPT_VERSION = '1.2.5';
 
-    const CHANGELOG = `Version 1.2.4:
+    const CHANGELOG = `Version 1.2.5:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.2.4:
 - The ticket number is read by the toolbar's shared ticket reader. Nothing changes in how the launcher works.
 
 Version 1.2.3:
@@ -10774,22 +10274,19 @@ Version 1.1.1:
     const GM_KEY_VERSION        = 'erlVersion';
     const GM_KEY_CHANGELOG_SEEN = 'erlChangelogSeen';
 
-    function getStoredVersion()  { return GM_getValue(GM_KEY_VERSION, null); }
-    function saveVersion(v)      { GM_setValue(GM_KEY_VERSION, v); }
-    function hasSeenChangelog()  { return GM_getValue(GM_KEY_CHANGELOG_SEEN, null) === SCRIPT_VERSION; }
-    function markChangelogSeen() { GM_setValue(GM_KEY_CHANGELOG_SEEN, SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Enhancement Request Launcher', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'erlVersion', seenKey: 'erlChangelogSeen', modalId: 'erl-cl-modal', overlayId: 'erl-cl-overlay',
+        toolId: 'enhancementRequestLogger', dotClass: 'enhReqLog-notif-dot', notifIds: ['erl-changelog-notif'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogSeen()            { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function isNewVersion() {
-        const stored = getStoredVersion();
-        if (!stored) return true;
-        const a = stored.split('.').map(Number);
-        const b = SCRIPT_VERSION.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
 
     /* ==========================================================
      *  CONFIGURATION
@@ -10841,154 +10338,6 @@ Version 1.1.1:
         ];
         const qs = params.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
         return `${FORM_BASE_URL}&${qs}`;
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'erl-cl-overlay';
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.5)', zIndex: '1000000', display: 'block'
-        });
-
-        const clModal = document.createElement('div');
-        clModal.id = 'erl-cl-modal';
-        Object.assign(clModal.style, {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            zIndex: '1000001', background: '#ffffff', border: '2px solid #333', padding: '20px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial,sans-serif',
-            borderRadius: '10px', maxWidth: '600px', width: '90%', maxHeight: '80vh',
-            overflowY: 'auto', color: '#333'
-        });
-
-        const clTitle = document.createElement('h2');
-        clTitle.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(clTitle.style, {
-            marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea',
-            paddingBottom: '10px', fontSize: '1.5em', fontWeight: 'bold'
-        });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            backgroundColor: '#f8f9fa', color: '#333', padding: '10px', borderRadius: '5px',
-            marginBottom: '15px', borderLeft: '4px solid #667eea', fontSize: '14px'
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            marginTop: '15px', padding: '10px 20px', backgroundColor: '#667eea', color: '#fff',
-            border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
-            width: '100%', fontSize: '14px'
-        });
-        closeButton.addEventListener('mouseenter', () => { closeButton.style.backgroundColor = '#5568d3'; });
-        closeButton.addEventListener('mouseleave', () => { closeButton.style.backgroundColor = '#667eea'; });
-        closeButton.onclick = () => {
-            overlay.remove();
-            clModal.remove();
-            markChangelogSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            const n = document.getElementById('erl-changelog-notif');
-            if (n) n.remove();
-        };
-
-        clModal.appendChild(clTitle);
-        clModal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        clModal.appendChild(cardsWrap);
-
-        clModal.appendChild(closeButton);
-
-        suiteModal(overlay, clModal);
-        overlay.onclick = () => closeButton.click();
     }
 
     /* ==========================================================
@@ -11671,49 +11020,6 @@ Version 1.1.1:
         if (modal) modal.style.display = 'none';
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'enhReqLog-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -11750,9 +11056,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.12';
+    const SCRIPT_VERSION = '1.7.13';
 
-    const CHANGELOG = `Version 1.7.12:
+    const CHANGELOG = `Version 1.7.13:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.7.12:
 - The comment field and the Short description are found by the toolbar's shared ticket code. Nothing changes in how the assignment works.
 
 Version 1.7.11:
@@ -11902,27 +11211,19 @@ Version 1.2.1:
      *  VERSION MANAGEMENT FUNCTIONS
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue('ticketAssignmentVersion', null);
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Ticket Assignment', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'ticketAssignmentVersion', seenKey: 'ticketAssignmentChangelogSeen', modalId: 'ticketAssignmentChangelogModal', overlayId: 'ticketAssignmentChangelogOverlay',
+        toolId: 'ticketAssignment', dotClass: 'ticketAssign-notif-dot', notifIds: ['ticketAssignmentChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function saveVersion(version) {
-        GM_setValue('ticketAssignmentVersion', version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue('ticketAssignmentChangelogSeen', null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue('ticketAssignmentChangelogSeen', SCRIPT_VERSION);
-    }
-
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
 
     /* ==========================================================
      *  FREEZE DATE STORAGE FUNCTIONS
@@ -12351,130 +11652,6 @@ Version 1.2.1:
             option.dataset.name = member.name;
             dropdown.appendChild(option);
         });
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'ticketAssignmentChangelogOverlay';
-
-        const modal = document.createElement('div');
-        modal.id = 'ticketAssignmentChangelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'version-info';
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            const notification = document.getElementById('ticketAssignmentChangelogNotification');
-            if (notification) notification.remove();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        overlay.onclick = () => closeButton.click();
     }
 
     /* ==========================================================
@@ -14305,48 +13482,6 @@ Thank you for your cooperation.` : '';
         });
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'ticketAssign-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -14408,9 +13543,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.4';
+    const SCRIPT_VERSION = '2.1.5';
 
-    const CHANGELOG = `Version 2.1.4:
+    const CHANGELOG = `Version 2.1.5:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 2.1.4:
 - The ticket number for change notes and log lines is read by the toolbar's shared ticket reader. Nothing changes in how the editor works.
 
 Version 2.1.3:
@@ -14831,26 +13969,19 @@ Version 1.4.1:
      *  VERSION MANAGEMENT
      * ==========================================================*/
 
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Destination Profile Editor', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'netskopeUrlListVersion', seenKey: 'netskopeUrlListChangelogSeen', modalId: 'netskopeChangelogModal', overlayId: 'netskopeChangelogOverlay',
+        toolId: 'netskopeUrlListManager', dotClass: 'urlListEditor-notif-dot', notifIds: ['netskopeChangelogNotification'] });
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
     const VersionManager = {
-        get stored() { return GM_getValue('netskopeUrlListVersion', null); },
-        save: () => GM_setValue('netskopeUrlListVersion', SCRIPT_VERSION),
-
-        get changelogSeen() { return GM_getValue('netskopeUrlListChangelogSeen', null) === SCRIPT_VERSION; },
-        markChangelogSeen: () => {
-            GM_setValue('netskopeUrlListChangelogSeen', SCRIPT_VERSION);
-            VersionManager.save();
-        },
-
-        isNewer() {
-            const stored = this.stored;
-            if (!stored) return true;
-            const [v1M, v1m, v1p] = stored.split('.').map(Number);
-            const [v2M, v2m, v2p] = SCRIPT_VERSION.split('.').map(Number);
-            return v2M > v1M ||
-                (v2M === v1M && v2m > v1m) ||
-                (v2M === v1M && v2m === v1m && v2p > v1p);
-        },
-
+        get stored() { return TOOL_VERSIONING.stored(); },
+        save: () => TOOL_VERSIONING.save(),
+        get changelogSeen() { return TOOL_VERSIONING.seen(); },
+        markChangelogSeen: () => { TOOL_VERSIONING.markSeen(); TOOL_VERSIONING.save(); },
+        isNewer() { return TOOL_VERSIONING.isNew(); },
         shouldShowChangelog() { return this.isNewer() && !this.changelogSeen; }
     };
 
@@ -14953,118 +14084,6 @@ Version 1.4.1:
     `;
     appendStyleWhenReady(changelogStyle);
 
-
-    function showChangelogModal() {
-        const overlay = UI.createElement('div', { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: '1000000' }, { id: 'netskopeChangelogModalOverlay' });
-        const modal   = UI.createElement('div', {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            zIndex: '1000001', background: '#ffffff', border: '2px solid #333333', padding: '20px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif',
-            borderRadius: '10px', maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto', color: '#333333'
-        }, { id: 'netskopeChangelogModal' });
-
-        const closeModal = () => { overlay.remove(); modal.remove(); VersionManager.markChangelogSeen(); document.getElementById('netskopeChangelogNotification')?.remove(); removeToolbarNotificationDot(); };
-
-        const h2 = document.createElement('h2');
-        h2.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(h2.style, { marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea', paddingBottom: '10px', fontSize: '1.5em' });
-        modal.appendChild(h2);
-
-        const infoDiv = document.createElement('div');
-        infoDiv.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(infoDiv.style, { backgroundColor: '#f8f9fa', color: '#333', padding: '10px', borderRadius: '5px', marginBottom: '15px', borderLeft: '4px solid #667eea' });
-        modal.appendChild(infoDiv);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-
-        const closeBtn = UI.createButton('Got it!', '#667eea', closeModal);
-        Object.assign(closeBtn.style, { marginTop: '15px', width: '100%', background: '#667eea' });
-        modal.appendChild(closeBtn);
-
-        overlay.onclick = closeModal;
-        suiteModal(overlay, modal);
-    }
 
     /* ==========================================================
      *  TOKEN UI BUILDERS
@@ -17386,52 +16405,10 @@ Version 1.4.1:
     }
 
     /* ==========================================================
-     *  TOOLBAR NOTIFICATION DOT
+     *  TOOLBAR ID
      * ==========================================================*/
 
     const TOOL_ID = 'netskopeUrlListManager';
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'urlListEditor-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!VersionManager.isNewer() || VersionManager.changelogSeen) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
 
     /* ==========================================================
      *  EVENT LISTENERS & INITIALIZATION
@@ -17482,9 +16459,12 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.8';
+    const SCRIPT_VERSION = '2.4.9';
 
-    const CHANGELOG = `Version 2.4.8:
+    const CHANGELOG = `Version 2.4.9:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 2.4.8:
 - Row Highlighter is now called List Highlighter. Your settings stay as they were.
 
 Version 2.4.7:
@@ -17597,158 +16577,19 @@ Version 2.3.1:
      *  VERSION MANAGEMENT FUNCTIONS
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue(VERSION_STORAGE_KEY, null);
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'List Highlighter', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'servicenow_highlighter_version', seenKey: 'servicenow_highlighter_changelog_seen', modalId: 'highlighterChangelogModal', overlayId: 'highlighterChangelogOverlay',
+        toolId: 'rowHighlighter', dotClass: 'rowHighlighter-notif-dot', notifIds: ['highlighterChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function saveVersion(version) {
-        GM_setValue(VERSION_STORAGE_KEY, version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue(CHANGELOG_SEEN_KEY, null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue(CHANGELOG_SEEN_KEY, SCRIPT_VERSION);
-    }
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-    function showChangelogModal() {
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'highlighterChangelogOverlay';
-
-        // Create modal
-        const modal = document.createElement('div');
-        modal.id = 'highlighterChangelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'highlighter-version-info';
-        versionInfo.textContent = `List Highlighter has been updated to version ${SCRIPT_VERSION}!`;
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'highlighter-close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-
-            // Remove the notification dot
-            const notification = document.getElementById('highlighterChangelogNotification');
-            if (notification) {
-                notification.remove();
-            }
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        // Close on overlay click
-        overlay.onclick = () => {
-            closeButton.click();
-        };
-    }
 
     /* ==========================================================
      *  STORAGE FUNCTIONS
@@ -19556,48 +18397,6 @@ Version 2.3.1:
             });
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'rowHighlighter-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -19981,9 +18780,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.2';
+    const SCRIPT_VERSION = '2.17.3';
 
-    const CHANGELOG = `Version 2.17.2:
+    const CHANGELOG = `Version 2.17.3:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 2.17.2:
 - On tickets with one journal field that switches between Work notes and Additional comments, the tracker asks ServiceNow which one is selected, so each text goes to the right journal more reliably.
 - The Short description date and status are written through the toolbar's shared ticket code. Nothing changes in how they look.
 
@@ -20941,10 +19743,18 @@ Version 1.4.3:
      *  VERSION MANAGEMENT
      * ==========================================================*/
 
-    function getStoredVersion()    { return GM_getValue('changeTrackerVersion', null); }
-    function saveVersion(v)        { GM_setValue('changeTrackerVersion', v); }
-    function hasSeenChangelog()    { return GM_getValue('changeTrackerChangelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue('changeTrackerChangelogSeen', SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Change Tracker', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'changeTrackerVersion', seenKey: 'changeTrackerChangelogSeen', modalId: 'ct-changelog-modal', overlayId: 'ct-changelog-overlay',
+        toolId: 'changeTracker', dotClass: 'changeTrackerOnline-notif-dot', notifIds: ['ct-changelog-dot'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
     // Auto-write toggle: when enabled, adding an entry also writes the
     // equivalent text into the SNow ticket worknote/comments fields.
@@ -21019,117 +19829,6 @@ Version 1.4.3:
     function getSearchableDropdown()  { return GM_getValue(SEARCHABLE_DROPDOWN_KEY, true) !== false; }
     function setSearchableDropdown(v) { GM_setValue(SEARCHABLE_DROPDOWN_KEY, !!v); }
 
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-    function showChangelogModal() {
-        const overlay = mk('div', { id: 'ct-changelog-overlay' });
-        const modal   = mk('div', { id: 'ct-changelog-modal'   });
-
-        const h2 = mk('h2');
-        h2.textContent = `What's New — v${SCRIPT_VERSION}`;
-
-        const info = mk('div', { className: 'ct-cl-info' });
-        info.textContent = `Updated to version ${SCRIPT_VERSION}!`;
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const btn = mk('button', { className: 'ct-cl-ok' });
-        btn.textContent = 'Got it!';
-        btn.onclick = () => {
-            overlay.remove(); modal.remove();
-            markChangelogAsSeen(); saveVersion(SCRIPT_VERSION);
-            document.getElementById('ct-changelog-dot')?.remove();
-            removeToolbarNotificationDot();
-        };
-
-        modal.append(h2, info, cardsWrap, btn);
-        suiteModal(overlay, modal);
-        overlay.onclick = () => btn.click();
-    }
 
     /* ==========================================================
      *  STYLES
@@ -22025,8 +20724,6 @@ Version 1.4.3:
 
         return { inspect, prepare, isReady, describeFailure };
     })();
-
-
 
 
     /* ==========================================================
@@ -29310,52 +28007,10 @@ Version 1.4.3:
     function toggleSidebar() { sidebarVisible ? hideSidebar() : showSidebar(); }
 
     /* ==========================================================
-     *  TOOLBAR NOTIFICATION DOT
+     *  TOOLBAR ID
      * ==========================================================*/
 
     const TOOL_ID = 'changeTracker';
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'changeTrackerOnline-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
 
     /* ==========================================================
      *  EVENT LISTENERS + INIT
@@ -29443,9 +28098,12 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.5';
+    const SCRIPT_VERSION = '1.7.6';
 
-    const CHANGELOG = `Version 1.7.5:
+    const CHANGELOG = `Version 1.7.6:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.7.5:
 - Domain Tools is now called Domain Checker. Your settings and API keys stay as they were.
 
 Version 1.7.4:
@@ -29536,150 +28194,18 @@ Version 1.0:
     const GM_KEY_VERSION        = 'domainToolsVersion';
     const GM_KEY_CHANGELOG_SEEN = 'domainToolsChangelogSeen';
 
-    function getStoredVersion()    { return GM_getValue(GM_KEY_VERSION, null); }
-    function saveVersion(v)        { GM_setValue(GM_KEY_VERSION, v); }
-    function hasSeenChangelog()    { return GM_getValue(GM_KEY_CHANGELOG_SEEN, null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue(GM_KEY_CHANGELOG_SEEN, SCRIPT_VERSION); }
-
-    function isNewVersion() {
-        const stored = getStoredVersion();
-        if (!stored) return true;
-        const a = stored.split('.').map(Number);
-        const b = SCRIPT_VERSION.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed', inset: '0', background: 'rgba(0,0,0,0.55)',
-            zIndex: '1000010', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        });
-
-        const modal = document.createElement('div');
-        Object.assign(modal.style, {
-            background: '#fff', borderRadius: '10px', padding: '20px',
-            width: '500px', maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New — Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            margin: '0 0 10px', fontSize: '18px', color: '#333',
-            borderBottom: '2px solid #667eea', paddingBottom: '10px',
-        });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `Domain Checker updated to v${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            background: '#f8f9fa', borderLeft: '4px solid #667eea',
-            padding: '10px', borderRadius: '5px', marginBottom: '15px',
-            fontSize: '13px', color: '#333',
-        });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border: '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px', marginBottom: '8px', overflow: 'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px', background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555', fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold', background: '#667eea',
-                    color: '#fff', borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999', transition: 'transform 0.2s',
-                display: 'inline-block', transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none', background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif', color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display = expanded ? 'block' : 'none';
-                body.style.padding = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'Got it!';
-        Object.assign(closeBtn.style, {
-            marginTop: '15px', padding: '10px 20px', background: '#667eea',
-            color: '#fff', border: 'none', borderRadius: '5px',
-            cursor: 'pointer', fontWeight: 'bold', width: '100%', fontSize: '14px',
-        });
-        closeBtn.onclick = () => {
-            overlay.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-        };
-
-        modal.append(title, versionInfo, cardsWrap, closeBtn);
-        overlay.appendChild(modal);
-        suiteModal(overlay, modal);
-        overlay.addEventListener('click', e => { if (e.target === overlay) closeBtn.click(); });
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Domain Checker', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'domainToolsVersion', seenKey: 'domainToolsChangelogSeen', modalId: 'domainToolsChangelogModal', overlayId: 'domainToolsChangelogOverlay',
+        toolId: 'domainTools', dotClass: 'domainTools-notif-dot', notifIds: [] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
 
     /* ==========================================================
@@ -31261,45 +29787,6 @@ Version 1.0:
     }
 
     /* ==========================================================
-     *  TOOLBAR NOTIFICATION DOT
-     * ==========================================================*/
-
-    const TOOLBAR_DOT_CLASS = 'domainTools-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let blue = true;
-            const intervalId = setInterval(() => {
-                blue = !blue;
-                dot.style.background = blue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) { clearInterval(Number(dot.dataset.intervalId)); dot.remove(); }
-    }
-
-    /* ==========================================================
      *  TOOLBAR REGISTRATION
      * ==========================================================*/
 
@@ -31360,9 +29847,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.4';
+    const SCRIPT_VERSION = '1.49.5';
 
-    const CHANGELOG = `Version 1.49.4:
+    const CHANGELOG = `Version 1.49.5:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.49.4:
 - The buttons this toolkit adds to the Netskope console rest while the tab is in the background and come back as soon as you return to it.
 
 Version 1.49.3:
@@ -31625,289 +30115,21 @@ Version 1.16:
   below the regex/keyword input field in the DLP Edit Entity modal.
 - Feature can be toggled on/off from the toolkit settings like all others.`;
 
-    function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
-    function saveVersion(v)        { GM_setValue('toolkit_version', v); }
-    function hasSeenChangelog()    { return GM_getValue('toolkit_changelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue('toolkit_changelogSeen', SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Netskope Console Toolkit', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'toolkit_version', seenKey: 'toolkit_changelogSeen', modalId: 'nsToolkitChangelogModal', overlayId: 'nsToolkitChangelogOverlay',
+        toolId: 'nsDlpToolkit', dotClass: 'nstk-notif-dot', notifIds: ['nsToolkitChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
 
     // ─────────────────────────────────────────────────────────────
-    // CHANGELOG MODAL — 100% inline styles, no stylesheet dependency
-    // ─────────────────────────────────────────────────────────────
-
-    function showChangelogModal() {
-        if (document.getElementById('nsToolkitChangelogModal')) return;
-
-        /* ── Overlay ── */
-        const overlay = document.createElement('div');
-        overlay.id = 'nsToolkitChangelogOverlay';
-        Object.assign(overlay.style, {
-            position:   'fixed',
-            top:        '0',
-            left:       '0',
-            width:      '100%',
-            height:     '100%',
-            background: 'rgba(0,0,0,0.5)',
-            zIndex:     '1000000',
-        });
-
-        /* ── Modal card ── */
-        const modal = document.createElement('div');
-        modal.id = 'nsToolkitChangelogModal';
-        Object.assign(modal.style, {
-            position:        'fixed',
-            top:             '50%',
-            left:            '50%',
-            transform:       'translate(-50%, -50%)',
-            zIndex:          '1000001',
-            background:      '#ffffff',
-            border:          '2px solid #333333',
-            padding:         '20px',
-            boxShadow:       '0 4px 12px rgba(0,0,0,0.3)',
-            fontFamily:      'Arial, sans-serif',
-            borderRadius:    '10px',
-            maxWidth:        '600px',
-            width:           '90vw',
-            maxHeight:       '80vh',
-            overflowY:       'auto',
-            color:           '#333333',
-            boxSizing:       'border-box',
-        });
-
-        /* ── Title ── */
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            marginTop:      '0',
-            marginBottom:   '15px',
-            color:          '#333333',
-            borderBottom:   '2px solid #667eea',
-            paddingBottom:  '10px',
-            fontFamily:     'Arial, sans-serif',
-            fontSize:       '18px',
-            fontWeight:     'bold',
-        });
-
-        /* ── Version banner ── */
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            backgroundColor: '#f8f9fa',
-            color:           '#333333',
-            padding:         '10px',
-            borderRadius:    '5px',
-            marginBottom:    '15px',
-            borderLeft:      '4px solid #667eea',
-            fontFamily:      'Arial, sans-serif',
-            fontSize:        '13px',
-            fontWeight:      'normal',
-        });
-
-        /* ── Version cards ── */
-        const cardsContainer = document.createElement('div');
-        cardsContainer.style.marginBottom = '0';
-
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display:        'flex',
-                alignItems:     'center',
-                justifyContent: 'space-between',
-                padding:        '9px 12px',
-                background:     isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor:         'pointer',
-                userSelect:     'none',
-            });
-
-            const versionWrap = document.createElement('div');
-            Object.assign(versionWrap.style, { display: 'flex', alignItems: 'center', gap: '8px' });
-
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold',
-                fontSize:   '13px',
-                color:      isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-
-            if (isLatest) {
-                const latestTag = document.createElement('span');
-                latestTag.textContent = 'Latest';
-                Object.assign(latestTag.style, {
-                    fontSize:     '10px',
-                    fontWeight:   'bold',
-                    background:   '#667eea',
-                    color:        '#fff',
-                    borderRadius: '3px',
-                    padding:      '1px 6px',
-                    fontFamily:   'Arial, sans-serif',
-                });
-                versionWrap.appendChild(latestTag);
-            }
-
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize:   '12px',
-                color:      '#999',
-                transition: 'transform 0.2s',
-                display:    'inline-block',
-                transform:  isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding:    isLatest ? '10px 14px' : '0',
-                display:    isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display:    'flex',
-                    gap:        '8px',
-                    padding:    '3px 0',
-                    fontSize:   '13px',
-                    fontFamily: 'Arial, sans-serif',
-                    color:      '#444',
-                    lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-
-            card.appendChild(body);
-
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-
-            cardsContainer.appendChild(card);
-        });
-
-        /* ── Close button ── */
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            display:         'block',
-            marginTop:       '15px',
-            padding:         '10px 20px',
-            backgroundColor: '#667eea',
-            color:           '#ffffff',
-            border:          'none',
-            borderRadius:    '5px',
-            cursor:          'pointer',
-            fontWeight:      'bold',
-            width:           '100%',
-            fontFamily:      'Arial, sans-serif',
-            fontSize:        '14px',
-            boxSizing:       'border-box',
-        });
-        closeButton.addEventListener('mouseenter', () => { closeButton.style.backgroundColor = '#5568d3'; });
-        closeButton.addEventListener('mouseleave', () => { closeButton.style.backgroundColor = '#667eea'; });
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            const notification = document.getElementById('nsToolkitChangelogNotification');
-            if (notification) notification.remove();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsContainer);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        overlay.onclick = () => closeButton.click();
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'nstk-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-
-            toolEl.style.position = 'relative';
-
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position:      'absolute',
-                top:           '2px',
-                right:         '2px',
-                width:         '8px',
-                height:        '8px',
-                borderRadius:  '50%',
-                background:    '#007bff',
-                pointerEvents: 'none',
-                zIndex:        '10',
-            });
-
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-
-            toolEl.appendChild(dot);
-        };
-
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
 
