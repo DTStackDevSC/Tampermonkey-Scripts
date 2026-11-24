@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.57.0
+// @version      2.57.1
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.57.0';
-    const CHANGELOG = `Version 2.57.0:
+   const SCRIPT_VERSION = '2.57.1';
+    const CHANGELOG = `Version 2.57.1:
+- Ticket Assignment Tool: on incidents the greeting mentions the caller when the form has no Opened by field, instead of the placeholder Requester Name.
+- ServiceNow Toolkit, Enhancement Request Launcher, Ticket Assignment Tool, Destination Profile Editor and Change Tracker: the ticket and its requester are read by one shared piece of the toolbar, so every tool finds the same ticket the same way.
+
+Version 2.57.0:
 - Change Tracker: changes that have not reached SharePoint for more than 7 days now show a red banner in the sidebar with the tickets they belong to. 🔄 Retry now sends them again; 🗑 Discard drops them after a second click and shows what SharePoint has.
 - Change Tracker: a batch session kept after a page reload now ends by itself after 7 days. Its entries stay in the log.
 
@@ -968,50 +972,90 @@ Version 1.0.0:
         return setInterval(() => { if (!document.hidden) fn(); }, ms);
     }
 
-    function getTicketContext() {
+    /* ==========================================================
+     *  SHARED: TICKET READING (core, used by every ServiceNow tool)
+     *  Where the ticket form is (the page itself, or the iframe of the
+     *  Next Experience shell), its number and who opened it.
+     * ==========================================================*/
+
+    // The open ticket form: { win, doc, gForm, mode }, or null when no form is loaded.
+    // opts.allowNoForm: also answer while the form's g_form is not there yet (the iframe, or the page itself)
+    function suiteTicketContext(opts = {}) {
         const macro = suiteMacroponent();
         if (macro && macro.shadowRoot) {
             const iframe = macro.shadowRoot.querySelector('#gsft_main');
-            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
-                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
+            const w = iframe && iframe.contentWindow;
+            if (w && (w.g_form || (opts.allowNoForm && iframe.contentDocument))) {
+                return { win: w, doc: iframe.contentDocument, gForm: w.g_form || null, mode: 'polaris' };
             }
         }
-        if (window.g_form) {
-            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        if (opts.allowNoForm) {
+            const direct = document.getElementById('gsft_main');
+            if (direct && direct.contentDocument) {
+                return { win: direct.contentWindow, doc: direct.contentDocument, gForm: (direct.contentWindow && direct.contentWindow.g_form) || null, mode: 'classic' };
+            }
+        }
+        if (window.g_form) return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        return opts.allowNoForm ? { win: window, doc: document, gForm: null, mode: 'classic' } : null;
+    }
+    function getTicketContext() { return suiteTicketContext(); }
+
+    // The ticket's number (RITM, INC, SCTASK...) from the form, or null. ctx defaults to the open form.
+    function suiteTicketNumber(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext();
+        if (ctx && ctx.gForm) {
+            try { const num = String(ctx.gForm.getValue('number') || '').trim(); if (num) return num; }
+            catch (e) { /* no number field on this form */ }
+        }
+        const doc = (ctx && ctx.doc) || document;
+        for (const id of ['sc_req_item.number', 'incident.number', 'sc_task.number']) {
+            const n = doc.getElementById(id);
+            const v = n && String(n.value || n.textContent || '').trim();
+            if (v) return v;
+        }
+        // Read only forms show the number in sys_readonly.<table>.number
+        const el = doc.querySelector('input[id$="sc_req_item.number"], input[id$="incident.number"], input[id$="sc_task.number"]') ||
+                   doc.querySelector('input[id$=".number"][readonly]');
+        return (el && el.value && el.value.trim()) || null;
+    }
+
+    // Who opened the ticket (the caller on incidents), one line, or null. The form's own fields first:
+    // g_form.getDisplayValue of a field that is not on the form gives the record number, so that is refused.
+    function suiteOpenedByName(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+        const ids = ['sc_req_item.opened_by_label', 'sys_display.sc_req_item.opened_by',
+                     'incident.opened_by_label', 'sys_display.incident.opened_by',
+                     'sc_req_item.caller_id_label', 'sys_display.sc_req_item.caller_id',
+                     'incident.caller_id_label', 'sys_display.incident.caller_id'];
+        for (const id of ids) {
+            const f = doc.getElementById(id);
+            const v = f && suiteCleanPersonName(f.value || f.textContent);
+            if (v && v.length > 2) return v;
+        }
+        for (const f of doc.querySelectorAll('[id*="opened_by"], [id*="caller_id"]')) {
+            const v = suiteCleanPersonName(f.value || f.textContent);
+            if (v.length > 2 && !v.includes('_')) return v;
+        }
+        const gf = ctx && ctx.gForm;
+        if (gf) {
+            const number = suiteTicketNumber(ctx) || '';
+            for (const field of ['opened_by', 'caller_id']) {
+                try {
+                    const v = suiteCleanPersonName(gf.getDisplayValue(field));
+                    if (v && v !== number && !/^[A-Z]{2,6}\d{5,}$/.test(v)) return v;
+                } catch (e) { /* field not on this form */ }
+            }
         }
         return null;
     }
 
-    function setJournalField(doc, win, fieldName, text) {
-        // fieldName is 'work_notes' or 'comments'
-
-        // 1. Hidden form textarea (submitted with the form)
-        const formTA = doc.getElementById(`sc_req_item.${fieldName}`);
-        if (formTA) {
-            formTA.value = text;
-            formTA.dispatchEvent(new Event('change', { bubbles: true }));
-            formTA.dispatchEvent(new Event('input',  { bubbles: true }));
-        }
-
-        // 2. Angular activity stream textarea (visible to the user)
-        const streamTA = doc.getElementById(`activity-stream-${fieldName}-textarea`) ||
-                         doc.getElementById('activity-stream-textarea');
-        if (streamTA) {
-            streamTA.value = text;
-            const angular = win.angular;
-            const scope   = angular.element(streamTA).scope();
-            const model   = streamTA.getAttribute('ng-model'); // e.g. "activity_field_0.value"
-            const key     = model.split('.')[0];               // "activity_field_0" or "activity_field_1"
-            let s = scope;
-            while (s) {
-                if (key in s) { s[key].value = text; s.$apply(); break; }
-                s = s.$parent;
-            }
-            streamTA.dispatchEvent(new Event('input',  { bubbles: true }));
-            streamTA.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('toolbarSuiteTestHooks', false) === true) {
+        (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__suiteTicket = {
+            context: (o) => { const c = suiteTicketContext(o); return c && { mode: c.mode, hasForm: !!c.gForm, inFrame: c.doc !== document }; },
+            number: () => suiteTicketNumber(), openedBy: () => suiteOpenedByName() };
     }
-    // Angular model mapping: activity_field_0 = work_notes, activity_field_1 = comments
 
     /* ==========================================================
      *  SHARED: @MENTIONS (core, used by every tool that writes a
@@ -7204,8 +7248,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.5';
-    const CHANGELOG = `Version 1.6.5:
+    const SCRIPT_VERSION = '1.6.6';
+    const CHANGELOG = `Version 1.6.6:
+- The ticket number for Saved Drafts is read by the toolbar's shared ticket reader. Nothing changes in how drafts work.
+
+Version 1.6.5:
 - Finding the open ticket on ServiceNow pages takes less work for the browser, and the SPM Germany reminder check rests while the tab is in the background.
 
 Version 1.6.4:
@@ -8510,12 +8557,9 @@ Version 1.1.4:
      *  MAIN LOGIC — TICKET PAGE AUTOSAVE
      * ==========================================================*/
 
+    // Drafts belong to the form on this page (the copy in the shell's iframe handles tickets opened there)
     function getTicketNumber() {
-        const el =
-            document.querySelector('input[id*="sc_req_item.number"]') ||
-            document.querySelector('input[id*="incident.number"]')     ||
-            document.querySelector('input[id$=".number"][readonly]');
-        return el?.value?.trim() || null;
+        return suiteTicketNumber({ win: window, doc: document, gForm: window.g_form || null });
     }
 
     function findWorkNotesFields() {
@@ -10605,9 +10649,12 @@ Version 1.0.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.3';
+    const SCRIPT_VERSION = '1.2.4';
 
-    const CHANGELOG = `Version 1.2.3:
+    const CHANGELOG = `Version 1.2.4:
+- The ticket number is read by the toolbar's shared ticket reader. Nothing changes in how the launcher works.
+
+Version 1.2.3:
 - Enhancement Request Logger is now called Enhancement Request Launcher, since it opens the request form already filled in. Your settings stay as they were.
 
 Version 1.2.2:
@@ -10698,19 +10745,7 @@ Version 1.1.1:
      * ==========================================================*/
 
 
-    function getTicketNumber() {
-        const ctx = getTicketContext();
-        if (ctx && ctx.gForm) {
-            const num = ctx.gForm.getValue('number');
-            if (num) return num.trim();
-        }
-        const doc = (ctx && ctx.doc) || document;
-        const el =
-            doc.querySelector('input[id*="sc_req_item.number"]') ||
-            doc.querySelector('input[id*="incident.number"]')     ||
-            doc.querySelector('input[id$=".number"][readonly]');
-        return el?.value?.trim() || null;
-    }
+    function getTicketNumber() { return suiteTicketNumber(); }
 
     function buildFormUrl(service, caseNumber, ritm, vendorCase, region, details) {
         // Service and Region are Choice fields in Office Forms — must be wrapped in quotes.
@@ -11635,9 +11670,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.10';
+    const SCRIPT_VERSION = '1.7.11';
 
-    const CHANGELOG = `Version 1.7.10:
+    const CHANGELOG = `Version 1.7.11:
+- On incidents the greeting mentions the caller when the form has no Opened by field, instead of the placeholder Requester Name.
+
+Version 1.7.10:
 - Mentions are written by the toolbar's shared mention code, also used by the Change Tracker. Nothing changes in how they work.
 
 Version 1.7.9:
@@ -13854,31 +13892,8 @@ Version 1.2.1:
     // shadowing the shared getTicketContext). The shared helper returns null unless
     // g_form is directly reachable, but this tool must still resolve the ticket
     // document via a top level #gsft_main iframe or the classic top document.
-    function getTicketContext() {
-        const macro = suiteMacroponent();
-        if (macro && macro.shadowRoot) {
-            const iframe = macro.shadowRoot.querySelector('#gsft_main');
-            if (iframe && iframe.contentDocument) {
-                return {
-                    win: iframe.contentWindow,
-                    doc: iframe.contentDocument,
-                    gForm: (iframe.contentWindow && iframe.contentWindow.g_form) || null,
-                    mode: 'polaris'
-                };
-            }
-        }
-        const directIframe = document.getElementById('gsft_main');
-        if (directIframe && directIframe.contentDocument) {
-            return {
-                win: directIframe.contentWindow,
-                doc: directIframe.contentDocument,
-                gForm: (directIframe.contentWindow && directIframe.contentWindow.g_form) || null,
-                mode: 'classic'
-            };
-        }
-        // Classic direct page: return the top document even if g_form is not yet set
-        return { win: window, doc: document, gForm: window.g_form || null, mode: 'classic' };
-    }
+    // The form, also while its g_form is still loading: the tool waits for the fields itself
+    function getTicketContext() { return suiteTicketContext({ allowNoForm: true }); }
 
     // One assignment at a time: a second click while one runs does nothing
     let assignmentRunning = false;
@@ -14060,24 +14075,14 @@ Version 1.2.1:
     }
 
     function getOpenedByName() {
-        const ticketDoc = _ctx ? _ctx.doc : document;
-        const openedByInput = ticketDoc.getElementById('sc_req_item.opened_by_label') ||
-                             ticketDoc.getElementById('sys_display.sc_req_item.opened_by') ||
-                             ticketDoc.getElementById('incident.opened_by_label') ||
-                             ticketDoc.getElementById('sys_display.incident.opened_by');
-        if (openedByInput) {
-            return cleanPersonName(openedByInput.value || openedByInput.textContent);
-        }
+        const name = suiteOpenedByName(_ctx || suiteTicketContext({ allowNoForm: true }));
+        if (name) return name;
         console.warn('⚠️ Could not find "Opened by" field, using placeholder');
         return 'Requester Name';
     }
 
     function getTicketNumber() {
-        const ticketDoc = _ctx ? _ctx.doc : document;
-        const numField = ticketDoc.getElementById('sc_req_item.number') ||
-                         ticketDoc.getElementById('incident.number');
-        if (numField) return (numField.value || numField.textContent).trim();
-        return '';
+        return suiteTicketNumber(_ctx || suiteTicketContext({ allowNoForm: true })) || '';
     }
 
     function detectMFCode() {
@@ -14323,9 +14328,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.3';
+    const SCRIPT_VERSION = '2.1.4';
 
-    const CHANGELOG = `Version 2.1.3:
+    const CHANGELOG = `Version 2.1.4:
+- The ticket number for change notes and log lines is read by the toolbar's shared ticket reader. Nothing changes in how the editor works.
+
+Version 2.1.3:
 - The API key passphrase now stays unlocked in every tab until one hour passes without using the key. The Feature Guide says so.
 
 Version 2.1.2:
@@ -16621,17 +16629,10 @@ Version 1.4.1:
     }
 
 
+    // Without a number (a new record), the record id keeps the log line apart
     function getTicketNumber() {
-        const ctx = getTicketContext();
-        if (ctx && ctx.gForm) {
-            const num = ctx.gForm.getValue('number');
-            if (num) return num.trim();
-        }
-        const doc = (ctx && ctx.doc) || document;
-        for (const id of ['sc_req_item.number', 'incident.number']) {
-            const n = doc.getElementById(id);
-            if (n?.value?.trim()) return n.value.trim();
-        }
+        const num = suiteTicketNumber();
+        if (num) return num;
         const sysId = new URLSearchParams(window.location.search).get('sys_id');
         return sysId ? `SYS_${sysId.slice(0, 8)}` : null;
     }
@@ -19900,9 +19901,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.0';
+    const SCRIPT_VERSION = '2.17.1';
 
-    const CHANGELOG = `Version 2.17.0:
+    const CHANGELOG = `Version 2.17.1:
+- The ticket number is read by the toolbar's shared ticket reader. Nothing changes in how the tracker works.
+
+Version 2.17.0:
 - Changes that have not reached SharePoint for more than 7 days now show a red banner in the sidebar with the tickets they belong to. 🔄 Retry now sends them again; 🗑 Discard drops them after a second click and shows what SharePoint has. Nothing is ever dropped without your click.
 - A batch session kept after a page reload now ends by itself after 7 days. Its entries stay in the log.
 - The Feature Guide shows the new banner in Connection and the 7 day limit in Settings.
@@ -21290,12 +21294,10 @@ Version 1.4.3:
      *  TICKET NUMBER DETECTION
      * ==========================================================*/
 
+    // Entries are stored per ticket: without a number (a new record), the record id keeps them apart
     function getTicketNumber() {
-        const ticketDoc = getTicketDoc();
-        for (const id of ['sc_req_item.number', 'incident.number']) {
-            const n = ticketDoc.getElementById(id);
-            if (n?.value?.trim()) return n.value.trim();
-        }
+        const num = suiteTicketNumber({ win: getTicketWin(), doc: getTicketDoc(), gForm: getTicketWin().g_form || null });
+        if (num) return num;
         const sysId = new URLSearchParams(window.location.search).get('sys_id');
         return sysId ? `SYS_${sysId.slice(0, 8)}` : 'UNKNOWN';
     }
@@ -22422,32 +22424,10 @@ Version 1.4.3:
 
         async function getOpenedByName(retries = 3, delay = 200) {
             if (_cachedOpenedByName) return _cachedOpenedByName;
-
-            const selectors = [
-                'sc_req_item.opened_by_label',
-                'sys_display.sc_req_item.opened_by',
-                'incident.opened_by_label',
-                'sys_display.incident.opened_by',
-                'sc_req_item.caller_id_label',
-                'sys_display.sc_req_item.caller_id',
-                'incident.caller_id_label',
-                'sys_display.incident.caller_id',
-            ];
-
+            // The fields load late on some forms: try a few times
             for (let attempt = 0; attempt < retries; attempt++) {
-                const ticketDoc = getTicketDoc();
-                for (const sel of selectors) {
-                    const f = ticketDoc.getElementById(sel);
-                    if (f) {
-                        const v = (f.value || f.textContent || '').replace(/\s+/g, ' ').trim();
-                        if (v.length > 2) { _cachedOpenedByName = v; return v; }
-                    }
-                }
-                const labelFields = ticketDoc.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
-                for (const f of labelFields) {
-                    const v = (f.value || f.textContent || '').replace(/\s+/g, ' ').trim();
-                    if (v.length > 2 && !v.includes('_')) { _cachedOpenedByName = v; return v; }
-                }
+                const v = suiteOpenedByName({ win: getTicketWin(), doc: getTicketDoc(), gForm: getTicketWin().g_form || null });
+                if (v) { _cachedOpenedByName = v; return v; }
                 if (attempt < retries - 1) await sleep(delay);
             }
             return null;
