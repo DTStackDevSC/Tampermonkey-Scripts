@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.9.1
+// @version      4.9.2
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.9.1';
-    const CHANGELOG = `Version 4.9.1:
+    const SCRIPT_VERSION = '4.9.2';
+    const CHANGELOG = `Version 4.9.2:
+- Response Templates and Formatted Text Editor: mentions are written by one shared piece of the suite, so both behave the same.
+- Response Templates and Formatted Text Editor: the requester's name is read the same way in both, from the ticket's Opened by (or Caller) field.
+
+Version 4.9.1:
 - Response Templates and Formatted Text Editor: a requester whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", is now mentioned by their full name instead of stopping at the first closing bracket.
 
 Version 4.9.0:
@@ -1465,8 +1469,88 @@ Version 4.0.0:
         return ok;
     }
 
+
+    // Writes text with mentions into a journal field, after what is already there. parts is the
+    // text split around the mentions: text, name, text, name, ..., text (an odd number of items).
+    // Every name is typed into ServiceNow's list and picked (a note names anyone it did not list),
+    // the page is covered while it types. Returns the names that could not be mentioned.
+    async function helpersWriteWithMentions(textarea, parts, opts = {}) {
+        const total = (parts.length - 1) / 2;
+        const existing = textarea.value.trim();
+        if (total < 1) {
+            textarea.value = existing ? existing + '\n\n' + (parts[0] || '') : (parts[0] || '');
+            textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            return [];
+        }
+        const fieldType = opts.fieldType || (String(textarea.id).includes('work_notes') ? 'work_notes' : 'comments');
+        const failed = [];
+        showMentionBlocker(total, 1, fieldType, textarea);
+        try {
+            textarea.value = existing ? existing + '\n\n' : '';
+            textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+            textarea.focus();
+            await mentionSleep(100);
+            for (let i = 0; i < parts.length; i++) {
+                if (i % 2 === 0) {
+                    let text = parts[i] || '';
+                    // The picker usually adds a space after the name already
+                    if (i > 0 && /[  ]$/.test(textarea.value.slice(0, textarea.selectionStart))) text = text.replace(/^( |&nbsp;)/, '');
+                    if (text) { insertTextDirectly(textarea, text); await mentionSleep(100); }
+                    continue;
+                }
+                updateMentionBlocker(total, (i + 1) / 2);
+                // A problem with one mention leaves that name as plain text and the rest of the text still goes in
+                let ok = false;
+                try { ok = await triggerMentionPicker(textarea, parts[i]); }
+                catch (e) { console.error('❌ Mention of', parts[i], 'failed:', e); }
+                if (!ok) failed.push(String(parts[i] || '').replace(/\s+/g, ' ').trim());
+                await mentionSleep(200);
+            }
+            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        } finally {
+            // Always release the blocker, even if an error was thrown
+            hideMentionBlocker();
+        }
+        return failed;
+    }
+
+    // Name of the person who opened the ticket (the caller on incidents), read once, or '' when not on the form.
+    // The form's own fields first: g_form.getDisplayValue of a field that is not on the form gives the
+    // record number instead, so that answer is refused.
+    function helpersReadOpenedBy() {
+        const clean = v => String(v || '').replace(/\s+/g, ' ').trim();
+        const ids = ['sc_req_item.opened_by_label', 'sys_display.sc_req_item.opened_by',
+                     'incident.opened_by_label', 'sys_display.incident.opened_by',
+                     'sc_req_item.caller_id_label', 'sys_display.sc_req_item.caller_id',
+                     'incident.caller_id_label', 'sys_display.incident.caller_id'];
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            const v = el && clean(el.value || el.textContent);
+            if (v && v.length > 2) return v;
+        }
+        for (const el of document.querySelectorAll('[id*="opened_by"], [id*="caller_id"]')) {
+            const v = clean(el.value || el.textContent);
+            if (v.length > 2 && !v.includes('_')) return v;
+        }
+        const gf = window.g_form;
+        if (gf) {
+            let number = '';
+            try { number = clean(gf.getValue('number')); } catch (e) { /* no number field */ }
+            for (const field of ['opened_by', 'caller_id']) {
+                try {
+                    const v = clean(gf.getDisplayValue(field));
+                    if (v && v !== number && !/^[A-Z]{2,6}\d{5,}$/.test(v)) return v;
+                } catch (e) { /* field not on this form */ }
+            }
+        }
+        return '';
+    }
+
     // Test only: the automated tests switch this on in their own storage
-    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersMention = { triggerMentionPicker };
+    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersMention = { triggerMentionPicker, helpersWriteWithMentions, helpersReadOpenedBy };
 
     appendStyleWhenReady(darkModeStyle);
 
@@ -1754,8 +1838,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.9.1';
-    const CHANGELOG = `Version 4.9.1:
+    const SCRIPT_VERSION = '4.9.2';
+    const CHANGELOG = `Version 4.9.2:
+- Response Templates and Formatted Text Editor: mentions are written by one shared piece of the suite, so both behave the same.
+- Response Templates and Formatted Text Editor: the requester's name is read the same way in both, from the ticket's Opened by (or Caller) field.
+
+Version 4.9.1:
 - Response Templates and Formatted Text Editor: a requester whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", is now mentioned by their full name instead of stopping at the first closing bracket.
 
 Version 4.9.0:
@@ -4974,9 +5062,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.22.1';
+    const SCRIPT_VERSION = '2.22.2';
 
-    const CHANGELOG = `Version 2.22.1:
+    const CHANGELOG = `Version 2.22.2:
+- Mentions are written by the suite's shared mention code, the same as in the Formatted Text Editor. Nothing changes in how they work.
+
+Version 2.22.1:
 - A requester whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", is now mentioned by their full name instead of stopping at the first closing bracket.
 
 Version 2.22.0:
@@ -7010,51 +7101,13 @@ Regards.`,
      * ==========================================================*/
 
     async function getOpenedByName(retries = 5, delay = 300) {
-        if (cachedOpenedByName) {
-            console.log('✓ Using cached name:', cachedOpenedByName);
-            return cachedOpenedByName;
-        }
-
-        const selectors = [
-            'sc_req_item.opened_by_label',
-            'sys_display.sc_req_item.opened_by',
-            'incident.opened_by_label',
-            'sys_display.incident.opened_by',
-            'sc_req_item.caller_id_label',
-            'sys_display.sc_req_item.caller_id',
-            'incident.caller_id_label',
-            'sys_display.incident.caller_id'
-        ];
-
+        if (cachedOpenedByName) return cachedOpenedByName;
+        // The fields load late on some forms: try a few times
         for (let attempt = 0; attempt < retries; attempt++) {
-            for (const selector of selectors) {
-                const field = document.getElementById(selector);
-                if (field) {
-                    const name = (field.value || field.textContent || '').replace(/\s+/g, ' ');
-                    if (name && name.trim() && name.trim().length > 2) {
-                        console.log(`✓ Found "Opened by" name on attempt ${attempt + 1}:`, name.trim());
-                        cachedOpenedByName = name.trim();
-                        return cachedOpenedByName;
-                    }
-                }
-            }
-
-            const labelFields = document.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
-            for (const field of labelFields) {
-                const name = (field.value || field.textContent || '').replace(/\s+/g, ' ');
-                if (name && name.trim() && !name.includes('_') && name.length > 2) {
-                    console.log(`✓ Found name from fallback on attempt ${attempt + 1}:`, name.trim());
-                    cachedOpenedByName = name.trim();
-                    return cachedOpenedByName;
-                }
-            }
-
-            if (attempt < retries - 1) {
-                console.log(`⏳ Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
-                await sleep(delay);
-            }
+            const name = helpersReadOpenedBy();
+            if (name) { cachedOpenedByName = name; return name; }
+            if (attempt < retries - 1) await sleep(delay);
         }
-
         console.warn('⚠️ Could not find "Opened by" name after all retries, using placeholder');
         return null;
     }
@@ -7100,40 +7153,6 @@ Regards.`,
     });
 
     /* ==========================================================
-     *  SERVICENOW API MENTION INSERTION
-     * ==========================================================*/
-
-    async function insertMentionViaAPI(textarea, name) {
-        console.log('🔔 Attempting API-based mention insertion for:', name);
-        try {
-            if (typeof $ !== 'undefined' && $(textarea).data('atwho')) {
-                const atwho = $(textarea).data('atwho');
-                if (atwho && atwho.insert) { atwho.insert('@', name); return true; }
-            }
-            if (typeof angular !== 'undefined') {
-                try {
-                    const scope = angular.element(textarea).scope();
-                    if (scope && scope.insertMention) { await scope.insertMention(name); return true; }
-                } catch (e) { console.warn('Angular method failed:', e.message); }
-            }
-            if (textarea.mentionPlugin || textarea._mentionApi) {
-                const api = textarea.mentionPlugin || textarea._mentionApi;
-                if (api.insert || api.addMention) { (api.insert || api.addMention).call(api, name); return true; }
-            }
-            if (typeof window.SNMention !== 'undefined' && window.SNMention.insert) {
-                window.SNMention.insert(textarea, name); return true;
-            }
-            if (typeof window.GlideMention !== 'undefined' && window.GlideMention.insert) {
-                window.GlideMention.insert(textarea, name); return true;
-            }
-        } catch (error) {
-            console.warn('⚠️ API insertion failed:', error);
-            return false;
-        }
-        return false;
-    }
-
-    /* ==========================================================
      *  MAIN MENTION INSERTION WITH STRATEGIES
      * ==========================================================*/
 
@@ -7154,80 +7173,9 @@ Regards.`,
             }
         }
 
-        console.group('📝 Inserting text with mentions');
-        console.log('Text to insert:', text);
-
         // A name may hold brackets itself ("Name [NL] Surname"): one inner [..] pair stays part of the name
         const mentionRegex = /@\[((?:[^\[\]]|\[[^\[\]]*\])+)\]/g;
-        const matches = text.match(mentionRegex);
-
-        if (!matches || matches.length === 0) {
-            console.log('ℹ️ No mentions detected, inserting as plain text');
-            if (textarea.value.trim() !== "") {
-                textarea.value += "\n\n" + text;
-            } else {
-                textarea.value = text;
-            }
-            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
-            textarea.dispatchEvent(new Event('change', { bubbles: true }));
-            console.groupEnd();
-            return;
-        }
-
-        console.log('🔔 Mentions detected:', matches);
-
-        const mentions = [];
-        let match;
-        mentionRegex.lastIndex = 0;
-        while ((match = mentionRegex.exec(text)) !== null) {
-            mentions.push({ placeholder: match[0], name: match[1], index: match.index });
-        }
-
-        const parts = text.split(mentionRegex);
-        console.log('Text parts:', parts);
-
-        // Show blocker before any async work begins
-        showMentionBlocker(mentions.length, 1, fieldType, textarea);
-
-        try {
-            const existingContent = textarea.value.trim();
-            if (existingContent) {
-                textarea.value = existingContent + "\n\n";
-                textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
-            } else {
-                textarea.value = '';
-            }
-
-            textarea.focus();
-            await sleep(100);
-
-            let partIndex = 0;
-            for (let i = 0; i < mentions.length; i++) {
-                if (i > 0) updateMentionBlocker(mentions.length, i + 1);
-                if (parts[partIndex]) {
-                    insertTextDirectly(textarea, parts[partIndex]);
-                    await sleep(100);
-                }
-                partIndex++;
-                await triggerMentionPicker(textarea, mentions[i].name);
-                await sleep(200);
-                partIndex++;
-            }
-
-            if (partIndex < parts.length && parts[partIndex]) {
-                insertTextDirectly(textarea, parts[partIndex]);
-            }
-
-            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
-            textarea.dispatchEvent(new Event('change', { bubbles: true }));
-
-            console.log('✓ Text insertion complete');
-        } finally {
-            // Always release the blocker, even if an error was thrown
-            hideMentionBlocker();
-        }
-
-        console.groupEnd();
+        return helpersWriteWithMentions(textarea, text.split(mentionRegex), { fieldType });
     }
 
     /* ==========================================================
@@ -9625,9 +9573,12 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.9';
+    const SCRIPT_VERSION = '1.4.10';
 
-    const CHANGELOG = `Version 1.4.9:
+    const CHANGELOG = `Version 1.4.10:
+- Mentions and the requester's name come from the suite's shared code, the same as in Response Templates. Nothing changes in how they work.
+
+Version 1.4.9:
 - A mention of someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", now picks that person by their full name instead of stopping at the first closing bracket.
 
 Version 1.4.8:
@@ -12825,22 +12776,7 @@ Version 1.0.3:
 
     // Name of the person who opened the ticket (caller on incidents), or '' when not found.
     function getOpenerName() {
-        if (window.g_form) {
-            for (const field of ['opened_by', 'caller_id']) {
-                try {
-                    const val = window.g_form.getDisplayValue(field);
-                    if (val && val.trim()) return val.replace(/\s+/g, ' ').trim();
-                } catch (e) { /* field not on this form */ }
-            }
-        }
-        const ids = ['sys_display.sc_req_item.opened_by', 'sys_display.incident.opened_by',
-                     'sys_display.sc_req_item.caller_id', 'sys_display.incident.caller_id'];
-        for (const id of ids) {
-            const el = document.getElementById(id);
-            const val = el && (el.value || el.textContent);
-            if (val && val.trim()) return val.replace(/\s+/g, ' ').trim();
-        }
-        return '';
+        return helpersReadOpenedBy();
     }
 
     // Puts @[Opener Name] at the caret. Without a known name, @[Full Name] is selected so it can be typed over.
@@ -12894,35 +12830,8 @@ Version 1.0.3:
         writeWithMentions: (...a) => writeWithMentions(...a), getOpenerName: () => getOpenerName() };
 
     async function writeWithMentions(targets, wrappedHTML) {
-        const parts = wrappedHTML.split(MENTION_TOKEN); // text, name, text, name, ..., text
-        const total = (parts.length - 1) / 2;
-        for (const ta of targets) {
-            const fieldType = ta.id.includes('work_notes') ? 'work_notes' : 'comments';
-            showMentionBlocker(total, 1, fieldType, ta);
-            try {
-                const existing = ta.value.trim();
-                ta.value = existing ? existing + '\n\n' : '';
-                ta.selectionStart = ta.selectionEnd = ta.value.length;
-                ta.focus();
-                await mentionSleep(100);
-                for (let i = 0; i < parts.length; i++) {
-                    if (i % 2 === 0) {
-                        let text = parts[i];
-                        // The picker usually adds a space after the name already
-                        if (i > 0 && /[ \u00a0]$/.test(ta.value.slice(0, ta.selectionStart))) text = text.replace(/^( |&nbsp;)/, '');
-                        if (text) insertTextDirectly(ta, text);
-                        continue;
-                    }
-                    updateMentionBlocker(total, (i + 1) / 2);
-                    await triggerMentionPicker(ta, decodeEntities(parts[i]).replace(/\u00a0/g, ' ').trim());
-                    await mentionSleep(200);
-                }
-                ta.dispatchEvent(new Event('input',  { bubbles: true }));
-                ta.dispatchEvent(new Event('change', { bubbles: true }));
-            } finally {
-                hideMentionBlocker();
-            }
-        }
+        const parts = wrappedHTML.split(MENTION_TOKEN).map((p, i) => i % 2 ? decodeEntities(p).replace(/\u00a0/g, ' ').trim() : p);
+        for (const ta of targets) await helpersWriteWithMentions(ta, parts);
     }
 
     // target is 'comments', 'work_notes', 'both', or 'auto'. Returns true if inserted.
