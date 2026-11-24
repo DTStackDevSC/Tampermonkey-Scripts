@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.56.4
+// @version      2.57.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.56.4';
-    const CHANGELOG = `Version 2.56.4:
+   const SCRIPT_VERSION = '2.57.0';
+    const CHANGELOG = `Version 2.57.0:
+- Change Tracker: changes that have not reached SharePoint for more than 7 days now show a red banner in the sidebar with the tickets they belong to. 🔄 Retry now sends them again; 🗑 Discard drops them after a second click and shows what SharePoint has.
+- Change Tracker: a batch session kept after a page reload now ends by itself after 7 days. Its entries stay in the log.
+
+Version 2.56.4:
 - Change Tracker: the requester's @mention in the ticket comment is now picked from that field's own ServiceNow suggestion list, the same safe way as the Ticket Assignment Tool. It no longer presses Enter blindly, so it can no longer pick someone from the Work Notes list or leave a line break where the name should be.
 - Change Tracker: when ServiceNow does not suggest the requester, the name stays as plain text and a warning at the bottom of the page says so until you close it, so you can retype the mention before posting.
 - Ticket Assignment Tool: mentions are written by the same shared code as the Change Tracker. Nothing changes in how it works.
@@ -19896,9 +19900,14 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.3';
+    const SCRIPT_VERSION = '2.17.0';
 
-    const CHANGELOG = `Version 2.16.3:
+    const CHANGELOG = `Version 2.17.0:
+- Changes that have not reached SharePoint for more than 7 days now show a red banner in the sidebar with the tickets they belong to. 🔄 Retry now sends them again; 🗑 Discard drops them after a second click and shows what SharePoint has. Nothing is ever dropped without your click.
+- A batch session kept after a page reload now ends by itself after 7 days. Its entries stay in the log.
+- The Feature Guide shows the new banner in Connection and the 7 day limit in Settings.
+
+Version 2.16.3:
 - The requester's @mention is picked from the comment field's own ServiceNow suggestion list, waiting for a slow lookup, and never by a blind Enter. It can no longer pick someone from the Work Notes list or leave a line break instead of the name.
 - When ServiceNow does not suggest the requester, a warning at the bottom of the page names them and stays until you close it, so you can retype the mention before posting.
 - The Feature Guide shows this warning in Writing to the Ticket.
@@ -20884,6 +20893,12 @@ Version 1.4.3:
 
     let batchSessions = getBatchPersistEnabled() ? (GM_getValue(BATCH_SESSIONS_KEY, {}) || {}) : {};
     if (!getBatchPersistEnabled()) GM_deleteValue(BATCH_SESSIONS_KEY);
+    else {
+        // A batch left open for more than 7 days was abandoned: forget it (its entries stay saved)
+        const BATCH_MAX_AGE = 7 * 86400000;
+        const old = Object.keys(batchSessions).filter(t => !(batchSessions[t] && batchSessions[t].startedAt > Date.now() - BATCH_MAX_AGE));
+        if (old.length) { old.forEach(t => delete batchSessions[t]); GM_setValue(BATCH_SESSIONS_KEY, batchSessions); }
+    }
 
     function saveBatchSessions() {
         if (getBatchPersistEnabled()) GM_setValue(BATCH_SESSIONS_KEY, batchSessions);
@@ -23047,8 +23062,10 @@ Version 1.4.3:
     }
 
     function savePending(ticket, p) {
-        if (!p.upserts.length && !p.deletes.length && !p.cleared) GM_deleteValue(PENDING_PREFIX + ticket);
-        else GM_setValue(PENDING_PREFIX + ticket, JSON.stringify(p));
+        if (!p.upserts.length && !p.deletes.length && !p.cleared) { GM_deleteValue(PENDING_PREFIX + ticket); return; }
+        // since: when the oldest change still waiting was queued, so a change stuck for days can be shown
+        if (!(p.since > 0)) p.since = Date.now();
+        GM_setValue(PENDING_PREFIX + ticket, JSON.stringify(p));
     }
 
     function hasPending(ticket) {
@@ -23085,6 +23102,26 @@ Version 1.4.3:
         return GM_listValues()
             .filter(k => k.startsWith(PENDING_PREFIX))
             .map(k => k.slice(PENDING_PREFIX.length));
+    }
+
+    /* Changes that have waited too long. They are never dropped by themselves (they may be the only copy):
+     * the sidebar shows them with Retry now and Discard. A queue saved before 2.17.0 has no date and counts from now. */
+    const STALE_PENDING_DAYS = 7;
+    function stalePendingTickets() {
+        const limit = Date.now() - STALE_PENDING_DAYS * 86400000;
+        return ticketsWithPending().filter(ticket => {
+            const p = loadPending(ticket);
+            if (!(p.since > 0)) { savePending(ticket, p); return false; }
+            return p.since < limit && (p.upserts.length || p.deletes.length || p.cleared);
+        });
+    }
+
+    // Drops the waiting changes of these tickets and their local copy, so the next look shows SharePoint's version.
+    function discardPending(tickets) {
+        tickets.forEach(ticket => {
+            GM_deleteValue(PENDING_PREFIX + ticket);
+            GM_deleteValue(storeKey(ticket));
+        });
     }
 
     // These stop a flush (try again later); anything else is about one entry only.
@@ -26009,6 +26046,15 @@ Version 1.4.3:
             })
         );
         setTimeout(renderNrdAlert, 0);
+        // Changes that have not reached SharePoint for more than 7 days (filled by renderStaleBanner)
+        sidebar.appendChild(
+            css(mk('div', { id:'ct-stale-banner' }), {
+                display:'none', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap',
+                gap:'8px', padding:'7px 10px', borderRadius:'4px', background:'#f8d7da', border:'1px solid #f5c6cb',
+                color:'#721c24', marginBottom:'10px', fontSize:'12px', fontFamily:'Arial, sans-serif'
+            })
+        );
+        setTimeout(renderStaleBanner, 0);
 
         // ══ INPUT AREA ═══════════════════════════════════════════
 
@@ -27200,6 +27246,11 @@ Version 1.4.3:
                     body.appendChild(banner('⚠ Offline · 2 changes waiting to sync', '↺ Reconnect', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
                     body.appendChild(banner('🔒 SharePoint session expired · 1 change waiting to sync', 'Open SharePoint to sign in', '#fff3cd', '#ffc107', '#856404', '#ffc107', '#333'));
                     body.appendChild(banner("⛔ Can't open the SharePoint list", 'Open SharePoint to sign in', '#f8d7da', '#f5c6cb', '#721c24', '#f5c6cb', '#721c24'));
+                    const stuck = banner('⚠ 3 changes have not reached SharePoint for more than 7 days (RITM0012345).', '🔄 Retry now', '#f8d7da', '#f5c6cb', '#721c24', '#c82333', '#fff');
+                    stuck.appendChild(chip('🗑 Discard', 'transparent', { color: '#721c24', border: '1px solid #c82333', radius: '3px' }));
+                    stuck.style.gap = '6px';
+                    body.appendChild(stuck);
+                    caption(body, 'Changes stuck for more than 7 days: 🔄 Retry now sends them again; 🗑 Discard asks for a second click, then drops them and shows what SharePoint has.');
                     body.appendChild(hrow([
                         span('2026-10-13 14:05  ·  by Jane', { fontSize: '10px', color: '#bbb', fontFamily: 'monospace' }),
                         chip('⏳ Not synced', '#fff3cd', { color: '#856404', border: '1px solid #ffc107', fontSize: '10px', padding: '1px 6px', radius: '8px' })
@@ -27211,7 +27262,7 @@ Version 1.4.3:
                     ], { margin: '6px 0 0 0' }));
                     caption(body, 'Edit conflict: someone else changed the entry while you edited it. A window shows both versions side by side, with the changed fields highlighted, so you can keep theirs or yours. "Copy mine" copies your text first, in case you want to redo part of it.');
                     bullets(body, [
-                        'Changes that cannot reach SharePoint are kept on this computer, even after a page reload, and are sent automatically once the connection is back.',
+                        'Changes that cannot reach SharePoint are kept on this computer, even after a page reload, and are sent automatically once the connection is back. They are never dropped by themselves: after 7 days the red banner above asks you to retry or discard them.',
                         'While offline the tracker retries in the background every minute; ↺ Reconnect retries right away.',
                         'Offline: you can keep adding entries; they are saved locally and synced later. Turn off "Allow adding entries while offline" to make the log read only instead.',
                         'Session expired: open SharePoint in another tab and sign in. Your changes wait on this computer and are sent when you come back to the ticket.',
@@ -27352,7 +27403,7 @@ Version 1.4.3:
                     body.appendChild(toggle('Auto-write entries to ticket', true, 'Writes the worknote and comment as soon as you add an entry.'));
                     body.appendChild(toggle('Update short description on write', true, 'Sets today\'s date and the matching status whenever an entry is written.'));
                     body.appendChild(toggle('Allow adding entries while offline', true, 'Keeps adding entries when SharePoint is unreachable; they sync once it is back.'));
-                    body.appendChild(toggle('Keep batch session after page reload', false, 'When on, an open batch session survives a page reload.'));
+                    body.appendChild(toggle('Keep batch session after page reload', false, 'When on, an open batch session survives a page reload. A batch left open for more than 7 days ends by itself; its entries stay in the log.'));
                     body.appendChild(toggle('Searchable change-type dropdown', true, 'Lets you type to filter the change types, including by group name.'));
                 }
             }
@@ -27713,6 +27764,77 @@ Version 1.4.3:
         });
         const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
         btns.append(review, again);
+        banner.append(msg, btns);
+    }
+
+    /* ── Changes stuck on this computer: Retry now or Discard ── */
+
+    function renderStaleBanner(force) {
+        const banner = document.getElementById('ct-stale-banner');
+        if (!banner) return;
+        const stale = stalePendingTickets();
+        const count = stale.reduce((n, t) => n + pendingCount(t), 0);
+        // Redrawn only when something changes, so a button in use keeps its state
+        const sig = stale.join(',') + '/' + count;
+        if (!force && banner.dataset.sig === sig) return;
+        if (banner.querySelector('button[data-suite-busy="1"], button[data-armed="1"]') && !force) return;
+        banner.dataset.sig = sig;
+        banner.replaceChildren();
+        banner.style.display = stale.length ? 'flex' : 'none';
+        if (!stale.length) return;
+        const shown = stale.slice(0, 3).join(', ') + (stale.length > 3 ? ` and ${stale.length - 3} more` : '');
+        const msg = mk('span', { id:'ct-stale-msg' });
+        msg.textContent = `⚠ ${count} ${count === 1 ? 'change has' : 'changes have'} not reached SharePoint for more than ${STALE_PENDING_DAYS} days (${shown}).`;
+        msg.title = `Waiting on this computer only: ${stale.join(', ')}. Retry now sends them; Discard drops them and keeps what SharePoint has.`;
+        const btn = (id, text, primary) => {
+            const b = css(mk('button', { id, type:'button' }), { border: primary ? 'none' : '1px solid #c82333', borderRadius:'3px', cursor:'pointer',
+                padding:'3px 10px', fontSize:'11px', fontWeight:'bold', background: primary ? '#c82333' : 'transparent', color: primary ? '#fff' : '#721c24' });
+            b.textContent = text;
+            return b;
+        };
+        const retry = btn('ct-stale-retry', '🔄 Retry now', true);
+        retry.title = 'Send the waiting changes to SharePoint now';
+        retry.onclick = () => suiteBusyButton(retry, 'Sending…', async () => {
+            if (!api.isConfigured()) { flashStatus('⚠ SharePoint is not set up. Open Configure first.', '#dc3545', 6000); return; }
+            const current = getTicketNumber();
+            const res = await flushAllPending();
+            if (current && stale.includes(current)) refreshLog(current);
+            const left = stalePendingTickets();
+            if (!res.ok) flashStatus('⚠ SharePoint could not be reached. Nothing was lost: sign in to SharePoint and try again.', '#dc3545', 8000);
+            else if (left.length) flashStatus(`⚠ ${res.synced} sent. Still waiting on ${left.join(', ')}: open the ticket, an entry marked with a problem needs your decision.`, '#e67e22', 10000);
+            else flashStatus(`✓ ${res.synced} ${res.synced === 1 ? 'change' : 'changes'} sent to SharePoint`, '#28a745', 5000);
+            setTimeout(() => renderStaleBanner(true), 0);
+        });
+        const discard = btn('ct-stale-discard', '🗑 Discard', false);
+        discard.title = 'Drop the waiting changes. SharePoint keeps its own version of these tickets.';
+        let armTimer = null;
+        discard.onclick = async () => {
+            if (discard.dataset.armed !== '1') {
+                discard.dataset.armed = '1';
+                discard.textContent = '🗑 Click again to discard';
+                clearTimeout(armTimer);
+                armTimer = setTimeout(() => { if (discard.isConnected) { delete discard.dataset.armed; discard.textContent = '🗑 Discard'; } }, 6000);
+                return;
+            }
+            clearTimeout(armTimer);
+            delete discard.dataset.armed;
+            await suiteBusyButton(discard, 'Discarding…', async () => {
+                const tickets = stalePendingTickets();
+                discardPending(tickets);
+                const current = getTicketNumber();
+                if (current && tickets.includes(current)) {
+                    if (connState === 'ONLINE') {
+                        const r = await api.fetchEntries(current);
+                        if (r.ok) _cacheEntries(current, r.data.entries || []);
+                    }
+                    refreshLog(current);
+                }
+                flashStatus(`🗑 Discarded the waiting changes of ${tickets.join(', ')}. SharePoint keeps its own version.`, '#6c757d', 6000);
+            });
+            renderStaleBanner(true);
+        };
+        const btns = css(mk('span'), { display:'inline-flex', gap:'4px' });
+        btns.append(retry, discard);
         banner.append(msg, btns);
     }
 
@@ -28994,7 +29116,7 @@ Version 1.4.3:
         const batchDesc  = css(mk('div'), { fontSize:'11px', color:'#666' });
         batchDesc.textContent =
             'When off, an open batch session ends when the page is reloaded ' +
-            '(its changes stay in the log). When on, the session continues where you left it.';
+            '(its changes stay in the log). When on, the session continues where you left it, for up to 7 days.';
         batchText.append(batchTitle, batchDesc);
 
         batchRow.append(batchInput, batchText);
@@ -29314,7 +29436,7 @@ Version 1.4.3:
         // reads SharePoint at most every 4 hours, across tabs). The dot is redrawn when the toolbar redraws.
         setTimeout(() => { if (api.isConfigured()) { nrdCheck(); policyCheck(); } }, 4000);
         setInterval(() => { if (api.isConfigured()) { nrdCheck(); policyCheck(); } }, 15 * 60000);
-        setInterval(renderNrdAlert, 5000);
+        setInterval(() => { renderNrdAlert(); renderStaleBanner(); }, 5000);
 
         // While offline, retry the connection in the background every minute.
         setInterval(() => {
