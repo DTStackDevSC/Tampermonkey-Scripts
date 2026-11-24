@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.56.0
+// @version      2.56.1
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.56.0';
-    const CHANGELOG = `Version 2.56.0:
+   const SCRIPT_VERSION = '2.56.1';
+    const CHANGELOG = `Version 2.56.1:
+- Change Tracker: the list name in the setup panel now starts empty instead of showing ChangeTracker. Type the name of your team's SharePoint list; the check tells you when it is missing. Teams already set up keep their list.
+
+Version 2.56.0:
 - Toolbar: new search. Press Alt+K on any page with the toolbar, or click 🔍 in the menu, and type what you want to do: it lists the tools of the page and the toolbar's own actions (Settings, Feature Guide, API Keys, Copy diagnostics). Arrows choose, Enter opens, Esc closes.
 
 Version 2.55.0:
@@ -19773,9 +19776,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.0';
+    const SCRIPT_VERSION = '2.16.1';
 
-    const CHANGELOG = `Version 2.16.0:
+    const CHANGELOG = `Version 2.16.1:
+- The list name in the setup panel now starts empty instead of showing ChangeTracker. Type the name of your team's SharePoint list; the check tells you when it is missing. Teams already set up keep their list.
+
+Version 2.16.0:
 - An entry that was changed after it was saved shows 🕘 History, with who changed it, when, and every changed field before and after.
 
 Version 2.15.1:
@@ -27368,7 +27374,7 @@ Version 1.4.3:
 
                     const pairs = [
                         ['SharePoint site URL', 'The site where your team keeps the change log.'],
-                        ['List name', 'The list inside that site. ChangeTracker unless your team chose another name.'],
+                        ['List name', 'The list inside that site, as your team named it. The field starts empty: type the name your team uses.'],
                         ['Local cache expiry', 'Days a ticket log stays cached in your browser (default 30).']
                     ];
                     const grid = document.createElement('div');
@@ -28758,7 +28764,9 @@ Version 1.4.3:
         modal.appendChild(siteInput);
 
         modal.appendChild(fieldLabel('List name', 'ct-setup-list'));
-        const listInput = fieldInput('ct-setup-list', SP_DEFAULT_LIST, prevList || SP_DEFAULT_LIST);
+        // Empty for a new setup: the team types its own list name. A setup saved before the name was
+        // stored keeps showing the list it really uses.
+        const listInput = fieldInput('ct-setup-list', 'Name of your team\'s SharePoint list', prevList || (prevSite ? SP_DEFAULT_LIST : ''));
         modal.appendChild(listInput);
 
         const help = css(mk('div'), { fontSize:'11px', color:'#666', marginBottom:'10px', lineHeight:'1.5', fontFamily:'Arial, sans-serif' });
@@ -28835,7 +28843,7 @@ Version 1.4.3:
         let checkPassedFor = null;   // "site|list" of the last check that passed
 
         function currentTarget() {
-            return { site: siteInput.value.trim().replace(/\/+$/, ''), list: listInput.value.trim() || SP_DEFAULT_LIST };
+            return { site: siteInput.value.trim().replace(/\/+$/, ''), list: listInput.value.trim() };
         }
 
         // Buttons that only appear when the check needs a decision from the user.
@@ -28904,6 +28912,7 @@ Version 1.4.3:
             hideError();
             const { site, list } = currentTarget();
             if (!/^https:\/\/[^/]+\/.+/i.test(site)) { showError('Enter the full address of the SharePoint site, starting with https://'); return false; }
+            if (!list) { showError('Enter the name of your team\'s SharePoint list. Ask your team lead if you do not know it.'); listInput.focus(); return false; }
             checkBtn.disabled = true;
             checkBtn.textContent = 'Checking…';
             actions.replaceChildren();
