@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.57.0
+// @version      2.58.2
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,26 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.57.0';
-    const CHANGELOG = `Version 2.57.0:
+   const SCRIPT_VERSION = '2.58.2';
+    const CHANGELOG = `Version 2.58.2:
+- Destination Profile Editor and Netskope Console Toolkit: the change log above a profile's or URL list's values and its 📜 Change History window are read and drawn by one shared piece of the toolbar, so both tools show the same history the same way.
+
+Version 2.58.1:
+- All tools: every Feature Guide is drawn with the same pieces, so the pictures in the guides (buttons, labels, checkboxes, toolbar icons) look the same in every tool. What the guides say has not changed.
+
+Version 2.58.0:
+- All tools: every What's New window now looks the same: the title, the line with the new version, one card per version with the newest open, and Got it!. It also reads well under the ServiceNow dark theme and on Netskope.
+- All tools: the What's New windows and the pulsing dot on the toolbar icons are shared by every tool. What you have already seen does not show again.
+
+Version 2.57.2:
+- Change Tracker: on tickets with one journal field that switches between Work notes and Additional comments, the tracker now asks ServiceNow which one is selected, so each text goes to the right journal more reliably.
+- Change Tracker and Ticket Assignment Tool: the journal fields and the Short description are found by one shared piece of the toolbar, so both tools write to the same fields the same way.
+
+Version 2.57.1:
+- Ticket Assignment Tool: on incidents the greeting mentions the caller when the form has no Opened by field, instead of the placeholder Requester Name.
+- ServiceNow Toolkit, Enhancement Request Launcher, Ticket Assignment Tool, Destination Profile Editor and Change Tracker: the ticket and its requester are read by one shared piece of the toolbar, so every tool finds the same ticket the same way.
+
+Version 2.57.0:
 - Change Tracker: changes that have not reached SharePoint for more than 7 days now show a red banner in the sidebar with the tickets they belong to. 🔄 Retry now sends them again; 🗑 Discard drops them after a second click and shows what SharePoint has.
 - Change Tracker: a batch session kept after a page reload now ends by itself after 7 days. Its entries stay in the log.
 
@@ -591,26 +609,15 @@ Version 1.1.0:
 Version 1.0.0:
 - Combined the eleven separate toolbar tools into a single install. Every tool keeps its own settings and its own "what's new" notification.`;
 
-    function getStoredVersion() {
-        return GM_getValue('toolbarSuiteVersion', null);
-    }
-
-    function saveVersion(version) {
-        GM_setValue('toolbarSuiteVersion', version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue('toolbarSuiteChangelogSeen', null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue('toolbarSuiteChangelogSeen', SCRIPT_VERSION);
-    }
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
+    // The suite's own What's New (the toolbar's "What's new" link); the window is the core one every tool uses
+    const SUITE_VERSIONING = suiteToolVersion({ name: 'Tools Toolbar', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'toolbarSuiteVersion', seenKey: 'toolbarSuiteChangelogSeen',
+        modalId: 'toolbarChangelogModal', overlayId: 'toolbarChangelogOverlay', notifIds: ['toolbarChangelogNotification'] });
+    function getStoredVersion()     { return SUITE_VERSIONING.stored(); }
+    function saveVersion(version)   { SUITE_VERSIONING.save(version); }
+    function hasSeenChangelog()     { return SUITE_VERSIONING.seen(); }
+    function markChangelogAsSeen()  { SUITE_VERSIONING.markSeen(); }
+    function isNewVersion()         { return SUITE_VERSIONING.isNew(); }
 
     /* ==========================================================
      *  DARK MODE ISOLATION
@@ -968,50 +975,166 @@ Version 1.0.0:
         return setInterval(() => { if (!document.hidden) fn(); }, ms);
     }
 
-    function getTicketContext() {
+    /* ==========================================================
+     *  SHARED: TICKET READING (core, used by every ServiceNow tool)
+     *  Where the ticket form is (the page itself, or the iframe of the
+     *  Next Experience shell), its number and who opened it.
+     * ==========================================================*/
+
+    // The open ticket form: { win, doc, gForm, mode }, or null when no form is loaded.
+    // opts.allowNoForm: also answer while the form's g_form is not there yet (the iframe, or the page itself)
+    function suiteTicketContext(opts = {}) {
         const macro = suiteMacroponent();
         if (macro && macro.shadowRoot) {
             const iframe = macro.shadowRoot.querySelector('#gsft_main');
-            if (iframe && iframe.contentWindow && iframe.contentWindow.g_form) {
-                return { win: iframe.contentWindow, doc: iframe.contentDocument, gForm: iframe.contentWindow.g_form, mode: 'polaris' };
+            const w = iframe && iframe.contentWindow;
+            if (w && (w.g_form || (opts.allowNoForm && iframe.contentDocument))) {
+                return { win: w, doc: iframe.contentDocument, gForm: w.g_form || null, mode: 'polaris' };
             }
         }
-        if (window.g_form) {
-            return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        if (opts.allowNoForm) {
+            const direct = document.getElementById('gsft_main');
+            if (direct && direct.contentDocument) {
+                return { win: direct.contentWindow, doc: direct.contentDocument, gForm: (direct.contentWindow && direct.contentWindow.g_form) || null, mode: 'classic' };
+            }
+        }
+        if (window.g_form) return { win: window, doc: document, gForm: window.g_form, mode: 'classic' };
+        return opts.allowNoForm ? { win: window, doc: document, gForm: null, mode: 'classic' } : null;
+    }
+    function getTicketContext() { return suiteTicketContext(); }
+
+    // The ticket's number (RITM, INC, SCTASK...) from the form, or null. ctx defaults to the open form.
+    function suiteTicketNumber(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext();
+        if (ctx && ctx.gForm) {
+            try { const num = String(ctx.gForm.getValue('number') || '').trim(); if (num) return num; }
+            catch (e) { /* no number field on this form */ }
+        }
+        const doc = (ctx && ctx.doc) || document;
+        for (const id of ['sc_req_item.number', 'incident.number', 'sc_task.number']) {
+            const n = doc.getElementById(id);
+            const v = n && String(n.value || n.textContent || '').trim();
+            if (v) return v;
+        }
+        // Read only forms show the number in sys_readonly.<table>.number
+        const el = doc.querySelector('input[id$="sc_req_item.number"], input[id$="incident.number"], input[id$="sc_task.number"]') ||
+                   doc.querySelector('input[id$=".number"][readonly]');
+        return (el && el.value && el.value.trim()) || null;
+    }
+
+    // Who opened the ticket (the caller on incidents), one line, or null. The form's own fields first:
+    // g_form.getDisplayValue of a field that is not on the form gives the record number, so that is refused.
+    function suiteOpenedByName(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext();
+        const doc = (ctx && ctx.doc) || document;
+        const ids = ['sc_req_item.opened_by_label', 'sys_display.sc_req_item.opened_by',
+                     'incident.opened_by_label', 'sys_display.incident.opened_by',
+                     'sc_req_item.caller_id_label', 'sys_display.sc_req_item.caller_id',
+                     'incident.caller_id_label', 'sys_display.incident.caller_id'];
+        for (const id of ids) {
+            const f = doc.getElementById(id);
+            const v = f && suiteCleanPersonName(f.value || f.textContent);
+            if (v && v.length > 2) return v;
+        }
+        for (const f of doc.querySelectorAll('[id*="opened_by"], [id*="caller_id"]')) {
+            const v = suiteCleanPersonName(f.value || f.textContent);
+            if (v.length > 2 && !v.includes('_')) return v;
+        }
+        const gf = ctx && ctx.gForm;
+        if (gf) {
+            const number = suiteTicketNumber(ctx) || '';
+            for (const field of ['opened_by', 'caller_id']) {
+                try {
+                    const v = suiteCleanPersonName(gf.getDisplayValue(field));
+                    if (v && v !== number && !/^[A-Z]{2,6}\d{5,}$/.test(v)) return v;
+                } catch (e) { /* field not on this form */ }
+            }
         }
         return null;
     }
 
-    function setJournalField(doc, win, fieldName, text) {
-        // fieldName is 'work_notes' or 'comments'
-
-        // 1. Hidden form textarea (submitted with the form)
-        const formTA = doc.getElementById(`sc_req_item.${fieldName}`);
-        if (formTA) {
-            formTA.value = text;
-            formTA.dispatchEvent(new Event('change', { bubbles: true }));
-            formTA.dispatchEvent(new Event('input',  { bubbles: true }));
-        }
-
-        // 2. Angular activity stream textarea (visible to the user)
-        const streamTA = doc.getElementById(`activity-stream-${fieldName}-textarea`) ||
-                         doc.getElementById('activity-stream-textarea');
-        if (streamTA) {
-            streamTA.value = text;
-            const angular = win.angular;
-            const scope   = angular.element(streamTA).scope();
-            const model   = streamTA.getAttribute('ng-model'); // e.g. "activity_field_0.value"
-            const key     = model.split('.')[0];               // "activity_field_0" or "activity_field_1"
-            let s = scope;
-            while (s) {
-                if (key in s) { s[key].value = text; s.$apply(); break; }
-                s = s.$parent;
-            }
-            streamTA.dispatchEvent(new Event('input',  { bubbles: true }));
-            streamTA.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+    // The ticket's Short description field (the input on the form), or null
+    function suiteShortDescriptionInput(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext({ allowNoForm: true });
+        const doc = (ctx && ctx.doc) || document;
+        return doc.getElementById('sc_req_item.short_description') ||
+               doc.getElementById('incident.short_description') ||
+               doc.getElementById('sc_task.short_description');
     }
-    // Angular model mapping: activity_field_0 = work_notes, activity_field_1 = comments
+    // Its current text ('' when the form has none)
+    function suiteShortDescription(ctx) {
+        if (ctx === undefined) ctx = suiteTicketContext({ allowNoForm: true });
+        let v = '';
+        try { v = (ctx && ctx.gForm && ctx.gForm.getValue('short_description')) || ''; } catch (e) { /* not on this form */ }
+        if (!v) { const input = suiteShortDescriptionInput(ctx); v = (input && input.value) || ''; }
+        return String(v).trim();
+    }
+    // Writes it the way ServiceNow expects (g_form, else the input with its events). False when there is no field.
+    function suiteSetShortDescription(ctx, value) {
+        if (ctx === undefined || ctx === null) ctx = suiteTicketContext({ allowNoForm: true });
+        try { if (ctx && ctx.gForm) { ctx.gForm.setValue('short_description', value); return true; } }
+        catch (e) { /* fall through to the input */ }
+        const input = suiteShortDescriptionInput(ctx);
+        if (!input) return false;
+        input.value = value;
+        input.dispatchEvent(new Event('input',  { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    // The activity stream (Work notes and Additional comments). ServiceNow shows either two textareas
+    // (dual mode) or one that the user switches between the two journals (single mode), next to hidden copies.
+    const suiteIsShown = el => !!(el && el.offsetParent !== null);
+    // Which journal a textarea writes to now: 'work_notes', 'comments' or null
+    function suiteJournalShows(textarea, doc) {
+        if (!textarea) return null;
+        doc = doc || textarea.ownerDocument;
+        const attr = textarea.getAttribute('data-stream-text-input');
+        if (attr === 'work_notes' || attr === 'comments') return attr;
+        const ph = (textarea.placeholder || '').toLowerCase();
+        if (ph.includes('work note')) return 'work_notes';
+        if (ph.includes('comment')) return 'comments';
+        const pressed = type => doc.querySelector(`[id*="show-${type}"].active, button[data-input-stream-type="${type}"].active, ` +
+            `button[data-input-stream-type="${type}"][aria-pressed="true"], button[data-input-stream-type="${type}"][aria-selected="true"]`);
+        if (pressed('work_notes')) return 'work_notes';
+        if (pressed('comments')) return 'comments';
+        const box = textarea.closest('[id*="activity-stream"]') || textarea.parentElement;
+        const cls = String((box && box.className) || '');
+        if (/work[_-]?notes/i.test(cls)) return 'work_notes';
+        if (/comments/i.test(cls)) return 'comments';
+        return null;
+    }
+    // The journal fields shown now:
+    //   { mode: 'both' | 'workNotesOnly' | 'commentsOnly' | 'unknown' | 'none', workNotes, comments, single }
+    // 'unknown' is a single textarea whose journal could not be told (it is given as comments).
+    function suiteJournalFields(doc) {
+        doc = doc || (suiteTicketContext({ allowNoForm: true }) || {}).doc || document;
+        const wn = doc.getElementById('activity-stream-work_notes-textarea');
+        const cm = doc.getElementById('activity-stream-comments-textarea');
+        const dual = doc.getElementById('multiple-input-journal-entry');
+        if (dual && dual.getAttribute('aria-hidden') === 'false' && wn && cm) return { mode: 'both', workNotes: wn, comments: cm, single: null };
+        const wnShown = suiteIsShown(wn), cmShown = suiteIsShown(cm);
+        if (wnShown && cmShown) return { mode: 'both', workNotes: wn, comments: cm, single: null };
+        if (wnShown) return { mode: 'workNotesOnly', workNotes: wn, comments: null, single: null };
+        if (cmShown) return { mode: 'commentsOnly', workNotes: null, comments: cm, single: null };
+        const single = doc.getElementById('activity-stream-textarea') || doc.querySelector('[data-stream-text-input]');
+        if (single) {
+            const which = suiteJournalShows(single, doc);
+            if (which === 'work_notes') return { mode: 'workNotesOnly', workNotes: single, comments: null, single };
+            if (which === 'comments') return { mode: 'commentsOnly', workNotes: null, comments: single, single };
+            return { mode: 'unknown', workNotes: null, comments: single, single };
+        }
+        return { mode: 'none', workNotes: null, comments: null, single: null };
+    }
+
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('toolbarSuiteTestHooks', false) === true) {
+        (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__suiteTicket = {
+            context: (o) => { const c = suiteTicketContext(o); return c && { mode: c.mode, hasForm: !!c.gForm, inFrame: c.doc !== document }; },
+            number: () => suiteTicketNumber(), openedBy: () => suiteOpenedByName(),
+            journal: () => { const j = suiteJournalFields(); return { mode: j.mode, workNotes: j.workNotes && j.workNotes.id, comments: j.comments && j.comments.id }; },
+            shortDescription: () => suiteShortDescription(), setShortDescription: (v) => suiteSetShortDescription(undefined, v) };
+    }
 
     /* ==========================================================
      *  SHARED: @MENTIONS (core, used by every tool that writes a
@@ -2157,135 +2280,295 @@ Version 1.0.0:
      * ==========================================================*/
 
     /* ==========================================================
-     *  CHANGELOG MODAL
+     *  SHARED: TOOL VERSION AND WHAT'S NEW (core, used by the suite
+     *  and every tool)
+     *  Each tool keeps its own stored keys, so nobody sees again a
+     *  What's New they already closed. Every What's New window looks
+     *  the same: title, the "updated" line, one card per version (the
+     *  newest open, the others folded) and Got it!. Its styles are
+     *  inline and !important, so it looks right under ServiceNow's dark
+     *  theme and under Netskope's CSP.
      * ==========================================================*/
 
-    function showChangelogModal() {
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'toolbarChangelogOverlay';
+    // cfg: { name, version, changelog, versionKey, seenKey, modalId, overlayId,
+    //        toolId (toolbar button that gets the pulsing dot), dotClass, notifIds (in tool "What's new" marks to remove) }
+    function suiteToolVersion(cfg) {
+        const stored = () => GM_getValue(cfg.versionKey, null);
+        const save = (v) => GM_setValue(cfg.versionKey, v === undefined ? cfg.version : v);
+        const seen = () => GM_getValue(cfg.seenKey, null) === cfg.version;
+        const markSeen = () => GM_setValue(cfg.seenKey, cfg.version);
+        const isNew = () => compareVersions(stored(), cfg.version);
+        const dotClass = cfg.dotClass || 'suite-tool-notif-dot';
 
-        // Create modal
-        const modal = document.createElement('div');
-        modal.id = 'toolbarChangelogModal';
+        function addDot() {
+            if (!cfg.toolId || !isNew() || seen()) return;
+            const tryAdd = (attempts) => {
+                const toolEl = document.querySelector(`[data-tool="${cfg.toolId}"]`);
+                if (!toolEl) { if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300); return; }
+                if (toolEl.querySelector('.' + dotClass)) return;
+                toolEl.style.position = 'relative';
+                const dot = document.createElement('div');
+                dot.className = dotClass;
+                suiteBusyStyle(dot, { position: 'absolute', top: '2px', right: '2px', width: '8px', height: '8px',
+                    'border-radius': '50%', background: '#007bff', 'pointer-events': 'none', 'z-index': '10' });
+                let blue = true;
+                const intervalId = setInterval(() => {
+                    blue = !blue;
+                    dot.style.setProperty('background', blue ? '#007bff' : '#ff8c00', 'important');
+                }, 500);
+                dot.dataset.intervalId = intervalId;
+                toolEl.appendChild(dot);
+            };
+            setTimeout(() => tryAdd(0), 500);
+        }
+        function removeDot() {
+            if (!cfg.toolId) return;
+            const dot = document.querySelector(`[data-tool="${cfg.toolId}"] .${dotClass}`);
+            if (dot) { clearInterval(Number(dot.dataset.intervalId)); dot.remove(); }
+        }
 
-        const title = document.createElement('h2');
-        title.textContent = `What's New: Version ${SCRIPT_VERSION}`;
+        function showWhatsNew() {
+            if (document.getElementById(cfg.modalId)) return;
+            const st = suiteBusyStyle;
+            const font = 'Arial, sans-serif';
+            const overlay = document.createElement('div');
+            overlay.id = cfg.overlayId;
+            st(overlay, { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+                background: 'rgba(0, 0, 0, 0.5)', 'z-index': '100000011', margin: '0', padding: '0', border: '0' });
+            const modal = document.createElement('div');
+            modal.id = cfg.modalId;
+            modal.className = 'suite-whats-new';
+            st(modal, { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', 'z-index': '100000012',
+                background: '#ffffff', color: '#333333', border: '2px solid #333333', padding: '20px', margin: '0',
+                'box-shadow': '0 4px 12px rgba(0,0,0,0.3)', 'font-family': font, 'border-radius': '10px',
+                width: 'min(600px, calc(100vw - 32px))', 'max-height': '80vh', 'overflow-y': 'auto', 'box-sizing': 'border-box', 'text-align': 'left' });
 
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'toolbar-version-info';
-        versionInfo.textContent = `Tools Toolbar Suite has been updated to version ${SCRIPT_VERSION}!`;
+            const title = document.createElement('h2');
+            title.textContent = `What's New: Version ${cfg.version}`;
+            st(title, { margin: '0 0 15px 0', color: '#333333', 'border-bottom': '2px solid #667eea', 'padding-bottom': '10px',
+                'font-size': '1.5em', 'font-weight': 'bold', 'font-family': font, background: 'transparent', 'line-height': '1.3' });
+            const info = document.createElement('div');
+            info.className = 'suite-whats-new-info';
+            info.textContent = `${cfg.name} has been updated to version ${cfg.version}!`;
+            st(info, { background: '#f8f9fa', color: '#333333', padding: '10px', 'border-radius': '5px', 'margin-bottom': '15px',
+                'border-left': '4px solid #667eea', 'font-family': font, 'font-size': '14px', 'font-weight': 'normal' });
 
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
+            const cards = document.createElement('div');
+            parseChangelog(cfg.changelog).forEach((entry, index) => {
+                const latest = index === 0;
+                const card = document.createElement('div');
+                st(card, { border: '1px solid ' + (latest ? '#667eea' : '#e0e0e0'), 'border-radius': '6px', 'margin-bottom': '8px',
+                    overflow: 'hidden', background: '#ffffff' });
+                const header = document.createElement('div');
+                header.setAttribute('role', 'button');
+                header.tabIndex = 0;
+                st(header, { display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', padding: '9px 12px',
+                    background: latest ? '#f0f0ff' : '#f8f8f8', cursor: 'pointer', 'user-select': 'none' });
+                const label = document.createElement('span');
+                st(label, { display: 'inline-flex', 'align-items': 'center' });
+                const versionLabel = document.createElement('span');
+                versionLabel.textContent = `Version ${entry.version}`;
+                st(versionLabel, { 'font-weight': 'bold', 'font-size': '13px', color: latest ? '#667eea' : '#555555', 'font-family': font });
+                label.appendChild(versionLabel);
+                if (latest) {
+                    const tag = document.createElement('span');
+                    tag.textContent = 'Latest';
+                    st(tag, { 'font-size': '10px', 'font-weight': 'bold', background: '#667eea', color: '#ffffff', 'border-radius': '3px',
+                        padding: '1px 6px', 'margin-left': '8px', 'font-family': font });
+                    label.appendChild(tag);
+                }
+                const chevron = document.createElement('span');
+                chevron.textContent = '▾';
+                st(chevron, { 'font-size': '12px', color: '#999999', transition: 'transform 0.2s', display: 'inline-block',
+                    transform: latest ? 'rotate(0deg)' : 'rotate(-90deg)' });
+                header.append(label, chevron);
+                const body = document.createElement('div');
+                st(body, { padding: '10px 14px', display: latest ? 'block' : 'none', background: '#ffffff' });
+                entry.bullets.forEach(bullet => {
+                    const row = document.createElement('div');
+                    st(row, { display: 'flex', gap: '8px', padding: '3px 0', 'font-size': '13px', 'font-family': font,
+                        color: '#444444', 'line-height': '1.5' });
+                    const dot = document.createElement('span');
+                    dot.textContent = '•';
+                    st(dot, { color: '#667eea', 'flex-shrink': '0', 'font-weight': 'bold' });
+                    const text = document.createElement('span');
+                    text.textContent = bullet;
+                    row.append(dot, text);
+                    body.appendChild(row);
                 });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
+                let open = latest;
+                header.setAttribute('aria-expanded', String(open));
+                const toggle = () => {
+                    open = !open;
+                    body.style.setProperty('display', open ? 'block' : 'none', 'important');
+                    chevron.style.setProperty('transform', open ? 'rotate(0deg)' : 'rotate(-90deg)', 'important');
+                    header.setAttribute('aria-expanded', String(open));
+                };
+                header.addEventListener('click', toggle);
+                header.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && !e.isComposing) { e.preventDefault(); toggle(); } });
+                header.addEventListener('mouseenter', () => header.style.setProperty('background', latest ? '#e6e6ff' : '#f0f0f0', 'important'));
+                header.addEventListener('mouseleave', () => header.style.setProperty('background', latest ? '#f0f0ff' : '#f8f8f8', 'important'));
+                card.append(header, body);
+                cards.appendChild(card);
             });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
+
+            const gotIt = document.createElement('button');
+            gotIt.type = 'button';
+            gotIt.className = 'suite-whats-new-close';
+            gotIt.textContent = 'Got it!';
+            st(gotIt, { 'margin-top': '15px', padding: '10px 20px', background: '#667eea', color: '#ffffff', border: 'none',
+                'border-radius': '5px', cursor: 'pointer', 'font-weight': 'bold', width: '100%', 'font-family': font, 'font-size': '14px' });
+            gotIt.addEventListener('mouseenter', () => gotIt.style.setProperty('background', '#5568d3', 'important'));
+            gotIt.addEventListener('mouseleave', () => gotIt.style.setProperty('background', '#667eea', 'important'));
+            gotIt.onclick = () => {
+                overlay.remove();
+                modal.remove();
+                markSeen();
+                save();
+                removeDot();
+                (cfg.notifIds || []).forEach(id => document.getElementById(id)?.remove());
+                if (cfg.onSeen) { try { cfg.onSeen(); } catch (e) { console.warn('What\'s New: after closing', e); } }
+            };
+            overlay.onclick = () => gotIt.click();
+
+            modal.append(title, info, cards, gotIt);
+            suiteModal(overlay, modal);
+        }
+
+        const api = { stored, save, seen, markSeen, isNew, addDot, removeDot, showWhatsNew };
+        if (GM_getValue('toolbarSuiteTestHooks', false) === true) {
+            const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            (w.__suiteWhatsNew = w.__suiteWhatsNew || {})[cfg.toolId || 'suite'] = {
+                open: () => showWhatsNew(), isNew: () => isNew(), seen: () => seen(), modalId: cfg.modalId };
+        }
+        return api;
+    }
+
+    function showChangelogModal() { SUITE_VERSIONING.showWhatsNew(); }
+
+    /* ==========================================================
+     *  SHARED: FEATURE GUIDE PIECES (core, used by every guide)
+     *  The building blocks every Feature Guide draws its sections with,
+     *  so all guides look the same. A guide takes the ones it uses:
+     *  const { lead, bullets, chip } = suiteGuide;
+     * ==========================================================*/
+
+    // Test only: the automated tests open every Feature Guide through this
+    function suiteGuideHook(name, open) {
+        if (GM_getValue('toolbarSuiteTestHooks', false) !== true) return;
+        const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        (w.__suiteGuides = w.__suiteGuides || {})[name] = () => open();
+    }
+
+    const suiteGuide = (() => {
+        const font = 'Arial, sans-serif';
+        // span: an inline text with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: font }, extra || {});
+            return s;
+        }
+        // lead: the one orienting sentence at the top of a section
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: font });
+            body.appendChild(p);
+        }
+        // bullets: short usage notes, each with a purple dot
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
                 const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
+                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: font });
                 const dot = document.createElement('span');
                 dot.textContent = '•';
                 Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'toolbar-close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-
-            // Remove the notification dot
-            const notification = document.getElementById('toolbarChangelogNotification');
-            if (notification) {
-                notification.remove();
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.append(dot, t);
+                ul.appendChild(row);
             }
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        // Close on overlay click
-        overlay.onclick = () => {
-            closeButton.click();
-        };
-    }
+            body.appendChild(ul);
+        }
+        // caption: a small italic note right under a picture
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: font });
+            body.appendChild(c);
+        }
+        // hrow: a wrapping row that holds pictures side by side
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+        // chip: a small colored label, also used to picture a button.
+        // opts: color, border, radius, padding, fontSize, weight
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff', borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
+                fontFamily: font, border: opts.border || 'none', display: 'inline-block', lineHeight: '1.4'
+            });
+            return c;
+        }
+        // toggle: a ticked or empty checkbox with its label and an optional note under it
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = document.createElement('span');
+            Object.assign(box.style, {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
+                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+            });
+            box.textContent = on ? '✓' : '';
+            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+            return wrap;
+        }
+        // toolSquare: one rounded icon tile like a toolbar button; opts.bg, opts.border, opts.dot (notification dot)
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px', background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+        // menuSep: the thin divider between groups in a menu picture
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+        // menuMock: a white menu card holding tiles, like the toolbar menu
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+        return { span, lead, bullets, caption, hrow, chip, toggle, toolSquare, menuSep, menuMock };
+    })();
 
     /* ==========================================================
      *  HELP / FEATURE GUIDE MODAL
@@ -2294,117 +2577,15 @@ Version 1.0.0:
     function showHelpModal() {
         if (document.getElementById('toolbarHelpModal')) return;
 
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
+        const { caption, lead, bullets, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
 
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6',
-                border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         const PURPLE_GRAD = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
 
@@ -2880,6 +3061,7 @@ Version 1.0.0:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('CORE', showHelpModal);
 
     /* ==========================================================
      *  SETTINGS DEFAULTS AND MANAGEMENT
@@ -5732,6 +5914,188 @@ Version 1.0.0:
      *  that field (or in a CodeMirror editor) marks it.
      * ==========================================================*/
 
+    /* ==========================================================
+     *  SHARED: URL LIST LOG (core, used by the Destination Profile
+     *  Editor and the Netskope Console Toolkit)
+     *  The log lines a tool writes above the values of a URL list or a
+     *  Destination Profile: "#RITM | YYYY-MM-DD | Name" followed by the
+     *  values it added, and the history window that lists them.
+     * ==========================================================*/
+
+    // Groups of the log: { ritm, date, name, isDeleted, domains: [{ raw, domain, isCommented }], raw, isOrphan }
+    function suiteParseUrlListLog(text) {
+        if (!text) return [];
+        const groups = [];
+        let current = null;
+        const orphanDomains = [];
+        for (const line of text.split('\n')) {
+            const trimmed = line.trim();
+            // Log header: # followed right away by a word character (#RITM...)
+            if (/^#\w/.test(trimmed)) {
+                if (orphanDomains.length > 0) {
+                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
+                    orphanDomains.length = 0;
+                }
+                const parts = trimmed.slice(1).split('|').map(p => p.trim());
+                current = {
+                    ritm:      '#' + parts[0],
+                    date:      parts[1] || '',
+                    name:      parts[2] || '',
+                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
+                    domains:   [],
+                    raw:       line,
+                };
+                groups.push(current);
+            } else if (trimmed) {
+                // A value line, maybe commented out with "# "
+                const isCommented = /^#/.test(trimmed);
+                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
+                const entry = { raw: line, domain, isCommented };
+                if (current) current.domains.push(entry);
+                else orphanDomains.push(entry);
+            }
+        }
+        if (orphanDomains.length > 0) {
+            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
+        }
+        return groups;
+    }
+
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('toolbarSuiteTestHooks', false) === true) {
+        (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__suiteUrlLog = {
+            parse: (text) => suiteParseUrlListLog(text),
+            history: (host, text, emptyText) => suiteUrlLogHistory(host, suiteParseUrlListLog(text).filter(g => g.ritm || g.domains.some(d => d.domain)), emptyText) };
+    }
+
+    // The history list of a log window: filters (RITM, date from, date to, Clear) and one card per group,
+    // added to host. emptyText is shown when the log has no entries at all.
+    function suiteUrlLogHistory(host, allGroups, emptyText) {
+        const filterRow = document.createElement('div');
+        Object.assign(filterRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end' });
+
+        const mkFilterBlock = (labelText, inputType) => {
+            const wrap = document.createElement('div');
+            const lbl  = document.createElement('div');
+            lbl.textContent = labelText;
+            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
+            const inp = document.createElement('input');
+            inp.type        = inputType || 'text';
+            inp.placeholder = inputType === 'date' ? '' : 'All';
+            Object.assign(inp.style, {
+                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
+                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px', boxSizing: 'border-box',
+            });
+            wrap.appendChild(lbl); wrap.appendChild(inp);
+            return { wrap, inp };
+        };
+
+        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
+        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
+        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
+
+        const clearFiltersBtn = document.createElement('button');
+        clearFiltersBtn.textContent = 'Clear';
+        Object.assign(clearFiltersBtn.style, {
+            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
+            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
+        });
+        clearFiltersBtn.onclick = () => { ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = ''; applyFilters(); };
+
+        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
+        host.appendChild(filterRow);
+
+        const scrollArea = document.createElement('div');
+        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
+        host.appendChild(scrollArea);
+
+        function buildGroupCard(group) {
+            const isDeleted = group.isDeleted;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
+                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
+                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif',
+            });
+
+            const mkBadge = (text, bg, color, border) => {
+                const s = document.createElement('span');
+                s.textContent = text;
+                Object.assign(s.style, {
+                    display: 'inline-block', background: bg, color, borderRadius: '4px',
+                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px', border: border || 'none',
+                });
+                return s;
+            };
+
+            const headerRow = document.createElement('div');
+            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
+
+            if (group.ritm)     headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
+            if (group.date)     headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
+            if (group.name)     headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
+            if (isDeleted)      headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
+            if (group.isOrphan) headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
+            card.appendChild(headerRow);
+
+            const activeDomains = group.domains.filter(d => d.domain);
+            if (activeDomains.length > 0) {
+                const domainList = document.createElement('div');
+                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
+                activeDomains.forEach(d => {
+                    const dEl = document.createElement('div');
+                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
+                    Object.assign(dEl.style, { color: d.isCommented ? '#aaa' : '#333', textDecoration: d.isCommented ? 'line-through' : 'none' });
+                    domainList.appendChild(dEl);
+                });
+                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
+                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
+                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
+                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
+                const countEl = document.createElement('div');
+                countEl.textContent = countText;
+                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
+                card.appendChild(domainList);
+                card.appendChild(countEl);
+            } else {
+                const emptyEl = document.createElement('div');
+                emptyEl.textContent = '(no domains in this group)';
+                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
+                card.appendChild(emptyEl);
+            }
+            return card;
+        }
+
+        function applyFilters() {
+            const ritmVal  = ritmFilter.value.trim().toLowerCase();
+            const dateFrom = dateFromFilter.value;
+            const dateTo   = dateToFilter.value;
+
+            const filtered = allGroups.filter(group => {
+                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
+                if (dateFrom && group.date && group.date < dateFrom) return false;
+                if (dateTo   && group.date && group.date > dateTo)   return false;
+                return true;
+            });
+
+            scrollArea.replaceChildren();
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = allGroups.length === 0 ? emptyText : 'No entries match the current filters.';
+                Object.assign(empty.style, { fontSize: '13px', color: '#999', textAlign: 'center', padding: '24px 0', fontStyle: 'italic' });
+                scrollArea.appendChild(empty);
+            } else {
+                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
+            }
+        }
+
+        ritmFilter.addEventListener('input', applyFilters);
+        dateFromFilter.addEventListener('change', applyFilters);
+        dateToFilter.addEventListener('change', applyFilters);
+        applyFilters();
+    }
+
     const suiteCaretFields = new WeakSet();
     ['mouseup', 'keyup'].forEach(type => document.addEventListener(type, (e) => {
         if (!e.isTrusted) return;
@@ -5998,8 +6362,14 @@ Version 1.0.0:
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.4.3';
-    const CHANGELOG = `Version 1.4.3:
+    const SCRIPT_VERSION = '1.4.5';
+    const CHANGELOG = `Version 1.4.5:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.4.4:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.4.3:
 - General Toolkit is now called General Web Toolkit. It is the place for helpers that work on any website; today it opens the ticket or case number you select. Your settings stay as they were.
 
 Version 1.4.2:
@@ -6029,13 +6399,19 @@ Version 1.3:
 Version 1.2:
 - Added INC (Incident) ticket type support. Highlight any INC number on any page to open it in ServiceNow alongside RITM and PER.`;
 
-    function getStoredVersion()    { return GM_getValue('tqo_version', null); }
-    function saveVersion(v)        { GM_setValue('tqo_version', v); }
-    function hasSeenChangelog()    { return GM_getValue('tqo_changelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue('tqo_changelogSeen', SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'General Web Toolkit', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'tqo_version', seenKey: 'tqo_changelogSeen', modalId: 'tqo-changelog-modal', overlayId: 'tqo-changelog-overlay',
+        toolId: 'ticketQuickOpen', dotClass: 'tqo-notif-dot', notifIds: ['tqo-changelog-notif'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
 
     // ─────────────────────────────────────────────────────────────
     // CONFIGURATION
@@ -6083,48 +6459,6 @@ Version 1.2:
 
 
     // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'tqo-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
 
@@ -6140,143 +6474,6 @@ Version 1.2:
     document.addEventListener('toolbarToolClicked', (e) => {
         if (e.detail.id === TOOL_ID) showSettingsModal();
     });
-
-    // ─────────────────────────────────────────────────────────────
-    // CHANGELOG MODAL
-    // ─────────────────────────────────────────────────────────────
-
-
-    function showChangelogModal() {
-        if (document.getElementById('tqo-changelog-modal')) return;
-
-        const overlay = document.createElement('div');
-        overlay.id = 'tqo-changelog-overlay';
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.5)', zIndex: '1000000',
-        });
-
-        const modal = document.createElement('div');
-        modal.id = 'tqo-changelog-modal';
-        Object.assign(modal.style, {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            zIndex: '1000001', background: '#ffffff', border: '2px solid #333',
-            padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            fontFamily: 'Arial, sans-serif', borderRadius: '10px',
-            maxWidth: '520px', width: '90vw', maxHeight: '80vh', overflowY: 'auto',
-            color: '#333', boxSizing: 'border-box',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New — v${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            marginTop: '0', marginBottom: '12px', fontSize: '16px', fontWeight: 'bold',
-            color: '#333', borderBottom: '2px solid #0073e6', paddingBottom: '8px',
-        });
-
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'Got it!';
-        Object.assign(closeBtn.style, {
-            display: 'block', marginTop: '14px', padding: '10px 20px',
-            background: '#0073e6', color: '#fff', border: 'none',
-            borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
-            width: '100%', fontSize: '14px', boxSizing: 'border-box',
-        });
-        closeBtn.addEventListener('mouseenter', () => { closeBtn.style.background = '#005bb5'; });
-        closeBtn.addEventListener('mouseleave', () => { closeBtn.style.background = '#0073e6'; });
-        closeBtn.onclick = () => {
-            overlay.remove(); modal.remove();
-            markChangelogAsSeen(); saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            document.getElementById('tqo-changelog-notif')?.remove();
-        };
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        modal.append(title, cardsWrap, closeBtn);
-        suiteModal(overlay, modal);
-        overlay.onclick = () => closeBtn.click();
-    }
 
     // ─────────────────────────────────────────────────────────────
     // SETTINGS MODAL
@@ -6539,142 +6736,16 @@ Version 1.2:
     function showHelpModal() {
         if (document.getElementById('tqoHelpModal')) return;
 
-        // lead: single orienting sentence at the top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list with purple dot markers.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(c);
-        }
 
-        // span: inline element with optional styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal flex row for side-by-side mocks.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0',
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block',
-            });
-            return c;
-        }
 
-        // toolSquare: rounded icon tile resembling a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative',
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff',
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between toolbar groups.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: white card wrapping toolbar icon tiles.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
-        // toggle: checkbox preview with an optional per-control description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 0 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block',
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -7071,6 +7142,7 @@ Version 1.2:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('GENERAL TOOLKIT', showHelpModal);
 
     function showSettingsModal() {
         buildSettingsModal();
@@ -7204,8 +7276,17 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.5';
-    const CHANGELOG = `Version 1.6.5:
+    const SCRIPT_VERSION = '1.6.8';
+    const CHANGELOG = `Version 1.6.8:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.6.7:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.6.6:
+- The ticket number for Saved Drafts is read by the toolbar's shared ticket reader. Nothing changes in how drafts work.
+
+Version 1.6.5:
 - Finding the open ticket on ServiceNow pages takes less work for the browser, and the SPM Germany reminder check rests while the tab is in the background.
 
 Version 1.6.4:
@@ -7298,22 +7379,19 @@ Version 1.1.4:
     const GM_KEY_VERSION        = 'snToolkitVersion';
     const GM_KEY_CHANGELOG_SEEN = 'snToolkitChangelogSeen';
 
-    function getStoredVersion()  { return GM_getValue(GM_KEY_VERSION, null); }
-    function saveVersion(v)      { GM_setValue(GM_KEY_VERSION, v); }
-    function hasSeenChangelog()  { return GM_getValue(GM_KEY_CHANGELOG_SEEN, null) === SCRIPT_VERSION; }
-    function markChangelogSeen() { GM_setValue(GM_KEY_CHANGELOG_SEEN, SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'ServiceNow Toolkit', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'snToolkitVersion', seenKey: 'snToolkitChangelogSeen', modalId: 'snToolkitChangelogModal', overlayId: 'snToolkitChangelogOverlay',
+        toolId: 'serviceNowToolkit', dotClass: 'snToolkit-notif-dot', notifIds: [] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogSeen()            { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function isNewVersion() {
-        const stored = getStoredVersion();
-        if (!stored) return true;
-        const a = stored.split('.').map(Number);
-        const b = SCRIPT_VERSION.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
 
     /* ==========================================================
      *  CONFIGURATION
@@ -7558,130 +7636,15 @@ Version 1.1.4:
          *      Each section's buildContent calls them. lead/bullets/caption append to
          *      the section body; span/hrow/chip return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // toggle: a checkbox preview row with label and optional description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -8075,6 +8038,7 @@ Version 1.1.4:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('SERVICENOW TOOLKIT', showHelpModal);
 
     /* ==========================================================
      *  UI COMPONENTS — settings / drafts modal
@@ -8510,12 +8474,9 @@ Version 1.1.4:
      *  MAIN LOGIC — TICKET PAGE AUTOSAVE
      * ==========================================================*/
 
+    // Drafts belong to the form on this page (the copy in the shell's iframe handles tickets opened there)
     function getTicketNumber() {
-        const el =
-            document.querySelector('input[id*="sc_req_item.number"]') ||
-            document.querySelector('input[id*="incident.number"]')     ||
-            document.querySelector('input[id$=".number"][readonly]');
-        return el?.value?.trim() || null;
+        return suiteTicketNumber({ win: window, doc: document, gForm: window.g_form || null });
     }
 
     function findWorkNotesFields() {
@@ -8729,185 +8690,6 @@ Version 1.1.4:
         }
 
         tryInit();
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed', inset: '0',
-            background: 'rgba(0,0,0,0.55)',
-            zIndex: '999999',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-        });
-
-        const modal = document.createElement('div');
-        Object.assign(modal.style, {
-            background: '#fff', borderRadius: '8px',
-            padding: '24px', width: '420px', maxWidth: '90vw',
-            maxHeight: '80vh', overflowY: 'auto',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-            fontFamily: 'Arial, sans-serif',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, { margin: '0 0 6px', fontSize: '16px', color: '#1d1d1d' });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `ServiceNow Toolkit updated to v${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, { fontSize: '13px', color: '#666', marginBottom: '16px' });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '16px';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            display: 'block', margin: '0 auto',
-            padding: '8px 28px', borderRadius: '6px',
-            background: '#667eea', color: '#fff',
-            border: 'none', cursor: 'pointer',
-            fontSize: '14px', fontFamily: 'Arial, sans-serif',
-        });
-        closeButton.onclick = () => {
-            overlay.remove();
-            markChangelogSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-        overlay.appendChild(modal);
-        suiteModal(overlay, modal);
-        overlay.addEventListener('click', e => { if (e.target === overlay) closeButton.click(); });
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'snToolkit-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
     }
 
     document.addEventListener('toolbarToolClicked', e => {
@@ -9129,9 +8911,15 @@ Version 1.1.4:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.7';
+    const SCRIPT_VERSION = '1.1.9';
 
-    const CHANGELOG = `Version 1.1.7:
+    const CHANGELOG = `Version 1.1.9:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.1.8:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.1.7:
 - Mini Summary Sidebar is now called Ticket Summary Panel. Your settings stay as they were.
 
 Version 1.1.6:
@@ -9187,161 +8975,18 @@ Version 1.0.2:
      *  VERSION MANAGEMENT FUNCTIONS
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue('miniSummarySidebarVersion', null);
-    }
-
-    function saveVersion(version) {
-        GM_setValue('miniSummarySidebarVersion', version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue('miniSummarySidebarChangelogSeen', null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue('miniSummarySidebarChangelogSeen', SCRIPT_VERSION);
-    }
-
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'miniSummaryChangelogOverlay';
-
-        // Create modal
-        const modal = document.createElement('div');
-        modal.id = 'miniSummaryChangelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'version-info';
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-
-            // Remove the notification dot from sidebar
-            const notification = document.getElementById('miniSummaryChangelogNotification');
-            if (notification) {
-                notification.remove();
-            }
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        // Close on overlay click
-        overlay.onclick = () => {
-            closeButton.click();
-        };
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Ticket Summary Panel', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'miniSummarySidebarVersion', seenKey: 'miniSummarySidebarChangelogSeen', modalId: 'miniSummaryChangelogModal', overlayId: 'miniSummaryChangelogOverlay',
+        toolId: 'miniSummary', dotClass: 'miniSummary-notif-dot', notifIds: ['miniSummaryChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
 
     /* ==========================================================
@@ -9596,82 +9241,13 @@ Version 1.0.2:
     function showHelpModal() {
         if (document.getElementById('miniSummarySidebarHelpModal')) return;
 
-        // lead: one orienting sentence at the top of a section
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, toolSquare, menuSep } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list of usage notes with a purple dot each
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(c);
-        }
 
-        // span: inline text node with optional extra styles, returned not appended
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal wrapping flex row for placing visual mocks side by side
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between groups in a mock menu
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
         const sections = [
             {
@@ -9950,6 +9526,7 @@ Version 1.0.2:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('MINI SUMMARY SIDEBAR', showHelpModal);
 
     /* ==========================================================
      *  SIDEBAR INITIALIZATION
@@ -10527,49 +10104,6 @@ Version 1.0.2:
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'miniSummary-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -10605,9 +10139,18 @@ Version 1.0.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.3';
+    const SCRIPT_VERSION = '1.2.6';
 
-    const CHANGELOG = `Version 1.2.3:
+    const CHANGELOG = `Version 1.2.6:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.2.5:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.2.4:
+- The ticket number is read by the toolbar's shared ticket reader. Nothing changes in how the launcher works.
+
+Version 1.2.3:
 - Enhancement Request Logger is now called Enhancement Request Launcher, since it opens the request form already filled in. Your settings stay as they were.
 
 Version 1.2.2:
@@ -10647,22 +10190,19 @@ Version 1.1.1:
     const GM_KEY_VERSION        = 'erlVersion';
     const GM_KEY_CHANGELOG_SEEN = 'erlChangelogSeen';
 
-    function getStoredVersion()  { return GM_getValue(GM_KEY_VERSION, null); }
-    function saveVersion(v)      { GM_setValue(GM_KEY_VERSION, v); }
-    function hasSeenChangelog()  { return GM_getValue(GM_KEY_CHANGELOG_SEEN, null) === SCRIPT_VERSION; }
-    function markChangelogSeen() { GM_setValue(GM_KEY_CHANGELOG_SEEN, SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Enhancement Request Launcher', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'erlVersion', seenKey: 'erlChangelogSeen', modalId: 'erl-cl-modal', overlayId: 'erl-cl-overlay',
+        toolId: 'enhancementRequestLogger', dotClass: 'enhReqLog-notif-dot', notifIds: ['erl-changelog-notif'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogSeen()            { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function isNewVersion() {
-        const stored = getStoredVersion();
-        if (!stored) return true;
-        const a = stored.split('.').map(Number);
-        const b = SCRIPT_VERSION.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
 
     /* ==========================================================
      *  CONFIGURATION
@@ -10698,19 +10238,7 @@ Version 1.1.1:
      * ==========================================================*/
 
 
-    function getTicketNumber() {
-        const ctx = getTicketContext();
-        if (ctx && ctx.gForm) {
-            const num = ctx.gForm.getValue('number');
-            if (num) return num.trim();
-        }
-        const doc = (ctx && ctx.doc) || document;
-        const el =
-            doc.querySelector('input[id*="sc_req_item.number"]') ||
-            doc.querySelector('input[id*="incident.number"]')     ||
-            doc.querySelector('input[id$=".number"][readonly]');
-        return el?.value?.trim() || null;
-    }
+    function getTicketNumber() { return suiteTicketNumber(); }
 
     function buildFormUrl(service, caseNumber, ritm, vendorCase, region, details) {
         // Service and Region are Choice fields in Office Forms — must be wrapped in quotes.
@@ -10729,154 +10257,6 @@ Version 1.1.1:
     }
 
     /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'erl-cl-overlay';
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.5)', zIndex: '1000000', display: 'block'
-        });
-
-        const clModal = document.createElement('div');
-        clModal.id = 'erl-cl-modal';
-        Object.assign(clModal.style, {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            zIndex: '1000001', background: '#ffffff', border: '2px solid #333', padding: '20px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial,sans-serif',
-            borderRadius: '10px', maxWidth: '600px', width: '90%', maxHeight: '80vh',
-            overflowY: 'auto', color: '#333'
-        });
-
-        const clTitle = document.createElement('h2');
-        clTitle.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(clTitle.style, {
-            marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea',
-            paddingBottom: '10px', fontSize: '1.5em', fontWeight: 'bold'
-        });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            backgroundColor: '#f8f9fa', color: '#333', padding: '10px', borderRadius: '5px',
-            marginBottom: '15px', borderLeft: '4px solid #667eea', fontSize: '14px'
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            marginTop: '15px', padding: '10px 20px', backgroundColor: '#667eea', color: '#fff',
-            border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
-            width: '100%', fontSize: '14px'
-        });
-        closeButton.addEventListener('mouseenter', () => { closeButton.style.backgroundColor = '#5568d3'; });
-        closeButton.addEventListener('mouseleave', () => { closeButton.style.backgroundColor = '#667eea'; });
-        closeButton.onclick = () => {
-            overlay.remove();
-            clModal.remove();
-            markChangelogSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            const n = document.getElementById('erl-changelog-notif');
-            if (n) n.remove();
-        };
-
-        clModal.appendChild(clTitle);
-        clModal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        clModal.appendChild(cardsWrap);
-
-        clModal.appendChild(closeButton);
-
-        suiteModal(overlay, clModal);
-        overlay.onclick = () => closeButton.click();
-    }
-
-    /* ==========================================================
      *  FEATURE GUIDE  (? Help modal)
      * ==========================================================*/
 
@@ -10886,83 +10266,12 @@ Version 1.1.1:
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      span/hrow/chip return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
         // badgeRow: a button preview on the left with a one line description on the right.
         function badgeRow(body, item) {
@@ -11009,47 +10318,8 @@ Version 1.1.1:
             return wrap;
         }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: a white rounded card that holds tool tiles, like the open toolbar menu.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         const sections = [
             {
@@ -11220,6 +10490,7 @@ Version 1.1.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('ENHANCEMENT REQUEST LOGGER', showHelpModal);
 
     function injectStyles() {
         const style = document.createElement('style');
@@ -11556,49 +10827,6 @@ Version 1.1.1:
         if (modal) modal.style.display = 'none';
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'enhReqLog-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -11635,9 +10863,21 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.10';
+    const SCRIPT_VERSION = '1.7.14';
 
-    const CHANGELOG = `Version 1.7.10:
+    const CHANGELOG = `Version 1.7.14:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.7.13:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.7.12:
+- The comment field and the Short description are found by the toolbar's shared ticket code. Nothing changes in how the assignment works.
+
+Version 1.7.11:
+- On incidents the greeting mentions the caller when the form has no Opened by field, instead of the placeholder Requester Name.
+
+Version 1.7.10:
 - Mentions are written by the toolbar's shared mention code, also used by the Change Tracker. Nothing changes in how they work.
 
 Version 1.7.9:
@@ -11781,27 +11021,19 @@ Version 1.2.1:
      *  VERSION MANAGEMENT FUNCTIONS
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue('ticketAssignmentVersion', null);
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Ticket Assignment', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'ticketAssignmentVersion', seenKey: 'ticketAssignmentChangelogSeen', modalId: 'ticketAssignmentChangelogModal', overlayId: 'ticketAssignmentChangelogOverlay',
+        toolId: 'ticketAssignment', dotClass: 'ticketAssign-notif-dot', notifIds: ['ticketAssignmentChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function saveVersion(version) {
-        GM_setValue('ticketAssignmentVersion', version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue('ticketAssignmentChangelogSeen', null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue('ticketAssignmentChangelogSeen', SCRIPT_VERSION);
-    }
-
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
 
     /* ==========================================================
      *  FREEZE DATE STORAGE FUNCTIONS
@@ -12230,130 +11462,6 @@ Version 1.2.1:
             option.dataset.name = member.name;
             dropdown.appendChild(option);
         });
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'ticketAssignmentChangelogOverlay';
-
-        const modal = document.createElement('div');
-        modal.id = 'ticketAssignmentChangelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'version-info';
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            const notification = document.getElementById('ticketAssignmentChangelogNotification');
-            if (notification) notification.remove();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        overlay.onclick = () => closeButton.click();
     }
 
     /* ==========================================================
@@ -12845,142 +11953,16 @@ Version 1.2.1:
     function showHelpModal() {
         if (document.getElementById('ticketAssignmentHelpModal')) return;
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: a white toolbar card that holds icon tiles side by side.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
-        // toggle: a checkbox preview with a label and an optional one-line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         // mockField: a rounded box that looks like a dropdown or text input on screen.
         function mockField(text, opts) {
@@ -13315,6 +12297,7 @@ Version 1.2.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('TICKET ASSIGNMENT TOOL', showHelpModal);
 
     /* ==========================================================
      *  MODAL INITIALIZATION
@@ -13854,31 +12837,8 @@ Version 1.2.1:
     // shadowing the shared getTicketContext). The shared helper returns null unless
     // g_form is directly reachable, but this tool must still resolve the ticket
     // document via a top level #gsft_main iframe or the classic top document.
-    function getTicketContext() {
-        const macro = suiteMacroponent();
-        if (macro && macro.shadowRoot) {
-            const iframe = macro.shadowRoot.querySelector('#gsft_main');
-            if (iframe && iframe.contentDocument) {
-                return {
-                    win: iframe.contentWindow,
-                    doc: iframe.contentDocument,
-                    gForm: (iframe.contentWindow && iframe.contentWindow.g_form) || null,
-                    mode: 'polaris'
-                };
-            }
-        }
-        const directIframe = document.getElementById('gsft_main');
-        if (directIframe && directIframe.contentDocument) {
-            return {
-                win: directIframe.contentWindow,
-                doc: directIframe.contentDocument,
-                gForm: (directIframe.contentWindow && directIframe.contentWindow.g_form) || null,
-                mode: 'classic'
-            };
-        }
-        // Classic direct page: return the top document even if g_form is not yet set
-        return { win: window, doc: document, gForm: window.g_form || null, mode: 'classic' };
-    }
+    // The form, also while its g_form is still loading: the tool waits for the fields itself
+    function getTicketContext() { return suiteTicketContext({ allowNoForm: true }); }
 
     // One assignment at a time: a second click while one runs does nothing
     let assignmentRunning = false;
@@ -14046,9 +13006,8 @@ Version 1.2.1:
     function updateShortDescription() {
         return new Promise((resolve, reject) => {
             try {
-                const ticketDoc = _ctx ? _ctx.doc : document;
-                const shortDescInput = ticketDoc.getElementById('sc_req_item.short_description') ||
-                                      ticketDoc.getElementById('incident.short_description');
+                // The input itself, as before: the template goes in as typed text
+                const shortDescInput = suiteShortDescriptionInput(_ctx || suiteTicketContext({ allowNoForm: true }));
                 if (!shortDescInput) throw new Error('Could not find "Short Description" field');
                 shortDescInput.value = SHORT_DESC_TEMPLATE;
                 shortDescInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -14060,24 +13019,14 @@ Version 1.2.1:
     }
 
     function getOpenedByName() {
-        const ticketDoc = _ctx ? _ctx.doc : document;
-        const openedByInput = ticketDoc.getElementById('sc_req_item.opened_by_label') ||
-                             ticketDoc.getElementById('sys_display.sc_req_item.opened_by') ||
-                             ticketDoc.getElementById('incident.opened_by_label') ||
-                             ticketDoc.getElementById('sys_display.incident.opened_by');
-        if (openedByInput) {
-            return cleanPersonName(openedByInput.value || openedByInput.textContent);
-        }
+        const name = suiteOpenedByName(_ctx || suiteTicketContext({ allowNoForm: true }));
+        if (name) return name;
         console.warn('⚠️ Could not find "Opened by" field, using placeholder');
         return 'Requester Name';
     }
 
     function getTicketNumber() {
-        const ticketDoc = _ctx ? _ctx.doc : document;
-        const numField = ticketDoc.getElementById('sc_req_item.number') ||
-                         ticketDoc.getElementById('incident.number');
-        if (numField) return (numField.value || numField.textContent).trim();
-        return '';
+        return suiteTicketNumber(_ctx || suiteTicketContext({ allowNoForm: true })) || '';
     }
 
     function detectMFCode() {
@@ -14102,21 +13051,19 @@ Version 1.2.1:
         if (ctxDoc !== document) docsToSearch.push(document);
 
         for (const doc of docsToSearch) {
-            // Find the visible textarea already showing comments mode.
-            // data-stream-text-input="comments" matches:
-            //   - #activity-stream-textarea in single mode (when comments is selected)
-            //   - #activity-stream-comments-textarea in dual mode
-            // Checking offsetParent skips the hidden counterpart that lives in the ng-hide container.
+            // The visible field writing Additional comments (dual mode, or single mode on comments)
             for (const el of doc.querySelectorAll('textarea[data-stream-text-input="comments"]')) {
-                if (el.offsetParent !== null) return el;
+                if (suiteIsShown(el)) return el;
             }
+            const j = suiteJournalFields(doc);
+            if (j.mode !== 'unknown' && suiteIsShown(j.comments)) return j.comments;
 
             // Single mode with work_notes currently selected: toggle to comments then return.
             const singleTA = doc.getElementById('activity-stream-textarea');
-            if (singleTA && singleTA.offsetParent !== null) {
+            if (suiteIsShown(singleTA)) {
                 const toggle = doc.querySelector('input[name="comments-journal-checkbox"]');
-                if (toggle) { toggle.click(); await sleep(300); }
-                if (singleTA.getAttribute('data-stream-text-input') === 'comments') return singleTA;
+                if (toggle && suiteJournalShows(singleTA, doc) !== 'comments') { toggle.click(); await sleep(300); }
+                if (suiteJournalShows(singleTA, doc) === 'comments') return singleTA;
             }
         }
         return null;
@@ -14220,48 +13167,6 @@ Thank you for your cooperation.` : '';
         });
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'ticketAssign-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -14323,9 +13228,21 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.3';
+    const SCRIPT_VERSION = '2.1.7';
 
-    const CHANGELOG = `Version 2.1.3:
+    const CHANGELOG = `Version 2.1.7:
+- The change log and the 📜 Change History window use the toolbar's shared log code, the same as the Netskope Console Toolkit. Nothing changes in how they work.
+
+Version 2.1.6:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 2.1.5:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 2.1.4:
+- The ticket number for change notes and log lines is read by the toolbar's shared ticket reader. Nothing changes in how the editor works.
+
+Version 2.1.3:
 - The API key passphrase now stays unlocked in every tab until one hour passes without using the key. The Feature Guide says so.
 
 Version 2.1.2:
@@ -14743,26 +13660,19 @@ Version 1.4.1:
      *  VERSION MANAGEMENT
      * ==========================================================*/
 
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Destination Profile Editor', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'netskopeUrlListVersion', seenKey: 'netskopeUrlListChangelogSeen', modalId: 'netskopeChangelogModal', overlayId: 'netskopeChangelogOverlay',
+        toolId: 'netskopeUrlListManager', dotClass: 'urlListEditor-notif-dot', notifIds: ['netskopeChangelogNotification'] });
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
     const VersionManager = {
-        get stored() { return GM_getValue('netskopeUrlListVersion', null); },
-        save: () => GM_setValue('netskopeUrlListVersion', SCRIPT_VERSION),
-
-        get changelogSeen() { return GM_getValue('netskopeUrlListChangelogSeen', null) === SCRIPT_VERSION; },
-        markChangelogSeen: () => {
-            GM_setValue('netskopeUrlListChangelogSeen', SCRIPT_VERSION);
-            VersionManager.save();
-        },
-
-        isNewer() {
-            const stored = this.stored;
-            if (!stored) return true;
-            const [v1M, v1m, v1p] = stored.split('.').map(Number);
-            const [v2M, v2m, v2p] = SCRIPT_VERSION.split('.').map(Number);
-            return v2M > v1M ||
-                (v2M === v1M && v2m > v1m) ||
-                (v2M === v1M && v2m === v1m && v2p > v1p);
-        },
-
+        get stored() { return TOOL_VERSIONING.stored(); },
+        save: () => TOOL_VERSIONING.save(),
+        get changelogSeen() { return TOOL_VERSIONING.seen(); },
+        markChangelogSeen: () => { TOOL_VERSIONING.markSeen(); TOOL_VERSIONING.save(); },
+        isNewer() { return TOOL_VERSIONING.isNew(); },
         shouldShowChangelog() { return this.isNewer() && !this.changelogSeen; }
     };
 
@@ -14866,118 +13776,6 @@ Version 1.4.1:
     appendStyleWhenReady(changelogStyle);
 
 
-    function showChangelogModal() {
-        const overlay = UI.createElement('div', { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', zIndex: '1000000' }, { id: 'netskopeChangelogModalOverlay' });
-        const modal   = UI.createElement('div', {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            zIndex: '1000001', background: '#ffffff', border: '2px solid #333333', padding: '20px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif',
-            borderRadius: '10px', maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto', color: '#333333'
-        }, { id: 'netskopeChangelogModal' });
-
-        const closeModal = () => { overlay.remove(); modal.remove(); VersionManager.markChangelogSeen(); document.getElementById('netskopeChangelogNotification')?.remove(); removeToolbarNotificationDot(); };
-
-        const h2 = document.createElement('h2');
-        h2.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(h2.style, { marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea', paddingBottom: '10px', fontSize: '1.5em' });
-        modal.appendChild(h2);
-
-        const infoDiv = document.createElement('div');
-        infoDiv.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(infoDiv.style, { backgroundColor: '#f8f9fa', color: '#333', padding: '10px', borderRadius: '5px', marginBottom: '15px', borderLeft: '4px solid #667eea' });
-        modal.appendChild(infoDiv);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-
-        const closeBtn = UI.createButton('Got it!', '#667eea', closeModal);
-        Object.assign(closeBtn.style, { marginTop: '15px', width: '100%', background: '#667eea' });
-        modal.appendChild(closeBtn);
-
-        overlay.onclick = closeModal;
-        suiteModal(overlay, modal);
-    }
-
     /* ==========================================================
      *  TOKEN UI BUILDERS
      * ==========================================================*/
@@ -15076,107 +13874,15 @@ Version 1.4.1:
     function showHelpModal() {
         if (document.getElementById('netskopeUrlListManagerHelpModal')) return;
 
-        // lead: one short orienting sentence at the top of a section
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list of short usage notes with purple dots
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed directly under a visual
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(c);
-        }
 
-        // span: inline text node with optional extra styles, returned not appended
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal wrapping flex row that holds visual mocks side by side
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label for categories and button previews
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff', borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif',
-                border: opts.border || 'none', display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between groups in a menu mock
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: white rounded card wrapping toolbar icon tiles
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         const sections = [
             {
@@ -15626,6 +14332,7 @@ Version 1.4.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('URL LIST EDITOR', showHelpModal);
 
     /* ==========================================================
      *  MODAL INITIALIZATION
@@ -16615,23 +15322,13 @@ Version 1.4.1:
      *  LOG BUTTON HELPERS
      * ==========================================================*/
 
-    function getTodayDate() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
+    function getTodayDate() { return dtToday(); }
 
 
+    // Without a number (a new record), the record id keeps the log line apart
     function getTicketNumber() {
-        const ctx = getTicketContext();
-        if (ctx && ctx.gForm) {
-            const num = ctx.gForm.getValue('number');
-            if (num) return num.trim();
-        }
-        const doc = (ctx && ctx.doc) || document;
-        for (const id of ['sc_req_item.number', 'incident.number']) {
-            const n = doc.getElementById(id);
-            if (n?.value?.trim()) return n.value.trim();
-        }
+        const num = suiteTicketNumber();
+        if (num) return num;
         const sysId = new URLSearchParams(window.location.search).get('sys_id');
         return sysId ? `SYS_${sysId.slice(0, 8)}` : null;
     }
@@ -16651,44 +15348,7 @@ Version 1.4.1:
         textarea.focus();
     }
 
-    function parseUrlListLog(text) {
-        if (!text) return [];
-        const lines = text.split('\n');
-        const groups = [];
-        let current = null;
-        const orphanDomains = [];
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (/^#\w/.test(trimmed)) {
-                if (orphanDomains.length > 0) {
-                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
-                    orphanDomains.length = 0;
-                }
-                const parts = trimmed.slice(1).split('|').map(p => p.trim());
-                current = {
-                    ritm:      '#' + parts[0],
-                    date:      parts[1] || '',
-                    name:      parts[2] || '',
-                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
-                    domains:   [],
-                    raw:       line,
-                };
-                groups.push(current);
-            } else if (trimmed) {
-                const isCommented = /^#/.test(trimmed);
-                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
-                const entry = { raw: line, domain, isCommented };
-                if (current) current.domains.push(entry);
-                else orphanDomains.push(entry);
-            }
-        }
-
-        if (orphanDomains.length > 0) {
-            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
-        }
-        return groups;
-    }
+    function parseUrlListLog(text) { return suiteParseUrlListLog(text); }
 
     function showUrlLogEntryModal(textarea) {
         if (document.getElementById('urllist-log-add-modal')) return;
@@ -17084,129 +15744,7 @@ Version 1.4.1:
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
         modal.appendChild(titleEl);
 
-        const filterRow = document.createElement('div');
-        Object.assign(filterRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end' });
-
-        const mkFilterBlock = (labelText, inputType) => {
-            const wrap = document.createElement('div');
-            const lbl  = document.createElement('div');
-            lbl.textContent = labelText;
-            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
-            const inp = document.createElement('input');
-            inp.type        = inputType || 'text';
-            inp.placeholder = inputType === 'date' ? '' : 'All';
-            Object.assign(inp.style, {
-                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
-                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px', boxSizing: 'border-box',
-            });
-            wrap.appendChild(lbl); wrap.appendChild(inp);
-            return { wrap, inp };
-        };
-
-        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
-        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
-        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
-
-        const clearFiltersBtn = document.createElement('button');
-        clearFiltersBtn.textContent = 'Clear';
-        Object.assign(clearFiltersBtn.style, {
-            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
-            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
-        });
-        clearFiltersBtn.onclick = () => { ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = ''; applyFilters(); };
-
-        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
-        modal.appendChild(filterRow);
-
-        const scrollArea = document.createElement('div');
-        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
-        modal.appendChild(scrollArea);
-
-        function buildGroupCard(group) {
-            const isDeleted = group.isDeleted;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
-                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
-                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px',
-                fontSize: '13px', fontFamily: 'Arial, sans-serif',
-            });
-
-            const mkBadge = (text, bg, color, border) => {
-                const s = document.createElement('span');
-                s.textContent = text;
-                Object.assign(s.style, {
-                    display: 'inline-block', background: bg, color, borderRadius: '4px',
-                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px', border: border || 'none',
-                });
-                return s;
-            };
-
-            const headerRow = document.createElement('div');
-            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
-
-            if (group.ritm)     headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
-            if (group.date)     headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
-            if (group.name)     headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
-            if (isDeleted)      headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
-            if (group.isOrphan) headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
-            card.appendChild(headerRow);
-
-            const activeDomains = group.domains.filter(d => d.domain);
-            if (activeDomains.length > 0) {
-                const domainList = document.createElement('div');
-                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
-                activeDomains.forEach(d => {
-                    const dEl = document.createElement('div');
-                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
-                    Object.assign(dEl.style, { color: d.isCommented ? '#aaa' : '#333', textDecoration: d.isCommented ? 'line-through' : 'none' });
-                    domainList.appendChild(dEl);
-                });
-                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
-                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
-                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
-                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
-                const countEl = document.createElement('div');
-                countEl.textContent = countText;
-                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
-                card.appendChild(domainList);
-                card.appendChild(countEl);
-            } else {
-                const emptyEl = document.createElement('div');
-                emptyEl.textContent = '(no domains in this group)';
-                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
-                card.appendChild(emptyEl);
-            }
-            return card;
-        }
-
-        function applyFilters() {
-            const ritmVal  = ritmFilter.value.trim().toLowerCase();
-            const dateFrom = dateFromFilter.value;
-            const dateTo   = dateToFilter.value;
-
-            const filtered = allGroups.filter(group => {
-                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
-                if (dateFrom && group.date && group.date < dateFrom) return false;
-                if (dateTo   && group.date && group.date > dateTo)   return false;
-                return true;
-            });
-
-            scrollArea.replaceChildren();
-            if (filtered.length === 0) {
-                const empty = document.createElement('div');
-                empty.textContent = allGroups.length === 0 ? 'No log entries found in these values.' : 'No entries match the current filters.';
-                Object.assign(empty.style, { fontSize: '13px', color: '#999', textAlign: 'center', padding: '24px 0', fontStyle: 'italic' });
-                scrollArea.appendChild(empty);
-            } else {
-                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
-            }
-        }
-
-        ritmFilter.addEventListener('input', applyFilters);
-        dateFromFilter.addEventListener('change', applyFilters);
-        dateToFilter.addEventListener('change', applyFilters);
-        applyFilters();
+        suiteUrlLogHistory(modal, allGroups, 'No log entries found in these values.');
 
         const footerRow = document.createElement('div');
         Object.assign(footerRow.style, { display: 'flex', gap: '8px', flexShrink: '0' });
@@ -17305,52 +15843,10 @@ Version 1.4.1:
     }
 
     /* ==========================================================
-     *  TOOLBAR NOTIFICATION DOT
+     *  TOOLBAR ID
      * ==========================================================*/
 
     const TOOL_ID = 'netskopeUrlListManager';
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'urlListEditor-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!VersionManager.isNewer() || VersionManager.changelogSeen) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
 
     /* ==========================================================
      *  EVENT LISTENERS & INITIALIZATION
@@ -17401,9 +15897,15 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.8';
+    const SCRIPT_VERSION = '2.4.10';
 
-    const CHANGELOG = `Version 2.4.8:
+    const CHANGELOG = `Version 2.4.10:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 2.4.9:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 2.4.8:
 - Row Highlighter is now called List Highlighter. Your settings stay as they were.
 
 Version 2.4.7:
@@ -17516,158 +16018,19 @@ Version 2.3.1:
      *  VERSION MANAGEMENT FUNCTIONS
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue(VERSION_STORAGE_KEY, null);
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'List Highlighter', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'servicenow_highlighter_version', seenKey: 'servicenow_highlighter_changelog_seen', modalId: 'highlighterChangelogModal', overlayId: 'highlighterChangelogOverlay',
+        toolId: 'rowHighlighter', dotClass: 'rowHighlighter-notif-dot', notifIds: ['highlighterChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function saveVersion(version) {
-        GM_setValue(VERSION_STORAGE_KEY, version);
-    }
-
-    function hasSeenChangelog() {
-        return GM_getValue(CHANGELOG_SEEN_KEY, null) === SCRIPT_VERSION;
-    }
-
-    function markChangelogAsSeen() {
-        GM_setValue(CHANGELOG_SEEN_KEY, SCRIPT_VERSION);
-    }
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-    function showChangelogModal() {
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'highlighterChangelogOverlay';
-
-        // Create modal
-        const modal = document.createElement('div');
-        modal.id = 'highlighterChangelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'highlighter-version-info';
-        versionInfo.textContent = `List Highlighter has been updated to version ${SCRIPT_VERSION}!`;
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'highlighter-close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-
-            // Remove the notification dot
-            const notification = document.getElementById('highlighterChangelogNotification');
-            if (notification) {
-                notification.remove();
-            }
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        // Close on overlay click
-        overlay.onclick = () => {
-            closeButton.click();
-        };
-    }
 
     /* ==========================================================
      *  STORAGE FUNCTIONS
@@ -18383,125 +16746,15 @@ Version 2.3.1:
     function showHelpModal() {
         if (document.getElementById('rowHighlighterHelpModal')) return;
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: a white toolbar card that holds icon tiles side by side.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         // mockField: a rounded box that looks like a dropdown or text input on screen.
         function mockField(text, opts) {
@@ -18781,6 +17034,7 @@ Version 2.3.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('SERVICENOW ROW HIGHLIGHTER', showHelpModal);
 
     /* ==========================================================
      *  CSS AND HIGHLIGHTING
@@ -19475,48 +17729,6 @@ Version 2.3.1:
             });
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'rowHighlighter-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
     /* ==========================================================
      *  EVENT LISTENERS
      * ==========================================================*/
@@ -19900,9 +18112,22 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.0';
+    const SCRIPT_VERSION = '2.17.4';
 
-    const CHANGELOG = `Version 2.17.0:
+    const CHANGELOG = `Version 2.17.4:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 2.17.3:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 2.17.2:
+- On tickets with one journal field that switches between Work notes and Additional comments, the tracker asks ServiceNow which one is selected, so each text goes to the right journal more reliably.
+- The Short description date and status are written through the toolbar's shared ticket code. Nothing changes in how they look.
+
+Version 2.17.1:
+- The ticket number is read by the toolbar's shared ticket reader. Nothing changes in how the tracker works.
+
+Version 2.17.0:
 - Changes that have not reached SharePoint for more than 7 days now show a red banner in the sidebar with the tickets they belong to. 🔄 Retry now sends them again; 🗑 Discard drops them after a second click and shows what SharePoint has. Nothing is ever dropped without your click.
 - A batch session kept after a page reload now ends by itself after 7 days. Its entries stay in the log.
 - The Feature Guide shows the new banner in Connection and the 7 day limit in Settings.
@@ -20853,10 +19078,18 @@ Version 1.4.3:
      *  VERSION MANAGEMENT
      * ==========================================================*/
 
-    function getStoredVersion()    { return GM_getValue('changeTrackerVersion', null); }
-    function saveVersion(v)        { GM_setValue('changeTrackerVersion', v); }
-    function hasSeenChangelog()    { return GM_getValue('changeTrackerChangelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue('changeTrackerChangelogSeen', SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Change Tracker', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'changeTrackerVersion', seenKey: 'changeTrackerChangelogSeen', modalId: 'ct-changelog-modal', overlayId: 'ct-changelog-overlay',
+        toolId: 'changeTracker', dotClass: 'changeTrackerOnline-notif-dot', notifIds: ['ct-changelog-dot'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
     // Auto-write toggle: when enabled, adding an entry also writes the
     // equivalent text into the SNow ticket worknote/comments fields.
@@ -20931,117 +19164,6 @@ Version 1.4.3:
     function getSearchableDropdown()  { return GM_getValue(SEARCHABLE_DROPDOWN_KEY, true) !== false; }
     function setSearchableDropdown(v) { GM_setValue(SEARCHABLE_DROPDOWN_KEY, !!v); }
 
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-    function showChangelogModal() {
-        const overlay = mk('div', { id: 'ct-changelog-overlay' });
-        const modal   = mk('div', { id: 'ct-changelog-modal'   });
-
-        const h2 = mk('h2');
-        h2.textContent = `What's New — v${SCRIPT_VERSION}`;
-
-        const info = mk('div', { className: 'ct-cl-info' });
-        info.textContent = `Updated to version ${SCRIPT_VERSION}!`;
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const btn = mk('button', { className: 'ct-cl-ok' });
-        btn.textContent = 'Got it!';
-        btn.onclick = () => {
-            overlay.remove(); modal.remove();
-            markChangelogAsSeen(); saveVersion(SCRIPT_VERSION);
-            document.getElementById('ct-changelog-dot')?.remove();
-            removeToolbarNotificationDot();
-        };
-
-        modal.append(h2, info, cardsWrap, btn);
-        suiteModal(overlay, modal);
-        overlay.onclick = () => btn.click();
-    }
 
     /* ==========================================================
      *  STYLES
@@ -21290,12 +19412,10 @@ Version 1.4.3:
      *  TICKET NUMBER DETECTION
      * ==========================================================*/
 
+    // Entries are stored per ticket: without a number (a new record), the record id keeps them apart
     function getTicketNumber() {
-        const ticketDoc = getTicketDoc();
-        for (const id of ['sc_req_item.number', 'incident.number']) {
-            const n = ticketDoc.getElementById(id);
-            if (n?.value?.trim()) return n.value.trim();
-        }
+        const num = suiteTicketNumber({ win: getTicketWin(), doc: getTicketDoc(), gForm: getTicketWin().g_form || null });
+        if (num) return num;
         const sysId = new URLSearchParams(window.location.search).get('sys_id');
         return sysId ? `SYS_${sysId.slice(0, 8)}` : 'UNKNOWN';
     }
@@ -21941,8 +20061,6 @@ Version 1.4.3:
     })();
 
 
-
-
     /* ==========================================================
      *  NAME CATALOG  (special rows: the names Netskope holds, per tenant)
      * ==========================================================*/
@@ -22326,94 +20444,10 @@ Version 1.4.3:
         const sleep = ms => new Promise(r => setTimeout(r, ms));
 
         // ── Field visibility detection ────────────────────────────
-
-        function isDualInputMode() {
-            const ticketDoc = getTicketDoc();
-            const container = ticketDoc.getElementById('multiple-input-journal-entry');
-            if (container && container.getAttribute('aria-hidden') === 'false') {
-                const wn = ticketDoc.getElementById('activity-stream-work_notes-textarea');
-                const cm = ticketDoc.getElementById('activity-stream-comments-textarea');
-                return !!(wn && cm);
-            }
-            return false;
-        }
-
-        function isVisible(el) {
-            return !!(el && el.offsetParent !== null);
-        }
-
-        /**
-         * In single-input mode SNow shows ONE textarea (#activity-stream-textarea)
-         * and lets the analyst toggle it between Work Notes and Additional
-         * Comments. We detect the active journal type from multiple signals:
-         *   1. The textarea's placeholder (most reliable across SNow versions)
-         *   2. An "active"/"selected"/"pressed" toggle button in the journal bar
-         *   3. A class hint on the textarea's container
-         * Returns 'work_notes' | 'comments' | null.
-         */
-        function detectSingleInputJournal(textarea) {
-            const ph = ((textarea && textarea.placeholder) || '').toLowerCase();
-            if (ph.includes('work note')) return 'work_notes';
-            if (ph.includes('additional comment') || ph.includes('comment')) return 'comments';
-
-            const ticketDoc = getTicketDoc();
-            const activeBtn = ticketDoc.querySelector(
-                '[id*="show-work_notes"].active, ' +
-                'button[data-input-stream-type="work_notes"].active, ' +
-                'button[data-input-stream-type="work_notes"][aria-pressed="true"], ' +
-                'button[data-input-stream-type="work_notes"][aria-selected="true"]'
-            );
-            if (activeBtn) return 'work_notes';
-
-            const activeCmBtn = ticketDoc.querySelector(
-                '[id*="show-comments"].active, ' +
-                'button[data-input-stream-type="comments"].active, ' +
-                'button[data-input-stream-type="comments"][aria-pressed="true"], ' +
-                'button[data-input-stream-type="comments"][aria-selected="true"]'
-            );
-            if (activeCmBtn) return 'comments';
-
-            const container = textarea && (textarea.closest('[id*="activity-stream"]') || textarea.parentElement);
-            const cls = (container && container.className) || '';
-            if (/work[_-]?notes/i.test(cls)) return 'work_notes';
-            if (/comments/i.test(cls))       return 'comments';
-
-            return null;
-        }
-
-        /**
-         * Returns one of:
-         *   { mode: 'both',          workNotes, comments }
-         *   { mode: 'workNotesOnly', workNotes, comments: null }
-         *   { mode: 'commentsOnly',  workNotes: null, comments }
-         *   { mode: 'unknown',       workNotes: null, comments: <generic textarea> }
-         *   { mode: 'none',          workNotes: null, comments: null }
-         */
+        // The core tells which journal fields are shown (both, one, or the single switchable one):
+        //   { mode: 'both' | 'workNotesOnly' | 'commentsOnly' | 'unknown' | 'none', workNotes, comments }
         function detectVisibility() {
-            const ticketDoc = getTicketDoc();
-            const wn = ticketDoc.getElementById('activity-stream-work_notes-textarea');
-            const cm = ticketDoc.getElementById('activity-stream-comments-textarea');
-
-            if (isDualInputMode()) return { mode: 'both', workNotes: wn, comments: cm };
-
-            const wnVisible = isVisible(wn);
-            const cmVisible = isVisible(cm);
-            if (wnVisible && cmVisible) return { mode: 'both',          workNotes: wn, comments: cm };
-            if (wnVisible)              return { mode: 'workNotesOnly', workNotes: wn, comments: null };
-            if (cmVisible)              return { mode: 'commentsOnly',  workNotes: null, comments: cm };
-
-            const generic = ticketDoc.querySelector('#activity-stream-textarea')
-                         || ticketDoc.querySelector('[data-stream-text-input]');
-            if (generic) {
-                // Single-input mode — figure out which journal it is currently
-                // showing so we pick the right template.
-                const which = detectSingleInputJournal(generic);
-                if (which === 'work_notes') return { mode: 'workNotesOnly', workNotes: generic, comments: null };
-                if (which === 'comments')   return { mode: 'commentsOnly',  workNotes: null,    comments: generic };
-                return { mode: 'unknown', workNotes: null, comments: generic };
-            }
-
-            return { mode: 'none', workNotes: null, comments: null };
+            return suiteJournalFields(getTicketDoc());
         }
 
         // ── "Opened by" name detection (for @mention target) ──────
@@ -22422,32 +20456,10 @@ Version 1.4.3:
 
         async function getOpenedByName(retries = 3, delay = 200) {
             if (_cachedOpenedByName) return _cachedOpenedByName;
-
-            const selectors = [
-                'sc_req_item.opened_by_label',
-                'sys_display.sc_req_item.opened_by',
-                'incident.opened_by_label',
-                'sys_display.incident.opened_by',
-                'sc_req_item.caller_id_label',
-                'sys_display.sc_req_item.caller_id',
-                'incident.caller_id_label',
-                'sys_display.incident.caller_id',
-            ];
-
+            // The fields load late on some forms: try a few times
             for (let attempt = 0; attempt < retries; attempt++) {
-                const ticketDoc = getTicketDoc();
-                for (const sel of selectors) {
-                    const f = ticketDoc.getElementById(sel);
-                    if (f) {
-                        const v = (f.value || f.textContent || '').replace(/\s+/g, ' ').trim();
-                        if (v.length > 2) { _cachedOpenedByName = v; return v; }
-                    }
-                }
-                const labelFields = ticketDoc.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
-                for (const f of labelFields) {
-                    const v = (f.value || f.textContent || '').replace(/\s+/g, ' ').trim();
-                    if (v.length > 2 && !v.includes('_')) { _cachedOpenedByName = v; return v; }
-                }
+                const v = suiteOpenedByName({ win: getTicketWin(), doc: getTicketDoc(), gForm: getTicketWin().g_form || null });
+                if (v) { _cachedOpenedByName = v; return v; }
                 if (attempt < retries - 1) await sleep(delay);
             }
             return null;
@@ -22482,15 +20494,8 @@ Version 1.4.3:
         }
 
         function updateShortDescription(status) {
-            const gf  = getTicketWin().g_form;
-            const doc = getTicketDoc();
-            let current = '';
-            try { current = (gf && gf.getValue('short_description')) || ''; } catch (e) { /* not on this form */ }
-            const input = doc.getElementById('sc_req_item.short_description') ||
-                          doc.getElementById('incident.short_description') ||
-                          doc.getElementById('sc_task.short_description');
-            if (!current && input) current = input.value || '';
-            current = current.trim();
+            const ctx = { win: getTicketWin(), doc: getTicketDoc(), gForm: getTicketWin().g_form || null };
+            const current = suiteShortDescription(ctx);
             if (!current) return;
 
             const today       = formattedToday();
@@ -22506,15 +20511,7 @@ Version 1.4.3:
                 }
             }
             if (next === current) return;
-
-            try {
-                if (gf) { gf.setValue('short_description', next); return; }
-            } catch (e) { /* fall through to the DOM input */ }
-            if (input) {
-                input.value = next;
-                input.dispatchEvent(new Event('input',  { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-            }
+            suiteSetShortDescription(ctx, next);
         }
 
         // ── @mention insertion ───────────────────────────────────
@@ -26820,109 +24817,14 @@ Version 1.4.3:
     function showHelpModal() {
         if (document.getElementById('changeTrackerHelpModal')) return;
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block', textDecoration: opts.underline ? 'underline' : 'none'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            return sq;
-        }
 
-        // menuMock: a white rounded card that holds toolbar tiles.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         // panel: a light card that frames a mock of part of the sidebar.
         function panel(extra) {
@@ -27000,22 +24902,6 @@ Version 1.4.3:
             body.appendChild(wrap);
         }
 
-        // toggle: a checkbox setting preview with its one-line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -27508,6 +25394,7 @@ Version 1.4.3:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('SERVICENOW TICKET HISTORY', showHelpModal);
 
     /* ==========================================================
      *  FIRST-RUN SETUP PROMPT
@@ -29345,52 +27232,10 @@ Version 1.4.3:
     function toggleSidebar() { sidebarVisible ? hideSidebar() : showSidebar(); }
 
     /* ==========================================================
-     *  TOOLBAR NOTIFICATION DOT
+     *  TOOLBAR ID
      * ==========================================================*/
 
     const TOOL_ID = 'changeTracker';
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'changeTrackerOnline-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
 
     /* ==========================================================
      *  EVENT LISTENERS + INIT
@@ -29478,9 +27323,15 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.5';
+    const SCRIPT_VERSION = '1.7.7';
 
-    const CHANGELOG = `Version 1.7.5:
+    const CHANGELOG = `Version 1.7.7:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.7.6:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.7.5:
 - Domain Tools is now called Domain Checker. Your settings and API keys stay as they were.
 
 Version 1.7.4:
@@ -29571,150 +27422,18 @@ Version 1.0:
     const GM_KEY_VERSION        = 'domainToolsVersion';
     const GM_KEY_CHANGELOG_SEEN = 'domainToolsChangelogSeen';
 
-    function getStoredVersion()    { return GM_getValue(GM_KEY_VERSION, null); }
-    function saveVersion(v)        { GM_setValue(GM_KEY_VERSION, v); }
-    function hasSeenChangelog()    { return GM_getValue(GM_KEY_CHANGELOG_SEEN, null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue(GM_KEY_CHANGELOG_SEEN, SCRIPT_VERSION); }
-
-    function isNewVersion() {
-        const stored = getStoredVersion();
-        if (!stored) return true;
-        const a = stored.split('.').map(Number);
-        const b = SCRIPT_VERSION.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed', inset: '0', background: 'rgba(0,0,0,0.55)',
-            zIndex: '1000010', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        });
-
-        const modal = document.createElement('div');
-        Object.assign(modal.style, {
-            background: '#fff', borderRadius: '10px', padding: '20px',
-            width: '500px', maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New — Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            margin: '0 0 10px', fontSize: '18px', color: '#333',
-            borderBottom: '2px solid #667eea', paddingBottom: '10px',
-        });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `Domain Checker updated to v${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            background: '#f8f9fa', borderLeft: '4px solid #667eea',
-            padding: '10px', borderRadius: '5px', marginBottom: '15px',
-            fontSize: '13px', color: '#333',
-        });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border: '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px', marginBottom: '8px', overflow: 'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px', background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555', fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold', background: '#667eea',
-                    color: '#fff', borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999', transition: 'transform 0.2s',
-                display: 'inline-block', transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none', background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif', color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display = expanded ? 'block' : 'none';
-                body.style.padding = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'Got it!';
-        Object.assign(closeBtn.style, {
-            marginTop: '15px', padding: '10px 20px', background: '#667eea',
-            color: '#fff', border: 'none', borderRadius: '5px',
-            cursor: 'pointer', fontWeight: 'bold', width: '100%', fontSize: '14px',
-        });
-        closeBtn.onclick = () => {
-            overlay.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-        };
-
-        modal.append(title, versionInfo, cardsWrap, closeBtn);
-        overlay.appendChild(modal);
-        suiteModal(overlay, modal);
-        overlay.addEventListener('click', e => { if (e.target === overlay) closeBtn.click(); });
-    }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Domain Checker', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'domainToolsVersion', seenKey: 'domainToolsChangelogSeen', modalId: 'domainToolsChangelogModal', overlayId: 'domainToolsChangelogOverlay',
+        toolId: 'domainTools', dotClass: 'domainTools-notif-dot', notifIds: [] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
 
     /* ==========================================================
@@ -30885,92 +28604,14 @@ Version 1.0:
     function showHelpModal() {
         if (document.getElementById('domainToolsHelpModal')) return;
 
-        // lead: one orienting sentence at the top of a section
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list of usage notes with a purple dot each
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(c);
-        }
 
-        // span: inline text node with optional extra styles, returned not appended
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal wrapping flex row for placing visual mocks side by side
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label for button previews and categories
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between groups in a mock menu
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
         // pill: a rounded mode-toggle button mock (Single / Multiple style)
         function pill(text, active) {
@@ -31265,6 +28906,7 @@ Version 1.0:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('DOMAIN TOOLS', showHelpModal);
 
     /* ==========================================================
      *  SHOW MODAL
@@ -31293,45 +28935,6 @@ Version 1.0:
         modal._activateTab(true);
         const textarea = modal.querySelector('textarea');
         if (textarea) setTimeout(() => textarea.focus(), 100);
-    }
-
-    /* ==========================================================
-     *  TOOLBAR NOTIFICATION DOT
-     * ==========================================================*/
-
-    const TOOLBAR_DOT_CLASS = 'domainTools-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-            toolEl.style.position = 'relative';
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position: 'absolute', top: '2px', right: '2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#007bff', pointerEvents: 'none', zIndex: '10',
-            });
-            let blue = true;
-            const intervalId = setInterval(() => {
-                blue = !blue;
-                dot.style.background = blue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-            toolEl.appendChild(dot);
-        };
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) { clearInterval(Number(dot.dataset.intervalId)); dot.remove(); }
     }
 
     /* ==========================================================
@@ -31395,9 +28998,18 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.4';
+    const SCRIPT_VERSION = '1.49.7';
 
-    const CHANGELOG = `Version 1.49.4:
+    const CHANGELOG = `Version 1.49.7:
+- The URL list and Destination Profile change log and its 📜 Change History window use the toolbar's shared log code, the same as the Destination Profile Editor. Nothing changes in how they work.
+
+Version 1.49.6:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.49.5:
+- The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
+
+Version 1.49.4:
 - The buttons this toolkit adds to the Netskope console rest while the tab is in the background and come back as soon as you return to it.
 
 Version 1.49.3:
@@ -31660,289 +29272,21 @@ Version 1.16:
   below the regex/keyword input field in the DLP Edit Entity modal.
 - Feature can be toggled on/off from the toolkit settings like all others.`;
 
-    function getStoredVersion()    { return GM_getValue('toolkit_version', null); }
-    function saveVersion(v)        { GM_setValue('toolkit_version', v); }
-    function hasSeenChangelog()    { return GM_getValue('toolkit_changelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue('toolkit_changelogSeen', SCRIPT_VERSION); }
+    // Version, What's New window and toolbar dot: the core's, with this tool's own stored keys
+    const TOOL_VERSIONING = suiteToolVersion({ name: 'Netskope Console Toolkit', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'toolkit_version', seenKey: 'toolkit_changelogSeen', modalId: 'nsToolkitChangelogModal', overlayId: 'nsToolkitChangelogOverlay',
+        toolId: 'nsDlpToolkit', dotClass: 'nstk-notif-dot', notifIds: ['nsToolkitChangelogNotification'] });
+    function getStoredVersion()             { return TOOL_VERSIONING.stored(); }
+    function saveVersion(v)                 { TOOL_VERSIONING.save(v); }
+    function hasSeenChangelog()             { return TOOL_VERSIONING.seen(); }
+    function markChangelogAsSeen()          { TOOL_VERSIONING.markSeen(); }
+    function isNewVersion()                 { return TOOL_VERSIONING.isNew(); }
+    function showChangelogModal()           { TOOL_VERSIONING.showWhatsNew(); }
+    function addToolbarNotificationDot()    { TOOL_VERSIONING.addDot(); }
+    function removeToolbarNotificationDot() { TOOL_VERSIONING.removeDot(); }
 
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
 
     // ─────────────────────────────────────────────────────────────
-    // CHANGELOG MODAL — 100% inline styles, no stylesheet dependency
-    // ─────────────────────────────────────────────────────────────
-
-    function showChangelogModal() {
-        if (document.getElementById('nsToolkitChangelogModal')) return;
-
-        /* ── Overlay ── */
-        const overlay = document.createElement('div');
-        overlay.id = 'nsToolkitChangelogOverlay';
-        Object.assign(overlay.style, {
-            position:   'fixed',
-            top:        '0',
-            left:       '0',
-            width:      '100%',
-            height:     '100%',
-            background: 'rgba(0,0,0,0.5)',
-            zIndex:     '1000000',
-        });
-
-        /* ── Modal card ── */
-        const modal = document.createElement('div');
-        modal.id = 'nsToolkitChangelogModal';
-        Object.assign(modal.style, {
-            position:        'fixed',
-            top:             '50%',
-            left:            '50%',
-            transform:       'translate(-50%, -50%)',
-            zIndex:          '1000001',
-            background:      '#ffffff',
-            border:          '2px solid #333333',
-            padding:         '20px',
-            boxShadow:       '0 4px 12px rgba(0,0,0,0.3)',
-            fontFamily:      'Arial, sans-serif',
-            borderRadius:    '10px',
-            maxWidth:        '600px',
-            width:           '90vw',
-            maxHeight:       '80vh',
-            overflowY:       'auto',
-            color:           '#333333',
-            boxSizing:       'border-box',
-        });
-
-        /* ── Title ── */
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            marginTop:      '0',
-            marginBottom:   '15px',
-            color:          '#333333',
-            borderBottom:   '2px solid #667eea',
-            paddingBottom:  '10px',
-            fontFamily:     'Arial, sans-serif',
-            fontSize:       '18px',
-            fontWeight:     'bold',
-        });
-
-        /* ── Version banner ── */
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            backgroundColor: '#f8f9fa',
-            color:           '#333333',
-            padding:         '10px',
-            borderRadius:    '5px',
-            marginBottom:    '15px',
-            borderLeft:      '4px solid #667eea',
-            fontFamily:      'Arial, sans-serif',
-            fontSize:        '13px',
-            fontWeight:      'normal',
-        });
-
-        /* ── Version cards ── */
-        const cardsContainer = document.createElement('div');
-        cardsContainer.style.marginBottom = '0';
-
-        parseChangelog(CHANGELOG).forEach((entry, index) => {
-            const isLatest = index === 0;
-
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display:        'flex',
-                alignItems:     'center',
-                justifyContent: 'space-between',
-                padding:        '9px 12px',
-                background:     isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor:         'pointer',
-                userSelect:     'none',
-            });
-
-            const versionWrap = document.createElement('div');
-            Object.assign(versionWrap.style, { display: 'flex', alignItems: 'center', gap: '8px' });
-
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold',
-                fontSize:   '13px',
-                color:      isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-
-            if (isLatest) {
-                const latestTag = document.createElement('span');
-                latestTag.textContent = 'Latest';
-                Object.assign(latestTag.style, {
-                    fontSize:     '10px',
-                    fontWeight:   'bold',
-                    background:   '#667eea',
-                    color:        '#fff',
-                    borderRadius: '3px',
-                    padding:      '1px 6px',
-                    fontFamily:   'Arial, sans-serif',
-                });
-                versionWrap.appendChild(latestTag);
-            }
-
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize:   '12px',
-                color:      '#999',
-                transition: 'transform 0.2s',
-                display:    'inline-block',
-                transform:  isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding:    isLatest ? '10px 14px' : '0',
-                display:    isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display:    'flex',
-                    gap:        '8px',
-                    padding:    '3px 0',
-                    fontSize:   '13px',
-                    fontFamily: 'Arial, sans-serif',
-                    color:      '#444',
-                    lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-
-            card.appendChild(body);
-
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-
-            cardsContainer.appendChild(card);
-        });
-
-        /* ── Close button ── */
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            display:         'block',
-            marginTop:       '15px',
-            padding:         '10px 20px',
-            backgroundColor: '#667eea',
-            color:           '#ffffff',
-            border:          'none',
-            borderRadius:    '5px',
-            cursor:          'pointer',
-            fontWeight:      'bold',
-            width:           '100%',
-            fontFamily:      'Arial, sans-serif',
-            fontSize:        '14px',
-            boxSizing:       'border-box',
-        });
-        closeButton.addEventListener('mouseenter', () => { closeButton.style.backgroundColor = '#5568d3'; });
-        closeButton.addEventListener('mouseleave', () => { closeButton.style.backgroundColor = '#667eea'; });
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            removeToolbarNotificationDot();
-            const notification = document.getElementById('nsToolkitChangelogNotification');
-            if (notification) notification.remove();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsContainer);
-        modal.appendChild(closeButton);
-
-        suiteModal(overlay, modal);
-
-        overlay.onclick = () => closeButton.click();
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // TOOLBAR NOTIFICATION DOT
-    // ─────────────────────────────────────────────────────────────
-
-    const TOOLBAR_DOT_CLASS = 'nstk-notif-dot';
-
-    function addToolbarNotificationDot() {
-        if (!isNewVersion() || hasSeenChangelog()) return;
-
-        const tryAdd = (attempts) => {
-            const toolEl = document.querySelector(`[data-tool="${TOOL_ID}"]`);
-            if (!toolEl) {
-                if (attempts < 10) setTimeout(() => tryAdd(attempts + 1), 300);
-                return;
-            }
-            if (toolEl.querySelector('.' + TOOLBAR_DOT_CLASS)) return;
-
-            toolEl.style.position = 'relative';
-
-            const dot = document.createElement('div');
-            dot.className = TOOLBAR_DOT_CLASS;
-            Object.assign(dot.style, {
-                position:      'absolute',
-                top:           '2px',
-                right:         '2px',
-                width:         '8px',
-                height:        '8px',
-                borderRadius:  '50%',
-                background:    '#007bff',
-                pointerEvents: 'none',
-                zIndex:        '10',
-            });
-
-            let dotBlue = true;
-            const intervalId = setInterval(() => {
-                dotBlue = !dotBlue;
-                dot.style.background = dotBlue ? '#007bff' : '#ff8c00';
-            }, 500);
-            dot.dataset.intervalId = intervalId;
-
-            toolEl.appendChild(dot);
-        };
-
-        setTimeout(() => tryAdd(0), 500);
-    }
-
-    function removeToolbarNotificationDot() {
-        const dot = document.querySelector(`[data-tool="${TOOL_ID}"] .${TOOLBAR_DOT_CLASS}`);
-        if (dot) {
-            clearInterval(Number(dot.dataset.intervalId));
-            dot.remove();
-        }
-    }
-
-
     // TOOLBAR REGISTRATION
     // ─────────────────────────────────────────────────────────────
 
@@ -32506,142 +29850,16 @@ Version 1.16:
     function showHelpModal() {
         if (document.getElementById('nsToolkitHelpModal')) return;
 
-        // lead: single orienting sentence at the top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list with purple dot markers.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(c);
-        }
 
-        // span: inline element with optional styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal flex row for side-by-side mocks.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0',
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block',
-            });
-            return c;
-        }
 
-        // toolSquare: rounded icon tile resembling a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative',
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff',
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between toolbar groups.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: white card wrapping toolbar icon tiles.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
-        // toggle: checkbox preview with an optional per-control description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block',
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -33907,6 +31125,7 @@ Version 1.16:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('NETSKOPE POLICY TOOLKIT', showHelpModal);
 
     function showSettingsModal() {
         buildSettingsModal(); // idempotent
@@ -34735,10 +31954,7 @@ Version 1.16:
         return ISO_DATE_RE.test(date || '') && date < cutoff;
     }
 
-    function getTodayDate() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
+    function getTodayDate() { return dtToday(); }
 
     function getDescriptionTextareas() {
         const seen = new Set();
@@ -35714,48 +32930,7 @@ Version 1.16:
         });
     }
 
-    /* ── Parse URL list content into groups ── */
-    function parseUrlListLog(text) {
-        if (!text) return [];
-        const lines = text.split('\n');
-        const groups = [];
-        let current = null;
-        const orphanDomains = [];
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            // Log header: starts with # followed immediately by a word character (#RITM...)
-            if (/^#\w/.test(trimmed)) {
-                if (orphanDomains.length > 0) {
-                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
-                    orphanDomains.length = 0;
-                }
-                const parts = trimmed.slice(1).split('|').map(p => p.trim());
-                current = {
-                    ritm:      '#' + parts[0],
-                    date:      parts[1] || '',
-                    name:      parts[2] || '',
-                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
-                    domains:   [],
-                    raw:       line,
-                };
-                groups.push(current);
-            } else if (trimmed) {
-                // Domain line — may be commented with "# " prefix
-                const isCommented = /^#/.test(trimmed);
-                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
-                const entry = { raw: line, domain, isCommented };
-                if (current) current.domains.push(entry);
-                else orphanDomains.push(entry);
-            }
-        }
-
-        if (orphanDomains.length > 0) {
-            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
-        }
-
-        return groups;
-    }
+    function parseUrlListLog(text) { return suiteParseUrlListLog(text); }
 
     /* ── Insert text at cursor position in a textarea ── */
     function insertAtCursor(textarea, text) {
@@ -36080,162 +33255,7 @@ Version 1.16:
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
         modal.appendChild(titleEl);
 
-        /* ── Filter row ── */
-        const filterRow = document.createElement('div');
-        Object.assign(filterRow.style, {
-            display: 'flex', gap: '8px', flexWrap: 'wrap',
-            marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end',
-        });
-
-        const mkFilterBlock = (labelText, inputType) => {
-            const wrap = document.createElement('div');
-            const lbl  = document.createElement('div');
-            lbl.textContent = labelText;
-            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
-            const inp  = document.createElement('input');
-            inp.type        = inputType || 'text';
-            inp.placeholder = inputType === 'date' ? '' : 'All';
-            Object.assign(inp.style, {
-                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
-                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px',
-                boxSizing: 'border-box',
-            });
-            wrap.appendChild(lbl); wrap.appendChild(inp);
-            return { wrap, inp };
-        };
-
-        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
-        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
-        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
-
-        const clearFiltersBtn = document.createElement('button');
-        clearFiltersBtn.textContent = 'Clear';
-        Object.assign(clearFiltersBtn.style, {
-            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
-            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
-        });
-        clearFiltersBtn.onclick = () => {
-            ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = '';
-            applyFilters();
-        };
-
-        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
-        modal.appendChild(filterRow);
-
-        const scrollArea = document.createElement('div');
-        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
-        modal.appendChild(scrollArea);
-
-        function buildGroupCard(group) {
-            const isDeleted = group.isDeleted;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
-                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
-                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px', fontSize: '13px',
-                fontFamily: 'Arial, sans-serif',
-            });
-
-            const mkBadge = (text, bg, color, border) => {
-                const s = document.createElement('span');
-                s.textContent = text;
-                Object.assign(s.style, {
-                    display: 'inline-block', background: bg, color, borderRadius: '4px',
-                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px',
-                    border: border || 'none',
-                });
-                return s;
-            };
-
-            const headerRow = document.createElement('div');
-            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
-
-            if (group.ritm) {
-                headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
-            }
-            if (group.date) {
-                headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
-            }
-            if (group.name) {
-                headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
-            }
-            if (isDeleted) {
-                headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
-            }
-            if (group.isOrphan) {
-                headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
-            }
-
-            card.appendChild(headerRow);
-
-            const activeDomains = group.domains.filter(d => d.domain);
-            if (activeDomains.length > 0) {
-                const domainList = document.createElement('div');
-                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
-
-                activeDomains.forEach(d => {
-                    const dEl = document.createElement('div');
-                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
-                    Object.assign(dEl.style, {
-                        color: d.isCommented ? '#aaa' : '#333',
-                        textDecoration: d.isCommented ? 'line-through' : 'none',
-                    });
-                    domainList.appendChild(dEl);
-                });
-
-                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
-                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
-                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
-                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
-                const countEl = document.createElement('div');
-                countEl.textContent = countText;
-                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
-
-                card.appendChild(domainList);
-                card.appendChild(countEl);
-            } else {
-                const emptyEl = document.createElement('div');
-                emptyEl.textContent = '(no domains in this group)';
-                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
-                card.appendChild(emptyEl);
-            }
-
-            return card;
-        }
-
-        function applyFilters() {
-            const ritmVal  = ritmFilter.value.trim().toLowerCase();
-            const dateFrom = dateFromFilter.value;
-            const dateTo   = dateToFilter.value;
-
-            const filtered = allGroups.filter(group => {
-                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
-                if (dateFrom && group.date && group.date < dateFrom) return false;
-                if (dateTo   && group.date && group.date > dateTo)   return false;
-                return true;
-            });
-
-            scrollArea.replaceChildren();
-
-            if (filtered.length === 0) {
-                const empty = document.createElement('div');
-                empty.textContent = allGroups.length === 0
-                    ? `No log entries found in this ${isDestination ? 'destination profile' : 'URL list'}.`
-                    : 'No entries match the current filters.';
-                Object.assign(empty.style, {
-                    fontSize: '13px', color: '#999', textAlign: 'center',
-                    padding: '24px 0', fontStyle: 'italic',
-                });
-                scrollArea.appendChild(empty);
-            } else {
-                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
-            }
-        }
-
-        ritmFilter.addEventListener('input', applyFilters);
-        dateFromFilter.addEventListener('change', applyFilters);
-        dateToFilter.addEventListener('change', applyFilters);
-        applyFilters();
+        suiteUrlLogHistory(modal, allGroups, `No log entries found in this ${isDestination ? 'destination profile' : 'URL list'}.`);
 
         const footerRow = document.createElement('div');
         Object.assign(footerRow.style, { display: 'flex', gap: '8px', flexShrink: '0' });
