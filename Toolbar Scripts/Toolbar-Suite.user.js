@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.56.1
+// @version      2.56.2
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.56.1';
-    const CHANGELOG = `Version 2.56.1:
+   const SCRIPT_VERSION = '2.56.2';
+    const CHANGELOG = `Version 2.56.2:
+- Ticket Assignment: tickets opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", are assigned again, with that person mentioned by their full name.
+- Ticket Assignment: a second click on Assign Ticket while an assignment is running no longer starts it twice.
+
+Version 2.56.1:
 - Change Tracker: the list name in the setup panel now starts empty instead of showing ChangeTracker. Type the name of your team's SharePoint list; the check tells you when it is missing. Teams already set up keep their list.
 
 Version 2.56.0:
@@ -11388,9 +11392,14 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.8';
+    const SCRIPT_VERSION = '1.7.9';
 
-    const CHANGELOG = `Version 1.7.8:
+    const CHANGELOG = `Version 1.7.9:
+- Tickets opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", are assigned again: the name was cut at the first closing bracket, so ServiceNow listed two people and the assignment stopped with an error.
+- A second click on Assign Ticket while an assignment is running no longer starts it twice.
+- If one mention cannot be made, that name stays as plain text and the rest of the comment is still written.
+
+Version 1.7.8:
 - Finding the open ticket on ServiceNow pages takes less work for the browser.
 
 Version 1.7.7:
@@ -13626,6 +13635,7 @@ Version 1.2.1:
     // Types @Name, waits for ServiceNow to list that person and picks them. Nothing is pressed blindly:
     // when the person does not show up, "@Name" stays as plain text and false is returned.
     async function triggerMentionPicker(textarea, name) {
+        name = cleanPersonName(name);
         console.log('🔔 Triggering @ mention picker for:', name);
         textarea.focus();
         await sleep(100);
@@ -13678,6 +13688,13 @@ Version 1.2.1:
         return ok;
     }
 
+    // A person's name as ServiceNow lists it: line breaks and repeated spaces become one space
+    const cleanPersonName = name => String(name || '').replace(/\s+/g, ' ').trim();
+    // Marks a mention in a comment text. The name is encoded, so brackets in it ("Name [NL] Surname")
+    // can no longer end the mention early; plain @[Name] marks still work.
+    const mentionTag = name => `@[${encodeURIComponent(cleanPersonName(name))}]`;
+    const mentionName = raw => { try { return cleanPersonName(decodeURIComponent(raw)); } catch (e) { return cleanPersonName(raw); } };
+
     async function insertTextWithMention(textarea, text) {
         console.group('📝 Inserting text with mentions');
 
@@ -13695,7 +13712,7 @@ Version 1.2.1:
         let match;
         mentionRegex.lastIndex = 0;
         while ((match = mentionRegex.exec(text)) !== null) {
-            mentions.push({ placeholder: match[0], name: match[1], index: match.index });
+            mentions.push({ placeholder: match[0], name: mentionName(match[1]), index: match.index });
         }
 
         const parts = text.split(mentionRegex);
@@ -13713,7 +13730,11 @@ Version 1.2.1:
                 await sleep(100);
             }
             partIndex++;
-            if (!(await triggerMentionPicker(textarea, mentions[i].name))) failed.push(mentions[i].name);
+            // A problem with one mention leaves that name as plain text and the rest of the comment still goes in
+            let ok = false;
+            try { ok = await triggerMentionPicker(textarea, mentions[i].name); }
+            catch (e) { console.error('❌ Mention of', mentions[i].name, 'failed:', e, (e && e.stack || '').split('\n').slice(1, 3).join(' ')); }
+            if (!ok) failed.push(mentions[i].name);
             await sleep(200);
             partIndex++;
         }
@@ -13764,7 +13785,15 @@ Version 1.2.1:
         return { win: window, doc: document, gForm: window.g_form || null, mode: 'classic' };
     }
 
+    // One assignment at a time: a second click while one runs does nothing
+    let assignmentRunning = false;
     async function performAssignment() {
+        if (assignmentRunning) { console.log('⏳ An assignment is already running'); return; }
+        assignmentRunning = true;
+        try { await runAssignment(); } finally { assignmentRunning = false; }
+    }
+
+    async function runAssignment() {
         const dropdown = document.getElementById('sn-assign-team-dropdown');
         const selectedValue = dropdown.value;
         if (!selectedValue) { alert('⚠️ Please select a team member'); return; }
@@ -13855,7 +13884,7 @@ Version 1.2.1:
             console.log('✅ Ticket assignment completed successfully');
         } catch (error) {
             hideLoading();
-            console.error('❌ Error during ticket assignment:', error);
+            console.error('❌ Error during ticket assignment:', error, (error && error.stack || '').split('\n').slice(1, 3).join(' '));
             alert('❌ Error assigning ticket: ' + error.message);
         }
     }
@@ -13942,7 +13971,7 @@ Version 1.2.1:
                              ticketDoc.getElementById('incident.opened_by_label') ||
                              ticketDoc.getElementById('sys_display.incident.opened_by');
         if (openedByInput) {
-            return (openedByInput.value || openedByInput.textContent).trim();
+            return cleanPersonName(openedByInput.value || openedByInput.textContent);
         }
         console.warn('⚠️ Could not find "Opened by" field, using placeholder');
         return 'Requester Name';
@@ -14006,7 +14035,7 @@ Version 1.2.1:
         let commentText;
 
         if (responseType === 'spm') {
-            commentText = `Hi @[${openedByName}],
+            commentText = `Hi ${mentionTag(openedByName)},
 
 Uploads to applications such as <App Name> are managed by the SCC/SPM team.
 Please complete the ServiceNow form to submit an exception request for the client engagement:
@@ -14018,17 +14047,17 @@ As no further action is required from the Global Data Protection team, this requ
 Kind regards,
 Global Data Security Enablement`;
         } else if (responseType === 'handover') {
-            commentText = `Hi @[${openedByName}],
+            commentText = `Hi ${mentionTag(openedByName)},
 
-As I will be on PTO over the coming days, this request has been reassigned to @[${assigneeName}].
+As I will be on PTO over the coming days, this request has been reassigned to ${mentionTag(assigneeName)}.
 Please work with him to ensure the request continues to progress.
 
 Kind regards,
 Global Data Security Enablement`;
         } else {
-            const greeting = `Hi @[${openedByName}],
+            const greeting = `Hi ${mentionTag(openedByName)},
 
-Our team has taken ownership of your request, and @[${assigneeName}] will be your designated point of contact throughout the support process.
+Our team has taken ownership of your request, and ${mentionTag(assigneeName)} will be your designated point of contact throughout the support process.
 
 Your request has been registered and will be reviewed as part of our ongoing ticket management process. Should any questions arise or additional information be required, they will reach out to you accordingly.
 
@@ -14073,7 +14102,7 @@ Thank you for your cooperation.` : '';
     }
 
     // Test only: the automated tests switch this on in their own storage
-    if (GM_getValue('toolbarSuiteTestHooks', false) === true) unsafeWindow.__assignMention = { insertTextWithMention, triggerMentionPicker,
+    if (GM_getValue('toolbarSuiteTestHooks', false) === true) unsafeWindow.__assignMention = { insertTextWithMention, triggerMentionPicker, mentionTag,
         findTicketRef: () => findTicketRef(getTicketContext()), normalizeRef, buildUrgentMailHref, ticketRegion: () => ticketRegion(getTicketContext()) };
 
     function openSCTASKInBackground() {
