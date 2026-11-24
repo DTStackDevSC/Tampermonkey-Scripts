@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.56.3
+// @version      2.56.4
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.56.3';
-    const CHANGELOG = `Version 2.56.3:
+   const SCRIPT_VERSION = '2.56.4';
+    const CHANGELOG = `Version 2.56.4:
+- Change Tracker: the requester's @mention in the ticket comment is now picked from that field's own ServiceNow suggestion list, the same safe way as the Ticket Assignment Tool. It no longer presses Enter blindly, so it can no longer pick someone from the Work Notes list or leave a line break where the name should be.
+- Change Tracker: when ServiceNow does not suggest the requester, the name stays as plain text and a warning at the bottom of the page says so until you close it, so you can retype the mention before posting.
+- Ticket Assignment Tool: mentions are written by the same shared code as the Change Tracker. Nothing changes in how it works.
+
+Version 2.56.3:
 - Change Tracker: notes written into a ticket opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", now mention that person by their full name.
 
 Version 2.56.2:
@@ -1003,6 +1008,237 @@ Version 1.0.0:
         }
     }
     // Angular model mapping: activity_field_0 = work_notes, activity_field_1 = comments
+
+    /* ==========================================================
+     *  SHARED: @MENTIONS (core, used by every tool that writes a
+     *  comment or work note with @[Name] marks)
+     *  A mark is @[Name], or @[<encoded name>] so a name with brackets
+     *  ("Name [NL] Surname") cannot end it early. Each person is typed
+     *  into the field's own ServiceNow list (ment.io) and picked by the
+     *  exact name, never by a blind Enter; a person ServiceNow does not
+     *  list stays plain text and is reported back.
+     * ==========================================================*/
+
+    // One mark: @[...] with at most one inner [..] pair, so a plain "Name [NL] Surname" also stays whole
+    const SUITE_MENTION_RE = /@\[((?:[^\[\]]|\[[^\[\]]*\])+)\]/g;
+    const suiteMentionSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    // A person's name as ServiceNow lists it: line breaks and repeated spaces become one space
+    const suiteCleanPersonName = name => String(name || '').replace(/\s+/g, ' ').trim();
+    // Marks a mention in a text. The name is encoded, so brackets in it can never end the mark early
+    const suiteMentionTag = name => `@[${encodeURIComponent(suiteCleanPersonName(name))}]`;
+    const suiteMentionName = raw => { try { return suiteCleanPersonName(decodeURIComponent(raw)); } catch (e) { return suiteCleanPersonName(raw); } };
+
+    const _suiteTextareaSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    function suiteSetFieldValue(textarea, value) {
+        try { _suiteTextareaSetter.call(textarea, value); } catch (e) { textarea.value = value; }
+    }
+
+    // Types text at the caret, the way a person would, so ServiceNow's listeners see it
+    function suiteInsertText(textarea, text) {
+        const start = textarea.selectionStart || 0;
+        const end   = textarea.selectionEnd   || 0;
+        suiteSetFieldValue(textarea, textarea.value.substring(0, start) + text + textarea.value.substring(end));
+        textarea.selectionStart = textarea.selectionEnd = start + text.length;
+        textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    }
+
+    // The picker of this textarea only: ServiceNow (ment.io) puts one menu per journal field on the page,
+    // its list is #mention-listbox-<textarea id>, hidden with visibility when closed
+    function suiteMentionOptions(textarea) {
+        const doc = textarea.ownerDocument;
+        const listId = textarea.getAttribute('aria-controls') || (textarea.id ? `mention-listbox-${textarea.id}` : '');
+        const list = listId ? doc.getElementById(listId) : null;
+        if (!list) return [];
+        const view = doc.defaultView || window;
+        for (let n = list; n && n !== doc.body; n = n.parentElement) {
+            const cs = view.getComputedStyle(n);
+            if (cs.visibility === 'hidden' || cs.display === 'none') return [];
+        }
+        return [...list.querySelectorAll('li[role="option"]')].filter(li => li.offsetParent !== null);
+    }
+
+    const suiteMentionTitle = li => suiteCleanPersonName((li.querySelector('.sn-widget-list-title') || li).textContent).toLowerCase();
+
+    // Types @Name, waits (up to 5 s) for ServiceNow to list that person and picks them. Nothing is pressed
+    // blindly: when the person does not show up, "@Name" stays as plain text and false is returned.
+    async function suiteTypeMention(textarea, name) {
+        name = suiteCleanPersonName(name);
+        textarea.focus();
+        await suiteMentionSleep(100);
+
+        // The picker only opens when the @ follows a space, a line break or the start of the field
+        const before = textarea.value.slice(0, textarea.selectionStart || 0);
+        if (before && !/\s$/.test(before)) suiteInsertText(textarea, ' ');
+
+        suiteInsertText(textarea, '@');
+        await suiteMentionSleep(150);
+        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: '@', inputType: 'insertText' }));
+        textarea.dispatchEvent(new KeyboardEvent('keyup', { key: '@', code: 'Digit2', keyCode: 50, which: 50, shiftKey: true, bubbles: true, cancelable: true }));
+        await suiteMentionSleep(400);
+
+        for (const char of name) {
+            suiteInsertText(textarea, char);
+            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: char, inputType: 'insertText' }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true, cancelable: true }));
+            await suiteMentionSleep(50);
+        }
+
+        const wanted = name.toLowerCase();
+        let pick = null;
+        for (let waited = 0; waited <= 5000; waited += 150) {
+            const opts = suiteMentionOptions(textarea);
+            pick = opts.find(li => suiteMentionTitle(li) === wanted) || null;
+            if (!pick && waited >= 2000 && opts.length === 1 && suiteMentionTitle(opts[0]).startsWith(wanted)) pick = opts[0];
+            if (pick) break;
+            await suiteMentionSleep(150);
+        }
+        if (!pick) {
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+            console.warn('⚠️ ServiceNow did not list', name, 'for the mention: left as plain text');
+            return false;
+        }
+
+        const shown = (pick.querySelector('.sn-widget-list-title') || pick).textContent.trim();
+        const mentioned = () => textarea.value.includes(`@[${name}]`) || textarea.value.includes(`@[${shown}]`);
+        pick.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        pick.click();
+        await suiteMentionSleep(250);
+        if (!mentioned() && suiteMentionOptions(textarea).includes(pick) && (pick.classList.contains('active') || pick.getAttribute('aria-selected') === 'true')) {
+            // Picked through the keyboard only when this person is the highlighted one
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+            await suiteMentionSleep(250);
+        }
+        const ok = mentioned();
+        console[ok ? 'log' : 'warn'](ok ? `✓ Mentioned ${name}` : `⚠️ The mention of ${name} was not confirmed`);
+        return ok;
+    }
+
+    // While mentions are typed, clicks on the page could close ServiceNow's list or move the caret:
+    // a see through cover eats them and a note at the top says what is going on
+    let _suiteMentionGuard = null;
+    function suiteMentionBlockerShow(fieldType, textarea) {
+        suiteMentionBlockerHide();
+        const overlay = document.createElement('div');
+        overlay.id = 'suite-mention-blocker-overlay';
+        suiteBusyStyle(overlay, { position: 'fixed', inset: '0', 'z-index': '2147483646', 'pointer-events': 'all',
+            cursor: 'not-allowed', background: 'rgba(0,0,0,0.10)', margin: '0', padding: '0', border: '0' });
+        const eat = e => { e.preventDefault(); e.stopImmediatePropagation(); };
+        ['mousedown', 'mouseup', 'click', 'pointerdown', 'pointerup'].forEach(t => overlay.addEventListener(t, eat, true));
+        const note = document.createElement('div');
+        note.id = 'suite-mention-blocker-toast';
+        note.setAttribute('role', 'status');
+        suiteBusyStyle(note, { position: 'fixed', top: '18px', left: '50%', transform: 'translateX(-50%)', 'z-index': '2147483647',
+            background: '#1a1a2e', color: '#ffffff', padding: '10px 18px', 'border-radius': '8px', margin: '0',
+            'box-shadow': '0 6px 24px rgba(0,0,0,.5)', 'font-family': 'Arial, sans-serif', 'font-size': '13px',
+            'white-space': 'nowrap', 'pointer-events': 'none', border: '1px solid rgba(102,126,234,0.55)' });
+        const what = document.createElement('span');
+        what.textContent = `Inserting @mention in ${fieldType === 'work_notes' ? '🔒 Work Notes' : '💬 Comments'}`;
+        const stop = document.createElement('span');
+        stop.textContent = '⛔ do not click';
+        suiteBusyStyle(stop, { color: '#fca5a5', 'margin-left': '10px', 'font-size': '12px' });
+        note.append(what, stop);
+        let refocus = null;
+        if (textarea) {
+            refocus = () => setTimeout(() => { if (_suiteMentionGuard) textarea.focus(); }, 0);
+            textarea.addEventListener('focusout', refocus, true);
+        }
+        _suiteMentionGuard = { overlay, note, textarea, refocus };
+        document.body.append(overlay, note);
+        // Above the tools' own panels too (top layer), so a click on them cannot steal the focus meanwhile
+        suitePanel(overlay, { isShown: () => true });
+        suitePanel(note, { isShown: () => true });
+    }
+    function suiteMentionBlockerHide() {
+        const g = _suiteMentionGuard;
+        _suiteMentionGuard = null;
+        if (!g) return;
+        if (g.textarea && g.refocus) g.textarea.removeEventListener('focusout', g.refocus, true);
+        g.overlay.remove();
+        g.note.remove();
+    }
+
+    // Tells the user which people ServiceNow did not list, so they retype those mentions before posting.
+    // It stays until closed: the user has to act on it.
+    function suiteMentionFailNotice(names) {
+        names = [...new Set((names || []).filter(Boolean))];
+        if (!names.length) return null;
+        document.querySelectorAll('.suite-mention-fail').forEach(n => n.remove());
+        const n = document.createElement('div');
+        n.className = 'suite-mention-fail';
+        n.setAttribute('role', 'alert');
+        suiteBusyStyle(n, { position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)', 'z-index': '2147483647',
+            background: '#fff4e5', color: '#8a5a00', border: '1px solid #ffc680', 'border-radius': '6px', padding: '8px 10px 8px 14px',
+            margin: '0', 'font-size': '12px', 'line-height': '1.45', 'font-family': 'Arial, sans-serif',
+            'box-shadow': '0 4px 12px rgba(0,0,0,0.15)', 'max-width': 'min(560px, calc(100vw - 32px))',
+            display: 'flex', 'align-items': 'flex-start', gap: '10px', 'box-sizing': 'border-box' });
+        const text = document.createElement('span');
+        const list = names.map(x => `"@${x}"`).join(', ');
+        text.textContent = `⚠ ServiceNow did not suggest ${names.join(', ')}, so ${list} ${names.length > 1 ? 'are' : 'is'} plain text. Retype ${names.length > 1 ? 'those mentions' : 'the mention'} before posting.`;
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.textContent = '✕';
+        close.title = 'Close this warning';
+        close.setAttribute('aria-label', 'Close this warning');
+        suiteBusyStyle(close, { background: 'transparent', color: '#8a5a00', border: 'none', cursor: 'pointer',
+            'font-size': '13px', padding: '0 4px', margin: '0', 'line-height': '1.2', 'flex-shrink': '0' });
+        close.addEventListener('mouseenter', () => close.style.setProperty('background', '#ffe2b8', 'important'));
+        close.addEventListener('mouseleave', () => close.style.setProperty('background', 'transparent', 'important'));
+        close.addEventListener('click', () => n.remove());
+        n.append(text, close);
+        document.body.appendChild(n);
+        suitePanel(n, { isShown: () => true });
+        return n;
+    }
+
+    // Writes text with @[Name] marks into a journal field: the text goes after what is already there,
+    // every mark becomes a real mention. Returns the names that could not be mentioned (left as "@Name").
+    // opts.fieldType ('comments' | 'work_notes') for the blocker note, opts.blocker shows the click cover,
+    // opts.notice (default true) shows the warning for the names that failed.
+    async function suiteWriteWithMentions(textarea, text, opts = {}) {
+        const notice = opts.notice !== false;
+        const re = new RegExp(SUITE_MENTION_RE.source, 'g');
+        const existing = textarea.value.trim();
+        if (!re.test(text)) {
+            suiteSetFieldValue(textarea, existing ? existing + '\n\n' + text : text);
+            textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+            return [];
+        }
+        const parts = text.split(re);   // text, name, text, name, ..., text
+        const failed = [];
+        if (opts.blocker) suiteMentionBlockerShow(opts.fieldType, textarea);
+        try {
+            suiteSetFieldValue(textarea, existing ? existing + '\n\n' : '');
+            textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+            textarea.focus();
+            await suiteMentionSleep(100);
+            for (let i = 0; i < parts.length; i++) {
+                if (i % 2 === 0) {
+                    // A stray @ typed right before a mark is dropped: the mention brings its own
+                    const piece = i < parts.length - 1 ? parts[i].replace(/@\s*$/, '') : parts[i];
+                    if (piece) { suiteInsertText(textarea, piece); await suiteMentionSleep(100); }
+                    continue;
+                }
+                const name = suiteMentionName(parts[i]);
+                // A problem with one mention leaves that name as plain text and the rest of the text still goes in
+                let ok = false;
+                try { ok = await suiteTypeMention(textarea, name); }
+                catch (e) { console.error('❌ Mention of', name, 'failed:', e, (e && e.stack || '').split('\n').slice(1, 3).join(' ')); }
+                if (!ok) failed.push(name);
+                await suiteMentionSleep(200);
+            }
+            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        } finally {
+            if (opts.blocker) suiteMentionBlockerHide();
+        }
+        if (failed.length && notice) suiteMentionFailNotice(failed);
+        return failed;
+    }
 
     /* ==========================================================
      *  DATA TRANSFER
@@ -11395,9 +11631,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.9';
+    const SCRIPT_VERSION = '1.7.10';
 
-    const CHANGELOG = `Version 1.7.9:
+    const CHANGELOG = `Version 1.7.10:
+- Mentions are written by the toolbar's shared mention code, also used by the Change Tracker. Nothing changes in how they work.
+
+Version 1.7.9:
 - Tickets opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", are assigned again: the name was cut at the first closing bracket, so ServiceNow listed two people and the assignment stopped with an error.
 - A second click on Assign Ticket while an assignment is running no longer starts it twice.
 - If one mention cannot be made, that name stays as plain text and the rest of the comment is still written.
@@ -13595,164 +13834,13 @@ Version 1.2.1:
      *  MENTION INSERTION SYSTEM
      * ==========================================================*/
 
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    const _nativeSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-
-    function setNativeValue(textarea, value) {
-        _nativeSetter.call(textarea, value);
-        textarea.dispatchEvent(new Event('input',  { bubbles: true }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    function insertTextDirectly(textarea, text) {
-        const start = textarea.selectionStart || 0;
-        const end   = textarea.selectionEnd   || 0;
-        const newValue = textarea.value.substring(0, start) + text + textarea.value.substring(end);
-        _nativeSetter.call(textarea, newValue);
-        textarea.selectionStart = textarea.selectionEnd = start + text.length;
-        textarea.dispatchEvent(new Event('input',  { bubbles: true }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-    }
-
-    // The picker of this textarea only: ServiceNow (ment.io) puts one menu per journal field on the page,
-    // its list is #mention-listbox-<textarea id>, hidden with visibility when closed
-    function mentionOptions(textarea) {
-        const doc = textarea.ownerDocument;
-        const listId = textarea.getAttribute('aria-controls') || (textarea.id ? `mention-listbox-${textarea.id}` : '');
-        const list = listId ? doc.getElementById(listId) : null;
-        if (!list) return [];
-        const view = doc.defaultView || window;
-        for (let n = list; n && n !== doc.body; n = n.parentElement) {
-            const cs = view.getComputedStyle(n);
-            if (cs.visibility === 'hidden' || cs.display === 'none') return [];
-        }
-        return [...list.querySelectorAll('li[role="option"]')].filter(li => li.offsetParent !== null);
-    }
-
-    const mentionTitle = li => ((li.querySelector('.sn-widget-list-title') || li).textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
-
-    // Types @Name, waits for ServiceNow to list that person and picks them. Nothing is pressed blindly:
-    // when the person does not show up, "@Name" stays as plain text and false is returned.
-    async function triggerMentionPicker(textarea, name) {
-        name = cleanPersonName(name);
-        console.log('🔔 Triggering @ mention picker for:', name);
-        textarea.focus();
-        await sleep(100);
-
-        // The picker only opens when the @ follows a space, a line break or the start of the field
-        const before = textarea.value.slice(0, textarea.selectionStart || 0);
-        if (before && !/\s$/.test(before)) insertTextDirectly(textarea, ' ');
-
-        insertTextDirectly(textarea, '@');
-        await sleep(150);
-        textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: '@', inputType: 'insertText' }));
-        textarea.dispatchEvent(new KeyboardEvent('keyup', { key: '@', code: 'Digit2', keyCode: 50, which: 50, shiftKey: true, bubbles: true, cancelable: true }));
-        await sleep(400);
-
-        for (const char of name) {
-            insertTextDirectly(textarea, char);
-            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: char, inputType: 'insertText' }));
-            textarea.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true, cancelable: true }));
-            await sleep(50);
-        }
-
-        // Wait (up to 5 s) until the list shows this person; a slow lookup no longer gets an early Enter
-        const wanted = name.trim().replace(/\s+/g, ' ').toLowerCase();
-        let pick = null;
-        for (let waited = 0; waited <= 5000; waited += 150) {
-            const opts = mentionOptions(textarea);
-            pick = opts.find(li => mentionTitle(li) === wanted) || null;
-            if (!pick && waited >= 2000 && opts.length === 1 && mentionTitle(opts[0]).startsWith(wanted)) pick = opts[0];
-            if (pick) break;
-            await sleep(150);
-        }
-        if (!pick) {
-            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
-            console.warn('⚠️ ServiceNow did not list', name, 'for the mention: left as plain text');
-            return false;
-        }
-
-        const mentioned = () => textarea.value.includes(`@[${name}]`) || textarea.value.includes(`@[${(pick.querySelector('.sn-widget-list-title') || pick).textContent.trim()}]`);
-        pick.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-        pick.click();
-        await sleep(250);
-        if (!mentioned() && mentionOptions(textarea).includes(pick) && (pick.classList.contains('active') || pick.getAttribute('aria-selected') === 'true')) {
-            // Picked through the keyboard only when this person is the highlighted one
-            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-            textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-            await sleep(250);
-        }
-        const ok = mentioned();
-        console[ok ? 'log' : 'warn'](ok ? `✓ Mentioned ${name}` : `⚠️ The mention of ${name} was not confirmed`);
-        return ok;
-    }
-
-    // A person's name as ServiceNow lists it: line breaks and repeated spaces become one space
-    const cleanPersonName = name => String(name || '').replace(/\s+/g, ' ').trim();
-    // Marks a mention in a comment text. The name is encoded, so brackets in it ("Name [NL] Surname")
-    // can no longer end the mention early; plain @[Name] marks still work.
-    const mentionTag = name => `@[${encodeURIComponent(cleanPersonName(name))}]`;
-    const mentionName = raw => { try { return cleanPersonName(decodeURIComponent(raw)); } catch (e) { return cleanPersonName(raw); } };
-
-    async function insertTextWithMention(textarea, text) {
-        console.group('📝 Inserting text with mentions');
-
-        const mentionRegex = /@\[([^\]]+)\]/g;
-        const matches = text.match(mentionRegex);
-
-        if (!matches || matches.length === 0) {
-            const existing = textarea.value.trim();
-            setNativeValue(textarea, existing ? existing + "\n\n" + text : text);
-            console.groupEnd();
-            return;
-        }
-
-        const mentions = [];
-        let match;
-        mentionRegex.lastIndex = 0;
-        while ((match = mentionRegex.exec(text)) !== null) {
-            mentions.push({ placeholder: match[0], name: mentionName(match[1]), index: match.index });
-        }
-
-        const parts = text.split(mentionRegex);
-        const existingContent = textarea.value.trim();
-        _nativeSetter.call(textarea, existingContent ? existingContent + "\n\n" : '');
-        textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
-        textarea.focus();
-        await sleep(100);
-
-        const failed = [];
-        let partIndex = 0;
-        for (let i = 0; i < mentions.length; i++) {
-            if (parts[partIndex]) {
-                insertTextDirectly(textarea, parts[partIndex].replace(/@\s*$/, ''));
-                await sleep(100);
-            }
-            partIndex++;
-            // A problem with one mention leaves that name as plain text and the rest of the comment still goes in
-            let ok = false;
-            try { ok = await triggerMentionPicker(textarea, mentions[i].name); }
-            catch (e) { console.error('❌ Mention of', mentions[i].name, 'failed:', e, (e && e.stack || '').split('\n').slice(1, 3).join(' ')); }
-            if (!ok) failed.push(mentions[i].name);
-            await sleep(200);
-            partIndex++;
-        }
-
-        if (partIndex < parts.length && parts[partIndex]) {
-            insertTextDirectly(textarea, parts[partIndex]);
-        }
-
-        textarea.dispatchEvent(new Event('input', { bubbles: true }));
-        textarea.dispatchEvent(new Event('change', { bubbles: true }));
-
-        console.log('✓ Text insertion complete');
-        console.groupEnd();
-        return failed;
-    }
+    // The mention writer lives in the core (SHARED: @MENTIONS); these names keep the tool's code unchanged
+    const sleep = suiteMentionSleep;
+    const cleanPersonName = suiteCleanPersonName;
+    const mentionTag = suiteMentionTag;
+    const triggerMentionPicker = suiteTypeMention;
+    // The success screen lists the people who could not be mentioned, so no separate warning here
+    const insertTextWithMention = (textarea, text) => suiteWriteWithMentions(textarea, text, { notice: false });
 
     /* ==========================================================
      *  TICKET ASSIGNMENT FUNCTIONALITY
@@ -19808,9 +19896,14 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.2';
+    const SCRIPT_VERSION = '2.16.3';
 
-    const CHANGELOG = `Version 2.16.2:
+    const CHANGELOG = `Version 2.16.3:
+- The requester's @mention is picked from the comment field's own ServiceNow suggestion list, waiting for a slow lookup, and never by a blind Enter. It can no longer pick someone from the Work Notes list or leave a line break instead of the name.
+- When ServiceNow does not suggest the requester, a warning at the bottom of the page names them and stays until you close it, so you can retype the mention before posting.
+- The Feature Guide shows this warning in Writing to the Ticket.
+
+Version 2.16.2:
 - Notes written into a ticket opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", now mention that person by their full name instead of stopping at the first closing bracket.
 
 Version 2.16.1:
@@ -22347,17 +22440,6 @@ Version 1.4.3:
 
         // ── Plain text insertion ─────────────────────────────────
 
-        function insertTextDirectly(textarea, text) {
-            const start = textarea.selectionStart || 0;
-            const end   = textarea.selectionEnd   || 0;
-            const cur   = textarea.value;
-            textarea.value = cur.substring(0, start) + text + cur.substring(end);
-            textarea.selectionStart = textarea.selectionEnd = start + text.length;
-            textarea.dispatchEvent(new Event('input',  { bubbles: true }));
-            textarea.dispatchEvent(new Event('change', { bubbles: true }));
-            textarea.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-        }
-
         function appendText(textarea, text) {
             const existing = textarea.value.trim();
             textarea.value = existing ? existing + '\n\n' + text : text;
@@ -22420,172 +22502,12 @@ Version 1.4.3:
             }
         }
 
-        // ── @mention insertion (best-effort: API → keystroke fallback) ──
-
-        async function insertMentionViaAPI(textarea, name) {
-            const tWin = getTicketWin();
-            try {
-                if (typeof tWin.$ !== 'undefined' && tWin.$(textarea).data('atwho')) {
-                    const atwho = tWin.$(textarea).data('atwho');
-                    if (atwho && atwho.insert) { atwho.insert('@', name); return true; }
-                }
-                if (typeof tWin.angular !== 'undefined') {
-                    try {
-                        const scope = tWin.angular.element(textarea).scope();
-                        if (scope && scope.insertMention) { await scope.insertMention(name); return true; }
-                    } catch {}
-                }
-                if (textarea.mentionPlugin || textarea._mentionApi) {
-                    const apiObj = textarea.mentionPlugin || textarea._mentionApi;
-                    if (apiObj.insert || apiObj.addMention) { (apiObj.insert || apiObj.addMention).call(apiObj, name); return true; }
-                }
-                if (typeof tWin.SNMention !== 'undefined' && tWin.SNMention.insert) {
-                    tWin.SNMention.insert(textarea, name); return true;
-                }
-                if (typeof tWin.GlideMention !== 'undefined' && tWin.GlideMention.insert) {
-                    tWin.GlideMention.insert(textarea, name); return true;
-                }
-            } catch {}
-            return false;
-        }
-
-        async function triggerMentionPicker(textarea, name) {
-            textarea.focus();
-            await sleep(80);
-            insertTextDirectly(textarea, '@');
-            await sleep(120);
-            textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: '@', inputType: 'insertText' }));
-            textarea.dispatchEvent(new KeyboardEvent('keyup', { key: '@', code: 'Digit2', keyCode: 50, which: 50, shiftKey: true, bubbles: true }));
-            await sleep(350);
-
-            for (const ch of name) {
-                insertTextDirectly(textarea, ch);
-                textarea.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: ch, inputType: 'insertText' }));
-                textarea.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
-                await sleep(45);
-            }
-
-            await sleep(350);
-            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-            textarea.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-            await sleep(180);
-
-            const suggestionSelectors = [
-                '.mention-suggestion', '.at-view-ul li', '[role="option"]',
-                '.atwho-view li', '.atwho-view-ul li', '.mentions-autocomplete li', '[data-mention-item]',
-            ];
-            const ticketDoc = getTicketDoc();
-            for (const sel of suggestionSelectors) {
-                const node = ticketDoc.querySelector(sel);
-                if (node && node.offsetParent !== null) { node.click(); await sleep(180); return true; }
-            }
-            return false;
-        }
-
-        // ── Mention blocker (prevents accidental clicks during keystroke flow) ──
-
-        let _blockerActive = false;
-        let _focusGuardTextarea = null;
-        let _focusGuardHandler  = null;
-
-        function showBlocker(fieldType, textarea) {
-            hideBlocker();
-            _blockerActive = true;
-
-            const overlay = document.createElement('div');
-            overlay.id = 'ct-mention-blocker-overlay';
-            Object.assign(overlay.style, {
-                position:'fixed', inset:'0', zIndex:'2147483646',
-                pointerEvents:'all', cursor:'not-allowed', background:'rgba(0,0,0,0.10)',
-            });
-            const eat = e => { e.preventDefault(); e.stopImmediatePropagation(); };
-            ['mousedown','mouseup','click','pointerdown','pointerup'].forEach(t => overlay.addEventListener(t, eat, true));
-
-            if (textarea) {
-                _focusGuardTextarea = textarea;
-                _focusGuardHandler  = () => {
-                    if (_blockerActive) setTimeout(() => { if (_blockerActive) textarea.focus(); }, 0);
-                };
-                textarea.addEventListener('focusout', _focusGuardHandler, true);
-            }
-
-            const fieldLabel = fieldType === 'work_notes' ? '🔒 Work Notes' : '💬 Comments';
-            const toast = document.createElement('div');
-            toast.id = 'ct-mention-blocker-toast';
-            Object.assign(toast.style, {
-                position:'fixed', top:'18px', left:'50%', transform:'translateX(-50%)',
-                zIndex:'2147483647', background:'linear-gradient(135deg,#1a1a2e 0%,#16213e 100%)',
-                color:'#fff', padding:'10px 18px', borderRadius:'8px',
-                boxShadow:'0 6px 24px rgba(0,0,0,.5)', fontFamily:'Arial,sans-serif',
-                fontSize:'13px', whiteSpace:'nowrap', pointerEvents:'none',
-                border:'1px solid rgba(102,126,234,0.55)',
-            });
-            toast.innerHTML = `Inserting @mention → <span style="color:#67e8f9">${fieldLabel}</span>` +
-                              `<span style="color:#fca5a5;margin-left:10px;font-size:12px">⛔ do not click</span>`;
-            document.body.appendChild(overlay);
-            document.body.appendChild(toast);
-            // Above the tracker's own panel too (top layer), so a click on it cannot steal the focus meanwhile
-            suitePanel(overlay, { isShown: () => true });
-            suitePanel(toast, { isShown: () => true });
-        }
-
-        function hideBlocker() {
-            _blockerActive = false;
-            if (_focusGuardTextarea && _focusGuardHandler) {
-                _focusGuardTextarea.removeEventListener('focusout', _focusGuardHandler, true);
-            }
-            _focusGuardTextarea = null;
-            _focusGuardHandler  = null;
-            document.getElementById('ct-mention-blocker-overlay')?.remove();
-            document.getElementById('ct-mention-blocker-toast')?.remove();
-        }
-
-        async function insertTextWithMention(textarea, text, fieldType) {
-            // A name may hold brackets itself ("Name [NL] Surname"): one inner [..] pair stays part of the name
-            const mentionRegex = /@\[((?:[^\[\]]|\[[^\[\]]*\])+)\]/g;
-            const matches = text.match(mentionRegex);
-
-            // No mentions → straight append
-            if (!matches || matches.length === 0) {
-                appendText(textarea, text);
-                return;
-            }
-
-            const mentions = [];
-            let m; mentionRegex.lastIndex = 0;
-            while ((m = mentionRegex.exec(text)) !== null) {
-                mentions.push({ placeholder: m[0], name: m[1], index: m.index });
-            }
-            const parts = text.split(mentionRegex);
-
-            showBlocker(fieldType, textarea);
-            try {
-                const existing = textarea.value.trim();
-                textarea.value = existing ? existing + '\n\n' : '';
-                textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
-                textarea.focus();
-                await sleep(80);
-
-                let pi = 0;
-                for (let i = 0; i < mentions.length; i++) {
-                    if (parts[pi]) {
-                        insertTextDirectly(textarea, parts[pi]);
-                        await sleep(80);
-                    }
-                    pi++;
-                    const apiOk = await insertMentionViaAPI(textarea, mentions[i].name);
-                    if (!apiOk) await triggerMentionPicker(textarea, mentions[i].name);
-                    await sleep(150);
-                    pi++;
-                }
-                if (pi < parts.length && parts[pi]) {
-                    insertTextDirectly(textarea, parts[pi]);
-                }
-                textarea.dispatchEvent(new Event('input',  { bubbles: true }));
-                textarea.dispatchEvent(new Event('change', { bubbles: true }));
-            } finally {
-                hideBlocker();
-            }
+        // ── @mention insertion ───────────────────────────────────
+        // The core writer (SHARED: @MENTIONS) picks each person from the field's own ServiceNow list,
+        // covers the page while it types and warns about anyone ServiceNow did not list.
+        // Returns the names that could not be mentioned.
+        function insertTextWithMention(textarea, text, fieldType) {
+            return suiteWriteWithMentions(textarea, text, { fieldType, blocker: true });
         }
 
         // ── Templates per entry type ──────────────────────────────
@@ -23005,7 +22927,7 @@ Version 1.4.3:
                 return { ok: true, wrote };
             } catch (e) {
                 console.warn('CT: ticket write failed', e);
-                hideBlocker();
+                suiteMentionBlockerHide();
                 return { ok: false, reason: 'error', error: e };
             }
         }
@@ -27202,6 +27124,11 @@ Version 1.4.3:
                         'The "Work note" and "Comment" checks next to "+ Add Entry" switch either one on or off for the entry you are adding; they go back to the "Auto-write" setting afterwards.',
                         'Custom entries are never written to the ticket.'
                     ]);
+                    const warn = span('⚠ ServiceNow did not suggest Jane Doe, so "@Jane Doe" is plain text. Retype the mention before posting.  ✕', {
+                        display: 'block', margin: '10px 0 0 0', padding: '8px 12px', fontSize: '11px', lineHeight: '1.45',
+                        background: '#fff4e5', color: '#8a5a00', border: '1px solid #ffc680', borderRadius: '6px' });
+                    body.appendChild(warn);
+                    caption(body, 'The requester is picked from ServiceNow\'s own suggestion list. If ServiceNow does not suggest them, the name stays as plain text and this warning stays at the bottom of the page until you close it.');
                 }
             },
             {
