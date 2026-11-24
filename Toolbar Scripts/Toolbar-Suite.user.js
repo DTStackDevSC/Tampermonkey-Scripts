@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.58.0
+// @version      2.58.1
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.58.0';
-    const CHANGELOG = `Version 2.58.0:
+   const SCRIPT_VERSION = '2.58.1';
+    const CHANGELOG = `Version 2.58.1:
+- All tools: every Feature Guide is drawn with the same pieces, so the pictures in the guides (buttons, labels, checkboxes, toolbar icons) look the same in every tool. What the guides say has not changed.
+
+Version 2.58.0:
 - All tools: every What's New window now looks the same: the title, the line with the new version, one card per version with the newest open, and Got it!. It also reads well under the ServiceNow dark theme and on Netskope.
 - All tools: the What's New windows and the pulsing dot on the toolbar icons are shared by every tool. What you have already seen does not show again.
 
@@ -2441,123 +2444,145 @@ Version 1.0.0:
     function showChangelogModal() { SUITE_VERSIONING.showWhatsNew(); }
 
     /* ==========================================================
+     *  SHARED: FEATURE GUIDE PIECES (core, used by every guide)
+     *  The building blocks every Feature Guide draws its sections with,
+     *  so all guides look the same. A guide takes the ones it uses:
+     *  const { lead, bullets, chip } = suiteGuide;
+     * ==========================================================*/
+
+    // Test only: the automated tests open every Feature Guide through this
+    function suiteGuideHook(name, open) {
+        if (GM_getValue('toolbarSuiteTestHooks', false) !== true) return;
+        const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        (w.__suiteGuides = w.__suiteGuides || {})[name] = () => open();
+    }
+
+    const suiteGuide = (() => {
+        const font = 'Arial, sans-serif';
+        // span: an inline text with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: font }, extra || {});
+            return s;
+        }
+        // lead: the one orienting sentence at the top of a section
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: font });
+            body.appendChild(p);
+        }
+        // bullets: short usage notes, each with a purple dot
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: font });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.append(dot, t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+        // caption: a small italic note right under a picture
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: font });
+            body.appendChild(c);
+        }
+        // hrow: a wrapping row that holds pictures side by side
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+        // chip: a small colored label, also used to picture a button.
+        // opts: color, border, radius, padding, fontSize, weight
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff', borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
+                fontFamily: font, border: opts.border || 'none', display: 'inline-block', lineHeight: '1.4'
+            });
+            return c;
+        }
+        // toggle: a ticked or empty checkbox with its label and an optional note under it
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = document.createElement('span');
+            Object.assign(box.style, {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
+                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+            });
+            box.textContent = on ? '✓' : '';
+            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+            return wrap;
+        }
+        // toolSquare: one rounded icon tile like a toolbar button; opts.bg, opts.border, opts.dot (notification dot)
+        function toolSquare(content, opts) {
+            opts = opts || {};
+            const sq = document.createElement('div');
+            Object.assign(sq.style, {
+                width: '30px', height: '30px', borderRadius: '8px', background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px', flexShrink: '0', position: 'relative'
+            });
+            sq.textContent = content;
+            if (opts.dot) {
+                const dot = document.createElement('span');
+                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
+                sq.appendChild(dot);
+            }
+            return sq;
+        }
+        // menuSep: the thin divider between groups in a menu picture
+        function menuSep() {
+            const s = document.createElement('div');
+            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
+            return s;
+        }
+        // menuMock: a white menu card holding tiles, like the toolbar menu
+        function menuMock(items) {
+            const menu = document.createElement('div');
+            Object.assign(menu.style, {
+                display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
+                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+            });
+            items.forEach(i => menu.appendChild(i));
+            return menu;
+        }
+        return { span, lead, bullets, caption, hrow, chip, toggle, toolSquare, menuSep, menuMock };
+    })();
+
+    /* ==========================================================
      *  HELP / FEATURE GUIDE MODAL
      * ==========================================================*/
 
     function showHelpModal() {
         if (document.getElementById('toolbarHelpModal')) return;
 
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
+        const { caption, lead, bullets, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
 
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6',
-                border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         const PURPLE_GRAD = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
 
@@ -3033,6 +3058,7 @@ Version 1.0.0:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('CORE', showHelpModal);
 
     /* ==========================================================
      *  SETTINGS DEFAULTS AND MANAGEMENT
@@ -6151,8 +6177,11 @@ Version 1.0.0:
     // VERSION CONTROL
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.4.4';
-    const CHANGELOG = `Version 1.4.4:
+    const SCRIPT_VERSION = '1.4.5';
+    const CHANGELOG = `Version 1.4.5:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.4.4:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 1.4.3:
@@ -6522,142 +6551,16 @@ Version 1.2:
     function showHelpModal() {
         if (document.getElementById('tqoHelpModal')) return;
 
-        // lead: single orienting sentence at the top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list with purple dot markers.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(c);
-        }
 
-        // span: inline element with optional styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal flex row for side-by-side mocks.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0',
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block',
-            });
-            return c;
-        }
 
-        // toolSquare: rounded icon tile resembling a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative',
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff',
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between toolbar groups.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: white card wrapping toolbar icon tiles.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
-        // toggle: checkbox preview with an optional per-control description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 0 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block',
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -7054,6 +6957,7 @@ Version 1.2:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('GENERAL TOOLKIT', showHelpModal);
 
     function showSettingsModal() {
         buildSettingsModal();
@@ -7187,8 +7091,11 @@ Version 1.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.6.7';
-    const CHANGELOG = `Version 1.6.7:
+    const SCRIPT_VERSION = '1.6.8';
+    const CHANGELOG = `Version 1.6.8:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.6.7:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 1.6.6:
@@ -7544,130 +7451,15 @@ Version 1.1.4:
          *      Each section's buildContent calls them. lead/bullets/caption append to
          *      the section body; span/hrow/chip return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // toggle: a checkbox preview row with label and optional description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -8061,6 +7853,7 @@ Version 1.1.4:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('SERVICENOW TOOLKIT', showHelpModal);
 
     /* ==========================================================
      *  UI COMPONENTS — settings / drafts modal
@@ -8933,9 +8726,12 @@ Version 1.1.4:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.1.8';
+    const SCRIPT_VERSION = '1.1.9';
 
-    const CHANGELOG = `Version 1.1.8:
+    const CHANGELOG = `Version 1.1.9:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.1.8:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 1.1.7:
@@ -9260,82 +9056,13 @@ Version 1.0.2:
     function showHelpModal() {
         if (document.getElementById('miniSummarySidebarHelpModal')) return;
 
-        // lead: one orienting sentence at the top of a section
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, toolSquare, menuSep } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list of usage notes with a purple dot each
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(c);
-        }
 
-        // span: inline text node with optional extra styles, returned not appended
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal wrapping flex row for placing visual mocks side by side
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between groups in a mock menu
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
         const sections = [
             {
@@ -9614,6 +9341,7 @@ Version 1.0.2:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('MINI SUMMARY SIDEBAR', showHelpModal);
 
     /* ==========================================================
      *  SIDEBAR INITIALIZATION
@@ -10226,9 +9954,12 @@ Version 1.0.2:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.2.5';
+    const SCRIPT_VERSION = '1.2.6';
 
-    const CHANGELOG = `Version 1.2.5:
+    const CHANGELOG = `Version 1.2.6:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.2.5:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 1.2.4:
@@ -10350,83 +10081,12 @@ Version 1.1.1:
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      span/hrow/chip return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
         // badgeRow: a button preview on the left with a one line description on the right.
         function badgeRow(body, item) {
@@ -10473,47 +10133,8 @@ Version 1.1.1:
             return wrap;
         }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: a white rounded card that holds tool tiles, like the open toolbar menu.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         const sections = [
             {
@@ -10684,6 +10305,7 @@ Version 1.1.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('ENHANCEMENT REQUEST LOGGER', showHelpModal);
 
     function injectStyles() {
         const style = document.createElement('style');
@@ -11056,9 +10678,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.13';
+    const SCRIPT_VERSION = '1.7.14';
 
-    const CHANGELOG = `Version 1.7.13:
+    const CHANGELOG = `Version 1.7.14:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.7.13:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 1.7.12:
@@ -12143,142 +11768,16 @@ Version 1.2.1:
     function showHelpModal() {
         if (document.getElementById('ticketAssignmentHelpModal')) return;
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: a white toolbar card that holds icon tiles side by side.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
-        // toggle: a checkbox preview with a label and an optional one-line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         // mockField: a rounded box that looks like a dropdown or text input on screen.
         function mockField(text, opts) {
@@ -12613,6 +12112,7 @@ Version 1.2.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('TICKET ASSIGNMENT TOOL', showHelpModal);
 
     /* ==========================================================
      *  MODAL INITIALIZATION
@@ -13543,9 +13043,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.5';
+    const SCRIPT_VERSION = '2.1.6';
 
-    const CHANGELOG = `Version 2.1.5:
+    const CHANGELOG = `Version 2.1.6:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 2.1.5:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 2.1.4:
@@ -14183,107 +13686,15 @@ Version 1.4.1:
     function showHelpModal() {
         if (document.getElementById('netskopeUrlListManagerHelpModal')) return;
 
-        // lead: one short orienting sentence at the top of a section
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list of short usage notes with purple dots
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed directly under a visual
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(c);
-        }
 
-        // span: inline text node with optional extra styles, returned not appended
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal wrapping flex row that holds visual mocks side by side
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label for categories and button previews
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff', borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif',
-                border: opts.border || 'none', display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, { position: 'absolute', top: '-3px', right: '-3px', width: '8px', height: '8px', borderRadius: '50%', background: '#ff8c00', border: '1px solid #fff' });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between groups in a menu mock
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: white rounded card wrapping toolbar icon tiles
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         const sections = [
             {
@@ -14733,6 +14144,7 @@ Version 1.4.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('URL LIST EDITOR', showHelpModal);
 
     /* ==========================================================
      *  MODAL INITIALIZATION
@@ -16459,9 +15871,12 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.9';
+    const SCRIPT_VERSION = '2.4.10';
 
-    const CHANGELOG = `Version 2.4.9:
+    const CHANGELOG = `Version 2.4.10:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 2.4.9:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 2.4.8:
@@ -17305,125 +16720,15 @@ Version 2.3.1:
     function showHelpModal() {
         if (document.getElementById('rowHighlighterHelpModal')) return;
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff'
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: the thin vertical divider used between groups in a menu mock.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: a white toolbar card that holds icon tiles side by side.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         // mockField: a rounded box that looks like a dropdown or text input on screen.
         function mockField(text, opts) {
@@ -17703,6 +17008,7 @@ Version 2.3.1:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('SERVICENOW ROW HIGHLIGHTER', showHelpModal);
 
     /* ==========================================================
      *  CSS AND HIGHLIGHTING
@@ -18780,9 +18086,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.3';
+    const SCRIPT_VERSION = '2.17.4';
 
-    const CHANGELOG = `Version 2.17.3:
+    const CHANGELOG = `Version 2.17.4:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 2.17.3:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 2.17.2:
@@ -25482,109 +24791,14 @@ Version 1.4.3:
     function showHelpModal() {
         if (document.getElementById('changeTrackerHelpModal')) return;
 
-        // lead: the single orienting sentence at the very top of a section. One line only.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block', textDecoration: opts.underline ? 'underline' : 'none'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            return sq;
-        }
 
-        // menuMock: a white rounded card that holds toolbar tiles.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
         // panel: a light card that frames a mock of part of the sidebar.
         function panel(extra) {
@@ -25662,22 +24876,6 @@ Version 1.4.3:
             body.appendChild(wrap);
         }
 
-        // toggle: a checkbox setting preview with its one-line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -26170,6 +25368,7 @@ Version 1.4.3:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('SERVICENOW TICKET HISTORY', showHelpModal);
 
     /* ==========================================================
      *  FIRST-RUN SETUP PROMPT
@@ -28098,9 +27297,12 @@ Version 1.4.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.6';
+    const SCRIPT_VERSION = '1.7.7';
 
-    const CHANGELOG = `Version 1.7.6:
+    const CHANGELOG = `Version 1.7.7:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.7.6:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 1.7.5:
@@ -29376,92 +28578,14 @@ Version 1.0:
     function showHelpModal() {
         if (document.getElementById('domainToolsHelpModal')) return;
 
-        // lead: one orienting sentence at the top of a section
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list of usage notes with a purple dot each
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif' });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' });
-            body.appendChild(c);
-        }
 
-        // span: inline text node with optional extra styles, returned not appended
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal wrapping flex row for placing visual mocks side by side
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label for button previews and categories
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // toolSquare: one rounded icon tile, like a real toolbar button
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative'
-            });
-            sq.textContent = content;
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between groups in a mock menu
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
         // pill: a rounded mode-toggle button mock (Single / Multiple style)
         function pill(text, active) {
@@ -29756,6 +28880,7 @@ Version 1.0:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('DOMAIN TOOLS', showHelpModal);
 
     /* ==========================================================
      *  SHOW MODAL
@@ -29847,9 +28972,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.5';
+    const SCRIPT_VERSION = '1.49.6';
 
-    const CHANGELOG = `Version 1.49.5:
+    const CHANGELOG = `Version 1.49.6:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.49.5:
 - The What's New window looks the same as in every other toolbar tool. What you have already seen does not show again.
 
 Version 1.49.4:
@@ -30693,142 +29821,16 @@ Version 1.16:
     function showHelpModal() {
         if (document.getElementById('nsToolkitHelpModal')) return;
 
-        // lead: single orienting sentence at the top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, toolSquare, menuSep, menuMock, toggle } = suiteGuide;   // the core's Feature Guide pieces
 
-        // bullets: compact list with purple dot markers.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: small italic note placed under a visual.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif',
-            });
-            body.appendChild(c);
-        }
 
-        // span: inline element with optional styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: horizontal flex row for side-by-side mocks.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0',
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: small colored rounded label.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: '4px', padding: '3px 8px',
-                fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block',
-            });
-            return c;
-        }
 
-        // toolSquare: rounded icon tile resembling a real toolbar button.
-        function toolSquare(content, opts) {
-            opts = opts || {};
-            const sq = document.createElement('div');
-            Object.assign(sq.style, {
-                width: '30px', height: '30px', borderRadius: '8px',
-                background: opts.bg || '#f3f4f6', border: opts.border || '2px solid transparent',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '15px', flexShrink: '0', position: 'relative',
-            });
-            sq.textContent = content;
-            if (opts.dot) {
-                const dot = document.createElement('span');
-                Object.assign(dot.style, {
-                    position: 'absolute', top: '-3px', right: '-3px',
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: '#ff8c00', border: '1px solid #fff',
-                });
-                sq.appendChild(dot);
-            }
-            return sq;
-        }
 
-        // menuSep: thin vertical divider between toolbar groups.
-        function menuSep() {
-            const s = document.createElement('div');
-            Object.assign(s.style, { width: '1px', height: '22px', background: '#e5e7eb', flexShrink: '0' });
-            return s;
-        }
 
-        // menuMock: white card wrapping toolbar icon tiles.
-        function menuMock(items) {
-            const menu = document.createElement('div');
-            Object.assign(menu.style, {
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px',
-                padding: '8px 12px', boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-            });
-            items.forEach(i => menu.appendChild(i));
-            return menu;
-        }
 
-        // toggle: checkbox preview with an optional per-control description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = document.createElement('span');
-            Object.assign(box.style, {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0',
-                border: on ? 'none' : '1px solid #b0b0b0',
-                background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block',
-            });
-            box.textContent = on ? '✓' : '';
-            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -32094,6 +31096,7 @@ Version 1.16:
         modal.appendChild(closeBtn);
         suiteModal(overlay, modal);
     }
+    suiteGuideHook('NETSKOPE POLICY TOOLKIT', showHelpModal);
 
     function showSettingsModal() {
         buildSettingsModal(); // idempotent

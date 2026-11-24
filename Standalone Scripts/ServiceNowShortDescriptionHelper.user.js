@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.10.0
+// @version      4.10.1
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.0';
-    const CHANGELOG = `Version 4.10.0:
+    const SCRIPT_VERSION = '4.10.1';
+    const CHANGELOG = `Version 4.10.1:
+- All helpers: every Feature Guide is drawn with the same pieces, so the pictures in the guides (buttons, labels, fields, checkboxes) look the same in every helper. What the guides say has not changed.
+
+Version 4.10.0:
 - All helpers: every What's New window now looks the same as in the Tools Toolbar: the title, the line with the new version, one card per version with the newest open, and Got it!. It also reads well under the ServiceNow dark theme and on Netskope.
 - All helpers: what you have already seen in a What's New window does not show again.
 
@@ -1777,6 +1780,174 @@ Version 4.0.0:
     }
 
     /* ==========================================================
+     *  SHARED: FEATURE GUIDE PIECES (core, used by every guide)
+     *  The building blocks every Feature Guide draws its sections with,
+     *  so all guides look the same. A guide takes the ones it uses:
+     *  const { lead, bullets, chip } = helpersGuide;
+     * ==========================================================*/
+
+    // Test only: the automated tests open every Feature Guide through this
+    function helpersGuideHook(name, open) {
+        if (GM_getValue('ticketHelpersTestHooks', false) !== true) return;
+        const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        (w.__helpersGuides = w.__helpersGuides || {})[name] = () => open();
+    }
+
+    const helpersGuide = (() => {
+        const font = 'Arial, sans-serif';
+        // span: an inline text with optional extra styles. Returned, not appended.
+        function span(text, extra) {
+            const s = document.createElement('span');
+            s.textContent = text;
+            Object.assign(s.style, { fontFamily: font }, extra || {});
+            return s;
+        }
+        // lead: the one orienting sentence at the top of a section
+        function lead(body, text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            Object.assign(p.style, { fontSize: '12px', color: '#555', lineHeight: '1.5', margin: '0 0 10px 0', fontFamily: font });
+            body.appendChild(p);
+        }
+        // bullets: short usage notes, each with a purple dot
+        function bullets(body, items) {
+            const ul = document.createElement('div');
+            ul.style.margin = '8px 0 0 0';
+            for (const item of items) {
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', gap: '8px', padding: '2px 0', fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: font });
+                const dot = document.createElement('span');
+                dot.textContent = '•';
+                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
+                const t = document.createElement('span');
+                t.textContent = item;
+                row.append(dot, t);
+                ul.appendChild(row);
+            }
+            body.appendChild(ul);
+        }
+        // caption: a small italic note right under a picture
+        function caption(body, text) {
+            const c = document.createElement('div');
+            c.textContent = text;
+            Object.assign(c.style, { fontSize: '11px', color: '#888', fontStyle: 'italic', margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: font });
+            body.appendChild(c);
+        }
+        // hrow: a wrapping row that holds pictures side by side
+        function hrow(children, extra) {
+            const r = document.createElement('div');
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '0 0 4px 0' }, extra || {});
+            children.forEach(c => r.appendChild(c));
+            return r;
+        }
+        // chip: a small colored label, also used to picture a button.
+        // opts: color, border, radius, padding, fontSize, weight
+        function chip(text, bg, opts) {
+            opts = opts || {};
+            const c = document.createElement('span');
+            c.textContent = text;
+            Object.assign(c.style, {
+                background: bg, color: opts.color || '#fff', borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
+                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
+                fontFamily: font, border: opts.border || 'none', display: 'inline-block', lineHeight: '1.4'
+            });
+            return c;
+        }
+        // toggle: a ticked or empty checkbox with its label and an optional note under it
+        function toggle(label, on, desc) {
+            const wrap = document.createElement('div');
+            wrap.style.margin = '0 0 8px 0';
+            const box = document.createElement('span');
+            Object.assign(box.style, {
+                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
+                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
+                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
+            });
+            box.textContent = on ? '✓' : '';
+            wrap.appendChild(hrow([box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' })], { margin: '0' }));
+            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px' }));
+            return wrap;
+        }
+        // badgeRow: a button preview on the left with a one line description on the right.
+        function badgeRow(body, item) {
+            const row = document.createElement('div');
+            Object.assign(row.style, {
+                display: 'flex', gap: '10px', alignItems: 'flex-start',
+                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
+            });
+            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px', radius: item.radius });
+            badge.style.flexShrink = '0';
+            if (item.minWidth) { badge.style.minWidth = item.minWidth; badge.style.textAlign = 'center'; }
+            row.appendChild(badge);
+            row.appendChild(span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' }));
+            body.appendChild(row);
+        }
+        // kvGrid: a two column key:value grid for field references and named settings.
+        function kvGrid(body, pairs) {
+            const grid = document.createElement('div');
+            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '0 0 6px 0' });
+            for (const [key, val] of pairs) {
+                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
+                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
+            }
+            body.appendChild(grid);
+        }
+        // formatBox: a monospace box for a fixed format or a template.
+        function formatBox(body, text) {
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
+                padding: '9px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333',
+                margin: '0 0 8px 0', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: '1.5'
+            });
+            box.textContent = text;
+            body.appendChild(box);
+        }
+        // beforeAfter: labelled rows showing how something changes, e.g. Before / After.
+        function beforeAfter(body, rows) {
+            const wrap = document.createElement('div');
+            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
+            rows.forEach(([label, text, good], i) => {
+                const row = hrow([
+                    span(label, { fontSize: '10px', fontWeight: 'bold', color: good ? '#2a7d4f' : '#888', textTransform: 'uppercase', width: '62px', flexShrink: '0' }),
+                    span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333', whiteSpace: 'pre-wrap' })
+                ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', alignItems: 'flex-start',
+                     background: good ? '#f2fff7' : '#f8f8ff', borderBottom: i < rows.length - 1 ? '1px solid #e8e8f0' : 'none' });
+                wrap.appendChild(row);
+            });
+            body.appendChild(wrap);
+        }
+        // panelMock: a white card that stands in for a panel or window of the script.
+        function panelMock(children, extra) {
+            const p = document.createElement('div');
+            Object.assign(p.style, {
+                border: '1px solid #ccc', borderRadius: '8px', background: '#fff', padding: '10px 12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)', maxWidth: '400px', margin: '0 0 8px 0'
+            }, extra || {});
+            children.forEach(c => p.appendChild(c));
+            return p;
+        }
+        // mockField: a labelled input or dropdown as it appears in the real form.
+        function mockField(label, value, opts) {
+            opts = opts || {};
+            const row = hrow([
+                span(label, { fontSize: '11px', fontWeight: 'bold', color: '#555', width: opts.labelWidth || '110px', flexShrink: '0' })
+            ], { margin: '0 0 5px 0', flexWrap: 'nowrap', gap: '8px' });
+            const box = document.createElement('div');
+            Object.assign(box.style, {
+                flex: '1', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', minHeight: '16px',
+                background: opts.locked ? '#efefef' : '#fff'
+            });
+            box.appendChild(span(value, { fontSize: '11px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
+            if (opts.caret) box.appendChild(span('▾', { fontSize: '10px', color: '#999' }));
+            row.appendChild(box);
+            return row;
+        }
+        return { span, lead, bullets, caption, hrow, chip, toggle, badgeRow, kvGrid, formatBox, beforeAfter, panelMock, mockField };
+    })();
+
+    /* ==========================================================
      *  SHARED: HELPER VERSION AND WHAT'S NEW (core, used by every
      *  helper)
      *  Each helper keeps its own stored keys, so nobody sees again a
@@ -2009,8 +2180,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.0';
-    const CHANGELOG = `Version 4.10.0:
+    const SCRIPT_VERSION = '4.10.1';
+    const CHANGELOG = `Version 4.10.1:
+- All helpers: every Feature Guide is drawn with the same pieces, so the pictures in the guides (buttons, labels, fields, checkboxes) look the same in every helper. What the guides say has not changed.
+
+Version 4.10.0:
 - All helpers: every What's New window now looks the same as in the Tools Toolbar: the title, the line with the new version, one card per version with the newest open, and Got it!. It also reads well under the ServiceNow dark theme and on Netskope.
 - All helpers: what you have already seen in a What's New window does not show again.
 
@@ -3682,179 +3856,19 @@ Version 3.0.8.1:
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      the others return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, badgeRow, kvGrid, formatBox, beforeAfter, panelMock, mockField, toggle } = helpersGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block', lineHeight: '1.4'
-            });
-            return c;
-        }
 
-        // badgeRow: a button preview on the left with a one line description on the right.
-        function badgeRow(body, item) {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
-            });
-            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px', radius: item.radius });
-            badge.style.flexShrink = '0';
-            if (item.minWidth) { badge.style.minWidth = item.minWidth; badge.style.textAlign = 'center'; }
-            row.appendChild(badge);
-            row.appendChild(span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' }));
-            body.appendChild(row);
-        }
 
-        // kvGrid: a two column key:value grid for field references and named settings.
-        function kvGrid(body, pairs) {
-            const grid = document.createElement('div');
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '0 0 6px 0' });
-            for (const [key, val] of pairs) {
-                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
-                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
-            }
-            body.appendChild(grid);
-        }
 
-        // formatBox: a monospace box for a fixed format or a template.
-        function formatBox(body, text) {
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
-                padding: '9px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333',
-                margin: '0 0 8px 0', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: '1.5'
-            });
-            box.textContent = text;
-            body.appendChild(box);
-        }
 
-        // beforeAfter: labelled rows showing how something changes, e.g. Before / After.
-        function beforeAfter(body, rows) {
-            const wrap = document.createElement('div');
-            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
-            rows.forEach(([label, text, good], i) => {
-                const row = hrow([
-                    span(label, { fontSize: '10px', fontWeight: 'bold', color: good ? '#2a7d4f' : '#888', textTransform: 'uppercase', width: '62px', flexShrink: '0' }),
-                    span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333', whiteSpace: 'pre-wrap' })
-                ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', alignItems: 'flex-start',
-                     background: good ? '#f2fff7' : '#f8f8ff', borderBottom: i < rows.length - 1 ? '1px solid #e8e8f0' : 'none' });
-                wrap.appendChild(row);
-            });
-            body.appendChild(wrap);
-        }
 
-        // panelMock: a white card that stands in for a panel or window of the script.
-        function panelMock(children, extra) {
-            const p = document.createElement('div');
-            Object.assign(p.style, {
-                border: '1px solid #ccc', borderRadius: '8px', background: '#fff', padding: '10px 12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)', maxWidth: '400px', margin: '0 0 8px 0'
-            }, extra || {});
-            children.forEach(c => p.appendChild(c));
-            return p;
-        }
 
-        // mockField: a labelled input or dropdown as it appears in the real form.
-        function mockField(label, value, opts) {
-            opts = opts || {};
-            const row = hrow([
-                span(label, { fontSize: '11px', fontWeight: 'bold', color: '#555', width: opts.labelWidth || '110px', flexShrink: '0' })
-            ], { margin: '0 0 5px 0', flexWrap: 'nowrap', gap: '8px' });
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                flex: '1', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', minHeight: '16px',
-                background: opts.locked ? '#efefef' : '#fff'
-            });
-            box.appendChild(span(value, { fontSize: '11px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
-            if (opts.caret) box.appendChild(span('▾', { fontSize: '10px', color: '#999' }));
-            row.appendChild(box);
-            return row;
-        }
 
-        // toggle: a ticked or unticked checkbox preview with an optional one line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = span(on ? '✓' : '', {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
-                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0', flexWrap: 'nowrap' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px', lineHeight: '1.4' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -4131,6 +4145,7 @@ Version 3.0.8.1:
         modal.appendChild(closeBtn);
         helpersModal(overlay, modal);
     }
+    helpersGuideHook('SHORT DESCRIPTION HELPER', showHelpModal);
 
     /* ==========================================================
      *  MODAL CLOSE FUNCTION
@@ -5080,9 +5095,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.22.3';
+    const SCRIPT_VERSION = '2.22.4';
 
-    const CHANGELOG = `Version 2.22.3:
+    const CHANGELOG = `Version 2.22.4:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 2.22.3:
 - The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
 
 Version 2.22.2:
@@ -7677,179 +7695,19 @@ Regards.`,
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      the others return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, badgeRow, kvGrid, formatBox, beforeAfter, panelMock, mockField, toggle } = helpersGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block', lineHeight: '1.4'
-            });
-            return c;
-        }
 
-        // badgeRow: a button preview on the left with a one line description on the right.
-        function badgeRow(body, item) {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
-            });
-            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px', radius: item.radius });
-            badge.style.flexShrink = '0';
-            if (item.minWidth) { badge.style.minWidth = item.minWidth; badge.style.textAlign = 'center'; }
-            row.appendChild(badge);
-            row.appendChild(span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' }));
-            body.appendChild(row);
-        }
 
-        // kvGrid: a two column key:value grid for field references and named settings.
-        function kvGrid(body, pairs) {
-            const grid = document.createElement('div');
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '0 0 6px 0' });
-            for (const [key, val] of pairs) {
-                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
-                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
-            }
-            body.appendChild(grid);
-        }
 
-        // formatBox: a monospace box for a fixed format or a template.
-        function formatBox(body, text) {
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
-                padding: '9px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333',
-                margin: '0 0 8px 0', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: '1.5'
-            });
-            box.textContent = text;
-            body.appendChild(box);
-        }
 
-        // beforeAfter: labelled rows showing how something changes, e.g. Before / After.
-        function beforeAfter(body, rows) {
-            const wrap = document.createElement('div');
-            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
-            rows.forEach(([label, text, good], i) => {
-                const row = hrow([
-                    span(label, { fontSize: '10px', fontWeight: 'bold', color: good ? '#2a7d4f' : '#888', textTransform: 'uppercase', width: '62px', flexShrink: '0' }),
-                    span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333', whiteSpace: 'pre-wrap' })
-                ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', alignItems: 'flex-start',
-                     background: good ? '#f2fff7' : '#f8f8ff', borderBottom: i < rows.length - 1 ? '1px solid #e8e8f0' : 'none' });
-                wrap.appendChild(row);
-            });
-            body.appendChild(wrap);
-        }
 
-        // panelMock: a white card that stands in for a panel or window of the script.
-        function panelMock(children, extra) {
-            const p = document.createElement('div');
-            Object.assign(p.style, {
-                border: '1px solid #ccc', borderRadius: '8px', background: '#fff', padding: '10px 12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)', maxWidth: '400px', margin: '0 0 8px 0'
-            }, extra || {});
-            children.forEach(c => p.appendChild(c));
-            return p;
-        }
 
-        // mockField: a labelled input or dropdown as it appears in the real form.
-        function mockField(label, value, opts) {
-            opts = opts || {};
-            const row = hrow([
-                span(label, { fontSize: '11px', fontWeight: 'bold', color: '#555', width: opts.labelWidth || '110px', flexShrink: '0' })
-            ], { margin: '0 0 5px 0', flexWrap: 'nowrap', gap: '8px' });
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                flex: '1', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', minHeight: '16px',
-                background: opts.locked ? '#efefef' : '#fff'
-            });
-            box.appendChild(span(value, { fontSize: '11px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
-            if (opts.caret) box.appendChild(span('▾', { fontSize: '10px', color: '#999' }));
-            row.appendChild(box);
-            return row;
-        }
 
-        // toggle: a ticked or unticked checkbox preview with an optional one line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = span(on ? '✓' : '', {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
-                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0', flexWrap: 'nowrap' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px', lineHeight: '1.4' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -8177,6 +8035,7 @@ Regards.`,
         modal.appendChild(closeBtn);
         helpersModal(overlay, modal);
     }
+    helpersGuideHook('TICKET RESPONSE HELPER', showHelpModal);
 
     /* ==========================================================
      *  FOOTER SIGNATURE
@@ -9435,9 +9294,12 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.11';
+    const SCRIPT_VERSION = '1.4.12';
 
-    const CHANGELOG = `Version 1.4.11:
+    const CHANGELOG = `Version 1.4.12:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.4.11:
 - The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
 
 Version 1.4.10:
@@ -10709,179 +10571,19 @@ Version 1.0.3:
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      the others return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, badgeRow, kvGrid, formatBox, beforeAfter, panelMock, mockField, toggle } = helpersGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block', lineHeight: '1.4'
-            });
-            return c;
-        }
 
-        // badgeRow: a button preview on the left with a one line description on the right.
-        function badgeRow(body, item) {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
-            });
-            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px', radius: item.radius });
-            badge.style.flexShrink = '0';
-            if (item.minWidth) { badge.style.minWidth = item.minWidth; badge.style.textAlign = 'center'; }
-            row.appendChild(badge);
-            row.appendChild(span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' }));
-            body.appendChild(row);
-        }
 
-        // kvGrid: a two column key:value grid for field references and named settings.
-        function kvGrid(body, pairs) {
-            const grid = document.createElement('div');
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '0 0 6px 0' });
-            for (const [key, val] of pairs) {
-                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
-                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
-            }
-            body.appendChild(grid);
-        }
 
-        // formatBox: a monospace box for a fixed format or a template.
-        function formatBox(body, text) {
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
-                padding: '9px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333',
-                margin: '0 0 8px 0', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: '1.5'
-            });
-            box.textContent = text;
-            body.appendChild(box);
-        }
 
-        // beforeAfter: labelled rows showing how something changes, e.g. Before / After.
-        function beforeAfter(body, rows) {
-            const wrap = document.createElement('div');
-            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
-            rows.forEach(([label, text, good], i) => {
-                const row = hrow([
-                    span(label, { fontSize: '10px', fontWeight: 'bold', color: good ? '#2a7d4f' : '#888', textTransform: 'uppercase', width: '62px', flexShrink: '0' }),
-                    span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333', whiteSpace: 'pre-wrap' })
-                ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', alignItems: 'flex-start',
-                     background: good ? '#f2fff7' : '#f8f8ff', borderBottom: i < rows.length - 1 ? '1px solid #e8e8f0' : 'none' });
-                wrap.appendChild(row);
-            });
-            body.appendChild(wrap);
-        }
 
-        // panelMock: a white card that stands in for a panel or window of the script.
-        function panelMock(children, extra) {
-            const p = document.createElement('div');
-            Object.assign(p.style, {
-                border: '1px solid #ccc', borderRadius: '8px', background: '#fff', padding: '10px 12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)', maxWidth: '400px', margin: '0 0 8px 0'
-            }, extra || {});
-            children.forEach(c => p.appendChild(c));
-            return p;
-        }
 
-        // mockField: a labelled input or dropdown as it appears in the real form.
-        function mockField(label, value, opts) {
-            opts = opts || {};
-            const row = hrow([
-                span(label, { fontSize: '11px', fontWeight: 'bold', color: '#555', width: opts.labelWidth || '110px', flexShrink: '0' })
-            ], { margin: '0 0 5px 0', flexWrap: 'nowrap', gap: '8px' });
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                flex: '1', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', minHeight: '16px',
-                background: opts.locked ? '#efefef' : '#fff'
-            });
-            box.appendChild(span(value, { fontSize: '11px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
-            if (opts.caret) box.appendChild(span('▾', { fontSize: '10px', color: '#999' }));
-            row.appendChild(box);
-            return row;
-        }
 
-        // toggle: a ticked or unticked checkbox preview with an optional one line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = span(on ? '✓' : '', {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
-                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0', flexWrap: 'nowrap' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px', lineHeight: '1.4' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -11152,6 +10854,7 @@ Version 1.0.3:
         modal.appendChild(closeBtn);
         helpersModal(overlay, modal);
     }
+    helpersGuideHook('FORMATTED TEXT HELPER', showHelpModal);
 
     /* ----------------------------------------------------------*/
 
@@ -12932,10 +12635,13 @@ Version 1.0.3:
         if (!isToolEnabled('slaBanner') || !dtToolRunsHere('slaBanner')) return;
 
 
-    const SCRIPT_VERSION = '1.4.5';
+    const SCRIPT_VERSION = '1.4.6';
 
 
-    const CHANGELOG = `Version 1.4.5:
+    const CHANGELOG = `Version 1.4.6:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.4.5:
 - The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
 
 Version 1.4.4:
@@ -13003,109 +12709,14 @@ Version 1.3:
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      span/hrow/chip return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, badgeRow, kvGrid } = helpersGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // badgeRow: a button preview on the left with a one line description on the right.
-        function badgeRow(body, item) {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
-            });
-            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px' });
-            badge.style.flexShrink = '0';
-            const descEl = span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' });
-            row.appendChild(badge);
-            row.appendChild(descEl);
-            body.appendChild(row);
-        }
 
-        // kvGrid: a two column key:value grid for field references and named settings.
-        function kvGrid(body, pairs) {
-            const grid = document.createElement('div');
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
-            for (const [key, val] of pairs) {
-                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
-                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
-            }
-            body.appendChild(grid);
-        }
 
         const sections = [
             {
@@ -13299,6 +12910,7 @@ Version 1.3:
         modal.appendChild(closeBtn);
         helpersModal(overlay, modal);
     }
+    helpersGuideHook('SLA ALERT BANNER', showHelpModal);
 
     // ─── Dark Mode Isolation ──────────────────────────────────────────────────
 
@@ -13737,9 +13349,12 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.14';
+    const SCRIPT_VERSION = '1.5.15';
 
-    const CHANGELOG = `Version 1.5.14:
+    const CHANGELOG = `Version 1.5.15:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.5.14:
 - The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
 
 Version 1.5.13:
@@ -13976,179 +13591,19 @@ Version 1.2.0:
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      the others return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, badgeRow, kvGrid, formatBox, beforeAfter, panelMock, mockField, toggle } = helpersGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: opts.weight || 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block', lineHeight: '1.4'
-            });
-            return c;
-        }
 
-        // badgeRow: a button preview on the left with a one line description on the right.
-        function badgeRow(body, item) {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                marginBottom: '8px', paddingBottom: '8px', borderBottom: '1px solid #f0f0f0'
-            });
-            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px', radius: item.radius });
-            badge.style.flexShrink = '0';
-            if (item.minWidth) { badge.style.minWidth = item.minWidth; badge.style.textAlign = 'center'; }
-            row.appendChild(badge);
-            row.appendChild(span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' }));
-            body.appendChild(row);
-        }
 
-        // kvGrid: a two column key:value grid for field references and named settings.
-        function kvGrid(body, pairs) {
-            const grid = document.createElement('div');
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', margin: '0 0 6px 0' });
-            for (const [key, val] of pairs) {
-                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
-                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
-            }
-            body.appendChild(grid);
-        }
 
-        // formatBox: a monospace box for a fixed format or a template.
-        function formatBox(body, text) {
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                background: '#f8f8ff', border: '1px solid #d0d0f0', borderRadius: '6px',
-                padding: '9px 14px', fontFamily: 'monospace', fontSize: '11px', color: '#333',
-                margin: '0 0 8px 0', overflowX: 'auto', whiteSpace: 'pre-wrap', lineHeight: '1.5'
-            });
-            box.textContent = text;
-            body.appendChild(box);
-        }
 
-        // beforeAfter: labelled rows showing how something changes, e.g. Before / After.
-        function beforeAfter(body, rows) {
-            const wrap = document.createElement('div');
-            Object.assign(wrap.style, { margin: '0 0 8px 0', borderRadius: '6px', border: '1px solid #d0d0f0', overflow: 'hidden' });
-            rows.forEach(([label, text, good], i) => {
-                const row = hrow([
-                    span(label, { fontSize: '10px', fontWeight: 'bold', color: good ? '#2a7d4f' : '#888', textTransform: 'uppercase', width: '62px', flexShrink: '0' }),
-                    span(text, { fontFamily: 'monospace', fontSize: '11px', color: '#333', whiteSpace: 'pre-wrap' })
-                ], { padding: '7px 12px', margin: '0', flexWrap: 'nowrap', alignItems: 'flex-start',
-                     background: good ? '#f2fff7' : '#f8f8ff', borderBottom: i < rows.length - 1 ? '1px solid #e8e8f0' : 'none' });
-                wrap.appendChild(row);
-            });
-            body.appendChild(wrap);
-        }
 
-        // panelMock: a white card that stands in for a panel or window of the script.
-        function panelMock(children, extra) {
-            const p = document.createElement('div');
-            Object.assign(p.style, {
-                border: '1px solid #ccc', borderRadius: '8px', background: '#fff', padding: '10px 12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.08)', maxWidth: '400px', margin: '0 0 8px 0'
-            }, extra || {});
-            children.forEach(c => p.appendChild(c));
-            return p;
-        }
 
-        // mockField: a labelled input or dropdown as it appears in the real form.
-        function mockField(label, value, opts) {
-            opts = opts || {};
-            const row = hrow([
-                span(label, { fontSize: '11px', fontWeight: 'bold', color: '#555', width: opts.labelWidth || '110px', flexShrink: '0' })
-            ], { margin: '0 0 5px 0', flexWrap: 'nowrap', gap: '8px' });
-            const box = document.createElement('div');
-            Object.assign(box.style, {
-                flex: '1', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', minHeight: '16px',
-                background: opts.locked ? '#efefef' : '#fff'
-            });
-            box.appendChild(span(value, { fontSize: '11px', color: opts.placeholder ? '#aaa' : '#333', fontStyle: opts.placeholder ? 'italic' : 'normal' }));
-            if (opts.caret) box.appendChild(span('▾', { fontSize: '10px', color: '#999' }));
-            row.appendChild(box);
-            return row;
-        }
 
-        // toggle: a ticked or unticked checkbox preview with an optional one line description.
-        function toggle(label, on, desc) {
-            const wrap = document.createElement('div');
-            wrap.style.margin = '0 0 8px 0';
-            const box = span(on ? '✓' : '', {
-                width: '15px', height: '15px', borderRadius: '3px', flexShrink: '0', boxSizing: 'border-box',
-                border: on ? 'none' : '1px solid #b0b0b0', background: on ? '#667eea' : '#fff', color: '#fff',
-                fontSize: '11px', lineHeight: '15px', textAlign: 'center', display: 'inline-block'
-            });
-            wrap.appendChild(hrow([ box, span(label, { fontSize: '12px', color: '#444', fontWeight: 'bold' }) ], { margin: '0', flexWrap: 'nowrap' }));
-            if (desc) wrap.appendChild(span(desc, { fontSize: '11px', color: '#777', display: 'block', margin: '2px 0 0 25px', lineHeight: '1.4' }));
-            return wrap;
-        }
 
         const sections = [
             {
@@ -14418,6 +13873,7 @@ Version 1.2.0:
         const helpParent = document.body;   // not the panel's parent: that is its top layer holder, which lets clicks through
         helpersModal(overlay, modal, { parent: helpParent });
     }
+    helpersGuideHook('POLICY NAMING HELPER', showHelpModal);
 
     /* ==========================================================
      *  CSS STYLES
@@ -16446,9 +15902,12 @@ Version 1.2.0:
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.1.4';
+    const SCRIPT_VERSION = '1.1.5';
 
-    const CHANGELOG = `Version 1.1.4:
+    const CHANGELOG = `Version 1.1.5:
+- The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
+
+Version 1.1.4:
 - The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
 
 Version 1.1.3:
@@ -17039,109 +16498,14 @@ Version 1.0.0:
         /* ---- Reusable content helpers. lead/bullets/caption append to the section body;
          *      span/hrow/chip return an element you place yourself. ---- */
 
-        // lead: the single orienting sentence at the very top of a section.
-        function lead(body, text) {
-            const p = document.createElement('p');
-            p.textContent = text;
-            Object.assign(p.style, {
-                fontSize: '12px', color: '#555', lineHeight: '1.5',
-                margin: '0 0 10px 0', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(p);
-        }
+        const { lead, bullets, caption, span, hrow, chip, badgeRow, kvGrid } = helpersGuide;   // the core's Feature Guide pieces
 
-        // bullets: a compact list of short usage notes, each prefixed with a purple dot.
-        function bullets(body, items) {
-            const ul = document.createElement('div');
-            ul.style.margin = '8px 0 0 0';
-            for (const item of items) {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '2px 0',
-                    fontSize: '12px', color: '#555', lineHeight: '1.5', fontFamily: 'Arial, sans-serif'
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const t = document.createElement('span');
-                t.textContent = item;
-                row.appendChild(dot);
-                row.appendChild(t);
-                ul.appendChild(row);
-            }
-            body.appendChild(ul);
-        }
 
-        // caption: a small italic note placed directly under a visual to explain it.
-        function caption(body, text) {
-            const c = document.createElement('div');
-            c.textContent = text;
-            Object.assign(c.style, {
-                fontSize: '11px', color: '#888', fontStyle: 'italic',
-                margin: '6px 0 0 0', lineHeight: '1.4', fontFamily: 'Arial, sans-serif'
-            });
-            body.appendChild(c);
-        }
 
-        // span: an inline text node with optional extra styles. Returned, not appended.
-        function span(text, extra) {
-            const s = document.createElement('span');
-            s.textContent = text;
-            Object.assign(s.style, { fontFamily: 'Arial, sans-serif' }, extra || {});
-            return s;
-        }
 
-        // hrow: a horizontal, wrapping flex row that holds visual mocks side by side.
-        function hrow(children, extra) {
-            const r = document.createElement('div');
-            Object.assign(r.style, {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                flexWrap: 'wrap', margin: '0 0 4px 0'
-            }, extra || {});
-            children.forEach(c => r.appendChild(c));
-            return r;
-        }
 
-        // chip: a small colored rounded label. Use for categories and button previews.
-        function chip(text, bg, opts) {
-            opts = opts || {};
-            const c = document.createElement('span');
-            c.textContent = text;
-            Object.assign(c.style, {
-                background: bg, color: opts.color || '#fff',
-                borderRadius: opts.radius || '4px', padding: opts.padding || '3px 8px',
-                fontSize: opts.fontSize || '11px', fontWeight: 'bold', whiteSpace: 'nowrap',
-                fontFamily: 'Arial, sans-serif', border: opts.border || 'none',
-                display: 'inline-block'
-            });
-            return c;
-        }
 
-        // badgeRow: a button preview on the left with a one line description on the right.
-        function badgeRow(body, item) {
-            const row = document.createElement('div');
-            Object.assign(row.style, {
-                display: 'flex', gap: '10px', alignItems: 'flex-start',
-                marginBottom: '10px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0'
-            });
-            const badge = chip(item.label, item.bg, { color: item.color, border: item.border, padding: '4px 8px' });
-            badge.style.flexShrink = '0';
-            const descEl = span(item.desc, { fontSize: '12px', color: '#555', lineHeight: '1.5' });
-            row.appendChild(badge);
-            row.appendChild(descEl);
-            body.appendChild(row);
-        }
 
-        // kvGrid: a two column key:value grid for field references and named settings.
-        function kvGrid(body, pairs) {
-            const grid = document.createElement('div');
-            Object.assign(grid.style, { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 14px', marginBottom: '10px' });
-            for (const [key, val] of pairs) {
-                grid.appendChild(span(key, { fontFamily: 'monospace', fontSize: '11px', color: '#667eea', fontWeight: 'bold', padding: '2px 0', whiteSpace: 'nowrap' }));
-                grid.appendChild(span(val, { fontSize: '12px', color: '#555', padding: '2px 0', lineHeight: '1.4' }));
-            }
-            body.appendChild(grid);
-        }
 
         const sections = [
             {
@@ -17336,6 +16700,7 @@ Version 1.0.0:
         modal.appendChild(closeBtn);
         helpersModal(overlay, modal);
     }
+    helpersGuideHook('TICKET SUBJECT HELPER', showHelpModal);
 
     function closePanel() {
         const p = document.getElementById('nsTktPanel');
