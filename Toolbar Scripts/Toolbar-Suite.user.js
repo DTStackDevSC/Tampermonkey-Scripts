@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.56.2
+// @version      2.56.3
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.56.2';
-    const CHANGELOG = `Version 2.56.2:
+   const SCRIPT_VERSION = '2.56.3';
+    const CHANGELOG = `Version 2.56.3:
+- Change Tracker: notes written into a ticket opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", now mention that person by their full name.
+
+Version 2.56.2:
 - Ticket Assignment: tickets opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", are assigned again, with that person mentioned by their full name.
 - Ticket Assignment: a second click on Assign Ticket while an assignment is running no longer starts it twice.
 
@@ -19805,9 +19808,12 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.16.1';
+    const SCRIPT_VERSION = '2.16.2';
 
-    const CHANGELOG = `Version 2.16.1:
+    const CHANGELOG = `Version 2.16.2:
+- Notes written into a ticket opened by someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", now mention that person by their full name instead of stopping at the first closing bracket.
+
+Version 2.16.1:
 - The list name in the setup panel now starts empty instead of showing ChangeTracker. Type the name of your team's SharePoint list; the check tells you when it is missing. Teams already set up keep their list.
 
 Version 2.16.0:
@@ -22325,13 +22331,13 @@ Version 1.4.3:
                 for (const sel of selectors) {
                     const f = ticketDoc.getElementById(sel);
                     if (f) {
-                        const v = (f.value || f.textContent || '').trim();
+                        const v = (f.value || f.textContent || '').replace(/\s+/g, ' ').trim();
                         if (v.length > 2) { _cachedOpenedByName = v; return v; }
                     }
                 }
                 const labelFields = ticketDoc.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
                 for (const f of labelFields) {
-                    const v = (f.value || f.textContent || '').trim();
+                    const v = (f.value || f.textContent || '').replace(/\s+/g, ' ').trim();
                     if (v.length > 2 && !v.includes('_')) { _cachedOpenedByName = v; return v; }
                 }
                 if (attempt < retries - 1) await sleep(delay);
@@ -22535,7 +22541,8 @@ Version 1.4.3:
         }
 
         async function insertTextWithMention(textarea, text, fieldType) {
-            const mentionRegex = /@\[([^\]]+)\]/g;
+            // A name may hold brackets itself ("Name [NL] Surname"): one inner [..] pair stays part of the name
+            const mentionRegex = /@\[((?:[^\[\]]|\[[^\[\]]*\])+)\]/g;
             const matches = text.match(mentionRegex);
 
             // No mentions → straight append
@@ -23068,6 +23075,7 @@ Version 1.4.3:
             writeBatch,
             detectVisibility,                              // exposed for diagnostics
             hasTemplate: type => Boolean(NOTE_TEMPLATES[type]),
+            insertTextWithMention, getOpenedByName,        // used by the automated tests
         };
     })();
 

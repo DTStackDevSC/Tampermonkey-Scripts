@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.9.0
+// @version      4.9.1
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.9.0';
-    const CHANGELOG = `Version 4.9.0:
+    const SCRIPT_VERSION = '4.9.1';
+    const CHANGELOG = `Version 4.9.1:
+- Response Templates and Formatted Text Editor: a requester whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", is now mentioned by their full name instead of stopping at the first closing bracket.
+
+Version 4.9.0:
 - Response Templates: six new variables for your own responses and the team's: Ticket Number, Requested For, My Name, Today, Short Description and Tenant. Each takes its value from the open ticket, and shows as [ticket number], [tenant] and so on when the ticket has none, so you can fill it in.
 
 Version 4.8.0:
@@ -1405,6 +1408,7 @@ Version 4.0.0:
     // Types @Name, waits for ServiceNow to list that person and picks them. Nothing is pressed blindly:
     // when the person does not show up, "@Name" stays as plain text, a note says so and false is returned.
     async function triggerMentionPicker(textarea, name) {
+        name = String(name || '').replace(/\s+/g, ' ').trim();   // line breaks in a name become one space
         console.log('🔔 Triggering @ mention picker for:', name);
         textarea.focus();
         await mentionSleep(100);
@@ -1750,8 +1754,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.9.0';
-    const CHANGELOG = `Version 4.9.0:
+    const SCRIPT_VERSION = '4.9.1';
+    const CHANGELOG = `Version 4.9.1:
+- Response Templates and Formatted Text Editor: a requester whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", is now mentioned by their full name instead of stopping at the first closing bracket.
+
+Version 4.9.0:
 - Response Templates: six new variables for your own responses and the team's: Ticket Number, Requested For, My Name, Today, Short Description and Tenant. Each takes its value from the open ticket, and shows as [ticket number], [tenant] and so on when the ticket has none, so you can fill it in.
 
 Version 4.8.0:
@@ -4967,9 +4974,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.22.0';
+    const SCRIPT_VERSION = '2.22.1';
 
-    const CHANGELOG = `Version 2.22.0:
+    const CHANGELOG = `Version 2.22.1:
+- A requester whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", is now mentioned by their full name instead of stopping at the first closing bracket.
+
+Version 2.22.0:
 - Six new variables for your own responses and the team's: Ticket Number, Requested For, My Name, Today, Short Description and Tenant. Each takes its value from the open ticket, and shows as [ticket number], [tenant] and so on when the ticket has none, so you can fill it in.
 
 Version 2.21.9:
@@ -7020,7 +7030,7 @@ Regards.`,
             for (const selector of selectors) {
                 const field = document.getElementById(selector);
                 if (field) {
-                    const name = field.value || field.textContent;
+                    const name = (field.value || field.textContent || '').replace(/\s+/g, ' ');
                     if (name && name.trim() && name.trim().length > 2) {
                         console.log(`✓ Found "Opened by" name on attempt ${attempt + 1}:`, name.trim());
                         cachedOpenedByName = name.trim();
@@ -7031,7 +7041,7 @@ Regards.`,
 
             const labelFields = document.querySelectorAll('[id*="opened_by"], [id*="caller_id"]');
             for (const field of labelFields) {
-                const name = field.value || field.textContent;
+                const name = (field.value || field.textContent || '').replace(/\s+/g, ' ');
                 if (name && name.trim() && !name.includes('_') && name.length > 2) {
                     console.log(`✓ Found name from fallback on attempt ${attempt + 1}:`, name.trim());
                     cachedOpenedByName = name.trim();
@@ -7127,6 +7137,10 @@ Regards.`,
      *  MAIN MENTION INSERTION WITH STRATEGIES
      * ==========================================================*/
 
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersResponse = {
+        insertTextWithMention: (...a) => insertTextWithMention(...a), getOpenedByName: (...a) => getOpenedByName(...a) };
+
     async function insertTextWithMention(textarea, text, fieldType = 'comments') {
         // Footer: strip any existing footer from textarea to avoid duplication, then append to text
         if (getFooterEnabled()) {
@@ -7143,7 +7157,8 @@ Regards.`,
         console.group('📝 Inserting text with mentions');
         console.log('Text to insert:', text);
 
-        const mentionRegex = /@\[([^\]]+)\]/g;
+        // A name may hold brackets itself ("Name [NL] Surname"): one inner [..] pair stays part of the name
+        const mentionRegex = /@\[((?:[^\[\]]|\[[^\[\]]*\])+)\]/g;
         const matches = text.match(mentionRegex);
 
         if (!matches || matches.length === 0) {
@@ -9610,9 +9625,12 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.8';
+    const SCRIPT_VERSION = '1.4.9';
 
-    const CHANGELOG = `Version 1.4.8:
+    const CHANGELOG = `Version 1.4.9:
+- A mention of someone whose name has brackets or a line break, such as "Bhargavi [NL] Kodepaka", now picks that person by their full name instead of stopping at the first closing bracket.
+
+Version 1.4.8:
 - Formatted Text Helper is now called Formatted Text Editor. Your settings stay as they were.
 
 Version 1.4.7:
@@ -12802,7 +12820,8 @@ Version 1.0.3:
      *  picker on insert, the same way Quick Responses do it.
      * ==========================================================*/
 
-    const MENTION_TOKEN = /@\[([^\]<>]+)\]/g;
+    // A name may hold brackets itself ("Name [NL] Surname"): one inner [..] pair stays part of the name
+    const MENTION_TOKEN = /@\[((?:[^\[\]<>]|\[[^\[\]<>]*\])+)\]/g;
 
     // Name of the person who opened the ticket (caller on incidents), or '' when not found.
     function getOpenerName() {
@@ -12810,7 +12829,7 @@ Version 1.0.3:
             for (const field of ['opened_by', 'caller_id']) {
                 try {
                     const val = window.g_form.getDisplayValue(field);
-                    if (val && val.trim()) return val.trim();
+                    if (val && val.trim()) return val.replace(/\s+/g, ' ').trim();
                 } catch (e) { /* field not on this form */ }
             }
         }
@@ -12819,7 +12838,7 @@ Version 1.0.3:
         for (const id of ids) {
             const el = document.getElementById(id);
             const val = el && (el.value || el.textContent);
-            if (val && val.trim()) return val.trim();
+            if (val && val.trim()) return val.replace(/\s+/g, ' ').trim();
         }
         return '';
     }
@@ -12870,6 +12889,10 @@ Version 1.0.3:
     }
 
     // Writes the wrapped HTML into each textarea, turning every @[Name] into a real mention.
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersFormatted = {
+        writeWithMentions: (...a) => writeWithMentions(...a), getOpenerName: () => getOpenerName() };
+
     async function writeWithMentions(targets, wrappedHTML) {
         const parts = wrappedHTML.split(MENTION_TOKEN); // text, name, text, name, ..., text
         const total = (parts.length - 1) / 2;
