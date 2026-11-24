@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.9.2
+// @version      4.10.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.9.2';
-    const CHANGELOG = `Version 4.9.2:
+    const SCRIPT_VERSION = '4.10.0';
+    const CHANGELOG = `Version 4.10.0:
+- All helpers: every What's New window now looks the same as in the Tools Toolbar: the title, the line with the new version, one card per version with the newest open, and Got it!. It also reads well under the ServiceNow dark theme and on Netskope.
+- All helpers: what you have already seen in a What's New window does not show again.
+
+Version 4.9.2:
 - Response Templates and Formatted Text Editor: mentions are written by one shared piece of the suite, so both behave the same.
 - Response Templates and Formatted Text Editor: the requester's name is read the same way in both, from the ticket's Opened by (or Caller) field.
 
@@ -1773,6 +1777,173 @@ Version 4.0.0:
     }
 
     /* ==========================================================
+     *  SHARED: HELPER VERSION AND WHAT'S NEW (core, used by every
+     *  helper)
+     *  Each helper keeps its own stored keys, so nobody sees again a
+     *  What's New they already closed. Every What's New window looks
+     *  the same: title, the "updated" line, one card per version (the
+     *  newest open, the others folded) and Got it!. Its styles are
+     *  inline and !important, so it looks right under ServiceNow's dark
+     *  theme and under Netskope's CSP.
+     * ==========================================================*/
+
+    function helpersCompareVersions(v1, v2) {
+        if (!v1) return true;
+        const a = String(v1).split('.').map(Number), b = String(v2).split('.').map(Number);
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+            const x = a[i] || 0, y = b[i] || 0;
+            if (y > x) return true;
+            if (y < x) return false;
+        }
+        return false;
+    }
+    // "Version X:" blocks with "- " bullets; indented lines continue the bullet above
+    function helpersParseChangelog(text) {
+        const entries = [];
+        let current = null, bullet = null;
+        for (const line of String(text || '').split('\n')) {
+            const v = line.match(/^Version\s+([\d.]+):/);
+            if (v) {
+                if (bullet !== null && current) current.bullets.push(bullet);
+                bullet = null;
+                if (current) entries.push(current);
+                current = { version: v[1], bullets: [] };
+            } else if (line.trim().startsWith('-') && current) {
+                if (bullet !== null) current.bullets.push(bullet);
+                bullet = line.trim().slice(1).trim();
+            } else if (line.trim() && current && bullet !== null) {
+                bullet += ' ' + line.trim();
+            }
+        }
+        if (bullet !== null && current) current.bullets.push(bullet);
+        if (current) entries.push(current);
+        return entries;
+    }
+
+    // cfg: { name, version, changelog, versionKey, seenKey, modalId, overlayId, notifIds (in helper "What's new" marks to remove) }
+    function helpersToolVersion(cfg) {
+        const stored = () => GM_getValue(cfg.versionKey, null);
+        const save = (v) => GM_setValue(cfg.versionKey, v === undefined ? cfg.version : v);
+        const seen = () => GM_getValue(cfg.seenKey, null) === cfg.version;
+        const markSeen = () => GM_setValue(cfg.seenKey, cfg.version);
+        const isNew = () => helpersCompareVersions(stored(), cfg.version);
+        function showWhatsNew() {
+            if (document.getElementById(cfg.modalId)) return;
+            const st = helpersBusyStyle;
+            const font = 'Arial, sans-serif';
+            const overlay = document.createElement('div');
+            overlay.id = cfg.overlayId;
+            st(overlay, { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+                background: 'rgba(0, 0, 0, 0.5)', 'z-index': '100000011', margin: '0', padding: '0', border: '0' });
+            const modal = document.createElement('div');
+            modal.id = cfg.modalId;
+            modal.className = 'helpers-whats-new';
+            st(modal, { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', 'z-index': '100000012',
+                background: '#ffffff', color: '#333333', border: '2px solid #333333', padding: '20px', margin: '0',
+                'box-shadow': '0 4px 12px rgba(0,0,0,0.3)', 'font-family': font, 'border-radius': '10px',
+                width: 'min(600px, calc(100vw - 32px))', 'max-height': '80vh', 'overflow-y': 'auto', 'box-sizing': 'border-box', 'text-align': 'left' });
+
+            const title = document.createElement('h2');
+            title.textContent = `What's New: Version ${cfg.version}`;
+            st(title, { margin: '0 0 15px 0', color: '#333333', 'border-bottom': '2px solid #667eea', 'padding-bottom': '10px',
+                'font-size': '1.5em', 'font-weight': 'bold', 'font-family': font, background: 'transparent', 'line-height': '1.3' });
+            const info = document.createElement('div');
+            info.className = 'helpers-whats-new-info';
+            info.textContent = `${cfg.name} has been updated to version ${cfg.version}!`;
+            st(info, { background: '#f8f9fa', color: '#333333', padding: '10px', 'border-radius': '5px', 'margin-bottom': '15px',
+                'border-left': '4px solid #667eea', 'font-family': font, 'font-size': '14px', 'font-weight': 'normal' });
+
+            const cards = document.createElement('div');
+            helpersParseChangelog(cfg.changelog).forEach((entry, index) => {
+                const latest = index === 0;
+                const card = document.createElement('div');
+                st(card, { border: '1px solid ' + (latest ? '#667eea' : '#e0e0e0'), 'border-radius': '6px', 'margin-bottom': '8px',
+                    overflow: 'hidden', background: '#ffffff' });
+                const header = document.createElement('div');
+                header.setAttribute('role', 'button');
+                header.tabIndex = 0;
+                st(header, { display: 'flex', 'align-items': 'center', 'justify-content': 'space-between', padding: '9px 12px',
+                    background: latest ? '#f0f0ff' : '#f8f8f8', cursor: 'pointer', 'user-select': 'none' });
+                const label = document.createElement('span');
+                st(label, { display: 'inline-flex', 'align-items': 'center' });
+                const versionLabel = document.createElement('span');
+                versionLabel.textContent = `Version ${entry.version}`;
+                st(versionLabel, { 'font-weight': 'bold', 'font-size': '13px', color: latest ? '#667eea' : '#555555', 'font-family': font });
+                label.appendChild(versionLabel);
+                if (latest) {
+                    const tag = document.createElement('span');
+                    tag.textContent = 'Latest';
+                    st(tag, { 'font-size': '10px', 'font-weight': 'bold', background: '#667eea', color: '#ffffff', 'border-radius': '3px',
+                        padding: '1px 6px', 'margin-left': '8px', 'font-family': font });
+                    label.appendChild(tag);
+                }
+                const chevron = document.createElement('span');
+                chevron.textContent = '▾';
+                st(chevron, { 'font-size': '12px', color: '#999999', transition: 'transform 0.2s', display: 'inline-block',
+                    transform: latest ? 'rotate(0deg)' : 'rotate(-90deg)' });
+                header.append(label, chevron);
+                const body = document.createElement('div');
+                st(body, { padding: '10px 14px', display: latest ? 'block' : 'none', background: '#ffffff' });
+                entry.bullets.forEach(bullet => {
+                    const row = document.createElement('div');
+                    st(row, { display: 'flex', gap: '8px', padding: '3px 0', 'font-size': '13px', 'font-family': font,
+                        color: '#444444', 'line-height': '1.5' });
+                    const dot = document.createElement('span');
+                    dot.textContent = '•';
+                    st(dot, { color: '#667eea', 'flex-shrink': '0', 'font-weight': 'bold' });
+                    const text = document.createElement('span');
+                    text.textContent = bullet;
+                    row.append(dot, text);
+                    body.appendChild(row);
+                });
+                let open = latest;
+                header.setAttribute('aria-expanded', String(open));
+                const toggle = () => {
+                    open = !open;
+                    body.style.setProperty('display', open ? 'block' : 'none', 'important');
+                    chevron.style.setProperty('transform', open ? 'rotate(0deg)' : 'rotate(-90deg)', 'important');
+                    header.setAttribute('aria-expanded', String(open));
+                };
+                header.addEventListener('click', toggle);
+                header.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && !e.isComposing) { e.preventDefault(); toggle(); } });
+                header.addEventListener('mouseenter', () => header.style.setProperty('background', latest ? '#e6e6ff' : '#f0f0f0', 'important'));
+                header.addEventListener('mouseleave', () => header.style.setProperty('background', latest ? '#f0f0ff' : '#f8f8f8', 'important'));
+                card.append(header, body);
+                cards.appendChild(card);
+            });
+
+            const gotIt = document.createElement('button');
+            gotIt.type = 'button';
+            gotIt.className = 'helpers-whats-new-close';
+            gotIt.textContent = 'Got it!';
+            st(gotIt, { 'margin-top': '15px', padding: '10px 20px', background: '#667eea', color: '#ffffff', border: 'none',
+                'border-radius': '5px', cursor: 'pointer', 'font-weight': 'bold', width: '100%', 'font-family': font, 'font-size': '14px' });
+            gotIt.addEventListener('mouseenter', () => gotIt.style.setProperty('background', '#5568d3', 'important'));
+            gotIt.addEventListener('mouseleave', () => gotIt.style.setProperty('background', '#667eea', 'important'));
+            gotIt.onclick = () => {
+                overlay.remove();
+                modal.remove();
+                markSeen();
+                save();
+                (cfg.notifIds || []).forEach(id => document.getElementById(id)?.remove());
+                if (cfg.onSeen) { try { cfg.onSeen(); } catch (e) { console.warn('What\'s New: after closing', e); } }
+            };
+            overlay.onclick = () => gotIt.click();
+
+            modal.append(title, info, cards, gotIt);
+            helpersModal(overlay, modal);
+        }
+
+        if (GM_getValue('ticketHelpersTestHooks', false) === true) {
+            const w = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            (w.__helpersWhatsNew = w.__helpersWhatsNew || {})[cfg.id] = {
+                open: () => showWhatsNew(), isNew: () => isNew(), seen: () => seen(), modalId: cfg.modalId };
+        }
+        return { stored, save, seen, markSeen, isNew, showWhatsNew };
+    }
+
+
+    /* ==========================================================
      *  SHARED: TENANT OF A TICKET
      *  Requesting Member Firm "Deloitte <region>" to Netskope tenant.
      *  Used by the Short Description Builder and by the {{tenant}}
@@ -1838,8 +2009,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.9.2';
-    const CHANGELOG = `Version 4.9.2:
+    const SCRIPT_VERSION = '4.10.0';
+    const CHANGELOG = `Version 4.10.0:
+- All helpers: every What's New window now looks the same as in the Tools Toolbar: the title, the line with the new version, one card per version with the newest open, and Got it!. It also reads well under the ServiceNow dark theme and on Netskope.
+- All helpers: what you have already seen in a What's New window does not show again.
+
+Version 4.9.2:
 - Response Templates and Formatted Text Editor: mentions are written by one shared piece of the suite, so both behave the same.
 - Response Templates and Formatted Text Editor: the requester's name is read the same way in both, from the ticket's Opened by (or Caller) field.
 
@@ -2566,39 +2741,22 @@ Version 3.0.8.1:
         GM_setValue('shortDescTeam', teamKey);
     }
 
-    function getStoredVersion() {
-        return GM_getValue('shortDescVersion', null);
-    }
+    // Version and What's New window: the core's, with this helper's own stored keys
+    const HELPER_VERSIONING = helpersToolVersion({ id: 'shortDescription', name: 'Short Description Builder', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'shortDescVersion', seenKey: 'shortDescChangelogSeen', modalId: 'changelogModal', overlayId: 'changelogModalOverlay', notifIds: ['changelogNotification'] });
+    function getStoredVersion()    { return HELPER_VERSIONING.stored(); }
+    function saveVersion(v)        { HELPER_VERSIONING.save(v); }
+    function hasSeenChangelog()    { return HELPER_VERSIONING.seen(); }
+    function markChangelogAsSeen() { HELPER_VERSIONING.markSeen(); }
+    function isNewVersion()        { return HELPER_VERSIONING.isNew(); }
+    function showChangelogModal()  { HELPER_VERSIONING.showWhatsNew(); }
+    function compareVersions(a, b) { return helpersCompareVersions(a, b); }
+    function parseChangelog(text)  { return helpersParseChangelog(typeof text === 'string' ? text : CHANGELOG); }
 
-    function saveVersion(version) {
-        GM_setValue('shortDescVersion', version);
-    }
 
-    function hasSeenChangelog() {
-        return GM_getValue('shortDescChangelogSeen', null) === SCRIPT_VERSION;
-    }
 
-    function markChangelogAsSeen() {
-        GM_setValue('shortDescChangelogSeen', SCRIPT_VERSION);
-    }
 
-    function compareVersions(v1, v2) {
-        if (!v1) return true;
-        const parts1 = v1.split('.').map(Number);
-        const parts2 = v2.split('.').map(Number);
-        for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-            const num1 = parts1[i] || 0;
-            const num2 = parts2[i] || 0;
-            if (num2 > num1) return true;
-            if (num2 < num1) return false;
-        }
-        return false;
-    }
 
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
 
     function showTeamSelector() {
         const selectorContainer = document.createElement('div');
@@ -3297,147 +3455,7 @@ Version 3.0.8.1:
         document.body.appendChild(overlay);
     }
 
-    function parseChangelog() {
-        const entries = [];
-        let current = null;
-        let currentBullet = null;
-        for (const line of CHANGELOG.split('\n')) {
-            const versionMatch = line.match(/^Version\s+([\d.]+):/);
-            if (versionMatch) {
-                if (currentBullet !== null && current) current.bullets.push(currentBullet);
-                currentBullet = null;
-                if (current) entries.push(current);
-                current = { version: versionMatch[1], bullets: [] };
-            } else if (line.trim().startsWith('-') && current) {
-                if (currentBullet !== null) current.bullets.push(currentBullet);
-                currentBullet = line.trim().slice(1).trim();
-            } else if (line.trim() && current && currentBullet !== null) {
-                currentBullet += ' ' + line.trim();
-            }
-        }
-        if (currentBullet !== null && current) current.bullets.push(currentBullet);
-        if (current) entries.push(current);
-        return entries;
-    }
 
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'changelogModalOverlay';
-
-        const modal = document.createElement('div');
-        modal.id = 'changelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-
-        const versionInfo = document.createElement('div');
-        versionInfo.className = 'version-info';
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.className = 'close-changelog';
-        closeButton.textContent = 'Got it!';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-
-            const notification = document.getElementById('changelogNotification');
-            if (notification) notification.remove();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        helpersModal(overlay, modal);
-
-        overlay.onclick = () => closeButton.click();
-    }
 
     /* ==========================================================
      *  SETTINGS MODAL
@@ -5062,9 +5080,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.22.2';
+    const SCRIPT_VERSION = '2.22.3';
 
-    const CHANGELOG = `Version 2.22.2:
+    const CHANGELOG = `Version 2.22.3:
+- The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
+
+Version 2.22.2:
 - Mentions are written by the suite's shared mention code, the same as in the Formatted Text Editor. Nothing changes in how they work.
 
 Version 2.22.1:
@@ -6994,39 +7015,22 @@ Regards.`,
      *  VERSION CONTROL FUNCTIONS (GM_getValue/GM_setValue)
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue('ticketResponseVersion', null);
-    }
+    // Version and What's New window: the core's, with this helper's own stored keys
+    const HELPER_VERSIONING = helpersToolVersion({ id: 'ticketResponse', name: 'Response Templates', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'ticketResponseVersion', seenKey: 'ticketResponseChangelogSeen', modalId: 'changelogModal', overlayId: 'changelogModalOverlay', notifIds: ['changelogNotification'] });
+    function getStoredVersion()    { return HELPER_VERSIONING.stored(); }
+    function saveVersion(v)        { HELPER_VERSIONING.save(v); }
+    function hasSeenChangelog()    { return HELPER_VERSIONING.seen(); }
+    function markChangelogAsSeen() { HELPER_VERSIONING.markSeen(); }
+    function isNewVersion()        { return HELPER_VERSIONING.isNew(); }
+    function showChangelogModal()  { HELPER_VERSIONING.showWhatsNew(); }
+    function compareVersions(a, b) { return helpersCompareVersions(a, b); }
+    function parseChangelog(text)  { return helpersParseChangelog(typeof text === 'string' ? text : CHANGELOG); }
 
-    function saveVersion(version) {
-        GM_setValue('ticketResponseVersion', version);
-    }
 
-    function hasSeenChangelog() {
-        return GM_getValue('ticketResponseChangelogSeen', null) === SCRIPT_VERSION;
-    }
 
-    function markChangelogAsSeen() {
-        GM_setValue('ticketResponseChangelogSeen', SCRIPT_VERSION);
-    }
 
-    function compareVersions(v1, v2) {
-        if (!v1) return true;
-        const parts1 = v1.split('.').map(Number);
-        const parts2 = v2.split('.').map(Number);
-        for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-            const num1 = parts1[i] || 0;
-            const num2 = parts2[i] || 0;
-            if (num2 > num1) return true;
-            if (num2 < num1) return false;
-        }
-        return false;
-    }
 
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
 
     /* ==========================================================
      *  UTILITY FUNCTIONS
@@ -7665,149 +7669,7 @@ Regards.`,
         document.body.appendChild(overlay);
     }
 
-    function parseChangelog() {
-        const entries = [];
-        let current = null;
-        let currentBullet = null;
-        for (const line of CHANGELOG.split('\n')) {
-            const versionMatch = line.match(/^Version\s+([\d.]+):/);
-            if (versionMatch) {
-                if (currentBullet !== null && current) current.bullets.push(currentBullet);
-                currentBullet = null;
-                if (current) entries.push(current);
-                current = { version: versionMatch[1], bullets: [] };
-            } else if (line.trim().startsWith('-') && current) {
-                if (currentBullet !== null) current.bullets.push(currentBullet);
-                currentBullet = line.trim().slice(1).trim();
-            } else if (line.trim() && current && currentBullet !== null) {
-                currentBullet += ' ' + line.trim();
-            }
-        }
-        if (currentBullet !== null && current) current.bullets.push(currentBullet);
-        if (current) entries.push(current);
-        return entries;
-    }
 
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'changelogModalOverlay';
-        Object.assign(overlay.style, { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(0, 0, 0, 0.5)', zIndex: '10000' });
-
-        const modal = document.createElement('div');
-        modal.id = 'changelogModal';
-        Object.assign(modal.style, { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: '10001', background: '#fff', border: '2px solid #333', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial, sans-serif', borderRadius: '10px', maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto' });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, { marginTop: '0', marginBottom: '15px', color: '#333', borderBottom: '2px solid #667eea', paddingBottom: '10px' });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, { backgroundColor: '#f8f9fa', padding: '10px', borderRadius: '5px', marginBottom: '15px', borderLeft: '4px solid #667eea' });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, { marginTop: '15px', padding: '10px 20px', backgroundColor: '#667eea', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', width: '100%' });
-        closeButton.onmouseover = () => closeButton.style.backgroundColor = '#5568d3';
-        closeButton.onmouseout  = () => closeButton.style.backgroundColor = '#667eea';
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-            const changelogNotification = document.getElementById('changelogNotification');
-            if (changelogNotification) changelogNotification.remove();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-        helpersModal(overlay, modal);
-        overlay.onclick = () => closeButton.click();
-    }
 
     function showHelpModal() {
         if (document.getElementById('responseHelperHelpModal')) return;
@@ -9573,9 +9435,12 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.10';
+    const SCRIPT_VERSION = '1.4.11';
 
-    const CHANGELOG = `Version 1.4.10:
+    const CHANGELOG = `Version 1.4.11:
+- The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
+
+Version 1.4.10:
 - Mentions and the requester's name come from the suite's shared code, the same as in Response Templates. Nothing changes in how they work.
 
 Version 1.4.9:
@@ -9680,279 +9545,24 @@ Version 1.0.3:
      *  VERSION CONTROL FUNCTIONS
      * ==========================================================*/
 
-    function getStoredVersion() {
-        return GM_getValue('formattedTextHelperVersion', null);
-    }
+    // Version and What's New window: the core's, with this helper's own stored keys
+    const HELPER_VERSIONING = helpersToolVersion({ id: 'formattedText', name: 'Formatted Text Editor', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'formattedTextHelperVersion', seenKey: 'formattedTextHelperChangelogSeen', modalId: 'changelog-modal', overlayId: 'changelog-modal-overlay', notifIds: [] });
+    function getStoredVersion()    { return HELPER_VERSIONING.stored(); }
+    function saveVersion(v)        { HELPER_VERSIONING.save(v); }
+    function hasSeenChangelog()    { return HELPER_VERSIONING.seen(); }
+    function markChangelogAsSeen() { HELPER_VERSIONING.markSeen(); }
+    function isNewVersion()        { return HELPER_VERSIONING.isNew(); }
+    function showChangelogModal()  { HELPER_VERSIONING.showWhatsNew(); }
+    function compareVersions(a, b) { return helpersCompareVersions(a, b); }
+    function parseChangelog(text)  { return helpersParseChangelog(typeof text === 'string' ? text : CHANGELOG); }
 
-    function saveVersion(version) {
-        GM_setValue('formattedTextHelperVersion', version);
-    }
 
-    function hasSeenChangelog() {
-        return GM_getValue('formattedTextHelperChangelogSeen', null) === SCRIPT_VERSION;
-    }
 
-    function markChangelogAsSeen() {
-        GM_setValue('formattedTextHelperChangelogSeen', SCRIPT_VERSION);
-    }
 
-    function compareVersions(v1, v2) {
-        if (!v1) return true;
 
-        const parts1 = v1.split('.').map(Number);
-        const parts2 = v2.split('.').map(Number);
 
-        for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-            const num1 = parts1[i] || 0;
-            const num2 = parts2[i] || 0;
 
-            if (num2 > num1) return true;
-            if (num2 < num1) return false;
-        }
-
-        return false;
-    }
-
-    function isNewVersion() {
-        const storedVersion = getStoredVersion();
-        return compareVersions(storedVersion, SCRIPT_VERSION);
-    }
-
-    function parseChangelog() {
-        const entries = [];
-        let current = null;
-        let currentBullet = null;
-        for (const line of CHANGELOG.split('\n')) {
-            const versionMatch = line.match(/^Version\s+([\d.]+):/);
-            if (versionMatch) {
-                if (currentBullet !== null && current) current.bullets.push(currentBullet);
-                currentBullet = null;
-                if (current) entries.push(current);
-                current = { version: versionMatch[1], bullets: [] };
-            } else if (line.trim().startsWith('-') && current) {
-                if (currentBullet !== null) current.bullets.push(currentBullet);
-                currentBullet = line.trim().slice(1).trim();
-            } else if (line.trim() && current && currentBullet !== null) {
-                currentBullet += ' ' + line.trim();
-            }
-        }
-        if (currentBullet !== null && current) current.bullets.push(currentBullet);
-        if (current) entries.push(current);
-        return entries;
-    }
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'changelog-modal-overlay';
-        Object.assign(overlay.style, {
-            position: 'fixed',
-            top: '0',
-            left: '0',
-            width: '100%',
-            height: '100%',
-            background: 'rgba(0, 0, 0, 0.5)',
-            zIndex: '10000'
-        });
-
-        const modal = document.createElement('div');
-        modal.id = 'changelog-modal';
-        Object.assign(modal.style, {
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: '10001',
-            background: '#fff',
-            border: '2px solid #333',
-            padding: '20px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            fontFamily: 'Arial, sans-serif',
-            borderRadius: '10px',
-            maxWidth: '600px',
-            maxHeight: '80vh',
-            overflowY: 'auto'
-        });
-
-        // Header container with title and close button
-        const headerContainer = document.createElement('div');
-        Object.assign(headerContainer.style, {
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '15px',
-            borderBottom: '2px solid #28a745',
-            paddingBottom: '10px'
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            margin: '0',
-            color: '#333'
-        });
-
-        const closeX = document.createElement('button');
-        closeX.textContent = '✕';
-        closeX.type = 'button';
-        Object.assign(closeX.style, {
-            background: 'none',
-            border: 'none',
-            fontSize: '24px',
-            cursor: 'pointer',
-            color: '#666',
-            padding: '0',
-            width: '30px',
-            height: '30px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '4px'
-        });
-        closeX.onmouseover = () => {
-            closeX.style.backgroundColor = '#f0f0f0';
-            closeX.style.color = '#000';
-        };
-        closeX.onmouseout = () => {
-            closeX.style.backgroundColor = 'transparent';
-            closeX.style.color = '#666';
-        };
-        closeX.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-        };
-
-        headerContainer.appendChild(title);
-        headerContainer.appendChild(closeX);
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `Formatted Text Editor has been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            backgroundColor: '#f8f9fa',
-            padding: '10px',
-            borderRadius: '5px',
-            marginBottom: '15px',
-            borderLeft: '4px solid #28a745'
-        });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            marginTop: '15px',
-            padding: '10px 20px',
-            backgroundColor: '#28a745',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-            width: '100%'
-        });
-
-        closeButton.onmouseover = () => closeButton.style.backgroundColor = '#218838';
-        closeButton.onmouseout = () => closeButton.style.backgroundColor = '#28a745';
-
-        closeButton.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogAsSeen();
-            saveVersion(SCRIPT_VERSION);
-        };
-
-        modal.appendChild(headerContainer);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        helpersModal(overlay, modal);
-
-        overlay.onclick = () => {
-            closeButton.click();
-        };
-    }
 
     /* ==========================================================
      *  COLOR PALETTES
@@ -13322,10 +12932,13 @@ Version 1.0.3:
         if (!isToolEnabled('slaBanner') || !dtToolRunsHere('slaBanner')) return;
 
 
-    const SCRIPT_VERSION = '1.4.4';
+    const SCRIPT_VERSION = '1.4.5';
 
 
-    const CHANGELOG = `Version 1.4.4:
+    const CHANGELOG = `Version 1.4.5:
+- The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
+
+Version 1.4.4:
 - The last day countdown of the banner reads "SLA EXPIRES SOON: 05:12:30 remaining".
 
 Version 1.4.3:
@@ -13368,178 +12981,19 @@ Version 1.3:
     const SLA_VERSION_KEY   = 'sla_banner_version';
     const SLA_CHANGELOG_KEY = 'sla_banner_changelog_seen';
 
-    function getStoredVersion()    { return GM_getValue(SLA_VERSION_KEY, null); }
-    function saveVersion(v)        { GM_setValue(SLA_VERSION_KEY, v); }
-    function hasSeenChangelog()    { return GM_getValue(SLA_CHANGELOG_KEY, null) === SCRIPT_VERSION; }
-    function markChangelogSeen()   { GM_setValue(SLA_CHANGELOG_KEY, SCRIPT_VERSION); }
+    // Version and What's New window: the core's, with this helper's own stored keys
+    const HELPER_VERSIONING = helpersToolVersion({ id: 'slaBanner', name: 'SLA Alert Banner', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'sla_banner_version', seenKey: 'sla_banner_changelog_seen', modalId: 'sla-changelog-modal', overlayId: 'sla-changelog-overlay', notifIds: [] });
+    function getStoredVersion()    { return HELPER_VERSIONING.stored(); }
+    function saveVersion(v)        { HELPER_VERSIONING.save(v); }
+    function hasSeenChangelog()    { return HELPER_VERSIONING.seen(); }
+    function markChangelogSeen()   { HELPER_VERSIONING.markSeen(); }
+    function isNewVersion()        { return HELPER_VERSIONING.isNew(); }
+    function showChangelogModal()  { HELPER_VERSIONING.showWhatsNew(); }
+    function parseChangelog(text)  { return helpersParseChangelog(typeof text === 'string' ? text : CHANGELOG); }
 
-    function isNewVersion() {
-        const stored = getStoredVersion();
-        if (!stored) return true;
-        const a = stored.split('.').map(Number);
-        const b = SCRIPT_VERSION.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
 
-    function parseChangelog() {
-        const entries = [];
-        let current = null;
-        let currentBullet = null;
-        for (const line of CHANGELOG.split('\n')) {
-            const versionMatch = line.match(/^Version\s+([\d.]+):/);
-            if (versionMatch) {
-                if (currentBullet !== null && current) current.bullets.push(currentBullet);
-                currentBullet = null;
-                if (current) entries.push(current);
-                current = { version: versionMatch[1], bullets: [] };
-            } else if (line.trim().startsWith('-') && current) {
-                if (currentBullet !== null) current.bullets.push(currentBullet);
-                currentBullet = line.trim().slice(1).trim();
-            } else if (line.trim() && current && currentBullet !== null) {
-                currentBullet += ' ' + line.trim();
-            }
-        }
-        if (currentBullet !== null && current) current.bullets.push(currentBullet);
-        if (current) entries.push(current);
-        return entries;
-    }
 
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        Object.assign(overlay.style, {
-            position: 'fixed', inset: '0',
-            background: 'rgba(0,0,0,0.55)',
-            zIndex: '999999',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-        });
-
-        const modal = document.createElement('div');
-        modal.id = 'sla-changelog-modal';
-        Object.assign(modal.style, {
-            background: '#fff', borderRadius: '8px',
-            padding: '24px', width: '420px', maxWidth: '90vw',
-            maxHeight: '80vh', overflowY: 'auto',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-            fontFamily: 'Arial, sans-serif',
-        });
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, { margin: '0 0 6px', fontSize: '16px', color: '#1d1d1d' });
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `SLA Alert Banner updated to v${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, { fontSize: '13px', color: '#666', marginBottom: '16px' });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '16px';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            display: 'block', margin: '0 auto',
-            padding: '8px 28px', borderRadius: '6px',
-            background: '#667eea', color: '#fff',
-            border: 'none', cursor: 'pointer',
-            fontSize: '14px', fontFamily: 'Arial, sans-serif',
-        });
-        closeButton.onclick = () => {
-            overlay.remove();
-            markChangelogSeen();
-            saveVersion(SCRIPT_VERSION);
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-        overlay.appendChild(modal);
-        helpersModal(overlay, modal);
-        overlay.addEventListener('click', e => { if (e.target === overlay) closeButton.click(); });
-    }
 
     // ─── Feature Guide (? Help modal) ─────────────────────────────────────────
 
@@ -14283,9 +13737,12 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.13';
+    const SCRIPT_VERSION = '1.5.14';
 
-    const CHANGELOG = `Version 1.5.13:
+    const CHANGELOG = `Version 1.5.14:
+- The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
+
+Version 1.5.13:
 - Policy Naming Helper is now called Policy Name Builder. Your presets stay as they were.
 
 Version 1.5.12:
@@ -14378,23 +13835,19 @@ Version 1.2.0:
      *  VERSION MANAGEMENT
      * ==========================================================*/
 
-    function getStoredVersion() { return GM_getValue('netskopeHelperVersion', null); }
-    function saveVersion(version) { GM_setValue('netskopeHelperVersion', version); }
-    function hasSeenChangelog() { return GM_getValue('netskopeHelperChangelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogAsSeen() { GM_setValue('netskopeHelperChangelogSeen', SCRIPT_VERSION); }
+    // Version and What's New window: the core's, with this helper's own stored keys
+    const HELPER_VERSIONING = helpersToolVersion({ id: 'policyNaming', name: 'Policy Name Builder', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'netskopeHelperVersion', seenKey: 'netskopeHelperChangelogSeen', modalId: 'netskopeChangelogModal', overlayId: 'netskopeChangelogModalOverlay', notifIds: ['netskopeChangelogNotification'] });
+    function getStoredVersion()    { return HELPER_VERSIONING.stored(); }
+    function saveVersion(v)        { HELPER_VERSIONING.save(v); }
+    function hasSeenChangelog()    { return HELPER_VERSIONING.seen(); }
+    function markChangelogAsSeen() { HELPER_VERSIONING.markSeen(); }
+    function isNewVersion()        { return HELPER_VERSIONING.isNew(); }
+    function showChangelogModal()  { HELPER_VERSIONING.showWhatsNew(); }
+    function compareVersions(a, b) { return helpersCompareVersions(a, b); }
+    function parseChangelog(text)  { return helpersParseChangelog(typeof text === 'string' ? text : CHANGELOG); }
 
-    function compareVersions(v1, v2) {
-        if (!v1) return true;
-        const p1 = v1.split('.').map(Number);
-        const p2 = v2.split('.').map(Number);
-        for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
-            if ((p2[i] || 0) > (p1[i] || 0)) return true;
-            if ((p2[i] || 0) < (p1[i] || 0)) return false;
-        }
-        return false;
-    }
 
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
 
     /* ==========================================================
      *  PRESET STORAGE
@@ -14511,189 +13964,6 @@ Version 1.2.0:
             cb.checked = !!value;
             cb.dispatchEvent(new Event('change'));
         }
-    }
-
-    /* ==========================================================
-     *  CHANGELOG MODAL
-     * ==========================================================*/
-
-    function parseChangelog() {
-        const entries = [];
-        let current = null;
-        let currentBullet = null;
-        for (const line of CHANGELOG.split('\n')) {
-            const versionMatch = line.match(/^Version\s+([\d.]+):/);
-            if (versionMatch) {
-                if (currentBullet !== null && current) current.bullets.push(currentBullet);
-                currentBullet = null;
-                if (current) entries.push(current);
-                current = { version: versionMatch[1], bullets: [] };
-            } else if (line.trim().startsWith('-') && current) {
-                if (currentBullet !== null) current.bullets.push(currentBullet);
-                currentBullet = line.trim().slice(1).trim();
-            } else if (line.trim() && current && currentBullet !== null) {
-                currentBullet += ' ' + line.trim();
-            }
-        }
-        if (currentBullet !== null && current) current.bullets.push(currentBullet);
-        if (current) entries.push(current);
-        return entries;
-    }
-
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'netskopeChangelogModalOverlay';
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.5)', zIndex: '20000', display: 'block'
-        });
-
-        const modal = document.createElement('div');
-        modal.id = 'netskopeChangelogModal';
-        Object.assign(modal.style, {
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-            zIndex: '20001', background: '#ffffff', border: '2px solid #333', padding: '20px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)', fontFamily: 'Arial,sans-serif',
-            borderRadius: '10px', maxWidth: '600px', width: '90%', maxHeight: '80vh',
-            overflowY: 'auto', color: '#333'
-        });
-
-        const titleRow = document.createElement('div');
-        Object.assign(titleRow.style, {
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            marginBottom: '15px', borderBottom: '2px solid #667eea', paddingBottom: '10px'
-        });
-        const title = document.createElement('h2');
-        title.textContent = `What's New - Version ${SCRIPT_VERSION}`;
-        Object.assign(title.style, {
-            margin: '0', color: '#333', fontSize: '1.5em', fontWeight: 'bold'
-        });
-        const closeX = document.createElement('button');
-        closeX.textContent = '✕';
-        Object.assign(closeX.style, {
-            background: 'none', border: 'none', fontSize: '18px', color: '#999',
-            cursor: 'pointer', padding: '2px 6px', borderRadius: '4px',
-            lineHeight: '1', fontFamily: 'Arial, sans-serif', flexShrink: '0'
-        });
-        closeX.onmouseover = () => { closeX.style.background = '#f0f0f0'; };
-        closeX.onmouseout  = () => { closeX.style.background = 'none'; };
-        titleRow.appendChild(title);
-        titleRow.appendChild(closeX);
-
-        const versionInfo = document.createElement('div');
-        versionInfo.textContent = `You've been updated to version ${SCRIPT_VERSION}!`;
-        Object.assign(versionInfo.style, {
-            backgroundColor: '#f8f9fa', color: '#333', padding: '10px', borderRadius: '5px',
-            marginBottom: '15px', borderLeft: '4px solid #667eea', fontSize: '14px'
-        });
-
-        const cardsWrap = document.createElement('div');
-        cardsWrap.style.marginBottom = '0';
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                border:       '1px solid ' + (isLatest ? '#667eea' : '#e0e0e0'),
-                borderRadius: '6px',
-                marginBottom: '8px',
-                overflow:     'hidden',
-            });
-            const header = document.createElement('div');
-            Object.assign(header.style, {
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '9px 12px',
-                background: isLatest ? '#f0f0ff' : '#f8f8f8',
-                cursor: 'pointer', userSelect: 'none',
-            });
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-            const versionLabel = document.createElement('span');
-            versionLabel.textContent = `Version ${entry.version}`;
-            Object.assign(versionLabel.style, {
-                fontWeight: 'bold', fontSize: '13px',
-                color: isLatest ? '#667eea' : '#555',
-                fontFamily: 'Arial, sans-serif',
-            });
-            versionWrap.appendChild(versionLabel);
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.textContent = 'Latest';
-                Object.assign(tag.style, {
-                    fontSize: '10px', fontWeight: 'bold',
-                    background: '#667eea', color: '#fff',
-                    borderRadius: '3px', padding: '1px 6px',
-                    marginLeft: '8px', fontFamily: 'Arial, sans-serif',
-                });
-                versionWrap.appendChild(tag);
-            }
-            const chevron = document.createElement('span');
-            chevron.textContent = '▾';
-            Object.assign(chevron.style, {
-                fontSize: '12px', color: '#999',
-                transition: 'transform 0.2s', display: 'inline-block',
-                transform: isLatest ? 'rotate(0deg)' : 'rotate(-90deg)',
-            });
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-            const body = document.createElement('div');
-            Object.assign(body.style, {
-                padding: isLatest ? '10px 14px' : '0',
-                display: isLatest ? 'block' : 'none',
-                background: '#fff',
-            });
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                Object.assign(row.style, {
-                    display: 'flex', gap: '8px', padding: '3px 0',
-                    fontSize: '13px', fontFamily: 'Arial, sans-serif',
-                    color: '#444', lineHeight: '1.5',
-                });
-                const dot = document.createElement('span');
-                dot.textContent = '•';
-                Object.assign(dot.style, { color: '#667eea', flexShrink: '0', fontWeight: 'bold' });
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-            card.appendChild(body);
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display  = expanded ? 'block' : 'none';
-                body.style.padding  = expanded ? '10px 14px' : '0';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-            cardsWrap.appendChild(card);
-        });
-
-        const closeButton = document.createElement('button');
-        closeButton.textContent = 'Got it!';
-        Object.assign(closeButton.style, {
-            marginTop: '15px', padding: '10px 20px', backgroundColor: '#667eea', color: '#fff',
-            border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold',
-            width: '100%', fontSize: '14px'
-        });
-        closeButton.addEventListener('mouseenter', () => { closeButton.style.backgroundColor = '#5568d3'; });
-        closeButton.addEventListener('mouseleave', () => { closeButton.style.backgroundColor = '#667eea'; });
-        closeButton.onclick = () => {
-            overlay.remove(); modal.remove();
-            markChangelogAsSeen(); saveVersion(SCRIPT_VERSION);
-            const n = document.getElementById('netskopeChangelogNotification');
-            if (n) n.remove();
-        };
-        closeX.onclick = () => closeButton.click();
-
-        modal.appendChild(titleRow);
-        modal.appendChild(versionInfo);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeButton);
-
-        const parent = document.body;   // not the panel's parent: that is its top layer holder, which lets clicks through
-        helpersModal(overlay, modal, { parent: parent });
-        overlay.onclick = () => closeButton.click();
     }
 
     /* ==========================================================
@@ -17176,9 +16446,12 @@ Version 1.2.0:
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.1.3';
+    const SCRIPT_VERSION = '1.1.4';
 
-    const CHANGELOG = `Version 1.1.3:
+    const CHANGELOG = `Version 1.1.4:
+- The What's New window looks the same as in every other helper and in the Tools Toolbar. What you have already seen does not show again.
+
+Version 1.1.3:
 - Ticket Subject Helper is now called Support Case Subject Builder. Your settings stay as they were.
 
 Version 1.1.2:
@@ -17209,21 +16482,18 @@ Version 1.0.3:
 Version 1.0.0:
 - Initial Release`;
 
-    function getStoredVersion()    { return GM_getValue('nsTktVersion', null); }
-    function saveVersion(v)        { GM_setValue('nsTktVersion', v); }
-    function hasSeenChangelog()    { return GM_getValue('nsTktChangelogSeen', null) === SCRIPT_VERSION; }
-    function markChangelogSeen()   { GM_setValue('nsTktChangelogSeen', SCRIPT_VERSION); }
+    // Version and What's New window: the core's, with this helper's own stored keys
+    const HELPER_VERSIONING = helpersToolVersion({ id: 'ticketSubject', name: 'Support Case Subject Builder', version: SCRIPT_VERSION, changelog: CHANGELOG,
+        versionKey: 'nsTktVersion', seenKey: 'nsTktChangelogSeen', modalId: 'nsTktChangelogModal', overlayId: 'nsTktChangelogOverlay', notifIds: ['nsTktChangelogNotif'] });
+    function getStoredVersion()    { return HELPER_VERSIONING.stored(); }
+    function saveVersion(v)        { HELPER_VERSIONING.save(v); }
+    function hasSeenChangelog()    { return HELPER_VERSIONING.seen(); }
+    function markChangelogSeen()   { HELPER_VERSIONING.markSeen(); }
+    function isNewVersion()        { return HELPER_VERSIONING.isNew(); }
+    function showChangelogModal()  { HELPER_VERSIONING.showWhatsNew(); }
+    function compareVersions(a, b) { return helpersCompareVersions(a, b); }
+    function parseChangelog(text)  { return helpersParseChangelog(typeof text === 'string' ? text : CHANGELOG); }
 
-    function compareVersions(v1, v2) {
-        if (!v1) return true;
-        const a = v1.split('.').map(Number), b = v2.split('.').map(Number);
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-            if ((b[i] || 0) > (a[i] || 0)) return true;
-            if ((b[i] || 0) < (a[i] || 0)) return false;
-        }
-        return false;
-    }
-    function isNewVersion() { return compareVersions(getStoredVersion(), SCRIPT_VERSION); }
 
     /* ==========================================================
      *  CONFIG
@@ -17757,127 +17027,7 @@ Version 1.0.0:
      *  PANEL
      * ========================================================== */
 
-    function parseChangelog() {
-        const entries = [];
-        let current = null;
-        let currentBullet = null;
-        for (const line of CHANGELOG.split('\n')) {
-            const versionMatch = line.match(/^Version\s+([\d.]+):/);
-            if (versionMatch) {
-                if (currentBullet !== null && current) current.bullets.push(currentBullet);
-                currentBullet = null;
-                if (current) entries.push(current);
-                current = { version: versionMatch[1], bullets: [] };
-            } else if (line.trim().startsWith('-') && current) {
-                if (currentBullet !== null) current.bullets.push(currentBullet);
-                currentBullet = line.trim().slice(1).trim();
-            } else if (line.trim() && current && currentBullet !== null) {
-                currentBullet += ' ' + line.trim();
-            }
-        }
-        if (currentBullet !== null && current) current.bullets.push(currentBullet);
-        if (current) entries.push(current);
-        return entries;
-    }
 
-    function showChangelogModal() {
-        const overlay = document.createElement('div');
-        overlay.id = 'nsTktChangelogOverlay';
-
-        const modal = document.createElement('div');
-        modal.id = 'nsTktChangelogModal';
-
-        const title = document.createElement('h2');
-        title.textContent = `What's New — v${SCRIPT_VERSION}`;
-
-        const info = document.createElement('div');
-        info.className = 'ns-cl-info';
-        info.textContent = `You've been updated to v${SCRIPT_VERSION}!`;
-
-        const cardsWrap = document.createElement('div');
-        parseChangelog().forEach((entry, index) => {
-            const isLatest = index === 0;
-
-            const card = document.createElement('div');
-            card.className = 'ns-cl-card' + (isLatest ? ' ns-cl-card-latest' : '');
-
-            const header = document.createElement('div');
-            header.className = 'ns-cl-card-header';
-
-            const versionWrap = document.createElement('span');
-            versionWrap.style.cssText = 'display:inline-flex;align-items:center;';
-
-            const versionLabel = document.createElement('span');
-            versionLabel.className = 'ns-cl-card-version';
-            versionLabel.textContent = `Version ${entry.version}`;
-            versionWrap.appendChild(versionLabel);
-
-            if (isLatest) {
-                const tag = document.createElement('span');
-                tag.className = 'ns-cl-latest-tag';
-                tag.textContent = 'Latest';
-                versionWrap.appendChild(tag);
-            }
-
-            const chevron = document.createElement('span');
-            chevron.className = 'ns-cl-card-chevron';
-            chevron.textContent = '▾';
-            chevron.style.transform = isLatest ? 'rotate(0deg)' : 'rotate(-90deg)';
-
-            header.appendChild(versionWrap);
-            header.appendChild(chevron);
-            card.appendChild(header);
-
-            const body = document.createElement('div');
-            body.className = 'ns-cl-card-body';
-            body.style.display = isLatest ? 'block' : 'none';
-
-            entry.bullets.forEach(bullet => {
-                const row = document.createElement('div');
-                row.className = 'ns-cl-bullet';
-                const dot = document.createElement('span');
-                dot.className = 'ns-cl-bullet-dot';
-                dot.textContent = '•';
-                const text = document.createElement('span');
-                text.textContent = bullet;
-                row.appendChild(dot);
-                row.appendChild(text);
-                body.appendChild(row);
-            });
-
-            card.appendChild(body);
-
-            let expanded = isLatest;
-            header.addEventListener('click', () => {
-                expanded = !expanded;
-                body.style.display = expanded ? 'block' : 'none';
-                chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
-            });
-
-            cardsWrap.appendChild(card);
-        });
-
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'ns-cl-close';
-        closeBtn.textContent = 'Got it!';
-        closeBtn.onclick = () => {
-            overlay.remove();
-            modal.remove();
-            markChangelogSeen();
-            saveVersion(SCRIPT_VERSION);
-            const notif = document.getElementById('nsTktChangelogNotif');
-            if (notif) notif.remove();
-        };
-
-        modal.appendChild(title);
-        modal.appendChild(info);
-        modal.appendChild(cardsWrap);
-        modal.appendChild(closeBtn);
-
-        helpersModal(overlay, modal);
-
-        overlay.onclick = () => closeBtn.click();
-    }
 
     /* ==========================================================
      *  FEATURE GUIDE  (? Help modal)
