@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.58.1
+// @version      2.58.2
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.58.1';
-    const CHANGELOG = `Version 2.58.1:
+   const SCRIPT_VERSION = '2.58.2';
+    const CHANGELOG = `Version 2.58.2:
+- Destination Profile Editor and Netskope Console Toolkit: the change log above a profile's or URL list's values and its 📜 Change History window are read and drawn by one shared piece of the toolbar, so both tools show the same history the same way.
+
+Version 2.58.1:
 - All tools: every Feature Guide is drawn with the same pieces, so the pictures in the guides (buttons, labels, checkboxes, toolbar icons) look the same in every tool. What the guides say has not changed.
 
 Version 2.58.0:
@@ -5910,6 +5913,188 @@ Version 1.0.0:
      *  cursor only when the user put it there: a real click or key in
      *  that field (or in a CodeMirror editor) marks it.
      * ==========================================================*/
+
+    /* ==========================================================
+     *  SHARED: URL LIST LOG (core, used by the Destination Profile
+     *  Editor and the Netskope Console Toolkit)
+     *  The log lines a tool writes above the values of a URL list or a
+     *  Destination Profile: "#RITM | YYYY-MM-DD | Name" followed by the
+     *  values it added, and the history window that lists them.
+     * ==========================================================*/
+
+    // Groups of the log: { ritm, date, name, isDeleted, domains: [{ raw, domain, isCommented }], raw, isOrphan }
+    function suiteParseUrlListLog(text) {
+        if (!text) return [];
+        const groups = [];
+        let current = null;
+        const orphanDomains = [];
+        for (const line of text.split('\n')) {
+            const trimmed = line.trim();
+            // Log header: # followed right away by a word character (#RITM...)
+            if (/^#\w/.test(trimmed)) {
+                if (orphanDomains.length > 0) {
+                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
+                    orphanDomains.length = 0;
+                }
+                const parts = trimmed.slice(1).split('|').map(p => p.trim());
+                current = {
+                    ritm:      '#' + parts[0],
+                    date:      parts[1] || '',
+                    name:      parts[2] || '',
+                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
+                    domains:   [],
+                    raw:       line,
+                };
+                groups.push(current);
+            } else if (trimmed) {
+                // A value line, maybe commented out with "# "
+                const isCommented = /^#/.test(trimmed);
+                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
+                const entry = { raw: line, domain, isCommented };
+                if (current) current.domains.push(entry);
+                else orphanDomains.push(entry);
+            }
+        }
+        if (orphanDomains.length > 0) {
+            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
+        }
+        return groups;
+    }
+
+    // Test only: the automated tests switch this on in their own storage
+    if (GM_getValue('toolbarSuiteTestHooks', false) === true) {
+        (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__suiteUrlLog = {
+            parse: (text) => suiteParseUrlListLog(text),
+            history: (host, text, emptyText) => suiteUrlLogHistory(host, suiteParseUrlListLog(text).filter(g => g.ritm || g.domains.some(d => d.domain)), emptyText) };
+    }
+
+    // The history list of a log window: filters (RITM, date from, date to, Clear) and one card per group,
+    // added to host. emptyText is shown when the log has no entries at all.
+    function suiteUrlLogHistory(host, allGroups, emptyText) {
+        const filterRow = document.createElement('div');
+        Object.assign(filterRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end' });
+
+        const mkFilterBlock = (labelText, inputType) => {
+            const wrap = document.createElement('div');
+            const lbl  = document.createElement('div');
+            lbl.textContent = labelText;
+            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
+            const inp = document.createElement('input');
+            inp.type        = inputType || 'text';
+            inp.placeholder = inputType === 'date' ? '' : 'All';
+            Object.assign(inp.style, {
+                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
+                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px', boxSizing: 'border-box',
+            });
+            wrap.appendChild(lbl); wrap.appendChild(inp);
+            return { wrap, inp };
+        };
+
+        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
+        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
+        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
+
+        const clearFiltersBtn = document.createElement('button');
+        clearFiltersBtn.textContent = 'Clear';
+        Object.assign(clearFiltersBtn.style, {
+            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
+            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
+        });
+        clearFiltersBtn.onclick = () => { ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = ''; applyFilters(); };
+
+        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
+        host.appendChild(filterRow);
+
+        const scrollArea = document.createElement('div');
+        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
+        host.appendChild(scrollArea);
+
+        function buildGroupCard(group) {
+            const isDeleted = group.isDeleted;
+            const card = document.createElement('div');
+            Object.assign(card.style, {
+                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
+                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
+                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px',
+                fontSize: '13px', fontFamily: 'Arial, sans-serif',
+            });
+
+            const mkBadge = (text, bg, color, border) => {
+                const s = document.createElement('span');
+                s.textContent = text;
+                Object.assign(s.style, {
+                    display: 'inline-block', background: bg, color, borderRadius: '4px',
+                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px', border: border || 'none',
+                });
+                return s;
+            };
+
+            const headerRow = document.createElement('div');
+            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
+
+            if (group.ritm)     headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
+            if (group.date)     headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
+            if (group.name)     headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
+            if (isDeleted)      headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
+            if (group.isOrphan) headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
+            card.appendChild(headerRow);
+
+            const activeDomains = group.domains.filter(d => d.domain);
+            if (activeDomains.length > 0) {
+                const domainList = document.createElement('div');
+                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
+                activeDomains.forEach(d => {
+                    const dEl = document.createElement('div');
+                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
+                    Object.assign(dEl.style, { color: d.isCommented ? '#aaa' : '#333', textDecoration: d.isCommented ? 'line-through' : 'none' });
+                    domainList.appendChild(dEl);
+                });
+                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
+                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
+                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
+                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
+                const countEl = document.createElement('div');
+                countEl.textContent = countText;
+                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
+                card.appendChild(domainList);
+                card.appendChild(countEl);
+            } else {
+                const emptyEl = document.createElement('div');
+                emptyEl.textContent = '(no domains in this group)';
+                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
+                card.appendChild(emptyEl);
+            }
+            return card;
+        }
+
+        function applyFilters() {
+            const ritmVal  = ritmFilter.value.trim().toLowerCase();
+            const dateFrom = dateFromFilter.value;
+            const dateTo   = dateToFilter.value;
+
+            const filtered = allGroups.filter(group => {
+                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
+                if (dateFrom && group.date && group.date < dateFrom) return false;
+                if (dateTo   && group.date && group.date > dateTo)   return false;
+                return true;
+            });
+
+            scrollArea.replaceChildren();
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = allGroups.length === 0 ? emptyText : 'No entries match the current filters.';
+                Object.assign(empty.style, { fontSize: '13px', color: '#999', textAlign: 'center', padding: '24px 0', fontStyle: 'italic' });
+                scrollArea.appendChild(empty);
+            } else {
+                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
+            }
+        }
+
+        ritmFilter.addEventListener('input', applyFilters);
+        dateFromFilter.addEventListener('change', applyFilters);
+        dateToFilter.addEventListener('change', applyFilters);
+        applyFilters();
+    }
 
     const suiteCaretFields = new WeakSet();
     ['mouseup', 'keyup'].forEach(type => document.addEventListener(type, (e) => {
@@ -13043,9 +13228,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.6';
+    const SCRIPT_VERSION = '2.1.7';
 
-    const CHANGELOG = `Version 2.1.6:
+    const CHANGELOG = `Version 2.1.7:
+- The change log and the 📜 Change History window use the toolbar's shared log code, the same as the Netskope Console Toolkit. Nothing changes in how they work.
+
+Version 2.1.6:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 2.1.5:
@@ -15134,10 +15322,7 @@ Version 1.4.1:
      *  LOG BUTTON HELPERS
      * ==========================================================*/
 
-    function getTodayDate() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
+    function getTodayDate() { return dtToday(); }
 
 
     // Without a number (a new record), the record id keeps the log line apart
@@ -15163,44 +15348,7 @@ Version 1.4.1:
         textarea.focus();
     }
 
-    function parseUrlListLog(text) {
-        if (!text) return [];
-        const lines = text.split('\n');
-        const groups = [];
-        let current = null;
-        const orphanDomains = [];
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (/^#\w/.test(trimmed)) {
-                if (orphanDomains.length > 0) {
-                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
-                    orphanDomains.length = 0;
-                }
-                const parts = trimmed.slice(1).split('|').map(p => p.trim());
-                current = {
-                    ritm:      '#' + parts[0],
-                    date:      parts[1] || '',
-                    name:      parts[2] || '',
-                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
-                    domains:   [],
-                    raw:       line,
-                };
-                groups.push(current);
-            } else if (trimmed) {
-                const isCommented = /^#/.test(trimmed);
-                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
-                const entry = { raw: line, domain, isCommented };
-                if (current) current.domains.push(entry);
-                else orphanDomains.push(entry);
-            }
-        }
-
-        if (orphanDomains.length > 0) {
-            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
-        }
-        return groups;
-    }
+    function parseUrlListLog(text) { return suiteParseUrlListLog(text); }
 
     function showUrlLogEntryModal(textarea) {
         if (document.getElementById('urllist-log-add-modal')) return;
@@ -15596,129 +15744,7 @@ Version 1.4.1:
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
         modal.appendChild(titleEl);
 
-        const filterRow = document.createElement('div');
-        Object.assign(filterRow.style, { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end' });
-
-        const mkFilterBlock = (labelText, inputType) => {
-            const wrap = document.createElement('div');
-            const lbl  = document.createElement('div');
-            lbl.textContent = labelText;
-            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
-            const inp = document.createElement('input');
-            inp.type        = inputType || 'text';
-            inp.placeholder = inputType === 'date' ? '' : 'All';
-            Object.assign(inp.style, {
-                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
-                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px', boxSizing: 'border-box',
-            });
-            wrap.appendChild(lbl); wrap.appendChild(inp);
-            return { wrap, inp };
-        };
-
-        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
-        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
-        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
-
-        const clearFiltersBtn = document.createElement('button');
-        clearFiltersBtn.textContent = 'Clear';
-        Object.assign(clearFiltersBtn.style, {
-            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
-            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
-        });
-        clearFiltersBtn.onclick = () => { ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = ''; applyFilters(); };
-
-        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
-        modal.appendChild(filterRow);
-
-        const scrollArea = document.createElement('div');
-        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
-        modal.appendChild(scrollArea);
-
-        function buildGroupCard(group) {
-            const isDeleted = group.isDeleted;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
-                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
-                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px',
-                fontSize: '13px', fontFamily: 'Arial, sans-serif',
-            });
-
-            const mkBadge = (text, bg, color, border) => {
-                const s = document.createElement('span');
-                s.textContent = text;
-                Object.assign(s.style, {
-                    display: 'inline-block', background: bg, color, borderRadius: '4px',
-                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px', border: border || 'none',
-                });
-                return s;
-            };
-
-            const headerRow = document.createElement('div');
-            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
-
-            if (group.ritm)     headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
-            if (group.date)     headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
-            if (group.name)     headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
-            if (isDeleted)      headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
-            if (group.isOrphan) headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
-            card.appendChild(headerRow);
-
-            const activeDomains = group.domains.filter(d => d.domain);
-            if (activeDomains.length > 0) {
-                const domainList = document.createElement('div');
-                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
-                activeDomains.forEach(d => {
-                    const dEl = document.createElement('div');
-                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
-                    Object.assign(dEl.style, { color: d.isCommented ? '#aaa' : '#333', textDecoration: d.isCommented ? 'line-through' : 'none' });
-                    domainList.appendChild(dEl);
-                });
-                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
-                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
-                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
-                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
-                const countEl = document.createElement('div');
-                countEl.textContent = countText;
-                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
-                card.appendChild(domainList);
-                card.appendChild(countEl);
-            } else {
-                const emptyEl = document.createElement('div');
-                emptyEl.textContent = '(no domains in this group)';
-                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
-                card.appendChild(emptyEl);
-            }
-            return card;
-        }
-
-        function applyFilters() {
-            const ritmVal  = ritmFilter.value.trim().toLowerCase();
-            const dateFrom = dateFromFilter.value;
-            const dateTo   = dateToFilter.value;
-
-            const filtered = allGroups.filter(group => {
-                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
-                if (dateFrom && group.date && group.date < dateFrom) return false;
-                if (dateTo   && group.date && group.date > dateTo)   return false;
-                return true;
-            });
-
-            scrollArea.replaceChildren();
-            if (filtered.length === 0) {
-                const empty = document.createElement('div');
-                empty.textContent = allGroups.length === 0 ? 'No log entries found in these values.' : 'No entries match the current filters.';
-                Object.assign(empty.style, { fontSize: '13px', color: '#999', textAlign: 'center', padding: '24px 0', fontStyle: 'italic' });
-                scrollArea.appendChild(empty);
-            } else {
-                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
-            }
-        }
-
-        ritmFilter.addEventListener('input', applyFilters);
-        dateFromFilter.addEventListener('change', applyFilters);
-        dateToFilter.addEventListener('change', applyFilters);
-        applyFilters();
+        suiteUrlLogHistory(modal, allGroups, 'No log entries found in these values.');
 
         const footerRow = document.createElement('div');
         Object.assign(footerRow.style, { display: 'flex', gap: '8px', flexShrink: '0' });
@@ -28972,9 +28998,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.6';
+    const SCRIPT_VERSION = '1.49.7';
 
-    const CHANGELOG = `Version 1.49.6:
+    const CHANGELOG = `Version 1.49.7:
+- The URL list and Destination Profile change log and its 📜 Change History window use the toolbar's shared log code, the same as the Destination Profile Editor. Nothing changes in how they work.
+
+Version 1.49.6:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 1.49.5:
@@ -31925,10 +31954,7 @@ Version 1.16:
         return ISO_DATE_RE.test(date || '') && date < cutoff;
     }
 
-    function getTodayDate() {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
+    function getTodayDate() { return dtToday(); }
 
     function getDescriptionTextareas() {
         const seen = new Set();
@@ -32904,48 +32930,7 @@ Version 1.16:
         });
     }
 
-    /* ── Parse URL list content into groups ── */
-    function parseUrlListLog(text) {
-        if (!text) return [];
-        const lines = text.split('\n');
-        const groups = [];
-        let current = null;
-        const orphanDomains = [];
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            // Log header: starts with # followed immediately by a word character (#RITM...)
-            if (/^#\w/.test(trimmed)) {
-                if (orphanDomains.length > 0) {
-                    groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: [...orphanDomains], raw: '', isOrphan: true });
-                    orphanDomains.length = 0;
-                }
-                const parts = trimmed.slice(1).split('|').map(p => p.trim());
-                current = {
-                    ritm:      '#' + parts[0],
-                    date:      parts[1] || '',
-                    name:      parts[2] || '',
-                    isDeleted: parts.length >= 4 && parts[3].toLowerCase() === 'deleted',
-                    domains:   [],
-                    raw:       line,
-                };
-                groups.push(current);
-            } else if (trimmed) {
-                // Domain line — may be commented with "# " prefix
-                const isCommented = /^#/.test(trimmed);
-                const domain = isCommented ? trimmed.slice(1).trim() : trimmed;
-                const entry = { raw: line, domain, isCommented };
-                if (current) current.domains.push(entry);
-                else orphanDomains.push(entry);
-            }
-        }
-
-        if (orphanDomains.length > 0) {
-            groups.push({ ritm: '', date: '', name: '', isDeleted: false, domains: orphanDomains, raw: '', isOrphan: true });
-        }
-
-        return groups;
-    }
+    function parseUrlListLog(text) { return suiteParseUrlListLog(text); }
 
     /* ── Insert text at cursor position in a textarea ── */
     function insertAtCursor(textarea, text) {
@@ -33270,162 +33255,7 @@ Version 1.16:
         Object.assign(titleEl.style, { fontSize: '15px', fontWeight: 'bold', color: '#0073e6', marginBottom: '12px', flexShrink: '0' });
         modal.appendChild(titleEl);
 
-        /* ── Filter row ── */
-        const filterRow = document.createElement('div');
-        Object.assign(filterRow.style, {
-            display: 'flex', gap: '8px', flexWrap: 'wrap',
-            marginBottom: '12px', flexShrink: '0', alignItems: 'flex-end',
-        });
-
-        const mkFilterBlock = (labelText, inputType) => {
-            const wrap = document.createElement('div');
-            const lbl  = document.createElement('div');
-            lbl.textContent = labelText;
-            Object.assign(lbl.style, { fontSize: '10px', fontWeight: 'bold', color: '#888', marginBottom: '2px' });
-            const inp  = document.createElement('input');
-            inp.type        = inputType || 'text';
-            inp.placeholder = inputType === 'date' ? '' : 'All';
-            Object.assign(inp.style, {
-                padding: '5px 8px', border: '1px solid #ccc', borderRadius: '4px',
-                fontSize: '12px', width: inputType === 'date' ? '130px' : '140px',
-                boxSizing: 'border-box',
-            });
-            wrap.appendChild(lbl); wrap.appendChild(inp);
-            return { wrap, inp };
-        };
-
-        const { wrap: ritmWrap, inp: ritmFilter }    = mkFilterBlock('Filter by RITM');
-        const { wrap: fromWrap, inp: dateFromFilter } = mkFilterBlock('Date From', 'date');
-        const { wrap: toWrap,   inp: dateToFilter }   = mkFilterBlock('Date To',   'date');
-
-        const clearFiltersBtn = document.createElement('button');
-        clearFiltersBtn.textContent = 'Clear';
-        Object.assign(clearFiltersBtn.style, {
-            padding: '5px 10px', background: '#e0e0e0', color: '#333', border: '1px solid #ccc',
-            borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', alignSelf: 'flex-end',
-        });
-        clearFiltersBtn.onclick = () => {
-            ritmFilter.value = ''; dateFromFilter.value = ''; dateToFilter.value = '';
-            applyFilters();
-        };
-
-        filterRow.append(ritmWrap, fromWrap, toWrap, clearFiltersBtn);
-        modal.appendChild(filterRow);
-
-        const scrollArea = document.createElement('div');
-        Object.assign(scrollArea.style, { overflowY: 'auto', flex: '1', marginBottom: '12px' });
-        modal.appendChild(scrollArea);
-
-        function buildGroupCard(group) {
-            const isDeleted = group.isDeleted;
-            const card = document.createElement('div');
-            Object.assign(card.style, {
-                background:   isDeleted ? '#fff8f8' : (group.isOrphan ? '#f8f8f8' : '#f0f6ff'),
-                border:       `1px solid ${isDeleted ? '#ffcdd2' : (group.isOrphan ? '#e0e0e0' : '#bbdefb')}`,
-                borderRadius: '7px', padding: '12px 14px', marginBottom: '8px', fontSize: '13px',
-                fontFamily: 'Arial, sans-serif',
-            });
-
-            const mkBadge = (text, bg, color, border) => {
-                const s = document.createElement('span');
-                s.textContent = text;
-                Object.assign(s.style, {
-                    display: 'inline-block', background: bg, color, borderRadius: '4px',
-                    padding: '2px 8px', fontWeight: 'bold', fontSize: '12px',
-                    border: border || 'none',
-                });
-                return s;
-            };
-
-            const headerRow = document.createElement('div');
-            Object.assign(headerRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px', alignItems: 'center' });
-
-            if (group.ritm) {
-                headerRow.appendChild(mkBadge(group.ritm, isDeleted ? '#e53935' : '#1565c0', '#fff'));
-            }
-            if (group.date) {
-                headerRow.appendChild(mkBadge(group.date, '#f5f5f5', '#555', '1px solid #e0e0e0'));
-            }
-            if (group.name) {
-                headerRow.appendChild(mkBadge('👤 ' + group.name, '#e8f5e9', '#2e7d32'));
-            }
-            if (isDeleted) {
-                headerRow.appendChild(mkBadge('🗑 DELETED', '#e53935', '#fff'));
-            }
-            if (group.isOrphan) {
-                headerRow.appendChild(mkBadge('No Log Header', '#f5f5f5', '#999', '1px solid #e0e0e0'));
-            }
-
-            card.appendChild(headerRow);
-
-            const activeDomains = group.domains.filter(d => d.domain);
-            if (activeDomains.length > 0) {
-                const domainList = document.createElement('div');
-                Object.assign(domainList.style, { fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.7', paddingLeft: '4px' });
-
-                activeDomains.forEach(d => {
-                    const dEl = document.createElement('div');
-                    dEl.textContent = d.isCommented ? '# ' + d.domain : d.domain;
-                    Object.assign(dEl.style, {
-                        color: d.isCommented ? '#aaa' : '#333',
-                        textDecoration: d.isCommented ? 'line-through' : 'none',
-                    });
-                    domainList.appendChild(dEl);
-                });
-
-                const activeCount    = activeDomains.filter(d => !d.isCommented).length;
-                const commentedCount = activeDomains.filter(d =>  d.isCommented).length;
-                let countText = `${activeCount} domain${activeCount !== 1 ? 's' : ''}`;
-                if (commentedCount > 0) countText += `  ·  ${commentedCount} commented`;
-                const countEl = document.createElement('div');
-                countEl.textContent = countText;
-                Object.assign(countEl.style, { fontSize: '10px', color: '#999', marginTop: '4px' });
-
-                card.appendChild(domainList);
-                card.appendChild(countEl);
-            } else {
-                const emptyEl = document.createElement('div');
-                emptyEl.textContent = '(no domains in this group)';
-                Object.assign(emptyEl.style, { fontSize: '11px', color: '#bbb', fontStyle: 'italic' });
-                card.appendChild(emptyEl);
-            }
-
-            return card;
-        }
-
-        function applyFilters() {
-            const ritmVal  = ritmFilter.value.trim().toLowerCase();
-            const dateFrom = dateFromFilter.value;
-            const dateTo   = dateToFilter.value;
-
-            const filtered = allGroups.filter(group => {
-                if (ritmVal  && !group.ritm.toLowerCase().includes(ritmVal)) return false;
-                if (dateFrom && group.date && group.date < dateFrom) return false;
-                if (dateTo   && group.date && group.date > dateTo)   return false;
-                return true;
-            });
-
-            scrollArea.replaceChildren();
-
-            if (filtered.length === 0) {
-                const empty = document.createElement('div');
-                empty.textContent = allGroups.length === 0
-                    ? `No log entries found in this ${isDestination ? 'destination profile' : 'URL list'}.`
-                    : 'No entries match the current filters.';
-                Object.assign(empty.style, {
-                    fontSize: '13px', color: '#999', textAlign: 'center',
-                    padding: '24px 0', fontStyle: 'italic',
-                });
-                scrollArea.appendChild(empty);
-            } else {
-                filtered.forEach(group => scrollArea.appendChild(buildGroupCard(group)));
-            }
-        }
-
-        ritmFilter.addEventListener('input', applyFilters);
-        dateFromFilter.addEventListener('change', applyFilters);
-        dateToFilter.addEventListener('change', applyFilters);
-        applyFilters();
+        suiteUrlLogHistory(modal, allGroups, `No log entries found in this ${isDestination ? 'destination profile' : 'URL list'}.`);
 
         const footerRow = document.createElement('div');
         Object.assign(footerRow.style, { display: 'flex', gap: '8px', flexShrink: '0' });

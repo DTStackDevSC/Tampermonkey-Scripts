@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.10.1
+// @version      4.10.2
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.1';
-    const CHANGELOG = `Version 4.10.1:
+    const SCRIPT_VERSION = '4.10.2';
+    const CHANGELOG = `Version 4.10.2:
+- Response Templates: removed the hidden Ctrl+Shift+D shortcut that only wrote mention debugging details to the browser console.
+
+Version 4.10.1:
 - All helpers: every Feature Guide is drawn with the same pieces, so the pictures in the guides (buttons, labels, fields, checkboxes) look the same in every helper. What the guides say has not changed.
 
 Version 4.10.0:
@@ -2180,8 +2183,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.1';
-    const CHANGELOG = `Version 4.10.1:
+    const SCRIPT_VERSION = '4.10.2';
+    const CHANGELOG = `Version 4.10.2:
+- Response Templates: removed the hidden Ctrl+Shift+D shortcut that only wrote mention debugging details to the browser console.
+
+Version 4.10.1:
 - All helpers: every Feature Guide is drawn with the same pieces, so the pictures in the guides (buttons, labels, fields, checkboxes) look the same in every helper. What the guides say has not changed.
 
 Version 4.10.0:
@@ -5095,9 +5101,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.22.4';
+    const SCRIPT_VERSION = '2.22.5';
 
-    const CHANGELOG = `Version 2.22.4:
+    const CHANGELOG = `Version 2.22.5:
+- Removed the hidden Ctrl+Shift+D shortcut that only wrote mention debugging details to the browser console.
+
+Version 2.22.4:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 2.22.3:
@@ -7141,38 +7150,6 @@ Regards.`,
             console.log('✓ Cached opened by name:', cachedOpenedByName);
         }
     }
-
-    /* ==========================================================
-     *  DEBUG SERVICENOW MENTION SYSTEM
-     * ==========================================================*/
-
-    function debugMentionSystem() {
-        console.group('🔍 ServiceNow Mention System Debug');
-        const textarea = document.querySelector('#activity-stream-textarea');
-        console.log('Textarea found:', !!textarea);
-        console.log('Dual input mode:', isDualInputMode());
-        console.log('Mention blocker active:', _mentionBlockerActive);
-        console.log('g_form available:', typeof g_form !== 'undefined');
-        console.log('Angular available:', typeof angular !== 'undefined');
-        console.log('jQuery available:', typeof $ !== 'undefined');
-        if (textarea) {
-            const mentionElements = document.querySelectorAll('[class*="mention"], [data-mention], [class*="at-"], .atwho-view');
-            console.log('Mention-related elements:', mentionElements.length);
-            if (typeof $ !== 'undefined') {
-                try { console.log('jQuery data on textarea:', $(textarea).data()); } catch (e) {}
-            }
-        }
-        if (typeof window.SNMention !== 'undefined')    console.log('✓ SNMention found:', window.SNMention);
-        if (typeof window.GlideMention !== 'undefined') console.log('✓ GlideMention found:', window.GlideMention);
-        console.groupEnd();
-    }
-
-    document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-            e.preventDefault();
-            debugMentionSystem();
-        }
-    });
 
     /* ==========================================================
      *  MAIN MENTION INSERTION WITH STRATEGIES
@@ -9277,7 +9254,6 @@ Regards.`,
     }
 
     console.log('✓ Response Templates v' + SCRIPT_VERSION + ' loaded');
-    console.log('💡 Press Ctrl+Shift+D to debug mention system');
 
     })();
 
