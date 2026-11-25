@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.10.2
+// @version      4.10.3
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.2';
-    const CHANGELOG = `Version 4.10.2:
+    const SCRIPT_VERSION = '4.10.3';
+    const CHANGELOG = `Version 4.10.3:
+- Support Case Subject Builder: the buttons at the top of the panel (Tenant URLs, ? Help, ⚙ Suite and the close button) keep their own size and look on the Netskope support portal, and the rest of the panel keeps its look too.
+- Policy Name Builder: the protection that keeps the panel's top buttons in shape on Netskope pages is now shared with the Support Case Subject Builder. Nothing changes in how it looks.
+
+Version 4.10.2:
 - Response Templates: removed the hidden Ctrl+Shift+D shortcut that only wrote mention debugging details to the browser console.
 
 Version 4.10.1:
@@ -1163,6 +1167,43 @@ Version 4.0.0:
     }
 
     // The "⚙ Suite" pill placed next to every tool's "? Help".
+    /* ==========================================================
+     *  SHARED: KEEP OUR LOOK ON STRICT PAGES
+     * ========================================================== */
+
+    // Page styles of Netskope and its support portal (cascade layers with !important) win over normal inline
+    // styles and our stylesheet, which bent the panels' top buttons. This marks every inline style in el and below as !important, also the ones set
+    // later (hover colors, tab switches, the Saved flash), so the buttons keep the look they are given.
+    // Properties the panel never set, which Netskope's rules would otherwise fill in (tall buttons, text on two
+    // lines, capital letters). Only used where the element has no value of its own.
+    const HELPERS_LOCK_BASE_STYLE = {
+        'line-height': 'normal', height: 'auto', 'min-height': '0', 'max-height': 'none',
+        width: 'auto', 'min-width': '0', 'max-width': 'none', 'white-space': 'nowrap',
+        'text-transform': 'none', 'letter-spacing': 'normal', 'box-sizing': 'border-box',
+        'vertical-align': 'middle', 'font-family': 'Arial, sans-serif',
+        'background-color': 'transparent', color: 'inherit'
+    };
+
+    function helpersKeepInlineStyles(el) {
+        const lock = (n) => {
+            if (!n.style) return;
+            for (const [prop, value] of Object.entries(HELPERS_LOCK_BASE_STYLE)) {
+                if (!n.style.getPropertyValue(prop)) n.style.setProperty(prop, value, 'important');
+            }
+            for (const prop of Array.from(n.style)) {
+                if (n.style.getPropertyPriority(prop) !== 'important') n.style.setProperty(prop, n.style.getPropertyValue(prop), 'important');
+            }
+        };
+        const lockTree = (n) => { if (n.nodeType !== 1) return; lock(n); n.querySelectorAll('*').forEach(lock); };
+        lockTree(el);
+        new MutationObserver((records) => {
+            for (const r of records) {
+                if (r.type === 'attributes') lock(r.target);
+                else r.addedNodes.forEach(lockTree);
+            }
+        }).observe(el, { attributes: true, attributeFilter: ['style'], childList: true, subtree: true });
+    }
+
     function createSuitePill() {
         const pill = document.createElement('span');
         pill.textContent = '⚙ Suite';
@@ -2183,8 +2224,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.2';
-    const CHANGELOG = `Version 4.10.2:
+    const SCRIPT_VERSION = '4.10.3';
+    const CHANGELOG = `Version 4.10.3:
+- Support Case Subject Builder: the buttons at the top of the panel (Tenant URLs, ? Help, ⚙ Suite and the close button) keep their own size and look on the Netskope support portal, and the rest of the panel keeps its look too.
+- Policy Name Builder: the protection that keeps the panel's top buttons in shape on Netskope pages is now shared with the Support Case Subject Builder. Nothing changes in how it looks.
+
+Version 4.10.2:
 - Response Templates: removed the hidden Ctrl+Shift+D shortcut that only wrote mention debugging details to the browser console.
 
 Version 4.10.1:
@@ -13325,9 +13370,12 @@ Version 1.3:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.5.15';
+    const SCRIPT_VERSION = '1.5.16';
 
-    const CHANGELOG = `Version 1.5.15:
+    const CHANGELOG = `Version 1.5.16:
+- The protection that keeps the panel's top buttons in shape on Netskope pages is now shared with the Support Case Subject Builder. Nothing changes in how it looks.
+
+Version 1.5.15:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 1.5.14:
@@ -14602,38 +14650,8 @@ Version 1.2.0:
      *  PRESET BAR (inside main panel)
      * ==========================================================*/
 
-    // Netskope's page styles (cascade layers with !important) win over normal inline styles, which bent the
-    // panel's top buttons. This marks every inline style in el and below as !important, also the ones set
-    // later (hover colors, tab switches, the Saved flash), so the buttons keep the look they are given.
-    // Properties the panel never set, which Netskope's rules would otherwise fill in (tall buttons, text on two
-    // lines, capital letters). Only used where the element has no value of its own.
-    const NPG_BASE_STYLE = {
-        'line-height': 'normal', height: 'auto', 'min-height': '0', 'max-height': 'none',
-        width: 'auto', 'min-width': '0', 'max-width': 'none', 'white-space': 'nowrap',
-        'text-transform': 'none', 'letter-spacing': 'normal', 'box-sizing': 'border-box',
-        'vertical-align': 'middle', 'font-family': 'Arial, sans-serif',
-        'background-color': 'transparent', color: 'inherit'
-    };
-
-    function npgKeepInlineStyles(el) {
-        const lock = (n) => {
-            if (!n.style) return;
-            for (const [prop, value] of Object.entries(NPG_BASE_STYLE)) {
-                if (!n.style.getPropertyValue(prop)) n.style.setProperty(prop, value, 'important');
-            }
-            for (const prop of Array.from(n.style)) {
-                if (n.style.getPropertyPriority(prop) !== 'important') n.style.setProperty(prop, n.style.getPropertyValue(prop), 'important');
-            }
-        };
-        const lockTree = (n) => { if (n.nodeType !== 1) return; lock(n); n.querySelectorAll('*').forEach(lock); };
-        lockTree(el);
-        new MutationObserver((records) => {
-            for (const r of records) {
-                if (r.type === 'attributes') lock(r.target);
-                else r.addedNodes.forEach(lockTree);
-            }
-        }).observe(el, { attributes: true, attributeFilter: ['style'], childList: true, subtree: true });
-    }
+    // The top of the panel keeps its own look on Netskope pages (core helper)
+    const npgKeepInlineStyles = helpersKeepInlineStyles;
 
     function createPresetBar() {
         const bar = document.createElement('div');
@@ -15878,9 +15896,12 @@ Version 1.2.0:
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.1.5';
+    const SCRIPT_VERSION = '1.1.6';
 
-    const CHANGELOG = `Version 1.1.5:
+    const CHANGELOG = `Version 1.1.6:
+- The buttons at the top of the panel (Tenant URLs, ? Help, ⚙ Suite and the close button) keep their own size and look on the Netskope support portal, and the rest of the panel keeps its look too.
+
+Version 1.1.5:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 1.1.4:
@@ -16456,7 +16477,12 @@ Version 1.0.0:
             color: #333333 !important;
         }
     `;
-    document.head.appendChild(style);
+    // The support portal may block injected <style> (CSP): an adopted sheet is not blocked, <style> stays the fallback
+    try {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(style.textContent);
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    } catch (e) { document.head.appendChild(style); }
 
     /* ==========================================================
      *  PANEL
@@ -16760,20 +16786,40 @@ Version 1.0.0:
         const closeBtn = document.createElement('button');
         closeBtn.id = 'nsTktCloseBtn';
         closeBtn.textContent = '\u2715';
+        closeBtn.title = 'Close';
         closeBtn.onclick = closePanel;
+        // The top of the panel carries its look inline, so the support portal's own button rules cannot resize it
+        Object.assign(closeBtn.style, {
+            position: 'absolute', top: '6px', right: '6px', background: '#e53935', color: '#fff',
+            border: 'none', borderRadius: '4px', cursor: 'pointer', width: '26px', height: '26px',
+            padding: '0', margin: '0', fontWeight: 'bold', fontSize: '14px', lineHeight: '1',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: 'none'
+        });
         panel.appendChild(closeBtn);
 
         /* Header */
         const header = document.createElement('div');
         header.className = 'ns-header';
+        for (const [prop, value] of Object.entries({ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center',
+            'flex-wrap': 'wrap', 'row-gap': '6px', padding: '6px 40px 10px 10px', 'border-bottom': '1px solid #eee', margin: '0' })) {
+            header.style.setProperty(prop, value, 'important');
+        }
         const titleSpan = document.createElement('span');
         titleSpan.className = 'ns-title';
         titleSpan.textContent = '\uD83D\uDCDD Subject Helper';
+        Object.assign(titleSpan.style, { fontWeight: 'bold', fontSize: '13px', color: '#333', padding: '0', margin: '0', border: 'none' });
 
         const cfgBtn = document.createElement('button');
         cfgBtn.className = 'ns-cfg-btn';
         cfgBtn.title = 'Configure tenant URLs';
         cfgBtn.innerHTML = '\u2699\uFE0F <span style="font-size:11px;">Tenant URLs</span>';
+        Object.assign(cfgBtn.style, {
+            display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#f0f0f0', border: '1px solid #ccc',
+            cursor: 'pointer', fontSize: '11px', fontFamily: 'Arial, sans-serif', fontWeight: 'bold', color: '#444',
+            padding: '3px 8px', margin: '0', borderRadius: '4px', transition: 'background 0.15s, border-color 0.15s', boxShadow: 'none'
+        });
+        cfgBtn.onmouseover = () => { cfgBtn.style.background = '#e0e0e0'; cfgBtn.style.borderColor = '#999'; cfgBtn.style.color = '#222'; };
+        cfgBtn.onmouseout  = () => { cfgBtn.style.background = '#f0f0f0'; cfgBtn.style.borderColor = '#ccc'; cfgBtn.style.color = '#444'; };
         cfgBtn.onclick = () => {
             closePanel();
             showTenantSetup(() => {});
@@ -16807,7 +16853,10 @@ Version 1.0.0:
         const verSpan = document.createElement('span');
         verSpan.className = 'ns-version';
         verSpan.textContent = `v${SCRIPT_VERSION}`;
+        Object.assign(verSpan.style, { fontSize: '11px', color: '#aaa', padding: '0', margin: '0', border: 'none' });
         rightSpan.appendChild(verSpan);
+        // Inline looks of the top buttons and labels win over the support portal's !important rules
+        [closeBtn, leftSpan, verSpan].forEach(helpersKeepInlineStyles);
 
         if (isNewVersion() && !hasSeenChangelog()) {
             const notif = document.createElement('span');
