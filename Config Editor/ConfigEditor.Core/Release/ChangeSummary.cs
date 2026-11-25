@@ -90,6 +90,8 @@ public static class ChangeSummary
             ListDiff(o.ComplexityOptions, a.ComplexityOptions, "complexity", team, bullets);
             if (o.ShowVendor != a.ShowVendor || o.ShowPER != a.ShowPER || o.ComplexityNote != a.ComplexityNote)
                 bullets.Add($"Updated the settings of the {team}.");
+            if (o.ComplexityMediumFrom != a.ComplexityMediumFrom || o.ComplexityHighFrom != a.ComplexityHighFrom)
+                bullets.Add($"Changed the auto complexity limits of the {team}: Complexity 2 from {a.ComplexityMediumFrom ?? ShortDescriptionTeam.DefaultMediumFrom} comments, Complexity 3 from {a.ComplexityHighFrom ?? ShortDescriptionTeam.DefaultHighFrom}.");
         });
 
     static void Responses(ConfigDocument original, ConfigDocument edited, List<string> bullets) =>

@@ -52,6 +52,37 @@ public class TicketHelpersSectionTests
     }
 
     [Fact]
+    public void Complexity_limits_are_read_per_team_and_written_back()
+    {
+        var d = Doc();
+        foreach (var t in ShortDescriptionTeam.ReadAll(d))
+        {
+            Assert.Equal(16, t.ComplexityMediumFrom);
+            Assert.Equal(26, t.ComplexityHighFrom);
+        }
+        var ame = ShortDescriptionTeam.ReadAll(d).Single(t => t.Key == "ameTeam");
+        ame.ComplexityMediumFrom = 10;
+        ame.ComplexityHighFrom = 30;
+        ShortDescriptionTeam.Save(d, ame);
+        Assert.Equal(new[] { BlockCatalog.SdTeams }, d.Changed);
+        var (th, tb) = d.Render();
+        Assert.True(JsValidator.Check(th).Ok);
+        Assert.Contains("complexityMediumFrom: 10,", th);
+        Assert.Contains("complexityHighFrom: 30", th);
+        var back = ShortDescriptionTeam.ReadAll(ConfigDocument.Load(th, tb));
+        Assert.Equal((10, 30), (back.Single(t => t.Key == "ameTeam").ComplexityMediumFrom!.Value, back.Single(t => t.Key == "ameTeam").ComplexityHighFrom!.Value));
+        Assert.Equal(16, back.Single(t => t.Key == "emeaTeam").ComplexityMediumFrom);
+    }
+
+    [Theory]
+    [InlineData(16, 26, null)]
+    [InlineData(0, 26, "Complexity 2 must start at 1 comment or more.")]
+    [InlineData(20, 20, "Complexity 3 must start higher than Complexity 2.")]
+    [InlineData(null, 26, "Enter both numbers.")]
+    public void Complexity_limit_problems(int? medium, int? high, string? problem) =>
+        Assert.Equal(problem, ShortDescriptionTeam.ThresholdProblem(medium, high));
+
+    [Fact]
     public void Response_items_follow_menu_order_then_disabled()
     {
         var team = ResponseTeam.ReadAll(Doc()).Single(t => t.Key == "emeaTeam");

@@ -116,6 +116,28 @@ public class PagesTests
             ShortDescriptionTeam.ReadAll(vm.Session.Edited).Single(t => t.Key == sd[1].Key).StatusOptions.Count);
     }
 
+    [Fact]
+    public async Task Complexity_limits_page_saves_only_valid_values()
+    {
+        var vm = await Started();
+        var page = Page<ShortDescriptionPage>(vm, "shortDescription");
+        vm.SelectedTeamKey = "apacTeam";
+        Assert.Equal("16", page.ComplexityMediumFrom);
+        Assert.Equal("26", page.ComplexityHighFrom);
+        Assert.False(page.ComplexityHintIsError);
+
+        page.ComplexityHighFrom = "12";
+        Assert.True(page.ComplexityHintIsError);
+        Assert.StartsWith("Not saved:", page.ComplexityHint);
+        Assert.Equal(26, ShortDescriptionTeam.ReadAll(vm.Session!.Edited).Single(t => t.Key == "apacTeam").ComplexityHighFrom);
+
+        page.ComplexityHighFrom = "40";
+        Assert.False(page.ComplexityHintIsError);
+        var apac = ShortDescriptionTeam.ReadAll(vm.Session.Edited).Single(t => t.Key == "apacTeam");
+        Assert.Equal((16, 40), (apac.ComplexityMediumFrom!.Value, apac.ComplexityHighFrom!.Value));
+        Assert.Equal(26, ShortDescriptionTeam.ReadAll(vm.Session.Edited).Single(t => t.Key == "emeaTeam").ComplexityHighFrom);
+    }
+
     /// <summary>Does what a WPF ComboBox does: when its selected value leaves the list, it writes null back to the bound property.</summary>
     static void LikeComboBox(System.Collections.ObjectModel.ObservableCollection<Choice> choices, ResponsesPage page, Action<ResponseRow> clear, Func<ResponseRow, string> value) =>
         choices.CollectionChanged += (_, _) =>

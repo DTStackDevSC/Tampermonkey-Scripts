@@ -9,6 +9,18 @@ public static class JsEdit
 
     public static bool Bool(JsObject o, string key) => o[key] is JsBool { Value: true };
 
+    /// <summary>A whole number property, or null when it is missing or not a plain whole number.</summary>
+    public static int? Int(JsObject o, string key) =>
+        o[key] is JsNumber n && int.TryParse(n.Raw, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+
+    /// <summary>Sets a whole number property; null leaves a missing property missing and removes an existing one.</summary>
+    public static void SetInt(JsObject o, string key, int? value)
+    {
+        if (value == null) { if (o.Has(key)) o[key] = null; return; }
+        if (Int(o, key) == value) return;
+        o[key] = new JsNumber(value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     public static List<string> Strings(JsNode? n) =>
         n is JsArray a ? a.Items.OfType<JsString>().Select(s => s.Value).ToList() : new();
 

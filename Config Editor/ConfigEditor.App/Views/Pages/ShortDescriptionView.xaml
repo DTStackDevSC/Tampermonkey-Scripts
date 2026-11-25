@@ -37,6 +37,34 @@
                 <Border Style="{StaticResource Card}">
                     <StackPanel><TextBlock Text="📊 Complexities" Style="{StaticResource CardTitle}"/><c:ListEditor DataContext="{Binding ComplexityOptions}"/></StackPanel>
                 </Border>
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="🧮 Auto complexity" Style="{StaticResource CardTitle}"/>
+                        <TextBlock Text="Number of Additional comments from which a ticket of this team is Complexity 2 and Complexity 3. Whole numbers, the second higher than the first. Users can still set their own in the panel's Settings." Style="{StaticResource HintText}" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                        <StackPanel Orientation="Horizontal">
+                            <StackPanel Margin="0,0,16,0">
+                                <TextBlock Text="Complexity 2 from" Style="{StaticResource FieldLabel}"/>
+                                <TextBox Text="{Binding ComplexityMediumFrom, UpdateSourceTrigger=PropertyChanged}" Width="90" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="Complexity 3 from" Style="{StaticResource FieldLabel}"/>
+                                <TextBox Text="{Binding ComplexityHighFrom, UpdateSourceTrigger=PropertyChanged}" Width="90" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ComplexityHint}" TextWrapping="Wrap" Margin="0,8,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#555555"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ComplexityHintIsError}" Value="True">
+                                            <Setter Property="Foreground" Value="#C62828"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </Grid>

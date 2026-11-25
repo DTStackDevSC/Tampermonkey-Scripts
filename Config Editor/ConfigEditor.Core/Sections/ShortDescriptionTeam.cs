@@ -18,6 +18,23 @@ public sealed class ShortDescriptionTeam
     public bool ShowVendor { get; set; }
     public bool ShowPER { get; set; }
     public string ComplexityNote { get; set; } = "";
+    /// <summary>Auto complexity: Additional comments count from which a ticket is Complexity 2 (default 16).</summary>
+    public int? ComplexityMediumFrom { get; set; }
+    /// <summary>Auto complexity: Additional comments count from which a ticket is Complexity 3 (default 26).</summary>
+    public int? ComplexityHighFrom { get; set; }
+
+    public const int DefaultMediumFrom = 16;
+    public const int DefaultHighFrom = 26;
+
+    /// <summary>Why the two limits cannot be saved, or null when they are fine. The script falls back to 16 and 26 otherwise.</summary>
+    public static string? ThresholdProblem(int? mediumFrom, int? highFrom)
+    {
+        if (mediumFrom == null || highFrom == null) return "Enter both numbers.";
+        if (mediumFrom < 1) return "Complexity 2 must start at 1 comment or more.";
+        if (highFrom <= mediumFrom) return "Complexity 3 must start higher than Complexity 2.";
+        if (highFrom > 100000) return "Complexity 3 must start at 100000 comments or fewer.";
+        return null;
+    }
 
     public static ShortDescriptionTeam From(string key, JsObject o) => new(key)
     {
@@ -30,7 +47,9 @@ public sealed class ShortDescriptionTeam
         ComplexityOptions = JsEdit.Strings(o["complexityOptions"]),
         ShowVendor = JsEdit.Bool(o, "showVendor"),
         ShowPER = JsEdit.Bool(o, "showPER"),
-        ComplexityNote = JsEdit.Str(o, "complexityNote") ?? ""
+        ComplexityNote = JsEdit.Str(o, "complexityNote") ?? "",
+        ComplexityMediumFrom = JsEdit.Int(o, "complexityMediumFrom"),
+        ComplexityHighFrom = JsEdit.Int(o, "complexityHighFrom")
     };
 
     public JsObject ToNode()
@@ -46,6 +65,8 @@ public sealed class ShortDescriptionTeam
         JsEdit.SetBool(o, "showVendor", ShowVendor);
         JsEdit.SetBool(o, "showPER", ShowPER);
         JsEdit.SetStr(o, "complexityNote", ComplexityNote);
+        JsEdit.SetInt(o, "complexityMediumFrom", ComplexityMediumFrom);
+        JsEdit.SetInt(o, "complexityHighFrom", ComplexityHighFrom);
         return o;
     }
 

@@ -12,9 +12,9 @@ public sealed record HelpGuide(string Version, bool PublishEnabled, IReadOnlyLis
     static readonly Dictionary<string, (string Icon, string Changes, string Where, string[] Parts)> Texts = new()
     {
         ["shortDescription"] = ("📝",
-            "The choices the Short Description Builder offers each team, and whether the Vendor and PER fields show.",
+            "The choices the Short Description Builder offers each team, whether the Vendor and PER fields show, and the comment counts behind the auto complexity.",
             "ServiceNow ticket: the Short Description Builder dropdowns.",
-            new[] { "⚙️ General", "🏢 Member firms", "📦 Products", "🚦 Statuses", "🏷️ Types", "📊 Complexities" }),
+            new[] { "⚙️ General", "🏢 Member firms", "📦 Products", "🚦 Statuses", "🏷️ Types", "📊 Complexities", "🧮 Auto complexity" }),
         ["responses"] = ("💬",
             "The ready made replies of the Response Templates: menu text, where each one sits, comments or work notes, and the reply text.",
             "ServiceNow ticket: the Ticket Response menu.",
