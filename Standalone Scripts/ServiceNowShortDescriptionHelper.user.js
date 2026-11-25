@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.10.4
+// @version      4.11.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.4';
-    const CHANGELOG = `Version 4.10.4:
+    const SCRIPT_VERSION = '4.11.0';
+    const CHANGELOG = `Version 4.11.0:
+- Short Description Builder: the comment counts that set the auto complexity are now set per team. EMEA, AME and APAC start with the same values as before: 0 to 15 comments is Complexity 1, 16 to 25 is Complexity 2, 26 or more is Complexity 3.
+- Short Description Builder: new Auto complexity block in Settings to change those limits for your team, with Save and a Team default button to go back. The panel uses the new limits at once, and the comment counter shows the ranges when you point at it.
+
+Version 4.10.4:
 - Formatted Text Editor: inserting a message now also sets the date in the ticket's short description to today, the same as Response Templates.
 - Response Templates: the Auto-update date on insert setting now also covers messages from the Formatted Text Editor.
 
@@ -2272,8 +2276,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.4';
-    const CHANGELOG = `Version 4.10.4:
+    const SCRIPT_VERSION = '4.11.0';
+    const CHANGELOG = `Version 4.11.0:
+- Short Description Builder: the comment counts that set the auto complexity are now set per team. EMEA, AME and APAC start with the same values as before: 0 to 15 comments is Complexity 1, 16 to 25 is Complexity 2, 26 or more is Complexity 3.
+- Short Description Builder: new Auto complexity block in Settings to change those limits for your team, with Save and a Team default button to go back. The panel uses the new limits at once, and the comment counter shows the ranges when you point at it.
+
+Version 4.10.4:
 - Formatted Text Editor: inserting a message now also sets the date in the ticket's short description to today, the same as Response Templates.
 - Response Templates: the Auto-update date on insert setting now also covers messages from the Formatted Text Editor.
 
@@ -2765,7 +2773,10 @@ Version 3.0.8.1:
             complexityOptions: ['N/A', '1', '2', '3'],
             showVendor: true,
             showPER: true,
-            complexityNote: '1 = Low, 2 = Medium, 3 = High'
+            complexityNote: '1 = Low, 2 = Medium, 3 = High',
+            // Auto complexity: comment count from which the ticket is Complexity 2, and Complexity 3.
+            complexityMediumFrom: 16,
+            complexityHighFrom: 26
         },
 
         /// AME TEAM ///
@@ -2813,7 +2824,10 @@ Version 3.0.8.1:
             complexityOptions: ['N/A', '1', '2', '3'],
             showVendor: true,
             showPER: true,
-            complexityNote: '1 = Low, 2 = Medium, 3 = High'
+            complexityNote: '1 = Low, 2 = Medium, 3 = High',
+            // Auto complexity: comment count from which the ticket is Complexity 2, and Complexity 3.
+            complexityMediumFrom: 16,
+            complexityHighFrom: 26
         },
 
         /// APAC TEAM ///
@@ -2864,7 +2878,10 @@ Version 3.0.8.1:
             complexityOptions: ['N/A', '1', '2', '3'],
             showVendor: true,
             showPER: true,
-            complexityNote: '1 = Low, 2 = Medium, 3 = High'
+            complexityNote: '1 = Low, 2 = Medium, 3 = High',
+            // Auto complexity: comment count from which the ticket is Complexity 2, and Complexity 3.
+            complexityMediumFrom: 16,
+            complexityHighFrom: 26
         }
     };
 
@@ -2987,10 +3004,52 @@ Version 3.0.8.1:
         return count;
     }
 
-    function calculateAutoComplexity(count) {
-        if (count <= 15) return '1';
-        if (count <= 25) return '2';
-        return '3';
+    // Auto complexity thresholds: each team has its own in TEAMS (editable in the Config Editor),
+    // and a user can change them for a team in ⚙ Settings (stored per team, Reset goes back to the team's).
+    const COMPLEXITY_DEFAULT_THRESHOLDS = { mediumFrom: 16, highFrom: 26 };
+    const COMPLEXITY_THRESHOLDS_KEY = 'shortDescComplexityThresholds';
+
+    function validComplexityThresholds(t) {
+        return !!t && Number.isInteger(t.mediumFrom) && Number.isInteger(t.highFrom) &&
+            t.mediumFrom >= 1 && t.highFrom > t.mediumFrom && t.highFrom <= 100000;
+    }
+
+    function teamDefaultComplexityThresholds(teamKey) {
+        const team = TEAMS[teamKey];
+        const t = team && { mediumFrom: team.complexityMediumFrom, highFrom: team.complexityHighFrom };
+        return validComplexityThresholds(t) ? t : { ...COMPLEXITY_DEFAULT_THRESHOLDS };
+    }
+
+    function customComplexityThresholds(teamKey) {
+        const all = GM_getValue(COMPLEXITY_THRESHOLDS_KEY, {});
+        const t = all && typeof all === 'object' ? all[teamKey] : null;
+        return validComplexityThresholds(t) ? { mediumFrom: t.mediumFrom, highFrom: t.highFrom } : null;
+    }
+
+    function setCustomComplexityThresholds(teamKey, t) {
+        const stored = GM_getValue(COMPLEXITY_THRESHOLDS_KEY, {});
+        const all = stored && typeof stored === 'object' ? { ...stored } : {};
+        if (t) all[teamKey] = { mediumFrom: t.mediumFrom, highFrom: t.highFrom };
+        else delete all[teamKey];
+        GM_setValue(COMPLEXITY_THRESHOLDS_KEY, all);
+    }
+
+    function getComplexityThresholds(teamKey) {
+        return customComplexityThresholds(teamKey) || teamDefaultComplexityThresholds(teamKey);
+    }
+
+    function complexityRangesText(t) {
+        return `0 to ${t.mediumFrom - 1} = 1, ${t.mediumFrom} to ${t.highFrom - 1} = 2, ${t.highFrom} or more = 3`;
+    }
+
+    // Called by the open panel so a change in Settings shows at once.
+    let refreshAutoComplexity = () => {};
+
+    function calculateAutoComplexity(count, thresholds) {
+        const t = thresholds || getComplexityThresholds(getCurrentTeam());
+        if (count >= t.highFrom) return '3';
+        if (count >= t.mediumFrom) return '2';
+        return '1';
     }
 
     /* ==========================================================
@@ -3640,11 +3699,27 @@ Version 3.0.8.1:
             border-radius: 10px;
             width: 400px;
             max-width: 92vw;
+            max-height: 90vh;
+            overflow-y: auto;
             color: #333333 !important;
         }
 
         #settingsModal input[type="checkbox"] {
             accent-color: #667eea;
+        }
+
+        #settingsModal input[type="number"] {
+            background-color: #ffffff !important;
+            color: #333333 !important;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 4px 6px;
+            width: 70px;
+            font-size: 13px;
+        }
+        #settingsModal input[type="number"][aria-invalid="true"] {
+            border-color: #d93025 !important;
+            background-color: #fce8e6 !important;
         }
 
         /* Help Modal Styles */
@@ -3891,6 +3966,171 @@ Version 3.0.8.1:
         dropdownSection.appendChild(toggleRow);
         modal.appendChild(dropdownSection);
 
+        // ── Auto complexity thresholds of the current team ──
+        if (currentTeamKey) {
+            const cxSection = document.createElement('div');
+            cxSection.id = 'settingsComplexitySection';
+            Object.assign(cxSection.style, {
+                marginBottom: '18px', paddingBottom: '18px', borderBottom: '1px solid #eee'
+            });
+            const cxTitle = document.createElement('div');
+            cxTitle.textContent = `📊 Auto complexity (${currentTeam.name})`;
+            Object.assign(cxTitle.style, {
+                fontWeight: 'bold', fontSize: '13px', color: '#333',
+                marginBottom: '6px', fontFamily: 'Arial, sans-serif'
+            });
+            cxSection.appendChild(cxTitle);
+
+            const cxHint = document.createElement('div');
+            cxHint.id = 'settingsComplexityHint';
+            cxHint.textContent = 'Number of Additional comments from which a ticket counts as Complexity 2 and Complexity 3. Whole numbers, the second higher than the first.';
+            Object.assign(cxHint.style, {
+                fontSize: '12px', color: '#777', lineHeight: '1.4',
+                marginBottom: '10px', fontFamily: 'Arial, sans-serif'
+            });
+            cxSection.appendChild(cxHint);
+
+            const current = getComplexityThresholds(currentTeamKey);
+            const teamDefault = teamDefaultComplexityThresholds(currentTeamKey);
+
+            const cxRow = document.createElement('div');
+            Object.assign(cxRow.style, { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' });
+            function numberField(id, label, value) {
+                const wrap = document.createElement('label');
+                wrap.htmlFor = id;
+                Object.assign(wrap.style, {
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    fontSize: '12px', color: '#333', fontFamily: 'Arial, sans-serif'
+                });
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.id = id;
+                input.min = '1';
+                input.step = '1';
+                input.inputMode = 'numeric';
+                input.value = String(value);
+                input.setAttribute('aria-describedby', 'settingsComplexityHint');
+                wrap.appendChild(document.createTextNode(label));
+                wrap.appendChild(input);
+                cxRow.appendChild(wrap);
+                return input;
+            }
+            const mediumInput = numberField('settingsComplexityMedium', 'Complexity 2 from', current.mediumFrom);
+            const highInput = numberField('settingsComplexityHigh', 'Complexity 3 from', current.highFrom);
+            cxSection.appendChild(cxRow);
+
+            const cxPreview = document.createElement('div');
+            cxPreview.id = 'settingsComplexityPreview';
+            Object.assign(cxPreview.style, {
+                fontSize: '12px', color: '#555', margin: '8px 0 0 0', fontFamily: 'Arial, sans-serif'
+            });
+            cxSection.appendChild(cxPreview);
+
+            const cxMsg = document.createElement('div');
+            cxMsg.id = 'settingsComplexityMsg';
+            cxMsg.setAttribute('role', 'status');
+            Object.assign(cxMsg.style, {
+                fontSize: '12px', margin: '6px 0 0 0', minHeight: '16px', fontFamily: 'Arial, sans-serif'
+            });
+            cxSection.appendChild(cxMsg);
+
+            const cxButtons = document.createElement('div');
+            Object.assign(cxButtons.style, { display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' });
+            const cxSave = document.createElement('button');
+            cxSave.id = 'settingsComplexitySave';
+            cxSave.textContent = '💾 Save';
+            const cxReset = document.createElement('button');
+            cxReset.id = 'settingsComplexityReset';
+            cxReset.textContent = `↺ Team default (${teamDefault.mediumFrom} / ${teamDefault.highFrom})`;
+            cxReset.title = `Go back to the ${currentTeam.name} values: ${complexityRangesText(teamDefault)}.`;
+            [[cxSave, '#28a745', '#218838', '#fff'], [cxReset, '#f0f0f0', '#e0e0e0', '#333']].forEach(([b, bg, hover, color]) => {
+                Object.assign(b.style, {
+                    padding: '6px 14px', background: bg, color,
+                    border: bg === '#f0f0f0' ? '1px solid #ccc' : 'none', borderRadius: '5px', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: 'bold', fontFamily: 'Arial, sans-serif',
+                    transition: 'background 0.2s ease'
+                });
+                b.onmouseover = () => { if (!b.disabled) b.style.background = hover; };
+                b.onmouseout  = () => { b.style.background = bg; };
+            });
+            cxButtons.appendChild(cxSave);
+            cxButtons.appendChild(cxReset);
+            cxSection.appendChild(cxButtons);
+
+            function readFields() {
+                return { mediumFrom: Number(mediumInput.value), highFrom: Number(highInput.value) };
+            }
+            function showMsg(text, color) {
+                cxMsg.textContent = text;
+                cxMsg.style.color = color;
+            }
+            function markInvalid(bad) {
+                [mediumInput, highInput].forEach(i => {
+                    if (bad) {
+                        i.setAttribute('aria-invalid', 'true');
+                        i.setAttribute('aria-describedby', 'settingsComplexityHint settingsComplexityMsg');
+                    } else {
+                        i.removeAttribute('aria-invalid');
+                        i.setAttribute('aria-describedby', 'settingsComplexityHint');
+                    }
+                });
+            }
+            function updatePreview() {
+                const t = readFields();
+                const custom = customComplexityThresholds(currentTeamKey);
+                cxPreview.textContent = validComplexityThresholds(t)
+                    ? `Comments: ${complexityRangesText(t)}`
+                    : 'Comments: enter two whole numbers to see the ranges.';
+                cxReset.disabled = !custom;
+                cxReset.style.opacity = custom ? '1' : '0.55';
+                cxReset.style.cursor = custom ? 'pointer' : 'default';
+                if (!custom) cxReset.title = `Already using the ${currentTeam.name} values: ${complexityRangesText(teamDefault)}.`;
+                else cxReset.title = `Go back to the ${currentTeam.name} values: ${complexityRangesText(teamDefault)}.`;
+            }
+            [mediumInput, highInput].forEach(i => i.addEventListener('input', () => {
+                updatePreview();
+                if (i.getAttribute('aria-invalid') === 'true' && validComplexityThresholds(readFields())) {
+                    markInvalid(false);
+                    showMsg('', '#555');
+                }
+            }));
+            [mediumInput, highInput].forEach(i => i.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); cxSave.click(); }
+            }));
+
+            cxSave.onclick = () => {
+                const t = readFields();
+                if (!validComplexityThresholds(t)) {
+                    markInvalid(true);
+                    showMsg('❌ Error: use whole numbers, Complexity 2 from 1 or more and Complexity 3 higher than Complexity 2.', '#d93025');
+                    return;
+                }
+                markInvalid(false);
+                const same = t.mediumFrom === teamDefault.mediumFrom && t.highFrom === teamDefault.highFrom;
+                const before = getComplexityThresholds(currentTeamKey);
+                if (t.mediumFrom === before.mediumFrom && t.highFrom === before.highFrom) {
+                    showMsg('ℹ️ Nothing changed.', '#555');
+                    return;
+                }
+                setCustomComplexityThresholds(currentTeamKey, same ? null : t);
+                refreshAutoComplexity();
+                updatePreview();
+                showMsg(same ? '✅ Saved: back to the team values.' : '✅ Saved. Auto complexity now uses these values.', '#218838');
+            };
+            cxReset.onclick = () => {
+                if (cxReset.disabled) return;
+                setCustomComplexityThresholds(currentTeamKey, null);
+                mediumInput.value = String(teamDefault.mediumFrom);
+                highInput.value = String(teamDefault.highFrom);
+                markInvalid(false);
+                refreshAutoComplexity();
+                updatePreview();
+                showMsg('✅ Back to the team values.', '#218838');
+            };
+            updatePreview();
+            modal.appendChild(cxSection);
+        }
+
         // ── Tenant URLs section ──
         const tenantSection = document.createElement('div');
         tenantSection.style.marginBottom = '8px';
@@ -4057,12 +4297,27 @@ Version 3.0.8.1:
                 buildContent: (body) => {
                     lead(body, 'Complexity can be worked out for you from the number of comments on the ticket.');
                     body.appendChild(toggle('Auto-calculate complexity', true, 'Below the Complexity field. While it is on, the Complexity dropdown is locked.'));
+                    const cxTeam = getCurrentTeam();
+                    const cx = getComplexityThresholds(cxTeam);
                     kvGrid(body, [
-                        ['0 to 15', 'comments: Complexity 1 (Low)'],
-                        ['16 to 25', 'comments: Complexity 2 (Medium)'],
-                        ['26 or more', 'comments: Complexity 3 (High)']
+                        [`0 to ${cx.mediumFrom - 1}`, 'comments: Complexity 1 (Low)'],
+                        [`${cx.mediumFrom} to ${cx.highFrom - 1}`, 'comments: Complexity 2 (Medium)'],
+                        [`${cx.highFrom} or more`, 'comments: Complexity 3 (High)']
                     ]);
                     caption(body, 'Untick the box to choose the complexity yourself. Your choice is remembered.');
+                    body.appendChild(span('Change the limits', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '10px 0 6px 0' }));
+                    const numBox = (v) => span(String(v), { fontSize: '12px', color: '#333', border: '1px solid #ccc', borderRadius: '4px', padding: '3px 8px', background: '#fff', minWidth: '36px', display: 'inline-block' });
+                    body.appendChild(hrow([
+                        span('Complexity 2 from', { fontSize: '12px', color: '#333' }), numBox(cx.mediumFrom),
+                        span('Complexity 3 from', { fontSize: '12px', color: '#333' }), numBox(cx.highFrom),
+                        chip('💾 Save', '#28a745', { radius: '5px' }),
+                        chip('↺ Team default', '#f0f0f0', { color: '#333', border: '1px solid #ccc', radius: '5px' })
+                    ], { gap: '6px' }));
+                    bullets(body, [
+                        'Each team (EMEA, AME, APAC) has its own limits, 16 and 26 unless your team changed them.',
+                        'In ⚙ Settings you can set other limits for your team. They apply at once, also to the open panel.',
+                        '↺ Team default goes back to your team\'s limits.'
+                    ]);
                 }
             },
             {
@@ -4120,6 +4375,7 @@ Version 3.0.8.1:
                     body.appendChild(toggle('Searchable dropdowns', true, 'Type to filter every dropdown of the panel. Applies after a reload.'));
                     kvGrid(body, [
                         ['👥 Switch Team', 'Changes your team (EMEA, AME or APAC). Each team has its own lists. The page reloads.'],
+                        ['📊 Auto complexity', 'The comment counts from which your team\'s tickets are Complexity 2 and 3. 💾 Save applies them, ↺ Team default goes back to the team values.'],
                         ['🔗 Tenant URLs', 'Configure Tenant URLs: the Netskope tenant address for each region, with https://, as listed on the script installer page. Shared with the Support Case Subject Builder.']
                     ]);
                 }
@@ -4796,13 +5052,18 @@ Version 3.0.8.1:
             if (!complexitySelect) return;
 
             const count = countAdditionalComments();
-            const val = calculateAutoComplexity(count);
+            const thresholds = getComplexityThresholds(getCurrentTeam());
+            const val = calculateAutoComplexity(count, thresholds);
 
             complexitySelect.value = val;
             autoComplexityCount.textContent =
                 `(${count} comment${count !== 1 ? 's' : ''} → ${val})`;
+            autoComplexityCount.title = `Comments: ${complexityRangesText(thresholds)}. Change it in ⚙ Settings.`;
             autoComplexityCount.className = 'active';
         }
+        refreshAutoComplexity = () => {
+            if (autoComplexityCheckbox.isConnected && autoComplexityCheckbox.checked) applyAutoComplexity();
+        };
 
         function toggleAutoComplexity(enabled) {
             GM_setValue('shortDescAutoComplexity', enabled);
