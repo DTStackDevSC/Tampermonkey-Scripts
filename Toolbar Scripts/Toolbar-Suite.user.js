@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.58.2
+// @version      2.58.3
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.58.2';
-    const CHANGELOG = `Version 2.58.2:
+   const SCRIPT_VERSION = '2.58.3';
+    const CHANGELOG = `Version 2.58.3:
+- Netskope Console Toolkit: in the new user constraint profile side panel, the Bulk entry, Bulk delete and Copy constraints buttons now sit in their own row under the panel header, so a long profile name no longer pushes Save out of view.
+- Change Tracker: a Custom entry now writes its note into the ticket (Work Notes and Comments, like the other types) and its card shows ↪ Write. A Custom entry with no note still writes nothing.
+
+Version 2.58.2:
 - Destination Profile Editor and Netskope Console Toolkit: the change log above a profile's or URL list's values and its 📜 Change History window are read and drawn by one shared piece of the toolbar, so both tools show the same history the same way.
 
 Version 2.58.1:
@@ -18112,9 +18116,13 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.4';
+    const SCRIPT_VERSION = '2.17.5';
 
-    const CHANGELOG = `Version 2.17.4:
+    const CHANGELOG = `Version 2.17.5:
+- A Custom entry now writes its note into the ticket: the note as typed in Work Notes, and between the greeting and the sign off in Comments. Its card shows ↪ Write, and Write all to ticket includes it.
+- A Custom entry with no note still writes nothing.
+
+Version 2.17.4:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 2.17.3:
@@ -20851,8 +20859,14 @@ Version 1.4.3:
                 commentsHeader: "We've removed the following user's admin access to the Netskope console as requested:",
             },
 
-            // 'Custom' is intentionally absent — freeform notes don't auto-write.
+            // 'Custom' has no template: its own note is written as it was typed (customNote).
         };
+
+        // A Custom entry writes its note text; an empty Custom entry has nothing to write.
+        function customNote(entry) {
+            return entry && entry.type === 'Custom' && entry.note ? String(entry.note).trim() : '';
+        }
+        const canWrite = entry => Boolean(NOTE_TEMPLATES[entry.type] || customNote(entry));
 
         // ── Builders ─────────────────────────────────────────────
 
@@ -20879,6 +20893,7 @@ Version 1.4.3:
         }
 
         function buildWorkNoteText(entry) {
+            if (customNote(entry)) return customNote(entry);
             const tpl = NOTE_TEMPLATES[entry.type];
             if (!tpl) return null;
             const lines = [`#${tpl.workNoteHeader}`, ...fieldLines(entry)];
@@ -20886,9 +20901,10 @@ Version 1.4.3:
         }
 
         function buildCommentsText(entry, openedByName) {
+            const greeting = openedByName ? `Hi @[${openedByName}],` : 'Hi,';
+            if (customNote(entry)) return [greeting, '', customNote(entry), '', SIGN_OFF].join('\n');
             const tpl = NOTE_TEMPLATES[entry.type];
             if (!tpl) return null;
-            const greeting = openedByName ? `Hi @[${openedByName}],` : 'Hi,';
             const parts = [greeting, '', tpl.commentsHeader, ...fieldLines(entry)];
             if (tpl.commentsCloser) parts.push('', tpl.commentsCloser);
             parts.push('', SIGN_OFF);
@@ -20945,7 +20961,7 @@ Version 1.4.3:
         }
 
         async function writeEntry(entry, targets) {
-            if (!NOTE_TEMPLATES[entry.type]) return { ok: false, reason: 'no-template' };
+            if (!canWrite(entry)) return { ok: false, reason: 'no-template' };
             return writeToTicket(
                 () => buildWorkNoteText(entry),
                 name => buildCommentsText(entry, name),
@@ -20971,19 +20987,19 @@ Version 1.4.3:
         }
 
         function buildBatchWorkNoteText(entries) {
-            const blocks = entries.map(entry =>
+            const blocks = entries.map(entry => customNote(entry) ||
                 [NOTE_TEMPLATES[entry.type].workNoteHeader, ...fieldLines(entry)].join('\n'));
             return ['#Changes applied in this session:', '', blocks.join('\n\n')].join('\n');
         }
 
         function buildBatchCommentsText(entries, openedByName) {
             const greeting = openedByName ? `Hi @[${openedByName}],` : 'Hi,';
-            const blocks = entries.map(entry =>
+            const blocks = entries.map(entry => customNote(entry) ||
                 [NOTE_TEMPLATES[entry.type].commentsHeader, ...fieldLines(entry)].join('\n'));
             const parts = [greeting, '', "We've applied the following changes to support your request:", '', blocks.join('\n\n')];
             // Closers ask the requester to test; say it once, using the most complete wording.
             const closer = entries
-                .map(entry => NOTE_TEMPLATES[entry.type].commentsCloser)
+                .map(entry => (NOTE_TEMPLATES[entry.type] || {}).commentsCloser)
                 .filter(Boolean)
                 .sort((a, b) => b.length - a.length)[0];
             if (closer) parts.push('', closer);
@@ -20992,7 +21008,7 @@ Version 1.4.3:
         }
 
         async function writeBatch(entries) {
-            const templated = sortByCategory(entries.filter(entry => NOTE_TEMPLATES[entry.type]));
+            const templated = sortByCategory(entries.filter(canWrite));
             if (!templated.length) return { ok: false, reason: 'no-template' };
             const statuses = new Set(templated.map(statusForEntry));
             const status   = statuses.size === 1 ? [...statuses][0] : 'Waiting Requester';
@@ -21009,6 +21025,7 @@ Version 1.4.3:
             writeBatch,
             detectVisibility,                              // exposed for diagnostics
             hasTemplate: type => Boolean(NOTE_TEMPLATES[type]),
+            canWrite,
             insertTextWithMention, getOpenedByName,        // used by the automated tests
         };
     })();
@@ -23457,7 +23474,7 @@ Version 1.4.3:
 
         // Rewrite-to-ticket button (only shown for entries with a template)
         let writeBtn = null;
-        if (ticketWriter.hasTemplate(entry.type)) {
+        if (ticketWriter.canWrite(entry)) {
             writeBtn = css(mk('button'), {
                 background:'#17a2b8', color:'#fff', border:'none', borderRadius:'3px',
                 cursor:'pointer', padding:'2px 8px', fontSize:'10px', fontFamily:'Arial, sans-serif', fontWeight:'bold'
@@ -24485,13 +24502,13 @@ Version 1.4.3:
         else flashStatus(`✓ Entry added  (${entries.length} total)`);
 
         // Auto-write the equivalent text into the SNow worknote/comments
-        // textareas based on which are visible. Custom entries (no template)
-        // are skipped silently. Errors here must not block the entry save.
+        // textareas based on which are visible. Custom entries write their
+        // note; an empty Custom entry is skipped silently. Errors here must not block the entry save.
         // The quick-access checks decide for this entry; they start from the
         // auto-write setting and go back to it after every entry.
         const targets = getWriteChecks();
         resetWriteChecks();
-        if ((targets.workNotes || targets.comments) && ticketWriter.hasTemplate(type)) {
+        if ((targets.workNotes || targets.comments) && ticketWriter.canWrite(lastEntry)) {
             ticketWriter.writeEntry(lastEntry, targets).catch(err => {
                 console.warn('CT: ticket auto-write failed', err);
             });
@@ -24601,13 +24618,13 @@ Version 1.4.3:
             const where = res.wrote === 'both'      ? 'Work Notes + Comments'
                         : res.wrote === 'workNotes' ? 'Work Notes'
                         :                             'Comments';
-            const skipped = res.skipped ? `, ${res.skipped} custom skipped` : '';
+            const skipped = res.skipped ? `, ${res.skipped} empty custom skipped` : '';
             flashStatus(`✓ ${res.count} ${res.count === 1 ? 'change' : 'changes'} written to ${where}${skipped}`, '#28a745', 4000);
             return;
         }
         btn.disabled = false;
         btn.textContent = '✍ Write all to ticket';
-        if (res.reason === 'no-template') flashStatus('⚠️ Only custom entries in this batch; nothing to write.', '#e67e22');
+        if (res.reason === 'no-template') flashStatus('⚠️ Only empty custom entries in this batch; nothing to write.', '#e67e22');
         else if (res.reason === 'no-field') flashStatus('⚠️ No worknote/comments field visible.', '#e67e22');
         else                                flashStatus('✗ Write failed (see console).', '#dc3545');
     }
@@ -25054,7 +25071,7 @@ Version 1.4.3:
                     bullets(body, [
                         'Only the fields visible on the ticket are filled: work notes, comments, or both.',
                         'The "Work note" and "Comment" checks next to "+ Add Entry" switch either one on or off for the entry you are adding; they go back to the "Auto-write" setting afterwards.',
-                        'Custom entries are never written to the ticket.'
+                        'Custom entries write their note as you typed it: the same text as the Work Note, and in the Comment between the greeting and the sign off. A Custom entry with no note writes nothing.'
                     ]);
                     const warn = span('⚠ ServiceNow did not suggest Jane Doe, so "@Jane Doe" is plain text. Retype the mention before posting.  ✕', {
                         display: 'block', margin: '10px 0 0 0', padding: '8px 12px', fontSize: '11px', lineHeight: '1.45',
@@ -28998,9 +29015,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.7';
+    const SCRIPT_VERSION = '1.49.8';
 
-    const CHANGELOG = `Version 1.49.7:
+    const CHANGELOG = `Version 1.49.8:
+- Bulk Constraint Tools: in the new side panel the three buttons sit in their own row under the header, so a long profile name no longer pushes Save out of view.
+
+Version 1.49.7:
 - The URL list and Destination Profile change log and its 📜 Change History window use the toolbar's shared log code, the same as the Destination Profile Editor. Nothing changes in how they work.
 
 Version 1.49.6:
@@ -29360,7 +29380,7 @@ Version 1.16:
         {
             key:         'bulkConstraints',
             label:       '📥 Bulk Constraint Tools',
-            description: 'In the user constraint profile editor, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel (old modal) or Save (new side panel).',
+            description: 'In the user constraint profile editor, adds "Bulk entry", "Bulk delete" and "Copy constraints" buttons beside Cancel (old modal) or in a row under the header (new side panel).',
             credit:      'Contributed by Sameena K.',
         },
         {
@@ -30263,7 +30283,7 @@ Version 1.16:
                 icon: '📥',
                 title: 'Bulk Constraint Tools',
                 buildContent(body) {
-                    lead(body, 'In the user constraint profile editor, three buttons appear for working with many email or domain constraints at once: beside Cancel in the old modal, or beside Save in the header of the new side panel.');
+                    lead(body, 'In the user constraint profile editor, three buttons appear for working with many email or domain constraints at once: beside Cancel in the old modal, or in their own row under the header of the new side panel.');
 
                     const btnRowEl = document.createElement('div');
                     Object.assign(btnRowEl.style, { display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' });
@@ -30272,7 +30292,7 @@ Version 1.16:
                     btnRowEl.appendChild(chip('Copy constraints', '#fff', { color: '#333', border: '1px solid #a7a8aa' }));
                     btnRowEl.appendChild(chip('Cancel', '#e0e0e0', { color: '#333', border: '1px solid #ccc' }));
                     body.appendChild(btnRowEl);
-                    caption(body, 'Old modal: buttons sit before Cancel in the footer. New side panel: buttons sit before Save in the header.');
+                    caption(body, 'Old modal: buttons sit before Cancel in the footer. New side panel: buttons sit in a row of their own under the header, so Save stays in view even with a long profile name.');
 
                     bullets(body, [
                         '"Bulk entry": paste domains one per line. Each is added as a new row set to "Does not match" (untick the option to use "Matches"). Duplicates are skipped and you confirm before anything is inserted.',
@@ -34060,6 +34080,11 @@ Version 1.16:
         if (!anchor) return;
         const panel = bcIsPanel(modal);
 
+        // New side panel: the header shares one line between the profile name and
+        // Save, so a long name pushed our buttons and Save out of view. Our buttons
+        // get a row of their own right under the header instead.
+        if (panel) { bcInstallPanelRow(modal, anchor, hasEntry, hasDelete, hasCopy); return; }
+
         // Final order: [Bulk entry] [Bulk delete] [Copy constraints] [Cancel / Save]
         let entryButton = hasEntry;
         if (!entryButton) {
@@ -34074,6 +34099,39 @@ Version 1.16:
             entryButton.insertAdjacentElement('afterend',
                 bcMakeButton(BC_DELETE_BUTTON_ID, '🗑️ Bulk delete', true, 'delete', panel));
         }
+    }
+
+    const BC_PANEL_ROW_ID = 'nstk-bc-panel-row';
+
+    // The header block: the highest ancestor of Save inside the panel that does
+    // not also hold the constraint list (or its Add Another link).
+    function bcPanelHeader(modal, anchor) {
+        const body = modal.querySelector(BC_LIST_SELECTOR) || bcGetAddButton(modal);
+        if (!body) return null;
+        let el = anchor;
+        while (el.parentElement && el.parentElement !== modal && !el.parentElement.contains(body)) el = el.parentElement;
+        return el.contains(body) ? null : el;
+    }
+
+    function bcInstallPanelRow(modal, anchor, hasEntry, hasDelete, hasCopy) {
+        const header = bcPanelHeader(modal, anchor);
+        if (!header) return; // list not drawn yet: the observer tries again
+        let row = modal.querySelector('#' + BC_PANEL_ROW_ID);
+        if (!row) {
+            row = document.createElement('div');
+            row.id = BC_PANEL_ROW_ID;
+            Object.assign(row.style, {
+                display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center',
+                justifyContent: 'flex-end', padding: '8px 16px', boxSizing: 'border-box',
+                width: '100%', borderBottom: '1px solid #e5e7eb',
+            });
+            header.insertAdjacentElement('afterend', row);
+        }
+        // Buttons left beside Save by an older version move into the row
+        const entry  = hasEntry  || bcMakeButton(BC_ENTRY_BUTTON_ID, 'Bulk entry', false, 'bulk', true);
+        const del    = hasDelete || bcMakeButton(BC_DELETE_BUTTON_ID, '🗑️ Bulk delete', true, 'delete', true);
+        const copy   = hasCopy   || bcMakeButton(BC_COPY_BUTTON_ID, 'Copy constraints', false, 'copy', true);
+        [entry, del, copy].forEach(b => { if (b.parentElement !== row) row.appendChild(b); });
     }
 
     function initBulkConstraintTools() {
@@ -34100,7 +34158,7 @@ Version 1.16:
     function cleanupBulkConstraintTools() {
         bc.observer?.disconnect();
         bc.observer = null;
-        removeAll(`#${BC_ENTRY_BUTTON_ID}, #${BC_DELETE_BUTTON_ID}, #${BC_COPY_BUTTON_ID}`);
+        removeAll(`#${BC_ENTRY_BUTTON_ID}, #${BC_DELETE_BUTTON_ID}, #${BC_COPY_BUTTON_ID}, #${BC_PANEL_ROW_ID}`);
         bc.host?.remove();
         bc.host = bc.shadow = null;
     }
