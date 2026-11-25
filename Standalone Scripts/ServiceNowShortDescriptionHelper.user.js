@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.10.3
+// @version      4.10.4
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.3';
-    const CHANGELOG = `Version 4.10.3:
+    const SCRIPT_VERSION = '4.10.4';
+    const CHANGELOG = `Version 4.10.4:
+- Formatted Text Editor: inserting a message now also sets the date in the ticket's short description to today, the same as Response Templates.
+- Response Templates: the Auto-update date on insert setting now also covers messages from the Formatted Text Editor.
+
+Version 4.10.3:
 - Support Case Subject Builder: the buttons at the top of the panel (Tenant URLs, ? Help, ⚙ Suite and the close button) keep their own size and look on the Netskope support portal, and the rest of the panel keeps its look too.
 - Policy Name Builder: the protection that keeps the panel's top buttons in shape on Netskope pages is now shared with the Support Case Subject Builder. Nothing changes in how it looks.
 
@@ -2213,6 +2217,50 @@ Version 4.0.0:
         'United States': 'AME Tenant',
     };
 
+    /* ==========================================================
+     *  SHARED: SHORT DESCRIPTION DATE
+     *  Puts today's date (DD-MM-YYYY) at the start of the ticket's
+     *  short description when a helper writes a message into the
+     *  ticket. Used by Response Templates and the Formatted Text
+     *  Editor. One setting for both (Response Templates settings).
+     * ==========================================================*/
+
+    function helpersTodayDate() {
+        const today = new Date();
+        const day   = String(today.getDate()).padStart(2, '0');
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        return `${day}-${month}-${today.getFullYear()}`;
+    }
+
+    function helpersShortDescriptionInput() {
+        return document.getElementById('sc_req_item.short_description') ||
+               document.getElementById('incident.short_description') ||
+               document.getElementById('sc_task.short_description');
+    }
+
+    function helpersAutoUpdateDateEnabled() {
+        return GM_getValue('ticketResponseAutoUpdateDate', true);
+    }
+
+    // Returns true when the short description changed.
+    function helpersUpdateShortDescriptionDate() {
+        if (!helpersAutoUpdateDateEnabled()) return false;
+        const input = helpersShortDescriptionInput();
+        if (!input) return false;
+        const currentValue = input.value.trim();
+        if (!currentValue) return false;
+        const newDate = helpersTodayDate();
+        const datePattern = /^\d{2}-\d{2}-\d{4}/;
+        const newValue = datePattern.test(currentValue)
+            ? currentValue.replace(datePattern, newDate)
+            : `${newDate} | ${currentValue}`;
+        if (newValue === currentValue) return false;
+        input.value = newValue;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
     /* === TOOL: SHORT DESCRIPTION HELPER === */
     (() => {
         'use strict';
@@ -2224,8 +2272,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.10.3';
-    const CHANGELOG = `Version 4.10.3:
+    const SCRIPT_VERSION = '4.10.4';
+    const CHANGELOG = `Version 4.10.4:
+- Formatted Text Editor: inserting a message now also sets the date in the ticket's short description to today, the same as Response Templates.
+- Response Templates: the Auto-update date on insert setting now also covers messages from the Formatted Text Editor.
+
+Version 4.10.3:
 - Support Case Subject Builder: the buttons at the top of the panel (Tenant URLs, ? Help, ⚙ Suite and the close button) keep their own size and look on the Netskope support portal, and the rest of the panel keeps its look too.
 - Policy Name Builder: the protection that keeps the panel's top buttons in shape on Netskope pages is now shared with the Support Case Subject Builder. Nothing changes in how it looks.
 
@@ -5146,9 +5198,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.22.5';
+    const SCRIPT_VERSION = '2.22.6';
 
-    const CHANGELOG = `Version 2.22.5:
+    const CHANGELOG = `Version 2.22.6:
+- The Auto-update date on insert setting now also covers messages from the Formatted Text Editor.
+
+Version 2.22.5:
 - Removed the hidden Ctrl+Shift+D shortcut that only wrote mention debugging details to the browser console.
 
 Version 2.22.4:
@@ -6932,20 +6987,9 @@ Regards.`,
                document.getElementById('sc_task.short_description');
     }
 
+    // Shared with the Formatted Text Editor through the suite core
     function maybeUpdateShortDescriptionDate() {
-        if (!getAutoUpdateDateEnabled()) return;
-        const input = getShortDescriptionInput();
-        if (!input) return;
-        const currentValue = input.value.trim();
-        if (!currentValue) return;
-        const newDate = getFormattedDate();
-        const datePattern = /^\d{2}-\d{2}-\d{4}/;
-        const newValue = datePattern.test(currentValue)
-            ? currentValue.replace(datePattern, newDate)
-            : `${newDate} | ${currentValue}`;
-        if (newValue === currentValue) return;
-        input.value = newValue;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
+        helpersUpdateShortDescriptionDate();
     }
 
     // Named indices for the pipe-delimited short description format:
@@ -7924,7 +7968,7 @@ Regards.`,
                     badgeRow(body, { bg: 'transparent', color: '#555', border: '1px solid #ccc', label: '⚙ Suite', desc: 'Opens the Ticket Helpers settings: tools, team, tenant URLs and backups. The team is shared with the Short Description Builder.' });
                     badgeRow(body, { bg: 'transparent', color: '#0066cc', label: "🔵 What's New", desc: 'Beside the version after an update. Opens the changelog.' });
                     body.appendChild(span('Inside Settings', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#667eea', margin: '8px 0 6px 0' }));
-                    body.appendChild(toggle('Auto-update date on insert', true, 'Sets the short description date to today whenever you insert a response.'));
+                    body.appendChild(toggle('Auto-update date on insert', true, 'Sets the short description date to today whenever you insert a response or a Formatted Text Editor message.'));
                     body.appendChild(toggle('Add Change Tracker summary to Solved Closure', false, 'Solved Closure also writes the ticket\'s Change Tracker summary to the work notes and lists the changes in the comment.'));
                     body.appendChild(toggle('Paste clipboard into responses', false, 'Fills the empty ">" line of a response with what you copied.'));
                     body.appendChild(toggle('Append footer on insert', false, 'Adds your footer signature to every response. Edit changes its text.'));
@@ -8223,7 +8267,7 @@ Regards.`,
         labelText.textContent = 'Auto-update date on insert';
         Object.assign(labelText.style, { fontSize: '13px', fontWeight: 'bold', color: '#333', fontFamily: 'Arial, sans-serif' });
         const labelDesc = document.createElement('div');
-        labelDesc.textContent = 'Updates the short description date to today when a response is inserted.';
+        labelDesc.textContent = 'Updates the short description date to today when a response or a Formatted Text Editor message is inserted.';
         Object.assign(labelDesc.style, { fontSize: '11px', color: '#777', marginTop: '3px', fontFamily: 'Arial, sans-serif' });
         labelCol.appendChild(labelText);
         labelCol.appendChild(labelDesc);
@@ -9315,9 +9359,12 @@ Regards.`,
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.4.12';
+    const SCRIPT_VERSION = '1.4.13';
 
-    const CHANGELOG = `Version 1.4.12:
+    const CHANGELOG = `Version 1.4.13:
+- Inserting a message now also sets the date in the ticket's short description to today, the same as Response Templates. The Auto-update date on insert setting in Response Templates turns it off for both.
+
+Version 1.4.12:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 1.4.11:
@@ -10732,6 +10779,12 @@ Version 1.0.3:
                         'When only one field is visible, the text goes there without asking.',
                         'The text is added below anything already written in the field.'
                     ]);
+                    body.appendChild(span('Short description date', { display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', margin: '10px 0 3px 0' }));
+                    beforeAfter(body, [
+                        ['Before', '20-11-2026 | MF | Netskope | In Progress', false],
+                        ['After', '25-11-2026 | MF | Netskope | In Progress', true]
+                    ]);
+                    caption(body, 'Inserting also sets the short description date to today, like Response Templates. Turn it off with Auto-update date on insert in the Response Templates settings.');
                 }
             },
             {
@@ -12216,6 +12269,9 @@ Version 1.0.3:
         } else {
             targets.forEach(ta => writeToTextarea(ta, wrappedHTML));
         }
+
+        // Same as Response Templates: today's date goes into the short description
+        try { helpersUpdateShortDescriptionDate(); } catch (e) { console.warn('Short description date not updated:', e); }
 
         console.log('✓ Formatted text inserted successfully (' + target + ')');
         return true;
