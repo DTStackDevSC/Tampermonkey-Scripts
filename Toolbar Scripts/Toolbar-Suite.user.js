@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.58.3
+// @version      2.58.4
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.58.3';
-    const CHANGELOG = `Version 2.58.3:
+   const SCRIPT_VERSION = '2.58.4';
+    const CHANGELOG = `Version 2.58.4:
+- Destination Profile Editor: after you save and apply a profile, it opens again with a green line on top saying what was saved and the change note, and its card glows green for a moment. The line stays until you change something or close it.
+
+Version 2.58.3:
 - Netskope Console Toolkit: in the new user constraint profile side panel, the Bulk entry, Bulk delete and Copy constraints buttons now sit in their own row under the panel header, so a long profile name no longer pushes Save out of view.
 - Change Tracker: a Custom entry now writes its note into the ticket (Work Notes and Comments, like the other types) and its card shows ↪ Write. A Custom entry with no note still writes nothing.
 
@@ -13232,9 +13235,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.7';
+    const SCRIPT_VERSION = '2.1.8';
 
-    const CHANGELOG = `Version 2.1.7:
+    const CHANGELOG = `Version 2.1.8:
+- After you save and apply a profile, it opens again with a green line on top saying what was saved and the change note, and its card glows green for a moment. The line stays until you change something or close it with ✕. Before, the profile opened again with no sign that the save worked.
+
+Version 2.1.7:
 - The change log and the 📜 Change History window use the toolbar's shared log code, the same as the Netskope Console Toolkit. Nothing changes in how they work.
 
 Version 2.1.6:
@@ -14175,7 +14181,15 @@ Version 1.4.1:
                     note.appendChild(hrow([chip('🎫 Insert RITM', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Leave pending', '#fff', { color: '#333', border: '1px solid #bbb' }), chip('Apply now', '#667eea')], { gap: '6px', margin: '0' }));
                     body.appendChild(note);
                     caption(body, 'After every create or save: the change note goes into Netskope\'s audit log.');
+                    const savedMock = document.createElement('div');
+                    Object.assign(savedMock.style, { display: 'flex', gap: '8px', padding: '7px 10px', margin: '4px 0 4px 0', maxWidth: '380px', borderRadius: '6px',
+                        border: '1px solid #b7e1c1', background: '#e9f7ee', color: '#1e6b35', fontSize: '12px', fontFamily: 'Arial, sans-serif' });
+                    savedMock.appendChild(span('✅ Saved and applied in Netskope: values of "API Evernote". Note: "RITM0123456".', { flex: '1' }));
+                    savedMock.appendChild(span('✕', { color: '#1e6b35' }));
+                    body.appendChild(savedMock);
+                    caption(body, 'After Apply now the profile opens again with this green line on top and a short green glow on its card.');
                     bullets(body, [
+                        'The green line stays until you change something or close it with ✕, so you can always check that the save went through.',
                         'Save Changes reads the profile again first. If someone changed it in Netskope meanwhile, nothing is saved and ↺ Reload the profile appears.',
                         'Only what you changed is sent, and the labels of the profile are never touched. A profile left without values is saved with "#No values".',
                         'Apply now (it needs a change note, usually the RITM, and 🎫 Insert RITM fills it in) applies the change in Netskope. Leave pending keeps it pending and opens the console to apply it there.',
@@ -14748,7 +14762,32 @@ Version 1.4.1:
             return false;
         }
         UI.showStatus(`✅ Applied "${profile.name}" with the note "${note}".`, 'success');
-        return true;
+        return note || true;
+    }
+
+    // Saved note in the editor: an inline banner that stays until the user changes something
+    // (not a toast, the editor is a modal window), plus a short green glow on the profile card
+    function dpShowSaved(resultsArea, info, saved) {
+        const banner = UI.createElement('div', {}, { id: 'dp-saved-note', role: 'status' });
+        const css = { display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '7px 10px', margin: '0 0 8px 0', borderRadius: '6px',
+            border: '1px solid #b7e1c1', background: '#e9f7ee', color: '#1e6b35', fontSize: '12px', lineHeight: '1.4', fontFamily: 'Arial, sans-serif' };
+        for (const [k, v] of Object.entries(css)) banner.style.setProperty(k.replace(/[A-Z]/g, c => '-' + c.toLowerCase()), v, 'important');
+        const text = UI.createElement('span', { flex: '1' });
+        text.textContent = `✅ Saved and applied in Netskope: ${saved.what}.` + (saved.note && saved.note !== true ? ` Note: "${saved.note}".` : '');
+        const close = UI.createElement('button', { background: 'none', border: 'none', cursor: 'pointer', color: '#1e6b35', fontSize: '13px', padding: '0 2px', lineHeight: '1' },
+            { type: 'button', textContent: '✕', title: 'Hide this message', ariaLabel: 'Hide this message' });
+        close.onclick = () => banner.remove();
+        banner.append(text, close);
+        resultsArea.insertBefore(banner, info);
+        // Gone as soon as the user starts a new change, so it never describes an old state
+        const hide = () => { banner.remove(); resultsArea.removeEventListener('input', hide); };
+        resultsArea.addEventListener('input', hide);
+        const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!still && info.animate) {
+            info.animate([{ boxShadow: '0 0 0 3px rgba(40,167,69,0.55)', borderColor: '#28a745' }, { boxShadow: '0 0 0 0 rgba(40,167,69,0)', borderColor: '#ccc' }],
+                { duration: 2500, easing: 'ease-out' });
+        }
+        try { banner.scrollIntoView({ block: 'nearest' }); } catch (e) { /* not shown yet */ }
     }
 
     function dpField(label, input, counter) {
@@ -15074,7 +15113,7 @@ Version 1.4.1:
         footer.appendChild(back);
         container.appendChild(footer);
 
-        async function doLookup() {
+        async function doLookup(saved) {
             const id = idInput.value.trim();
             if (!id) return UI.showStatus('⚠️ Please enter a Destination Profile ID', 'warning');
             if (!/^[A-Za-z0-9-]+$/.test(id)) return UI.showStatus('⚠️ That does not look like a Destination Profile ID', 'warning');
@@ -15089,6 +15128,7 @@ Version 1.4.1:
             }
             UI.hideStatus();
             renderProfileEditor(resultsArea, r.data, doLookup);
+            if (saved && saved.what) dpShowSaved(resultsArea, resultsArea.firstElementChild, saved);
         }
         idInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) doLookup(); };
         if (prefillId) { idInput.value = prefillId; doLookup(); } else setTimeout(() => idInput.focus(), 100);
@@ -15198,7 +15238,7 @@ Version 1.4.1:
                 const what = [changes.name && 'name', changes.description !== undefined && 'description', changes.type && 'match type', changes.values && 'values'].filter(Boolean).join(', ');
                 currentProfiles = [];
                 const applied = await dpApply(r.tenant, Object.assign({}, data, r.data || {}, { id: data.id, name }), `Changed the ${what} of "${name}"`);
-                if (applied) reload();
+                if (applied) reload({ what: `${what} of "${name}"`, note: applied });
             } finally {
                 save.disabled = false;
             }
