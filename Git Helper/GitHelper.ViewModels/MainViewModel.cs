@@ -148,7 +148,13 @@ public partial class MainViewModel : ObservableObject
             if (update != null) { Say(update.Value.Kind, update.Value.Text); return; }
             Say(StatusKind.Info, $"ℹ️ {git} ready. Open a repository or clone one to start.");
         });
+        // Just restarted into a new version: say so first, so the user sees the update worked.
+        if (UpdatedFrom != null && UpdatedFrom != Version)
+            Say(StatusKind == StatusKind.Info ? StatusKind.Success : StatusKind, $"✅ Git Helper updated from {UpdatedFrom} to {Version}. {Strip(Status)}");
     }
+
+    /// <summary>The version the app ran before it updated itself and restarted (from --updated-from), else null.</summary>
+    public string? UpdatedFrom { get; set; }
 
     /// <summary>
     /// Pulls the repository the app runs from, so it is always up to date (setting on by default).

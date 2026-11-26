@@ -26,6 +26,8 @@ public partial class App : Application
         };
         var vm = new MainViewModel(new ProcessRunner(), new WpfDialogs(), new AppSettings(),
             appFolder: Path.GetDirectoryName(Environment.ProcessPath));
+        var from = Array.IndexOf(e.Args, "--updated-from");
+        if (from >= 0 && from + 1 < e.Args.Length) vm.UpdatedFrom = e.Args[from + 1];
         var window = new MainWindow(vm);
         MainWindow = window;
         window.Show();

@@ -260,6 +260,15 @@ public class MainViewModelTests
     }
 
     [Fact]
+    public async Task AfterASelfUpdateTheStatusSaysSo()
+    {
+        var vm = new MainViewModel(new ProcessRunner(), new FakeDialogs(), new FakeSettings()) { UpdatedFrom = "0.9.0" };
+        await vm.StartCommand.ExecuteAsync(null);
+        Assert.StartsWith($"✅ Git Helper updated from 0.9.0 to {MainViewModel.Version}.", vm.Status);
+        Assert.Equal(StatusKind.Success, vm.StatusKind);
+    }
+
+    [Fact]
     public void HelpDescribesEveryButtonOfTheMainWindow()
     {
         var xaml = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "MainWindow.xaml"));
