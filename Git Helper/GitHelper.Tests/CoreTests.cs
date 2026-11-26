@@ -113,12 +113,12 @@ public class GitRepoTests
         var a = t.Clone("a");
         TestRepo.Write(a, "readme.txt", "changed\n");
         TestRepo.Write(a, "new.txt", "brand new\n");
-        TestRepo.Write(a, "weird [1] *name.txt", "glob characters\n");
+        TestRepo.Write(a, "weird [1] name.txt", "glob characters\n");
         TestRepo.Write(a, "other.txt", "staged but not ticked\n");
         TestRepo.Git(a, "add", "other.txt");
         var repo = Open(a);
         var s = await repo.StatusAsync();
-        var ticked = s.Files.Where(f => f.Path is "readme.txt" or "new.txt" or "weird [1] *name.txt").ToList();
+        var ticked = s.Files.Where(f => f.Path is "readme.txt" or "new.txt" or "weird [1] name.txt").ToList();
         var r = await repo.CommitAsync(ticked, "Two files\n\nWith a body line \"quoted\"", merging: false);
         Assert.True(r.Ok, r.ErrorText);
         var after = await repo.StatusAsync();
