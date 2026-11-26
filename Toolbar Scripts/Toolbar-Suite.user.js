@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         || Tools Toolbar ||
+// @name         || Toolbox Suite ||
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.58.4
+// @version      2.59.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.58.4';
-    const CHANGELOG = `Version 2.58.4:
+   const SCRIPT_VERSION = '2.59.0';
+    const CHANGELOG = `Version 2.59.0:
+- The suite is now called Toolbox Suite. Tampermonkey lists it as || Toolbox Suite || after this update, and the Feature Guide, What's New, Settings and Copy diagnostics use the new name. It is the same script: your tools, settings and saved data stay as they are, and updates keep arriving on their own.
+
+Version 2.58.4:
 - Destination Profile Editor: after you save and apply a profile, it opens again with a green line on top saying what was saved and the change note, and its card glows green for a moment. The line stays until you change something or close it.
 
 Version 2.58.3:
@@ -617,7 +620,7 @@ Version 1.0.0:
 - Combined the eleven separate toolbar tools into a single install. Every tool keeps its own settings and its own "what's new" notification.`;
 
     // The suite's own What's New (the toolbar's "What's new" link); the window is the core one every tool uses
-    const SUITE_VERSIONING = suiteToolVersion({ name: 'Tools Toolbar', version: SCRIPT_VERSION, changelog: CHANGELOG,
+    const SUITE_VERSIONING = suiteToolVersion({ name: 'Toolbox Suite', version: SCRIPT_VERSION, changelog: CHANGELOG,
         versionKey: 'toolbarSuiteVersion', seenKey: 'toolbarSuiteChangelogSeen',
         modalId: 'toolbarChangelogModal', overlayId: 'toolbarChangelogOverlay', notifIds: ['toolbarChangelogNotification'] });
     function getStoredVersion()     { return SUITE_VERSIONING.stored(); }
@@ -1721,7 +1724,7 @@ Version 1.0.0:
         let data;
         try { data = JSON.parse(text); } catch (e) { throw new Error('This file is not a valid backup file.'); }
         if (!dtIsPlainObject(data) || data.format !== 'toolbar-suite-backup' || data.formatVersion !== 1 || !dtIsPlainObject(data.tools)) {
-            throw new Error('This file is not a Toolbar Suite backup.');
+            throw new Error('This file is not a Toolbox Suite backup.');
         }
         const tools = [], skipped = [];
         for (const [id, entry] of Object.entries(data.tools)) {
@@ -1789,7 +1792,7 @@ Version 1.0.0:
         link.className = 'dt-backup-import-link';
         link.dataset.toolId = toolId;
         link.textContent = '⤒ Import from a backup file';
-        link.title = 'Restore this tool from a Toolbar Suite backup file';
+        link.title = 'Restore this tool from a Toolbox Suite backup file';
         Object.assign(link.style, {
             display: 'block', width: '100%', margin: '0 0 12px 0', padding: '7px 14px',
             background: 'none', border: '1px dashed #aaa', borderRadius: '6px', color: '#555',
@@ -2144,8 +2147,8 @@ Version 1.0.0:
         const switches = new Map();
         const intro = document.createElement('div');
         intro.textContent = tools.length === 1
-            ? 'A new tool is now part of the Tools Toolbar. Choose whether you want to use it.'
-            : 'New tools are now part of the Tools Toolbar. Turn on the ones you want.';
+            ? 'A new tool is now part of the Toolbox Suite. Choose whether you want to use it.'
+            : 'New tools are now part of the Toolbox Suite. Turn on the ones you want.';
         Object.assign(intro.style, { fontSize: '13px', lineHeight: '1.5', margin: '0 0 10px 0', color: '#555' });
         const cards = [intro];
         for (const t of tools) {
@@ -2601,7 +2604,7 @@ Version 1.0.0:
                 icon: '🚀',
                 title: 'Getting Started',
                 buildContent: (body) => {
-                    lead(body, 'The Tools Toolbar floats on the page and expands into a menu. It is the home for every helper tool in this suite.');
+                    lead(body, 'The Toolbox Suite toolbar floats on the page and expands into a menu. It is the home for every helper tool in this suite.');
                     body.appendChild(hrow([
                         toolSquare('🔧', { bg: PURPLE_GRAD }),
                         span('▶', { color: '#bbb', fontSize: '14px' }),
@@ -2971,7 +2974,7 @@ Version 1.0.0:
             fontWeight: 'bold', fontSize: '17px', color: '#333', fontFamily: 'Arial, sans-serif'
         });
         const titleSub = document.createElement('div');
-        titleSub.textContent = `Tools Toolbar Suite v${SCRIPT_VERSION}`;
+        titleSub.textContent = `Toolbox Suite v${SCRIPT_VERSION}`;
         Object.assign(titleSub.style, {
             fontSize: '11px', color: '#888', marginTop: '2px', fontFamily: 'Arial, sans-serif'
         });
@@ -4279,7 +4282,7 @@ Version 1.0.0:
                 <div class="settings-overlay"></div>
                 <div class="settings-content">
                     <div class="settings-header">
-                        <h2>Toolbar Suite Settings</h2>
+                        <h2>Toolbox Suite Settings</h2>
                         <div class="settings-header-right">
                             <span id="toolbar-help-btn" title="View feature guide and documentation">? Help</span>
                             <button class="settings-close">&times;</button>
@@ -4491,7 +4494,7 @@ Version 1.0.0:
         `;
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
-        suiteModalByClass(document.getElementById('toolbar-settings-modal'), { label: 'Toolbar Suite Settings' });
+        suiteModalByClass(document.getElementById('toolbar-settings-modal'), { label: 'Toolbox Suite Settings' });
 
         loadSettings();
         setupSettingsEventListeners();
@@ -4514,7 +4517,7 @@ Version 1.0.0:
     function suiteDiagnosticsText() {
         const lines = [];
         const tm = (typeof GM_info !== 'undefined' && GM_info) || {};
-        lines.push(`Tools Toolbar ${SCRIPT_VERSION} (${tm.scriptHandler || 'userscript manager'} ${tm.version || ''})`.trim());
+        lines.push(`Toolbox Suite ${SCRIPT_VERSION} (${tm.scriptHandler || 'userscript manager'} ${tm.version || ''})`.trim());
         lines.push(`Install: ${DT_INSTALL_KIND}`);
         lines.push(`Browser: ${navigator.userAgent}`);
         let mode = 'other site';
@@ -5517,7 +5520,7 @@ Version 1.0.0:
         function networkError(host, r) {
             const detail = String((r && (r.error || r.statusText)) || '').trim();
             if (/not permitted|refused|@connect|blacklist|not allowed/i.test(detail)) {
-                return `Tampermonkey did not allow the request to ${host} (${detail}). In Tampermonkey, open the Tools Toolbar script, Settings tab, and remove ${host} from any "blocked" or "never" list, or allow it when Tampermonkey asks.`;
+                return `Tampermonkey did not allow the request to ${host} (${detail}). In Tampermonkey, open the Toolbox Suite script, Settings tab, and remove ${host} from any "blocked" or "never" list, or allow it when Tampermonkey asks.`;
             }
             return `Network error: the request did not reach ${host}${detail ? ` (${detail})` : ''}. Check that the tenant host is right and that this browser can open https://${host}.`;
         }

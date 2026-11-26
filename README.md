@@ -44,7 +44,7 @@ The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `conf
 
 ## Toolbar Scripts
 
-`Toolbar-Suite.user.js` is the **Tools Toolbar**: one script with the floating toolbar and every toolbar tool. Each tool only appears on the pages it supports.
+`Toolbar-Suite.user.js` is the **Toolbox Suite**: one script with the floating toolbar and every toolbar tool. Each tool only appears on the pages it supports.
 
 | Tool | Pages | Description |
 |---|---|---|
@@ -65,6 +65,6 @@ The separate scripts used before the two suites (the old toolbar tools, the old 
 
 If Tampermonkey still lists an old script (for example one showing version 99.0.x), open ServiceNow and Netskope once with the suite installed so it can bring that script's data in when it asks, then uninstall the old script. An old script no longer gets updates.
 
-**New users:** install only the Tools Toolbar. Each tool's first setup offers **Import from a backup file** if you have one.
+**New users:** install only the Toolbox Suite. Each tool's first setup offers **Import from a backup file** if you have one.
 
-**Moving to another computer:** open the toolbar Settings, under Data click **Export everything**. On the new computer install the Tools Toolbar and use **Import everything**. The backup file contains your tokens, so keep it safe.
+**Moving to another computer:** open the toolbar Settings, under Data click **Export everything**. On the new computer install the Toolbox Suite and use **Import everything**. The backup file contains your tokens, so keep it safe.

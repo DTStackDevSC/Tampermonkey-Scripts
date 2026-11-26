@@ -33,7 +33,7 @@ public sealed record HelpGuide(string Version, bool PublishEnabled, IReadOnlyLis
             new[] { "Work note heading (internal)", "Comment heading (the requester sees it)", "Comment closing sentence" }),
         ["mfCodes"] = ("🏢",
             "Which assignment group code goes with each member firm name read from the ticket.",
-            "ServiceNow ticket: the Ticket Assignment tool of the Tools Toolbar.",
+            "ServiceNow ticket: the Ticket Assignment tool of the Toolbox Suite.",
             new[] { "🏢 Member firm codes" }),
     };
 

@@ -9,7 +9,7 @@ public static class SuitePaths
 
     public static string Of(SuiteId suite) => suite == SuiteId.TicketHelpers ? TicketHelpers : Toolbar;
 
-    public static string DisplayName(SuiteId suite) => suite == SuiteId.TicketHelpers ? "Ticket Helpers" : "Tools Toolbar";
+    public static string DisplayName(SuiteId suite) => suite == SuiteId.TicketHelpers ? "Ticket Helpers" : "Toolbox Suite";
 }
 
 /// <summary>A config constant: <paramref name="Section"/> is the text after "=== TOOL: ", or null for the suite core.</summary>

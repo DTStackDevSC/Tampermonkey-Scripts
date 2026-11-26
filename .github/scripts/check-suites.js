@@ -17,7 +17,7 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '../..');
 const SUITES = [
-    { name: 'Tools Toolbar', file: 'Toolbar Scripts/Toolbar-Suite.user.js', sameAsSuite: 0 },
+    { name: 'Toolbox Suite', file: 'Toolbar Scripts/Toolbar-Suite.user.js', sameAsSuite: 0 },
     // The Short Description section (second SCRIPT_VERSION) keeps the suite version.
     { name: 'Ticket Helpers', file: 'Standalone Scripts/ServiceNowShortDescriptionHelper.user.js', sameAsSuite: 1 },
 ];

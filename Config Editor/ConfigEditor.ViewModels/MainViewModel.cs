@@ -31,7 +31,7 @@ public partial class MainViewModel : ObservableObject
         this.sources = sources; this.tokens = tokens; this.dialogs = dialogs; this.settings = settings;
         this.clock = clock ?? TimeProvider.System;
         this.publisherFactory = publisherFactory ?? (t => new GitHubPublisher(SharedHttp, t));
-        const string th = "Ticket Helpers", tb = "Tools Toolbar";
+        const string th = "Ticket Helpers", tb = "Toolbox Suite";
         Nav = new ObservableCollection<NavItem>
         {
             new("shortDescription", "Short Description", th, true, BlockCatalog.SdTeams, BlockCatalog.DtTeams),

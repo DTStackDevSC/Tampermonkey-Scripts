@@ -137,7 +137,7 @@ public sealed class HelpWindow : Window
         nav.Children.Add(MockNav("Short Description", false));
         nav.Children.Add(MockNav("Ticket Response", true));
         nav.Children.Add(MockNav("Policy Naming", false));
-        nav.Children.Add(MockSmall("Tools Toolbar", true));
+        nav.Children.Add(MockSmall("Toolbox Suite", true));
         nav.Children.Add(MockNav("Change Tracker note texts", false));
         Place(win, Boxed(nav, new Thickness(0, 0, 1, 0)), 1, 0);
 
@@ -169,7 +169,7 @@ public sealed class HelpWindow : Window
             var head = new WrapPanel();
             head.Children.Add(new TextBlock { Text = s.Icon, FontSize = 18, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
             head.Children.Add(new TextBlock { Text = s.Title, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = MockText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
-            head.Children.Add(Chip(s.Group, s.Group == "Tools Toolbar" ? TbGroup : ThGroup));
+            head.Children.Add(Chip(s.Group, s.Group == "Toolbox Suite" ? TbGroup : ThGroup));
             if (s.PerTeam) head.Children.Add(Chip("👥 Per team", Hex("#2a7d4f")));
             card.Children.Add(head);
             card.Children.Add(new TextBlock { Text = s.Changes, TextWrapping = TextWrapping.Wrap, Foreground = MockText, Margin = new Thickness(0, 6, 0, 4) });

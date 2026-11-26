@@ -70,7 +70,7 @@ public class GitHubPublisherTests
         Assert.DoesNotContain(tree.GetProperty("tree").EnumerateArray(), e => e.GetProperty("path").GetString() == "Toolbar Scripts/Toolbar.user.js");
 
         var commit = JsonDocument.Parse(gh.Requests.Single(q => q.Path == "git/commits").Body).RootElement;
-        Assert.Equal("Ticket Helpers 4.3.5 and Tools Toolbar 2.29.3: configuration update", commit.GetProperty("message").GetString());
+        Assert.Equal("Ticket Helpers 4.3.5 and Toolbox Suite 2.29.3: configuration update", commit.GetProperty("message").GetString());
         Assert.Equal("base1", commit.GetProperty("parents")[0].GetString());
         foreach (var who in new[] { "author", "committer" })
         {
@@ -132,7 +132,7 @@ public class GitHubPublisherTests
     public void Commit_message_names_each_suite_with_its_version()
     {
         var items = new[] { new ChangeItem(Core.Sections.BlockCatalog.NoteTemplates, "Change Tracker", "Updated the ticket note texts for \"Policy Created\" entries.") };
-        Assert.Equal("Ticket Helpers 4.3.5 and Tools Toolbar 2.29.3: Change Tracker: Updated the ticket note texts for \"Policy Created\" entries",
+        Assert.Equal("Ticket Helpers 4.3.5 and Toolbox Suite 2.29.3: Change Tracker: Updated the ticket note texts for \"Policy Created\" entries",
             GitHubPublisher.CommitMessage(Files, items));
     }
 

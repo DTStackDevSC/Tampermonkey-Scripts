@@ -133,7 +133,7 @@ public sealed class GitHubPublisher
 
     static readonly Regex HeaderVersion = new(@"^// @version[ \t]+(\S+)", RegexOptions.Multiline);
 
-    /// <summary>"Ticket Helpers 4.3.5 and Tools Toolbar 2.29.3: first change"; <paramref name="fallback"/> when no file names a suite.</summary>
+    /// <summary>"Ticket Helpers 4.3.5 and Toolbox Suite 2.29.3: first change"; <paramref name="fallback"/> when no file names a suite.</summary>
     public static string CommitMessage(IReadOnlyDictionary<string, string> files, IReadOnlyList<ChangeItem> items, string fallback = "Config Editor update")
     {
         var suites = new List<string>();
