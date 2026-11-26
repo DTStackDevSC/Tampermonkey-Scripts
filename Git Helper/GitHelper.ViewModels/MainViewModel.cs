@@ -27,9 +27,12 @@ public partial class MainViewModel : ObservableObject
     DateTimeOffset discardArmedAt, undoArmedAt, abortArmedAt;
     int diffRequest;
 
-    public MainViewModel(ICommandRunner runner, IDialogs dialogs, IAppSettings settings, TimeProvider? clock = null)
+    readonly string? appFolder;
+
+    /// <param name="appFolder">The folder the app runs from; with the setting on, its repository is pulled at start.</param>
+    public MainViewModel(ICommandRunner runner, IDialogs dialogs, IAppSettings settings, TimeProvider? clock = null, string? appFolder = null)
     {
-        this.runner = runner; this.dialogs = dialogs; this.settings = settings;
+        this.runner = runner; this.dialogs = dialogs; this.settings = settings; this.appFolder = appFolder;
         this.clock = clock ?? TimeProvider.System;
         gh = new GhCli(runner);
         runner.Ran += OnRan;
@@ -134,13 +137,44 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
             await CheckGhAsync();
+            var update = await UpdateAppRepoAsync();
             if (settings.LastRepo is { } last && Directory.Exists(last))
             {
+                BusyText = "Opening the repository…";
                 await OpenPathAsync(last);
+                if (update != null && StatusKind == StatusKind.Success) Say(update.Value.Kind, $"{update.Value.Text} {Strip(Status)}");
                 return;
             }
+            if (update != null) { Say(update.Value.Kind, update.Value.Text); return; }
             Say(StatusKind.Info, $"ℹ️ {git} ready. Open a repository or clone one to start.");
         });
+    }
+
+    /// <summary>
+    /// Pulls the repository the app runs from, so it is always up to date (setting on by default).
+    /// Never leaves it halfway: a pull that stops on a conflict is aborted. Null when there is nothing to say.
+    /// </summary>
+    public async Task<(StatusKind Kind, string Text)?> UpdateAppRepoAsync()
+    {
+        if (!settings.PullAppRepoOnStart || string.IsNullOrEmpty(appFolder)) return null;
+        var root = await GitRepo.FindRootAsync(runner, appFolder);
+        if (root == null) return null;
+        var app = new GitRepo(runner, root);
+        BusyText = $"Updating {app.Name} from GitHub…";
+        var st = await app.StatusAsync();
+        if (st.Detached || !st.HasUpstream) return (StatusKind.Info, $"ℹ️ {app.Name} was not updated: its branch is not linked to GitHub.");
+        var before = (await app.RunAsync("rev-parse", "HEAD")).StdOut.Trim();
+        var r = await app.PullAsync(settings.PullRebase);
+        if (!r.Ok)
+        {
+            var op = await app.OperationAsync();
+            if (op != RepoOperation.None) await app.AbortAsync(op);
+            return (StatusKind.Warning, $"⚠️ {app.Name} could not be updated, it was left as it was. " + Explain.Failure("Pull", r).Replace("Pull failed. ", ""));
+        }
+        var after = (await app.RunAsync("rev-parse", "HEAD")).StdOut.Trim();
+        var n = before == after ? 0 : int.TryParse((await app.RunAsync("rev-list", "--count", $"{before}..{after}")).StdOut.Trim(), out var c) ? c : 0;
+        return n == 0 ? (StatusKind.Success, $"✅ {app.Name} is up to date.")
+                      : (StatusKind.Success, $"✅ {app.Name} updated with {n} new commit{(n == 1 ? "" : "s")}.");
     }
 
     async Task CheckGhAsync()

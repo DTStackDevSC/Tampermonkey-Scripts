@@ -11,7 +11,12 @@ public interface IAppSettings
     bool CheckIdentity { get; set; }
     bool PullRebase { get; set; }
     string? CloneFolder { get; set; }
-    void Save();
+    /// <summary>Pull the repository the app runs from when it starts. On by default.</summary>
+    bool PullAppRepoOnStart { get; set; }
+    /// <summary>Where the settings file lives (inside the user's own profile, no admin rights needed).</summary>
+    string Location { get; }
+    /// <summary>Writes the settings; returns an error text when it could not.</summary>
+    string? Save();
 }
 
 /// <summary>Everything that needs a window or the shell; the App implements it, tests fake it.</summary>

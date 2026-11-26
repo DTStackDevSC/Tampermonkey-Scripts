@@ -55,10 +55,11 @@ public sealed class HelpGuide
                 ("Abort", "Goes back to how things were before the pull. Needs a second click."),
                 ("Output", "The Output panel at the bottom shows every git command the app ran and git's answer."),
             ]),
-            new("⚙️", "Settings", "Choose who your commits are from and how Pull works.",
+            new("⚙️", "Settings", "Choose who your commits are from and how Pull works. Settings are saved in your own user folder, so no admin rights are needed.",
             [
                 ("Commit identity", "The name and email on your commits. \"Fill from my GitHub account\" uses your private noreply email, so your work email is never published."),
                 ("Check before each commit", "If a repository would commit under another name or email, the app asks before it commits and can fix it for that repository."),
+                ("Update the app's repository", "On by default: when the app starts it pulls the repository it runs from, so that copy is always up to date. A pull that cannot finish is undone and you get a warning."),
                 ("Pull with rebase", "On: your local commits are put on top of the new ones from GitHub (no merge commits). Off: Pull only fast forwards."),
             ]),
         ],

@@ -16,7 +16,10 @@ public partial class SettingsViewModel : ObservableObject
         identityEmail = settings.IdentityEmail ?? "";
         checkIdentity = settings.CheckIdentity;
         pullRebase = settings.PullRebase;
+        pullAppRepoOnStart = settings.PullAppRepoOnStart;
     }
+
+    public string Location => $"Saved for you only in {settings.Location} (no admin rights needed).";
 
     /// <summary>Raised when the window should close (true = saved).</summary>
     public event Action<bool>? CloseRequested;
@@ -25,6 +28,7 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string identityEmail;
     [ObservableProperty] private bool checkIdentity;
     [ObservableProperty] private bool pullRebase;
+    [ObservableProperty] private bool pullAppRepoOnStart;
     [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(FillFromGitHubCommand), nameof(SaveCommand))] private bool isBusy;
     [ObservableProperty] private string? message;
     [ObservableProperty] private StatusKind messageKind = StatusKind.Info;
@@ -74,7 +78,12 @@ public partial class SettingsViewModel : ObservableObject
         settings.IdentityEmail = email.Length == 0 ? null : email;
         settings.CheckIdentity = CheckIdentity;
         settings.PullRebase = PullRebase;
-        settings.Save();
+        settings.PullAppRepoOnStart = PullAppRepoOnStart;
+        if (settings.Save() is { } error)
+        {
+            Say(StatusKind.Error, $"❌ Could not save the settings: {error}");
+            return;
+        }
         CloseRequested?.Invoke(true);
     }
 

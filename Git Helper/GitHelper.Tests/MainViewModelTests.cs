@@ -13,8 +13,10 @@ sealed class FakeSettings : IAppSettings
     public bool CheckIdentity { get; set; }
     public bool PullRebase { get; set; } = true;
     public string? CloneFolder { get; set; }
+    public bool PullAppRepoOnStart { get; set; } = true;
+    public string Location => "test";
     public int Saves;
-    public void Save() => Saves++;
+    public string? Save() { Saves++; return null; }
 }
 
 sealed class FakeDialogs : IDialogs
@@ -219,6 +221,42 @@ public class MainViewModelTests
         await vm.PushCommand.ExecuteAsync(null);
         Assert.Equal(StatusKind.Success, vm.StatusKind);
         Assert.Contains("origin/feature/y", vm.SyncText);
+    }
+
+    [Fact]
+    public async Task StartPullsTheRepositoryTheAppRunsFrom()
+    {
+        using var t = new TestRepo();
+        var a = t.Clone("a");
+        var app = t.Clone("app");
+        Directory.CreateDirectory(Path.Combine(app, "tools"));
+        TestRepo.Write(a, "new.txt", "n\n"); TestRepo.CommitAll(a, "new"); TestRepo.Git(a, "push", "-q");
+        var settings = new FakeSettings();
+        var vm = new MainViewModel(new ProcessRunner(), new FakeDialogs(), settings, appFolder: Path.Combine(app, "tools"));
+        await vm.StartCommand.ExecuteAsync(null);
+        Assert.Equal("✅ app updated with 1 new commit.", vm.Status);
+        Assert.True(File.Exists(Path.Combine(app, "new.txt")));
+
+        settings.PullAppRepoOnStart = false;
+        TestRepo.Write(a, "more.txt", "m\n"); TestRepo.CommitAll(a, "more"); TestRepo.Git(a, "push", "-q");
+        await vm.StartCommand.ExecuteAsync(null);
+        Assert.False(File.Exists(Path.Combine(app, "more.txt")));
+    }
+
+    [Fact]
+    public async Task AConflictingUpdateOfTheAppRepositoryIsUndone()
+    {
+        using var t = new TestRepo();
+        var a = t.Clone("a");
+        var app = t.Clone("app");
+        TestRepo.Write(a, "readme.txt", "A\n"); TestRepo.CommitAll(a, "a"); TestRepo.Git(a, "push", "-q");
+        TestRepo.Write(app, "readme.txt", "local\n"); TestRepo.CommitAll(app, "local");
+        var vm = new MainViewModel(new ProcessRunner(), new FakeDialogs(), new FakeSettings(), appFolder: app);
+        await vm.StartCommand.ExecuteAsync(null);
+        Assert.Equal(StatusKind.Warning, vm.StatusKind);
+        Assert.Contains("left as it was", vm.Status);
+        Assert.Equal(RepoOperation.None, await new GitRepo(TestRepo.Runner, app).OperationAsync());
+        Assert.Equal("local\n", File.ReadAllText(Path.Combine(app, "readme.txt")));
     }
 
     [Fact]

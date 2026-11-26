@@ -30,6 +30,9 @@
             <TextBlock Text="Pull" FontSize="16" FontWeight="SemiBold" Margin="0,20,0,0"/>
             <CheckBox IsChecked="{Binding PullRebase}" Margin="0,8,0,0"
                       Content="Pull with rebase (recommended: your local commits go on top, no merge commits)"/>
+            <CheckBox IsChecked="{Binding PullAppRepoOnStart}" Margin="0,8,0,0"
+                      Content="Update the repository this app runs from each time the app starts (pull)"/>
+            <TextBlock Text="{Binding Location}" Style="{StaticResource HintText}" Margin="0,16,0,0"/>
 
             <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="0,14,0,0" FontWeight="SemiBold"
                        Foreground="{Binding MessageKind, Converter={StaticResource StatusBrush}}"

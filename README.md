@@ -52,7 +52,7 @@ The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `conf
 2. **📁 Open repo** (or **⬇ Clone** to copy one from GitHub).
 3. Tick the files, write a message and click **✔ Commit and push**. **⬇ Pull** brings in what others pushed.
 
-In **⚙ Settings** choose the name and email your commits carry. **Fill from my GitHub account** uses your private noreply email, and the app warns before a commit would go out under another identity. The **? Help** button explains every button.
+When it starts, the app pulls the repository it runs from, so that copy stays up to date (you can turn this off in **⚙ Settings**). Its settings are saved in your own user folder, so no admin rights are needed. In **⚙ Settings** choose the name and email your commits carry. **Fill from my GitHub account** uses your private noreply email, and the app warns before a commit would go out under another identity. The **? Help** button explains every button.
 
 The app is built from the `Git Helper/` folder (C# WPF, .NET 10) by the `git-helper.yml` workflow.
 

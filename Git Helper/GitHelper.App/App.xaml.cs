@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -18,7 +19,8 @@ public partial class App : Application
             MessageBox.Show(args.Exception.Message, "Git Helper: unexpected error", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
         };
-        var vm = new MainViewModel(new ProcessRunner(), new WpfDialogs(), new AppSettings());
+        var vm = new MainViewModel(new ProcessRunner(), new WpfDialogs(), new AppSettings(),
+            appFolder: Path.GetDirectoryName(Environment.ProcessPath));
         var window = new MainWindow(vm);
         MainWindow = window;
         window.Show();

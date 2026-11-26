@@ -87,7 +87,7 @@ public partial class CloneViewModel : ObservableObject
                 return;
             }
             settings.CloneFolder = ParentFolder;
-            settings.Save();
+            settings.Save(); // only remembers the folder; the clone itself worked
             ClonedPath = target;
             Say(StatusKind.Success, "✅ Cloned.");
             CloseRequested?.Invoke();
