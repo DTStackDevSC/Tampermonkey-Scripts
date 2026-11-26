@@ -11,9 +11,14 @@ namespace GitHelper.App;
 
 public partial class App : Application
 {
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        var v = typeof(App).Assembly.GetName().Version ?? new Version(1, 0, 0);
+        // A newer release replaces this exe and restarts it before anything opens.
+        if (!await AppUpdate.StartupUpdate.RunAsync(this,
+                new AppUpdate.UpdateTarget("Git Helper", "git-helper-v", "GitHelper.exe", new Version(v.Major, v.Minor, v.Build)), e.Args))
+            return;
         DispatcherUnhandledException += (_, args) =>
         {
             MessageBox.Show(args.Exception.Message, "Git Helper: unexpected error", MessageBoxButton.OK, MessageBoxImage.Error);

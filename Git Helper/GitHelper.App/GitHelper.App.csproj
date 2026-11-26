@@ -17,4 +17,7 @@
   <ItemGroup>
     <Resource Include="app.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\Shared\AppUpdate\StartupUpdate.cs" Link="AppUpdate\StartupUpdate.cs" />
+  </ItemGroup>
 </Project>

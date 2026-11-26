@@ -38,6 +38,8 @@ The **? Help** button at the top right opens a visual guide to the window, every
 
 **Optional, publish from the app:** in **Settings** turn on publishing and paste a fine grained GitHub token with *Contents: Read and write* on this repository only. **Publish** then commits the change for you under your own GitHub account, using your private noreply email.
 
+**Updates:** when it starts, the app checks GitHub for a newer release, downloads it and replaces itself, then restarts. If it cannot replace itself (for example a folder you cannot write to), it saves the new version in your Downloads folder and tells you.
+
 The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `config-editor.yml` workflow.
 
 ### Git Helper (Windows app)
@@ -53,6 +55,8 @@ The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `conf
 3. Tick the files, write a message and click **✔ Commit and push**. **⬇ Pull** brings in what others pushed.
 
 When it starts, the app pulls the repository it runs from, so that copy stays up to date (you can turn this off in **⚙ Settings**). Its settings are saved in your own user folder, so no admin rights are needed. In **⚙ Settings** choose the name and email your commits carry. **Fill from my GitHub account** uses your private noreply email, and the app warns before a commit would go out under another identity. The **? Help** button explains every button.
+
+Like the Config Editor, Git Helper updates itself from GitHub when it starts (or saves the new version in Downloads and tells you when it cannot).
 
 The app is built from the `Git Helper/` folder (C# WPF, .NET 10) by the `git-helper.yml` workflow.
 

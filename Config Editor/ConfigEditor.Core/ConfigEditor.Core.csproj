@@ -10,4 +10,8 @@
     <PackageReference Include="Acornima" Version="1.9.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Shared with the other Windows app: checks GitHub releases and replaces the exe. -->
+    <Compile Include="..\..\Shared\AppUpdate\AppUpdater.cs" Link="AppUpdate\AppUpdater.cs" />
+  </ItemGroup>
 </Project>

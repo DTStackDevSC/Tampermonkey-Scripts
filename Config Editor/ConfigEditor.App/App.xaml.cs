@@ -8,9 +8,14 @@ namespace ConfigEditor.App;
 
 public partial class App : Application
 {
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        var v = typeof(App).Assembly.GetName().Version ?? new Version(1, 0, 0);
+        // A newer release replaces this exe and restarts it before anything opens.
+        if (!await AppUpdate.StartupUpdate.RunAsync(this,
+                new AppUpdate.UpdateTarget("Config Editor", "config-editor-v", "ConfigEditor.exe", new Version(v.Major, v.Minor, v.Build)), e.Args))
+            return;
         DispatcherUnhandledException += (_, args) =>
         {
             MessageBox.Show(args.Exception.Message, "Config Editor: unexpected error", MessageBoxButton.OK, MessageBoxImage.Error);
