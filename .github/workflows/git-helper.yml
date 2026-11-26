@@ -1,0 +1,47 @@
+name: Git Helper
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'git-helper-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@example.invalid"
+          dotnet test "Git Helper/GitHelper.sln" -c Release
+
+      - name: Publish
+        shell: pwsh
+        run: >
+          dotnet publish "Git Helper/GitHelper.App" -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: git-helper
+          path: publish/*.exe
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/git-helper-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: gh release create "${{ github.ref_name }}" (Get-ChildItem publish/*.exe).FullName --title "Git Helper ${{ github.ref_name }}" --notes "Download GitHelper.exe and run it. No install needed. Needs Git for Windows and the GitHub CLI (gh)."

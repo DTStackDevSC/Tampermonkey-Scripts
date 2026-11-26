@@ -40,6 +40,22 @@ The **? Help** button at the top right opens a visual guide to the window, every
 
 The app is built from the `Config Editor/` folder (C# WPF, .NET 10) by the `config-editor.yml` workflow.
 
+### Git Helper (Windows app)
+
+**Git Helper** is a small Windows app for everyday git work without the command line: see what changed, tick the files to commit, write a message, then commit, push, pull or sync with GitHub in one click. It also switches and creates branches, clones repositories, shows the history and can take back a commit that was not pushed yet.
+
+**Get it:** download `GitHelper.exe` from the latest `git-helper-v*` release on the [Releases page](https://github.com/DTStackDevSC/Tampermonkey-Scripts/releases). No install is needed. It uses the [Git for Windows](https://git-scm.com/download/win) and [GitHub CLI](https://cli.github.com/) already on the PC.
+
+**Use it:**
+
+1. Click **🔑 Sign in to GitHub** once if the app says you are not signed in.
+2. **📁 Open repo** (or **⬇ Clone** to copy one from GitHub).
+3. Tick the files, write a message and click **✔ Commit and push**. **⬇ Pull** brings in what others pushed.
+
+In **⚙ Settings** choose the name and email your commits carry. **Fill from my GitHub account** uses your private noreply email, and the app warns before a commit would go out under another identity. The **? Help** button explains every button.
+
+The app is built from the `Git Helper/` folder (C# WPF, .NET 10) by the `git-helper.yml` workflow.
+
 ---
 
 ## Toolbar Scripts

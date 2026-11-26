@@ -1,0 +1,41 @@
+<Window x:Class="GitHelper.App.Views.CloneDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:GitHelper.App.Controls"
+        Title="Clone a repository from GitHub" Width="600" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <!-- A disabled button still shows its tooltip, which says why it is off. -->
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+    </Window.Resources>
+    <Grid>
+        <StackPanel Margin="20,16">
+            <TextBlock Text="Repository" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="📋 Load my list" Command="{Binding LoadReposCommand}" Margin="8,0,0,0"
+                        ToolTip="Load the repositories your GitHub account can see"/>
+                <ComboBox ItemsSource="{Binding Repos}" Text="{Binding Repo, UpdateSourceTrigger=PropertyChanged}" IsEditable="True"
+                          ToolTip="owner/name, or a link such as https://github.com/owner/name"/>
+            </DockPanel>
+            <TextBlock Style="{StaticResource HintText}" Margin="0,4,0,0" Text="Type owner/name or paste a link, or load your list and pick one."/>
+            <TextBlock Text="Put it in this folder" Style="{StaticResource FieldLabel}"/>
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="📁 Browse" Command="{Binding BrowseCommand}" Margin="8,0,0,0" ToolTip="Pick the folder"/>
+                <TextBox Text="{Binding ParentFolder, UpdateSourceTrigger=PropertyChanged}"/>
+            </DockPanel>
+            <TextBlock Text="{Binding TargetText}" Style="{StaticResource HintText}" Margin="0,6,0,0"/>
+            <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="0,14,0,0" FontWeight="SemiBold"
+                       Foreground="{Binding MessageKind, Converter={StaticResource StatusBrush}}"
+                       Visibility="{Binding Message, Converter={StaticResource EmptyToVis}}"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                <Button Content="Cancel" IsCancel="True" Click="OnCancel"/>
+                <Button Content="⬇ Clone" Command="{Binding CloneCommand}" Style="{DynamicResource AccentButtonStyle}" Margin="0" IsDefault="True"
+                        ToolTip="{Binding CloneHint}"/>
+            </StackPanel>
+        </StackPanel>
+        <c:BusyOverlay IsActive="{Binding IsBusy}" Text="{Binding BusyText}"/>
+    </Grid>
+</Window>
