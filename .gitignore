@@ -9,3 +9,4 @@ temp_text.txt
 
 # Claude Code migration bundle (skills, memory, settings), local only
 .claude-migration/
+GitHelper.exe
