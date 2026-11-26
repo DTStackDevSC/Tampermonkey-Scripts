@@ -18,7 +18,8 @@ public sealed record GitIdentity(string? Name, string? Email)
 public sealed class GitRepo
 {
     public const string Git = "git";
-    static readonly string[] Common = ["--literal-pathspecs", "-c", "core.quotepath=false", "-c", "color.ui=false", "-c", "core.pager=cat"];
+    // No fsmonitor program: a folder's own .git/config could name one, and the app reads status on its own when a folder opens.
+    static readonly string[] Common = ["--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.quotepath=false", "-c", "color.ui=false", "-c", "core.pager=cat"];
 
     readonly ICommandRunner runner;
 
@@ -165,13 +166,13 @@ public sealed class GitRepo
         CommandResult r;
         if (noCommitsYet)
         {
-            var staged = await RunAsync("diff", "--no-ext-diff", "--cached", "--", f.Path);
-            var work = await RunAsync("diff", "--no-ext-diff", "--", f.Path);
+            var staged = await RunAsync("diff", "--no-ext-diff", "--no-textconv", "--cached", "--", f.Path);
+            var work = await RunAsync("diff", "--no-ext-diff", "--no-textconv", "--", f.Path);
             return staged.StdOut + work.StdOut;
         }
-        if (f.IsConflict) r = await RunAsync("diff", "--no-ext-diff", "--", f.Path);
-        else if (f.OriginalPath != null) r = await RunAsync("diff", "--no-ext-diff", "-M", "HEAD", "--", f.OriginalPath, f.Path);
-        else r = await RunAsync("diff", "--no-ext-diff", "HEAD", "--", f.Path);
+        if (f.IsConflict) r = await RunAsync("diff", "--no-ext-diff", "--no-textconv", "--", f.Path);
+        else if (f.OriginalPath != null) r = await RunAsync("diff", "--no-ext-diff", "--no-textconv", "-M", "HEAD", "--", f.OriginalPath, f.Path);
+        else r = await RunAsync("diff", "--no-ext-diff", "--no-textconv", "HEAD", "--", f.Path);
         if (!r.Ok) throw new GitException(r);
         return r.StdOut;
     }
