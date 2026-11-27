@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.13.0
+// @version      4.13.1
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.13.0';
-    const CHANGELOG = `Version 4.13.0:
+    const SCRIPT_VERSION = '4.13.1';
+    const CHANGELOG = `Version 4.13.1:
+- Response Templates: new variable button @Mention Requested For mentions the person the request is for. The variable buttons now go in this order: @Mention Opened By, Opened By Email, @Mention Requested For, Requested For Email, Page Type, Ticket Number, My Name, Today, Short Description, Tenant.
+
+Version 4.13.0:
 - Response Templates: new variable {{requestedForEmail}} puts the email of the person the request is for into a response (on incidents: the caller). When ServiceNow has no email for that person it shows [requested for email].
 - Response Templates: {{requestedForName}} on incidents now also reads the caller from ServiceNow when the form does not show it.
 
@@ -2350,8 +2353,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.13.0';
-    const CHANGELOG = `Version 4.13.0:
+    const SCRIPT_VERSION = '4.13.1';
+    const CHANGELOG = `Version 4.13.1:
+- Response Templates: new variable button @Mention Requested For mentions the person the request is for. The variable buttons now go in this order: @Mention Opened By, Opened By Email, @Mention Requested For, Requested For Email, Page Type, Ticket Number, My Name, Today, Short Description, Tenant.
+
+Version 4.13.0:
 - Response Templates: new variable {{requestedForEmail}} puts the email of the person the request is for into a response (on incidents: the caller). When ServiceNow has no email for that person it shows [requested for email].
 - Response Templates: {{requestedForName}} on incidents now also reads the caller from ServiceNow when the form does not show it.
 
@@ -5540,9 +5546,13 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.24.0';
+    const SCRIPT_VERSION = '2.24.1';
 
-    const CHANGELOG = `Version 2.24.0:
+    const CHANGELOG = `Version 2.24.1:
+- New variable button @Mention Requested For mentions the person the request is for (on incidents: the caller). It replaces the plain Requested For button.
+- The variable buttons now go in this order: @Mention Opened By, Opened By Email, @Mention Requested For, Requested For Email, Page Type, Ticket Number, My Name, Today, Short Description, Tenant.
+
+Version 2.24.0:
 - New variable {{requestedForEmail}} (button Requested For Email) inserts the email of the person the request is for (on incidents: the caller). When ServiceNow has no email for that person it shows [requested for email].
 - {{requestedForName}} on incidents now also reads the caller from ServiceNow when the form does not show it.
 
@@ -7567,7 +7577,8 @@ Regards.`,
 
     // Test only: the automated tests switch this on in their own storage
     if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersResponse = {
-        insertTextWithMention: (...a) => insertTextWithMention(...a), getOpenedByName: (...a) => getOpenedByName(...a) };
+        insertTextWithMention: (...a) => insertTextWithMention(...a), getOpenedByName: (...a) => getOpenedByName(...a),
+        showCustomResponsesModal: (...a) => showCustomResponsesModal(...a) };
 
     async function insertTextWithMention(textarea, text, fieldType = 'comments') {
         // Footer: strip any existing footer from textarea to avoid duplication, then append to text
@@ -7879,10 +7890,17 @@ Regards.`,
             Object.assign(varLabelEl.style, { fontSize: '12px', color: '#666', marginRight: '2px' });
             varBar.appendChild(varLabelEl);
 
+            const varButton = key => {
+                const v = RESPONSE_VARIABLES.find(x => x.key === key);
+                return { label: v.button, value: `{{${v.key}}}`, tooltip: `${v.tooltip}. Shows [${v.label}] when the ticket has none.` };
+            };
             const variables = [
-                { label: '@Mention Opened By', value: '@[{{openedByName}}]', tooltip: '@ mention the ticket opener (triggers ServiceNow mention picker)' },
-                { label: 'Page Type',           value: '{{pageType}}',        tooltip: 'Inserts "request" or "incident" based on ticket type' },
-                ...RESPONSE_VARIABLES.map(v => ({ label: v.button, value: `{{${v.key}}}`, tooltip: `${v.tooltip}. Shows [${v.label}] when the ticket has none.` }))
+                { label: '@Mention Opened By',     value: '@[{{openedByName}}]',     tooltip: '@ mention the ticket opener (triggers ServiceNow mention picker)' },
+                varButton('openedByEmail'),
+                { label: '@Mention Requested For', value: '@[{{requestedForName}}]', tooltip: '@ mention the person the request is for, on incidents the caller (triggers ServiceNow mention picker)' },
+                varButton('requestedForEmail'),
+                { label: 'Page Type',              value: '{{pageType}}',            tooltip: 'Inserts "request" or "incident" based on ticket type' },
+                ...['ticketNumber', 'myName', 'today', 'shortDescription', 'tenant'].map(varButton)
             ];
 
             variables.forEach(v => {
@@ -8246,9 +8264,7 @@ Regards.`,
                         ], { margin: '0 0 6px 0', gap: '6px' }),
                         hrow([
                             span('Insert variable:', { fontSize: '11px', color: '#666' }),
-                            chip('@Mention Opened By', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
-                            chip('Page Type', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
-                            ...['Ticket Number', 'Requested For', 'Requested For Email', 'Opened By Email', 'My Name', 'Today', 'Short Description', 'Tenant'].map(l => chip(l, '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }))
+                            ...['@Mention Opened By', 'Opened By Email', '@Mention Requested For', 'Requested For Email', 'Page Type', 'Ticket Number', 'My Name', 'Today', 'Short Description', 'Tenant'].map(l => chip(l, '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }))
                         ], { margin: '0 0 4px 0', gap: '6px', flexWrap: 'wrap' }),
                         span('Hi @[{{openedByName}}], your {{pageType}} has been escalated.', { display: 'block', fontSize: '11px', fontFamily: 'monospace', border: '1px solid #ccc', borderRadius: '4px', padding: '6px 8px', color: '#333' })
                     ]));
