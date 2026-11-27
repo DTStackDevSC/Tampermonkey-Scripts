@@ -15,6 +15,7 @@ public static class TemplateText
         (TicketType,            "${vars.pageType}",         "Request"),
         ("{Ticket number}",     "${vars.ticketNumber}",     "RITM0123456"),
         ("{Requested for}",     "${vars.requestedForName}", "Jane Smith"),
+        ("{Requested for email}", "${vars.requestedForEmail}", "jane.smith@example.com"),
         ("{Opened by email}",   "${vars.openedByEmail}",    "jane.doe@example.com"),
         ("{My name}",           "${vars.myName}",           "Alex Garcia"),
         ("{Today}",             "${vars.today}",            "2026-11-23"),

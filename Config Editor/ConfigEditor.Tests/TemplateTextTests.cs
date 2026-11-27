@@ -24,11 +24,11 @@ public class TemplateTextTests
     [Fact]
     public void NewPlaceholdersRoundTrip()
     {
-        const string friendly = "Hi {Requested for} ({Opened by email}), {Ticket number} ({Short description}) is done in {Tenant} on {Today}. {My name}";
+        const string friendly = "Hi {Requested for} <{Requested for email}> ({Opened by email}), {Ticket number} ({Short description}) is done in {Tenant} on {Today}. {My name}";
         var raw = TemplateText.FromFriendly(friendly);
-        Assert.Equal("Hi ${vars.requestedForName} (${vars.openedByEmail}), ${vars.ticketNumber} (${vars.shortDescription}) is done in ${vars.tenant} on ${vars.today}. ${vars.myName}", raw);
+        Assert.Equal("Hi ${vars.requestedForName} <${vars.requestedForEmail}> (${vars.openedByEmail}), ${vars.ticketNumber} (${vars.shortDescription}) is done in ${vars.tenant} on ${vars.today}. ${vars.myName}", raw);
         Assert.True(TemplateText.IsEditable(raw));
         Assert.Equal(friendly, TemplateText.ToFriendly(raw));
-        Assert.Equal("Hi Jane Smith (jane.doe@example.com), RITM0123456 (Allow access to example.com) is done in EMA on 2026-11-23. Alex Garcia", TemplateText.Preview(friendly));
+        Assert.Equal("Hi Jane Smith <jane.smith@example.com> (jane.doe@example.com), RITM0123456 (Allow access to example.com) is done in EMA on 2026-11-23. Alex Garcia", TemplateText.Preview(friendly));
     }
 }

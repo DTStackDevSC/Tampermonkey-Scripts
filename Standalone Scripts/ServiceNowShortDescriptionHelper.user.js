@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.12.0
+// @version      4.13.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,12 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.12.0';
-    const CHANGELOG = `Version 4.12.0:
+    const SCRIPT_VERSION = '4.13.0';
+    const CHANGELOG = `Version 4.13.0:
+- Response Templates: new variable {{requestedForEmail}} puts the email of the person the request is for into a response (on incidents: the caller). When ServiceNow has no email for that person it shows [requested for email].
+- Response Templates: {{requestedForName}} on incidents now also reads the caller from ServiceNow when the form does not show it.
+
+Version 4.12.0:
 - Response Templates: new variable {{openedByEmail}} puts the email of the person who opened the ticket into a response. When ServiceNow has no email for that person it shows [opened by email].
 
 Version 4.11.0:
@@ -1611,46 +1615,75 @@ Version 4.0.0:
         return '';
     }
 
-    // Who opened the ticket, with the email ServiceNow has for that person: { name, email, sysId }.
-    // The name is read from the form like helpersReadOpenedBy. The email comes from one Table API read of the
-    // ticket itself (opened_by, or caller_id when the ticket has no opener), with the user's own session.
-    // Answers are kept per ticket, so a ticket is read once. email and sysId are '' when ServiceNow gives none.
-    const helpersOpenedByCache = new Map();
-    async function helpersOpenedBy() {
+    // People on the open ticket, read from the ticket record with the Table API and the user's own session
+    // (X-UserToken). One read per ticket and reference field, kept in memory; a failed read is tried again next time.
+    const helpersPersonCache = new Map();
+    function helpersTicketRecord() {
         const w = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
-        const name = helpersReadOpenedBy();
         const gf = w.g_form;
         let table = '', id = '';
         try { table = (gf && gf.getTableName && gf.getTableName()) || ''; id = (gf && gf.getUniqueValue && gf.getUniqueValue()) || ''; }
         catch (e) { /* no form */ }
-        const empty = { name, email: '', sysId: '' };
-        if (!table || !id || !/^[a-z0-9_]+$/.test(table) || !w.g_ck) return empty;
-        const key = `${table}/${id}`;
-        if (!helpersOpenedByCache.has(key)) {
-            helpersOpenedByCache.set(key, (async () => {
+        return { w, gf, table, id };
+    }
+    // The first of refs (reference fields, dot walks allowed) that holds a person: { name, email, sysId }, or null
+    async function helpersReadPerson(refs) {
+        const { w, table, id } = helpersTicketRecord();
+        if (!table || !id || !/^[a-z0-9_]+$/.test(table) || !w.g_ck) return null;
+        const key = `${table}/${id}/${refs.join('|')}`;
+        if (!helpersPersonCache.has(key)) {
+            helpersPersonCache.set(key, (async () => {
                 try {
-                    const fields = ['opened_by', 'opened_by.email', 'caller_id', 'caller_id.email'].join(',');
-                    const r = await fetch(`/api/now/table/${table}/${encodeURIComponent(id)}?sysparm_fields=${fields}&sysparm_exclude_reference_link=true`,
+                    const fields = refs.flatMap(f => [f, `${f}.email`]).join(',');
+                    const r = await fetch(`/api/now/table/${table}/${encodeURIComponent(id)}?sysparm_fields=${fields}&sysparm_display_value=all&sysparm_exclude_reference_link=true`,
                         { headers: { Accept: 'application/json', 'X-UserToken': w.g_ck }, credentials: 'same-origin' });
-                    if (!r.ok) { console.warn('[Ticket Helpers] Opened by email: HTTP', r.status); return null; }
+                    if (!r.ok) { console.warn('[Ticket Helpers] Person read: HTTP', r.status); return null; }
                     const res = ((await r.json()) || {}).result || {};
-                    const val = v => String((v && typeof v === 'object' ? v.value : v) || '').trim();
-                    for (const f of ['opened_by', 'caller_id']) {
-                        const sysId = val(res[f]);
-                        if (sysId) return { email: val(res[`${f}.email`]), sysId };
+                    const part = (v, k) => String((v && typeof v === 'object' ? v[k] : v) || '').replace(/\s+/g, ' ').trim();
+                    for (const f of refs) {
+                        const sysId = part(res[f], 'value');
+                        if (sysId) return { name: part(res[f], 'display_value'), email: part(res[`${f}.email`], 'value'), sysId };
                     }
-                } catch (e) { console.warn('[Ticket Helpers] Opened by email:', e); }
+                } catch (e) { console.warn('[Ticket Helpers] Person read:', e); }
                 return null;
             })());
         }
-        const found = await helpersOpenedByCache.get(key);
-        // A failed read is tried again next time
-        if (!found) { helpersOpenedByCache.delete(key); return empty; }
-        return { name, email: found.email, sysId: found.sysId };
+        const found = await helpersPersonCache.get(key);
+        if (!found) helpersPersonCache.delete(key);
+        return found;
+    }
+
+    // Who opened the ticket (the caller when it has no opener): { name, email, sysId }. The name is read from
+    // the form like helpersReadOpenedBy; email and sysId are '' when ServiceNow gives none.
+    async function helpersOpenedBy() {
+        const name = helpersReadOpenedBy();
+        const found = await helpersReadPerson(['opened_by', 'caller_id']);
+        return { name: name || (found && found.name) || '', email: (found && found.email) || '', sysId: (found && found.sysId) || '' };
+    }
+
+    // Who the ticket is for: { name, email, sysId }. A RITM's "Requested for" belongs to its request (its own
+    // column can hold the opener), an incident's is the caller. The form's own field is the fallback for the name.
+    async function helpersRequestedFor() {
+        const { gf, table } = helpersTicketRecord();
+        const refs = table === 'incident' ? ['caller_id'] : table === 'sc_request' ? ['requested_for'] : ['request.requested_for'];
+        const found = await helpersReadPerson(refs);
+        let name = (found && found.name) || '';
+        if (!name && gf) {
+            let number = '';
+            try { number = String(gf.getValue('number') || ''); } catch (e) { /* no number field */ }
+            for (const f of refs) {
+                try {
+                    const v = String(gf.getDisplayValue(f) || '').replace(/\s+/g, ' ').trim();
+                    // getDisplayValue of a field that is not on the form answers the record number
+                    if (v && v !== number) { name = v; break; }
+                } catch (e) { /* field not on this form */ }
+            }
+        }
+        return { name, email: (found && found.email) || '', sysId: (found && found.sysId) || '' };
     }
 
     // Test only: the automated tests switch this on in their own storage
-    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersMention = { triggerMentionPicker, helpersWriteWithMentions, helpersReadOpenedBy, helpersOpenedBy };
+    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersMention = { triggerMentionPicker, helpersWriteWithMentions, helpersReadOpenedBy, helpersOpenedBy, helpersRequestedFor };
 
     appendStyleWhenReady(darkModeStyle);
 
@@ -2317,8 +2350,12 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.12.0';
-    const CHANGELOG = `Version 4.12.0:
+    const SCRIPT_VERSION = '4.13.0';
+    const CHANGELOG = `Version 4.13.0:
+- Response Templates: new variable {{requestedForEmail}} puts the email of the person the request is for into a response (on incidents: the caller). When ServiceNow has no email for that person it shows [requested for email].
+- Response Templates: {{requestedForName}} on incidents now also reads the caller from ServiceNow when the form does not show it.
+
+Version 4.12.0:
 - Response Templates: new variable {{openedByEmail}} puts the email of the person who opened the ticket into a response. When ServiceNow has no email for that person it shows [opened by email].
 
 Version 4.11.0:
@@ -5503,9 +5540,13 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.23.0';
+    const SCRIPT_VERSION = '2.24.0';
 
-    const CHANGELOG = `Version 2.23.0:
+    const CHANGELOG = `Version 2.24.0:
+- New variable {{requestedForEmail}} (button Requested For Email) inserts the email of the person the request is for (on incidents: the caller). When ServiceNow has no email for that person it shows [requested for email].
+- {{requestedForName}} on incidents now also reads the caller from ServiceNow when the form does not show it.
+
+Version 2.23.0:
 - New variable {{openedByEmail}} (button Opened By Email) inserts the email of the person who opened the ticket. When ServiceNow has no email for that person it shows [opened by email].
 
 Version 2.22.6:
@@ -7139,6 +7180,7 @@ Regards.`,
     const RESPONSE_VARIABLES = [
         { key: 'ticketNumber',     label: 'ticket number',     button: 'Ticket Number',     tooltip: 'The ticket number, such as RITM0123456' },
         { key: 'requestedForName', label: 'requested for',     button: 'Requested For',     tooltip: 'The person the request is for (on incidents: the caller)' },
+        { key: 'requestedForEmail', label: 'requested for email', button: 'Requested For Email', tooltip: 'The email of the person the request is for (on incidents: the caller)' },
         { key: 'openedByEmail',    label: 'opened by email',   button: 'Opened By Email',   tooltip: 'The email of the person who opened the ticket' },
         { key: 'myName',           label: 'your name',         button: 'My Name',           tooltip: 'Your own name, as ServiceNow knows it' },
         { key: 'today',            label: 'today',             button: 'Today',             tooltip: 'Today\'s date, such as 2026-11-23' },
@@ -7165,39 +7207,6 @@ Regards.`,
         const w = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
         return w.g_form ? { win: w, gf: w.g_form } : null;
     }
-    function responseField(gf, names) {
-        let number = '';
-        try { number = String(gf.getValue('number') || ''); } catch (e) { /* no number field */ }
-        for (const n of names) {
-            try {
-                const v = String(gf.getDisplayValue(n) || '').trim();
-                // getDisplayValue of a field that is not on the form answers the record number
-                if (v && v !== number) return v;
-            } catch (e) { /* field not on this form */ }
-        }
-        return '';
-    }
-    async function responseRequestedFor(form) {
-        let table = '';
-        try { table = (form.gf.getTableName && form.gf.getTableName()) || ''; } catch (e) { table = ''; }
-        if (table !== 'sc_req_item') return responseField(form.gf, ['caller_id']);
-        // A RITM's "Requested for" belongs to its request (its own column can hold the opener): read it with the Table API
-        try {
-            const id = form.gf.getUniqueValue && form.gf.getUniqueValue();
-            if (id && form.win.g_ck) {
-                const r = await fetch(`/api/now/table/sc_req_item/${encodeURIComponent(id)}?sysparm_fields=request.requested_for&sysparm_display_value=true`,
-                    { headers: { Accept: 'application/json', 'X-UserToken': form.win.g_ck }, credentials: 'same-origin' });
-                if (r.ok) {
-                    const j = await r.json();
-                    const v = j && j.result && j.result['request.requested_for'];
-                    const name = String((v && typeof v === 'object' ? v.display_value : v) || '').trim();
-                    if (name) return name;
-                }
-            }
-        } catch (e) { console.warn('[Response Templates] Requested for:', e); }
-        return responseField(form.gf, ['request.requested_for']);
-    }
-
     async function getResponseVars() {
         const vars = { pageType: getPageType() };
         vars.openedByName = (await getOpenedByName()) || 'User';
@@ -7207,7 +7216,9 @@ Regards.`,
         if (form) {
             try { vars.ticketNumber = String(form.gf.getValue('number') || '').trim(); } catch (e) { /* no number */ }
             try { vars.shortDescription = String(form.gf.getValue('short_description') || '').trim(); } catch (e) { /* no field */ }
-            vars.requestedForName = await responseRequestedFor(form);
+            const requestedFor = await helpersRequestedFor();
+            vars.requestedForName = requestedFor.name;
+            vars.requestedForEmail = requestedFor.email;
             vars.openedByEmail = (await helpersOpenedBy()).email;
             const u = form.win.g_user;
             if (u) vars.myName = String((typeof u.getFullName === 'function' && u.getFullName()) || [u.firstName, u.lastName].filter(Boolean).join(' ') || '').trim();
@@ -7938,7 +7949,7 @@ Regards.`,
 
             function updatePreview() {
                 const sampleVars = { openedByName: cachedOpenedByName || 'John Doe', pageType: getPageType(),
-                    ticketNumber: 'RITM0123456', requestedForName: 'Jane Smith', openedByEmail: 'john.doe@example.com', myName: 'Alex Garcia', today: '2026-11-23',
+                    ticketNumber: 'RITM0123456', requestedForName: 'Jane Smith', requestedForEmail: 'jane.smith@example.com', openedByEmail: 'john.doe@example.com', myName: 'Alex Garcia', today: '2026-11-23',
                     shortDescription: 'Allow access to example.com', tenant: 'EMA' };
                 previewBox.textContent = resolveCustomResponseText(bodyTextarea.value, sampleVars) || '(empty)';
             }
@@ -8237,7 +8248,7 @@ Regards.`,
                             span('Insert variable:', { fontSize: '11px', color: '#666' }),
                             chip('@Mention Opened By', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
                             chip('Page Type', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
-                            ...['Ticket Number', 'Requested For', 'Opened By Email', 'My Name', 'Today', 'Short Description', 'Tenant'].map(l => chip(l, '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }))
+                            ...['Ticket Number', 'Requested For', 'Requested For Email', 'Opened By Email', 'My Name', 'Today', 'Short Description', 'Tenant'].map(l => chip(l, '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }))
                         ], { margin: '0 0 4px 0', gap: '6px', flexWrap: 'wrap' }),
                         span('Hi @[{{openedByName}}], your {{pageType}} has been escalated.', { display: 'block', fontSize: '11px', fontFamily: 'monospace', border: '1px solid #ccc', borderRadius: '4px', padding: '6px 8px', color: '#333' })
                     ]));
