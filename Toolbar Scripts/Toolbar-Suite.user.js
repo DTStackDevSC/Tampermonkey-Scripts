@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.60.0
+// @version      2.60.1
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.60.0';
-    const CHANGELOG = `Version 2.60.0:
+   const SCRIPT_VERSION = '2.60.1';
+    const CHANGELOG = `Version 2.60.1:
+- Netskope Console Toolkit: on Client Configuration the "↕ Reorder" button now sits next to the search box instead of inside it.
+
+Version 2.60.0:
 - Netskope Console Toolkit: new "↕ Reorder" button on the Steering Configuration and Client Configuration lists. Tick one or more configurations, move them to an exact position, to the top or to the bottom, check the new order and save it with a second click. No more dragging rows many times. Netskope applies the order at once, ↩ Undo last save puts back the order from before.
 
 Version 2.59.0:
@@ -29062,9 +29065,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.50.0';
+    const SCRIPT_VERSION = '1.50.1';
 
-    const CHANGELOG = `Version 1.50.0:
+    const CHANGELOG = `Version 1.50.1:
+- On Client Configuration the "↕ Reorder" button now sits next to the search box instead of inside it.
+
+Version 1.50.0:
 - New "↕ Reorder" button on the Steering Configuration and Client Configuration lists. Tick one or more configurations (Shift+click for a range, filter by name or group), then move them to the top, the bottom, one place up or down, or to an exact position. The list shows the new order and where each one was before anything is saved. 💾 Save order asks for a second click, because Netskope applies the order at once, and then checks the result. If the order changed meanwhile nothing is sent. ↩ Undo last save shows the order from before so you can save it back. Turn it off in Settings with "↕ Reorder configurations".
 
 Version 1.49.8:
@@ -38595,12 +38601,26 @@ Version 1.16:
         return btn;
     }
 
+    // The whole search box around the input: the bordered box with its magnifier and clear icons.
+    // Climbs while the parent is barely bigger than the input, so the button goes next to the box, never inside it.
+    function roSearchBox(input) {
+        const r0 = input.getBoundingClientRect();
+        let el = input;
+        for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+            if (p.querySelector('#' + RO_BUTTON_ID)) break;
+            const r = p.getBoundingClientRect();
+            if (r.height > r0.height + 24 || r.width > r0.width + 120) break;
+            el = p;
+        }
+        return el;
+    }
+
     // Client Configuration: the page's search box, else its New Configuration button
     function roFindClientAnchor() {
         const vis = el => !!el && el.offsetParent !== null;
         const input = [...document.querySelectorAll('input[placeholder], input[type="search"]')].find(i =>
             vis(i) && /search/i.test(i.placeholder || i.getAttribute('aria-label') || ''));
-        if (input) return { el: input.closest('.ns-icon-input-container, .search-container, .input-group') || input, where: 'afterend' };
+        if (input) return { el: roSearchBox(input), where: 'afterend' };
         const btn = [...document.querySelectorAll('button')].find(b => vis(b) && b.id !== RO_BUTTON_ID &&
             /^\s*\+?\s*(new|add)\b.*configuration/i.test(b.textContent || ''));
         if (btn) return { el: btn, where: 'beforebegin' };
