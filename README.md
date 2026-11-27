@@ -2,7 +2,7 @@
 
 A collection of Tampermonkey userscripts that extend and automate workflows in ServiceNow and Netskope.
 
-Scripts are split into two categories: standalone scripts that run independently on their target pages, and toolbar scripts that attach to a shared floating toolbar.
+There are two scripts, each a suite of tools: the **Ticket Helpers Suite** (helpers that run on their own pages) and the **Toolbox Suite** (tools that attach to a shared floating toolbar). Install both; you choose which tools of each one run.
 
 ---
 
@@ -79,12 +79,10 @@ The app is built from the `Git Helper/` folder (C# WPF, .NET 10) by the `git-hel
 | Destination Profile Editor | ServiceNow | Finds, creates, edits and deletes Netskope Destination Profiles from a ticket through the API. |
 | Netskope Console Toolkit | Netskope tenant | Copy and open buttons, log entries, steering exception tools and more. |
 
-## Old scripts
+## Installing
 
-The separate scripts used before the two suites (the old toolbar tools, the old helpers and their redirect files) have been retired and are no longer in this repository. Only `Toolbar-Suite.user.js` and `ServiceNowShortDescriptionHelper.user.js` are published and updated.
+Only `Toolbar-Suite.user.js` and `ServiceNowShortDescriptionHelper.user.js` are published and updated.
 
-If Tampermonkey still lists an old script (for example one showing version 99.0.x), open ServiceNow and Netskope once with the suite installed so it can bring that script's data in when it asks, then uninstall the old script. An old script no longer gets updates.
-
-**New users:** install only the Toolbox Suite. Each tool's first setup offers **Import from a backup file** if you have one.
+**New users:** install both suites. Each tool's first setup offers **Import from a backup file** if you have one.
 
 **Moving to another computer:** open the toolbar Settings, under Data click **Export everything**. On the new computer install the Toolbox Suite and use **Import everything**. The backup file contains your tokens, so keep it safe.

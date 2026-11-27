@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.60.1
+// @version      2.60.2
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,15 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.60.1';
-    const CHANGELOG = `Version 2.60.1:
+   const SCRIPT_VERSION = '2.60.2';
+    const CHANGELOG = `Version 2.60.2:
+- Settings no longer has Import from old scripts, and the toolbar no longer asks every day to bring in data from the separate scripts used before the suite. Export everything and Import everything work as before.
+- Choose your tools and Settings > Tools no longer show the old name of renamed tools.
+- API keys saved by very old versions without a passphrase now show as not set: enter the key once more and it is stored safely.
+- Change Tracker: a tracker you never chose in Choose your tools stays off until you tick it there, like every other tool.
+- Change Tracker, Netskope Console Toolkit, Ticket Assignment, Destination Profile Editor and List Highlighter: their first setup opens without waiting for a check of the old separate scripts.
+
+Version 2.60.1:
 - Netskope Console Toolkit: on Client Configuration the "↕ Reorder" button now sits next to the search box instead of inside it.
 
 Version 2.60.0:
@@ -1385,15 +1392,14 @@ Version 1.0.0:
 
     /* ==========================================================
      *  DATA TRANSFER
-     *  Moves tool data between the suite, the old separate tool
-     *  scripts and backup files.
+     *  Tool data registry, backup files and which tools run.
      * ==========================================================*/
 
     // Which tool owns each stored key: a key belongs to a tool when it equals one of its
     // exact keys or starts with one of its prefixes. setupKeys mark a tool as "set up".
-    // pages are the @match rules of the tool's old separate script: it only runs there.
+    // pages are the @match rules of the tool: it only runs there.
     const DATA_REGISTRY = [
-        { id: 'toolbar', pages: ['https://*.netskope.com/*', 'https://*.goskope.com/*', 'https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'Toolbar', site: 'all', script: '|| Tools Toolbar ||',
+        { id: 'toolbar', pages: ['https://*.netskope.com/*', 'https://*.goskope.com/*', 'https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'Toolbar', site: 'all',
           exact: ['compact-mode', 'auto-close', 'show-tooltips', 'button-size', 'tool-size',
                   'animation-speed', 'menu-gap', 'show-labels', 'label-position'],
           prefixes: ['toolbar-', 'toolbarSuite'] },
@@ -1401,56 +1407,57 @@ Version 1.0.0:
           category: 'general', where: 'Appears on: every page', setup: '',
           whenToUse: 'Keep it on everywhere. Today: whenever a RITM, INC, SCTASK or Netskope case number shows up outside ServiceNow.',
           includes: ['Ticket Quick Open'],
-          formerly: 'General Toolkit', site: 'all', script: '|Toolbar| General Toolkit',
+          site: 'all',
           exact: [], prefixes: ['tqo_'] },
         { id: 'domainTools', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Domain Checker', description: 'Pulls the domains out of the ticket and checks their category and reputation.',
           category: 'netskope', where: 'Opens from: ServiceNow ticket', setup: 'API keys (optional)',
           whenToUse: 'On unblock, category or reputation requests.',
-          formerly: 'Domain Tools', site: 'servicenow', script: '|Toolbar| Domain Tools',
+          site: 'servicenow',
           exact: [], prefixes: ['domainTools'] },
         { id: 'enhancementRequestLogger', pages: ['https://*.service-now.com/*'], name: 'Enhancement Request Launcher', description: 'Opens the enhancement request form already filled with the ticket data.',
           category: 'servicenow', where: 'Appears on: ServiceNow', setup: '',
           whenToUse: 'When a ticket needs an enhancement request logged.',
-          formerly: 'Enhancement Request Logger', site: 'servicenow',
-          script: '|Toolbar| Enhancement Request Logger', exact: [], prefixes: ['erl'] },
+          site: 'servicenow',
+          exact: [], prefixes: ['erl'] },
         { id: 'miniSummary', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Ticket Summary Panel', description: 'Shows the key fields of the open ticket in a side panel, ready to copy.',
           category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: '',
           whenToUse: 'When you first read a ticket or prepare an SPM request.',
-          formerly: 'Mini Summary Sidebar', site: 'servicenow', script: '|Toolbar| Mini Summary Sidebar',
+          site: 'servicenow',
           exact: [], prefixes: ['miniSummarySidebar'] },
         { id: 'rowHighlighter', pages: ['https://*.service-now.com/*', 'https://*.servicenow.com/*'], name: 'List Highlighter', description: 'Colors list rows you updated and shows how close each SLA is.',
           category: 'servicenow', where: 'Appears on: ServiceNow lists', setup: 'your ServiceNow name',
           whenToUse: 'While you work from ServiceNow lists and queues.',
-          formerly: 'Row Highlighter', site: 'servicenow', script: '|Toolbar| ServiceNow Row Highlighter',
+          site: 'servicenow',
           exact: [], prefixes: ['servicenow_highlighter_'], setupKeys: ['servicenow_highlighter_username'] },
         { id: 'changeTracker', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Change Tracker', description: 'Logs each change you make for a ticket in the team\'s SharePoint list and writes it in the ticket.',
           category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'team SharePoint list',
-          whenToUse: 'Every time you change Netskope for a ticket, and when the reminders tab shows items due.', site: 'servicenow', script: '|Toolbar| Change Tracker (Online)',
+          whenToUse: 'Every time you change Netskope for a ticket, and when the reminders tab shows items due.', site: 'servicenow',
           exact: [], prefixes: ['changeTracker'], setupKeys: ['changeTrackerSpSiteUrl'] },
         { id: 'serviceNowToolkit', pages: ['https://*.service-now.com/*'], name: 'ServiceNow Toolkit', description: 'Saves drafts of your comments and work notes, opens SCTASKs for you and reminds the Germany rule on SPM requests.',
           category: 'servicenow', where: 'Appears on: ServiceNow', setup: '',
           whenToUse: 'Keep it on while you work in ServiceNow.',
-          includes: ['Saved Drafts', 'SCTASK auto open', 'SPM Germany reminder'], site: 'servicenow', script: '|Toolbar| ServiceNow Toolkit',
+          includes: ['Saved Drafts', 'SCTASK auto open', 'SPM Germany reminder'], site: 'servicenow',
           exact: [], prefixes: ['sn_toolkit_', 'snToolkit'] },
         { id: 'ticketAssignment', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/*'], name: 'Ticket Assignment', description: 'Assigns the ticket and writes the team comment with @mentions in one step.',
           category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'team members and leaders',
-          whenToUse: 'When you triage a new ticket and hand it to a team member.', site: 'servicenow', script: '|Toolbar| Ticket Assignment Tool',
+          whenToUse: 'When you triage a new ticket and hand it to a team member.', site: 'servicenow',
           exact: [], prefixes: ['ticketAssignment'], setupKeys: ['ticketAssignmentMembers'] },
         { id: 'netskopeUrlListManager', pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/now/nav/ui/classic/params/target/*'], name: 'Destination Profile Editor', description: 'Finds, creates, edits and deletes the ticket\'s Destination Profiles from ServiceNow, then deploys them.',
           category: 'netskope', where: 'Opens from: ServiceNow ticket', setup: 'tenant hosts and API key',
-          whenToUse: 'When a ticket asks to add or remove values in a Destination Profile.', site: 'servicenow', script: '|Toolbar| Netskope URL List Manager',
+          whenToUse: 'When a ticket asks to add or remove values in a Destination Profile.', site: 'servicenow',
           exact: [], prefixes: ['netskope_', 'netskopeHost_', 'netskopeUrlList'], setupKeys: ['netskopeHost_'] },
         { id: 'nsDlpToolkit', pages: ['https://*.goskope.com/*'], name: 'Netskope Console Toolkit', description: 'Adds copy buttons, change logs, bulk tools and exports to the Netskope console.',
           category: 'netskope', where: 'Appears on: Netskope console', setup: 'your name for log lines',
           whenToUse: 'Keep it on in the console. Open its bulk tools when a change touches many policies or steering configurations, and its exports for audits or troubleshooting.',
           includes: ['Policy tools', 'Steering Exception tools', 'Copy policy', 'SSL Decryption export', 'Transaction Events export', 'Reorder Steering and Client Configurations', 'Source tools', 'copy, open and log buttons'],
-          formerly: 'NS Policies Toolkit', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
+          site: 'netskope',
           exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
     ];
 
-    const DT_MIGRATED_KEY = 'toolbarSuiteMigratedTools';
-    const DT_DECLINED_KEY = 'toolbarSuiteMigrationDeclined';
-    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'toolbarSuiteDetectedTools', 'toolbarSuitePickerLater', 'toolbarSuiteKnownTools', 'toolbarSuiteAnnounceLater'];
+    // Left in storage by older versions and no longer read: removed so they never land in a backup.
+    ['toolbarSuiteMigratedTools', 'toolbarSuiteMigrationDeclined', 'toolbarSuiteCtUnlocked', 'changeTrackerWorkerUrl', 'changeTrackerToken']
+        .forEach(key => GM_deleteValue(key));
+    const DT_PRIVATE_KEYS = ['toolbarSuiteDetectedTools', 'toolbarSuitePickerLater', 'toolbarSuiteKnownTools', 'toolbarSuiteAnnounceLater'];
     // Keys that only mean something on this browser right now: never exported, imported or counted as data.
     // netskope_unlocked_<host> holds an unlocked API key passphrase for one hour (NETSKOPE API).
     const DT_PRIVATE_RE = /^netskope_unlocked_/;
@@ -1463,7 +1470,7 @@ Version 1.0.0:
     function dtOwnerOf(key) { return DATA_REGISTRY.find(t => dtOwns(t, key)) || null; }
     function dtIsPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
 
-    // Keeps only the keys the tool owns. Bookkeeping keys of the migration are never accepted.
+    // Keeps only the keys the tool owns. Private bookkeeping keys are never accepted.
     function dtFilterValues(tool, values) {
         const kept = {}, dropped = [];
         for (const [key, value] of Object.entries(values)) {
@@ -1476,12 +1483,10 @@ Version 1.0.0:
     // Checks that imported values have the shape the tool expects. Returns a problem, or ''.
     function dtCheckValues(tool, values) {
         if (tool.id === 'changeTracker') {
-            for (const key of ['changeTrackerWorkerUrl', 'changeTrackerSpSiteUrl']) {
-                if (!values[key]) continue;
+            if (values.changeTrackerSpSiteUrl) {
                 let url = null;
-                try { url = new URL(values[key]); } catch (e) { /* not a URL */ }
-                if (!url || url.protocol !== 'https:') return key === 'changeTrackerSpSiteUrl'
-                    ? 'the SharePoint site is not a valid https address' : 'the server address is not a valid https address';
+                try { url = new URL(values.changeTrackerSpSiteUrl); } catch (e) { /* not a URL */ }
+                if (!url || url.protocol !== 'https:') return 'the SharePoint site is not a valid https address';
             }
         }
         if (tool.id === 'netskopeUrlListManager') {
@@ -1541,7 +1546,6 @@ Version 1.0.0:
     const DT_CHOICES_KEY      = 'toolbarSuiteToolChoices';
     const DT_INSTALL_KIND_KEY = 'toolbarSuiteInstallKind';
     const DT_DETECTED_KEY     = 'toolbarSuiteDetectedTools';
-    const DT_CT_UNLOCKED_KEY  = 'toolbarSuiteCtUnlocked';
     const DT_PICKER_LATER_KEY = 'toolbarSuitePickerLater';
 
     // Decided once, the first time the suite runs: 'upgrade' when it found saved data, 'new' when storage was empty.
@@ -1558,16 +1562,6 @@ Version 1.0.0:
         return dtIsPlainObject(v) ? v : {};
     }
     function dtSaveChoices(update) { GM_setValue(DT_CHOICES_KEY, Object.assign(dtChoices(), update)); }
-
-    // Before version 2.0.0 the Change Tracker needed an activation code, or an existing server and token.
-    function dtCtUnlocked() {
-        if (GM_getValue(DT_CT_UNLOCKED_KEY, false) === true) return true;
-        if (GM_getValue('changeTrackerWorkerUrl', '') && GM_getValue('changeTrackerToken', '')) {
-            GM_setValue(DT_CT_UNLOCKED_KEY, true);
-            return true;
-        }
-        return false;
-    }
 
     // ServiceNow Next Experience shell (/now/...): a classic ticket, list or task opens inside
     // iframe#gsft_main, where the suite runs again with the ticket at hand. So the shell itself keeps
@@ -1596,19 +1590,10 @@ Version 1.0.0:
         if (Object.prototype.hasOwnProperty.call(choices, id)) return choices[id] === true;
         // A tool added by an update stays off until the user answers its "New tool added" window
         if (dtIsNewTool(id)) return false;
-        // Undecided: the Change Tracker stays as before 2.0.0, on only for people who could use it then.
-        if (id === 'changeTracker') return DT_INSTALL_KIND === 'upgrade' && dtCtUnlocked();
+        // Undecided: the Change Tracker needs a SharePoint list, so it waits for the user's choice in the picker.
+        if (id === 'changeTracker') return false;
         return DT_INSTALL_KIND === 'upgrade';
     }
-
-    // Version 2.0.0 dropped the activation code and the old team server. On every load, an old server
-    // address and token (left by an old install or brought by an import) only mark the tracker as used, then go.
-    (function dtForgetCtServer() {
-        if (!GM_getValue('changeTrackerWorkerUrl', '') && !GM_getValue('changeTrackerToken', '')) return;
-        dtCtUnlocked();
-        GM_deleteValue('changeTrackerWorkerUrl');
-        GM_deleteValue('changeTrackerToken');
-    })();
 
     // Kept from the moment the suite loads, before any page script can replace it.
     const dtAttachShadow = Element.prototype.attachShadow;
@@ -1745,7 +1730,7 @@ Version 1.0.0:
     }
 
     // Writes each entry and reports the result. Returns the ids that were written and that failed.
-    function dtApply(entries, title, options) {
+    function dtApply(entries, title) {
         const doneIds = [], failedIds = [];
         for (const entry of entries) {
             try {
@@ -1760,10 +1745,6 @@ Version 1.0.0:
         if (doneIds.length) lines.push('Imported: ' + names(doneIds) + '.');
         if (failedIds.length) lines.push('Could not import: ' + names(failedIds) + '. Try again later.');
         if (doneIds.length) lines.push('Reload the page to apply it.');
-        if (doneIds.length && options && options.uninstallHint) {
-            lines.push('You can now uninstall these old scripts in Tampermonkey: ' +
-                doneIds.map(id => dtTool(id).script).join(', ') + '.');
-        }
         dtDialog(title, lines, doneIds.length
             ? [{ label: 'Reload now', primary: true, onClick: () => location.reload() }, { label: 'Close' }]
             : [{ label: 'Close', primary: true }]);
@@ -1825,152 +1806,32 @@ Version 1.0.0:
         return link;
     }
 
-    const DT_WAIT_MS = 2000;
     const DT_START_DELAY_MS = 2000;
 
-    function dtMigrated() {
-        const v = GM_getValue(DT_MIGRATED_KEY, []);
-        return Array.isArray(v) ? v : [];
-    }
-    function dtMarkMigrated(ids) {
-        if (ids.length) GM_setValue(DT_MIGRATED_KEY, [...new Set([...dtMigrated(), ...ids])]);
-    }
-
-    // Asks the old separate scripts on this page for their data and calls done(answers)
-    // after DT_WAIT_MS. Only answers to this request, from known tools, are kept, and only
-    // with the keys that tool owns.
-    function dtRequestOldData(done) {
-        const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
-        const answers = new Map();
-        const payloads = new Map();
-        // Each old script answers once. Two different answers for one tool mean something
-        // else on the page is answering too, so that tool is not trusted. Answers whose data
-        // does not have the expected shape are not trusted either.
-        const conflicts = new Set();
-        const onAnswer = (e) => {
-            const d = e.detail;
-            if (!d || d.requestId !== requestId || d.protocol !== 1 || typeof d.payload !== 'string') return;
-            const tool = dtTool(d.toolId);
-            if (!tool || tool.id === 'toolbar') return;
-            if (payloads.has(tool.id)) {
-                if (payloads.get(tool.id) !== d.payload) conflicts.add(tool.id);
-                return;
-            }
-            payloads.set(tool.id, d.payload);
-            let values;
-            try { values = JSON.parse(d.payload); } catch (err) { return; }
-            if (!dtIsPlainObject(values)) return;
-            const filtered = dtFilterValues(tool, values);
-            if (dtCheckValues(tool, filtered.values)) { conflicts.add(tool.id); return; }
-            answers.set(tool.id, { tool, ...filtered });
-        };
-        document.addEventListener('toolbarSuiteDataResponse', onAnswer);
-        document.dispatchEvent(new CustomEvent('toolbarSuiteDataRequest', { detail: { requestId } }));
-        setTimeout(() => {
-            document.removeEventListener('toolbarSuiteDataResponse', onAnswer);
-            done([...answers.values()].filter(a => !conflicts.has(a.tool.id)), [...conflicts].map(id => dtTool(id).name));
-        }, DT_WAIT_MS);
-    }
-
-    // The addresses a tool will talk to after the import, shown so the user can check them.
-    function dtServerNote(answer) {
-        if (answer.tool.id === 'changeTracker') {
-            try { return ` (SharePoint: ${new URL(answer.values.changeTrackerSpSiteUrl).host})`; } catch (e) { /* no SharePoint site */ }
-            try { return ` (server: ${new URL(answer.values.changeTrackerWorkerUrl).host})`; } catch (e) { return ''; }
-        }
-        if (answer.tool.id === 'netskopeUrlListManager') {
-            const hosts = Object.entries(answer.values)
-                .filter(([key, value]) => key.startsWith('netskopeHost_') && typeof value === 'string' && value)
-                .map(([, value]) => value);
-            return hosts.length ? ` (hosts: ${[...new Set(hosts)].join(', ')})` : '';
-        }
-        return '';
-    }
-
-    // Runs the migration on this page. manual is true when started from Settings: it then
-    // ignores the "Not now" date and reports even when there is nothing to import.
-    function dtMigrationSite() {
+    // The site the suite is on: the picker and the "New tool added" window only open there.
+    function dtSuiteSite() {
         const host = location.hostname;
         return /\.service-now\.com$|\.servicenow\.com$/.test(host) ? 'servicenow'
              : /\.goskope\.com$/.test(host) ? 'netskope' : null;
     }
 
-    function dtRunMigration(manual) {
-        if (!dtMigrationSite()) {
-            if (manual) dtDialog('Import from old scripts', ['Open a ServiceNow page or a Netskope tenant page, then try again from there.'], [{ label: 'Close', primary: true }]);
-            return;
-        }
-        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) { dtSettle(); dtMaybeShowPicker(); return; }
-        dtRequestOldData((answers, conflicts) => {
-            dtMarkDetected(answers.map(a => a.tool.id));
-            const migrated = dtMigrated();
-            const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
-            const hasValues = a => Object.keys(a.values).length > 0;
-            const empty = fresh.filter(a => !hasValues(a));
-            // Automatic runs never replace what the user set up in the toolbar. From Settings,
-            // the user may choose to replace it, and the prompt says so.
-            const kept  = manual ? [] : fresh.filter(a => hasValues(a) && dtSuiteHasData(a.tool));
-            const todo  = fresh.filter(a => hasValues(a) && (manual || !dtSuiteHasData(a.tool)));
-            dtMarkMigrated([...empty, ...kept].map(a => a.tool.id));
-
-            if (!todo.length) {
-                dtSettle();
-                if (conflicts.length) {
-                    dtDialog('Import from old scripts', ['Not imported, because the data received did not look right: ' +
-                        conflicts.join(', ') + '. Use a backup file instead.'], [{ label: 'Close', primary: true }]);
-                } else if (!manual) {
-                    dtMaybeShowPicker();
-                } else {
-                    dtDialog('Import from old scripts', [
-                        fresh.length
-                            ? 'Nothing to import: the old scripts on this page have no new data for the toolbar.'
-                            : 'No old scripts answered on this page. Open a ServiceNow ticket or a Netskope tenant page where they ran, then try again.'
-                    ], [{ label: 'Close', primary: true }]);
-                }
-                return;
-            }
-
-            const lines = ['Data found from your previous toolbar scripts:'];
-            for (const a of todo) lines.push('• ' + a.tool.name + dtServerNote(a) +
-                (manual && dtSuiteHasData(a.tool) ? ' (replaces what you set up in the toolbar)' : ''));
-            if (todo.some(a => dtServerNote(a))) lines.push('Only import if you recognise these addresses.');
-            if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflicts.join(', ') + '.');
-            if (kept.length) lines.push('Already set up in the toolbar, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
-            lines.push('Import it into the toolbar?');
-            dtDialog('Bring your data into the toolbar', lines, [
-                { label: 'Import', primary: true, onClick: () => {
-                    const result = dtApply(todo, 'Bring your data into the toolbar', { uninstallHint: true });
-                    dtMarkMigrated(result.done);
-                } },
-                { label: 'Not now', onClick: () => { GM_setValue(DT_DECLINED_KEY, dtToday()); dtMaybeShowPicker(); } }
-            ], dtSettle);
-        });
+    // First setups that open by themselves wait until every tool has registered, so they never
+    // open before the page is ready for them.
+    let dtStarted = false;
+    const dtStartWaiters = [];
+    function dtWhenStarted(fn) {
+        if (dtStarted) fn(); else dtStartWaiters.push(fn);
     }
 
-    // First setups that open by themselves wait until the old scripts had their chance to
-    // hand over data on this page, then check again whether they are still needed.
-    let dtSettled = false;
-    const dtSettleWaiters = [];
-    function dtSettle() {
-        if (dtSettled) return;
-        dtSettled = true;
-        for (const fn of dtSettleWaiters.splice(0)) {
+    // Called once per page load after every tool has registered: runs the waiting first setups,
+    // then offers the tool picker on ServiceNow and Netskope tenant pages.
+    function dtStart() {
+        if (dtStarted) return;
+        dtStarted = true;
+        for (const fn of dtStartWaiters.splice(0)) {
             try { fn(); } catch (e) { console.error('Toolbar first setup:', e); }
         }
-    }
-    function dtWhenMigrationSettled(fn) {
-        if (dtSettled) fn(); else dtSettleWaiters.push(fn);
-    }
-
-    // Started once per page load on ServiceNow and Netskope tenant pages, while some tool
-    // of that site is not migrated yet.
-    function dtAutoMigrate() {
-        const site = dtMigrationSite();
-        if (!site) { dtSettle(); return; }
-        const migrated = dtMigrated();
-        const pending = DATA_REGISTRY.some(t => t.id !== 'toolbar' && (t.site === site || t.site === 'all') && !migrated.includes(t.id));
-        if (!pending) { dtSettle(); setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS); return; }
-        setTimeout(() => dtRunMigration(false), DT_START_DELAY_MS);
+        if (dtSuiteSite()) setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS);
     }
 
     const DT_SITE_LABELS = { servicenow: 'ServiceNow', netskope: 'Netskope tenant', all: 'All pages' };
@@ -2040,12 +1901,6 @@ Version 1.0.0:
                 const name = document.createElement('strong');
                 name.textContent = tool.name;
                 text.appendChild(name);
-                if (tool.formerly) {
-                    const was = document.createElement('span');
-                    was.textContent = ` (formerly ${tool.formerly})`;
-                    Object.assign(was.style, { color: '#999', fontSize: '11px' });
-                    text.appendChild(was);
-                }
                 const desc = document.createElement('span');
                 desc.textContent = tool.description;
                 Object.assign(desc.style, { display: 'block', color: '#555', fontSize: '12px' });
@@ -2078,7 +1933,7 @@ Version 1.0.0:
                 }
                 section.appendChild(card);
                 boxes.set(tool.id, cb);
-                rows.push({ card, text: [tool.name, tool.formerly, tool.description, tool.whenToUse, (tool.includes || []).join(' ')].join(' ').toLowerCase() });
+                rows.push({ card, text: [tool.name, tool.description, tool.whenToUse, (tool.includes || []).join(' ')].join(' ').toLowerCase() });
             }
             groups.push({ section, rows });
             wrap.appendChild(section);
@@ -2122,12 +1977,6 @@ Version 1.0.0:
             { label: 'Save', primary: true,
               onClick: () => { dtSaveChoices(list.choices()); location.reload(); } }
         ]);
-    }
-
-    function dtMarkDetected(ids) {
-        if (!ids.length) return;
-        const current = GM_getValue(DT_DETECTED_KEY, []);
-        GM_setValue(DT_DETECTED_KEY, [...new Set([...(Array.isArray(current) ? current : []), ...ids])]);
     }
 
     // Shows the picker on ServiceNow and Netskope tenant pages while tools of this site are undecided.
@@ -2240,7 +2089,7 @@ Version 1.0.0:
     }
 
     function dtMaybeShowPicker() {
-        const site = dtMigrationSite();
+        const site = dtSuiteSite();
         if (!site || document.getElementById('toolbarSuiteDataHost')) return;
         const choices = dtChoices();
         const all = DATA_REGISTRY.filter(t => t.id !== 'toolbar' && !dtIsNewTool(t.id));
@@ -2684,10 +2533,10 @@ Version 1.0.0:
                         background: warn ? '#fff4e0' : '#f3f4f8', border: warn ? '1px solid #f0c36d' : '1px solid #d8dae5'
                     });
                     [
-                        ['ServiceNow · 6 tools', 'Change Tracker', true, '', 'Logs each change you make for a ticket in the team list and writes it in the ticket.', 'Appears on: ServiceNow ticket', 'team SharePoint list'],
-                        ['Netskope · 3 tools', 'Netskope Console Toolkit', true, 'NS Policies Toolkit', 'Adds copy buttons, change logs, bulk tools and exports to the Netskope console.', 'Appears on: Netskope console', 'your name for log lines'],
-                        ['General · 1 tool', 'General Web Toolkit', false, 'General Toolkit', 'Small helpers that work on any website.', 'Appears on: every page', '']
-                    ].forEach(([section, name, on, was, desc, where, setup]) => {
+                        ['ServiceNow · 6 tools', 'Change Tracker', true, 'Logs each change you make for a ticket in the team list and writes it in the ticket.', 'Appears on: ServiceNow ticket', 'team SharePoint list'],
+                        ['Netskope · 3 tools', 'Netskope Console Toolkit', true, 'Adds copy buttons, change logs, bulk tools and exports to the Netskope console.', 'Appears on: Netskope console', 'your name for log lines'],
+                        ['General · 1 tool', 'General Web Toolkit', false, 'Small helpers that work on any website.', 'Appears on: every page', '']
+                    ].forEach(([section, name, on, desc, where, setup]) => {
                         list.appendChild(span(section, { display: 'block', fontSize: '10px', fontWeight: 'bold', color: '#888', letterSpacing: '.6px', textTransform: 'uppercase', margin: '6px 0 4px 0' }));
                         const card = document.createElement('div');
                         Object.assign(card.style, { border: '1px solid #e5e7eb', borderRadius: '8px', padding: '6px 8px', margin: '0 0 4px 0' });
@@ -2697,7 +2546,6 @@ Version 1.0.0:
                             border: on ? 'none' : '1px solid #b0b0b0', flexShrink: '0', boxSizing: 'border-box'
                         });
                         const items = [box, span(name, { fontSize: '12px', fontWeight: 'bold', color: '#333' })];
-                        if (was) items.push(span(`(formerly ${was})`, { fontSize: '10px', color: '#999' }));
                         card.appendChild(hrow(items, { margin: '0', gap: '6px' }));
                         card.appendChild(span(desc, { display: 'block', fontSize: '11px', color: '#555', margin: '2px 0 4px 21px' }));
                         const chips = [mockChip(where, false)];
@@ -2710,7 +2558,7 @@ Version 1.0.0:
                     bullets(body, [
                         'The first time, a "Choose your tools" window asks which tools you want. No tool runs before that.',
                         'Each card says what the tool does, where it shows up and what it needs before you use it (orange chip). Open "When to use" for when it helps.',
-                        'Type in Search tools to find a tool by name, old name or what it does.',
+                        'Type in Search tools to find a tool by name or what it does.',
                         'Change it any time in Settings, under Tools. The page reloads to apply the change.'
                     ]);
                 }
@@ -2923,13 +2771,11 @@ Version 1.0.0:
 
                     body.appendChild(hrow([
                         chip('Export everything', '#f3f4f6', { color: '#374151' }),
-                        chip('Import everything', '#f3f4f6', { color: '#374151' }),
-                        chip('Import from old scripts', '#f3f4f6', { color: '#374151' })
+                        chip('Import everything', '#f3f4f6', { color: '#374151' })
                     ], { margin: '10px 0 0 0' }));
                     bullets(body, [
                         'Export everything saves the toolbar and every tool into one backup file. It includes your tokens, so keep it safe.',
-                        'Import everything restores that file, for example on a new computer. Each tool\'s first setup can also import it.',
-                        'Import from old scripts brings in the data of the separate toolbar scripts you used before. The toolbar also offers it by itself once a day until it is done.'
+                        'Import everything restores that file, for example on a new computer. Each tool\'s first setup can also import it.'
                     ]);
 
                     body.appendChild(hrow([
@@ -4146,14 +3992,6 @@ Version 1.0.0:
             toolbarElement.style.transform = 'none';
         }
 
-        // Suite marker: signals to other scripts that the suite is active
-        if (!document.getElementById('custom-toolbar-suite-marker')) {
-            const marker = document.createElement('div');
-            marker.id = 'custom-toolbar-suite-marker';
-            marker.style.display = 'none';
-            document.body.appendChild(marker);
-        }
-
         setupEventListeners();
         snShellWatch();
 
@@ -4486,7 +4324,6 @@ Version 1.0.0:
                             <div class="setting-item">
                                 <button id="export-everything" class="btn-secondary">Export everything</button>
                                 <button id="import-everything" class="btn-secondary">Import everything</button>
-                                <button id="import-old-scripts" class="btn-secondary">Import from old scripts</button>
                             </div>
                         </div>
                     </div>
@@ -4623,7 +4460,6 @@ Version 1.0.0:
         document.getElementById('reset-settings').addEventListener('click', resetSettings);
         document.getElementById('export-everything').addEventListener('click', dtExportEverything);
         document.getElementById('import-everything').addEventListener('click', dtImportEverything);
-        document.getElementById('import-old-scripts').addEventListener('click', () => dtRunMigration(true));
 
         const showLabelsEl   = document.getElementById('show-labels');
         const labelPosRow    = document.getElementById('label-position-row');
@@ -4909,7 +4745,7 @@ Version 1.0.0:
         for (const c of toolRegistry.values()) {
             const reg = DATA_REGISTRY.find(t => t.id === c.id) || {};
             items.push({ key: 'tool:' + c.id, label: reg.name || c.tooltip || c.id, hint: reg.description || '',
-                words: [c.tooltip, reg.formerly, ...(reg.includes || [])].filter(Boolean).join(' '),
+                words: [c.tooltip, ...(reg.includes || [])].filter(Boolean).join(' '),
                 run: () => document.dispatchEvent(new CustomEvent('toolbarToolClicked', { detail: { id: c.id } })) });
         }
         for (const [id, a] of suitePaletteActions) {
@@ -5270,15 +5106,6 @@ Version 1.0.0:
                 const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(16, 28) }, await this.key(passphrase, all.slice(0, 16)), all.slice(28));
                 return new TextDecoder().decode(dec);
             },
-            // Tokens saved by very old versions were only obfuscated
-            legacy(text) {
-                try {
-                    const d = atob(text);
-                    let out = '';
-                    for (let i = 0; i < d.length; i++) out += String.fromCharCode(d.charCodeAt(i) - 7 - (i % 5));
-                    return out;
-                } catch (e) { return text; }
-            },
         };
 
         /* ── Unlocked passphrase: the script's own storage, one hour after the last use ── */
@@ -5316,7 +5143,8 @@ Version 1.0.0:
 
         /* ── Keys ── */
 
-        const hasKey = host => !!GM_getValue(K.token(host), '');
+        // A key counts only with its passphrase check: a token without one cannot be unlocked and is entered again.
+        const hasKey = host => !!GM_getValue(K.token(host), '') && !!GM_getValue(K.hash(host), '');
         const expiryOf = host => { const e = GM_getValue(K.expiry(host), null); return e && e.expiryDate ? e : null; };
 
         function status(host) {
@@ -5360,13 +5188,10 @@ Version 1.0.0:
             emit();
         }
 
-        // Keys from very old versions were saved without a passphrase hash, only obfuscated
-        const isLegacy = host => !!GM_getValue(K.token(host), '') && !GM_getValue(K.hash(host), '');
 
         async function readKey(host) {
             const data = GM_getValue(K.token(host), '');
             if (!data) return null;
-            if (isLegacy(host)) return crypt.legacy(data);
             const passphrase = sessionGet(host);
             if (!passphrase) return null;
             try { const key = await crypt.decrypt(data, passphrase); sessionTouch(host); return key; }
@@ -5458,7 +5283,7 @@ Version 1.0.0:
         function unlock(host, { caller } = {}) {
             const t = slotOf(host);
             if (!t || !hasKey(t.host)) return Promise.resolve(false);
-            if (isLegacy(t.host) || sessionGet(t.host)) return Promise.resolve(true);
+            if (sessionGet(t.host)) return Promise.resolve(true);
             if (unlocking[t.host]) return unlocking[t.host];
             unlocking[t.host] = sessionLoad(t.host).then(loaded => loaded || new Promise(resolve => {
                 const d = openDialog('nsapi-unlock', `
@@ -10879,9 +10704,12 @@ Version 1.1.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '1.7.14';
+    const SCRIPT_VERSION = '1.7.15';
 
-    const CHANGELOG = `Version 1.7.14:
+    const CHANGELOG = `Version 1.7.15:
+- The team setup on first use opens without waiting for a check of the old separate scripts.
+
+Version 1.7.14:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 1.7.13:
@@ -13206,8 +13034,7 @@ Thank you for your cooperation.` : '';
         const members = getStoredMembers();
 
         if (!members || members.length === 0) {
-            // Wait until the toolbar had the chance to import a saved team list.
-            dtWhenMigrationSettled(() => {
+            dtWhenStarted(() => {
                 const imported = getStoredMembers();
                 if (imported && imported.length) { initializeModal(imported); return; }
                 showMemberSetupWizard((newMembers) => {
@@ -13244,9 +13071,12 @@ Thank you for your cooperation.` : '';
      *  CONSTANTS & CONFIGURATION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.1.8';
+    const SCRIPT_VERSION = '2.1.9';
 
-    const CHANGELOG = `Version 2.1.8:
+    const CHANGELOG = `Version 2.1.9:
+- The tenant host setup on first use opens without waiting for a check of the old separate scripts.
+
+Version 2.1.8:
 - After you save and apply a profile, it opens again with a green line on top saying what was saved and the change note, and its card glows green for a moment. The line stays until you change something or close it with ✕. Before, the profile opened again with no sign that the save worked.
 
 Version 2.1.7:
@@ -15913,8 +15743,7 @@ Version 1.4.1:
         isInitialized = true;
 
         // Show host setup on first run (non-blocking — modal triggers on toolbar click too)
-        // Waits until the toolbar had the chance to import saved hosts.
-        dtWhenMigrationSettled(() => {
+        dtWhenStarted(() => {
             if (!areTenantHostsConfigured()) {
                 showTenantHostSetup(() => console.log('✅ Tenant hosts configured.'));
             }
@@ -15950,9 +15779,12 @@ Version 1.4.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.4.10';
+    const SCRIPT_VERSION = '2.4.11';
 
-    const CHANGELOG = `Version 2.4.10:
+    const CHANGELOG = `Version 2.4.11:
+- The name prompt on first use opens without waiting for a check of the old separate scripts.
+
+Version 2.4.10:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 2.4.9:
@@ -17900,8 +17732,7 @@ Version 2.3.1:
 
         // Show first-run prompt if no username is stored
         if (!targetUsername) {
-            // Waits until the toolbar had the chance to import a saved username.
-            dtWhenMigrationSettled(() => {
+            dtWhenStarted(() => {
                 if (!getStoredUsername()) setTimeout(() => showFirstRunPrompt(), 800);
             });
         } else {
@@ -18165,9 +17996,13 @@ Version 2.3.1:
      *  VERSION
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.17.5';
+    const SCRIPT_VERSION = '2.17.6';
 
-    const CHANGELOG = `Version 2.17.5:
+    const CHANGELOG = `Version 2.17.6:
+- The tracker no longer looks for the address of the old team server when it starts.
+- A tracker you never chose in Choose your tools stays off until you tick it there.
+
+Version 2.17.5:
 - A Custom entry now writes its note into the ticket: the note as typed in Work Notes, and between the greeting and the sign off in Comments. Its card shows ↪ Write, and Write all to ticket includes it.
 - A Custom entry with no note still writes nothing.
 
@@ -20491,9 +20326,7 @@ Version 1.4.3:
      *    - 'workNotesOnly'  → write technical text to work_notes
      *    - 'commentsOnly'   → write customer-facing text + @mention to comments
      *
-     *  Mention-insertion machinery is adapted from
-     *  Standalone Scripts/ServiceNowTicketResponseHelper.js. Custom (freeform)
-     *  entries don't auto-write (no template defined for them).
+     *  Custom (freeform) entries don't auto-write (no template defined for them).
      * ==========================================================*/
 
     const ticketWriter = (() => {
@@ -27326,9 +27159,6 @@ Version 1.4.3:
         if (!document.body) { setTimeout(initialize, 50); return; }
         if (isInitialized) return;
         isInitialized = true;
-        // The old team server is retired: its address and token are not needed any more.
-        GM_deleteValue('changeTrackerWorkerUrl');
-        GM_deleteValue('changeTrackerToken');
         document.head.appendChild(styleEl);
         initializeSidebar();
         console.log('✅ Change Tracker ready!');
@@ -29028,7 +28858,7 @@ Version 1.0:
 
     // This body runs as soon as the suite loads (document start), because the steering
     // request sniffer must be in place before the Netskope console makes its first calls.
-    // Only Netskope tenant pages get it, the same pages the standalone script matched.
+    // Only Netskope tenant pages get it.
     if (!/\.goskope\.com$/.test(location.hostname)) return function register() {};
 
 
@@ -29065,9 +28895,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.50.1';
+    const SCRIPT_VERSION = '1.50.2';
 
-    const CHANGELOG = `Version 1.50.1:
+    const CHANGELOG = `Version 1.50.2:
+- The name prompt on first use opens without waiting for a check of the old separate scripts.
+
+Version 1.50.1:
 - On Client Configuration the "↕ Reorder" button now sits next to the search box instead of inside it.
 
 Version 1.50.0:
@@ -29774,9 +29607,9 @@ Version 1.16:
             return row;
         }
 
-        /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd', 'sslExport', 'txExport', 'configReorder'];
-        FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
+        /* ── Feature rows outside any category ── */
+        const TOP_LEVEL_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd', 'sslExport', 'txExport', 'configReorder'];
+        FEATURES.filter(f => TOP_LEVEL_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
 
@@ -33457,8 +33290,6 @@ Version 1.16:
     const BC_PRIMARY_ID       = 'activities-constraint-modal';
     const BC_PANEL_SELECTOR   = '[data-testid="user-constraint-profile-form-panel-sidepanel"]';
     const BC_LIST_SELECTOR    = '[data-testid="constraint-profile-email-list-wrapper"]';
-    // Button IDs match the original standalone scripts so a copy of those
-    // that is still installed never adds a second set of buttons.
     const BC_ENTRY_BUTTON_ID  = 'bulk-constraint-entry-button';
     const BC_DELETE_BUTTON_ID = 'bulk-constraint-delete-button';
     const BC_COPY_BUTTON_ID   = 'bulk-constraint-copy-button';
@@ -38705,7 +38536,7 @@ Version 1.16:
     const smWait = ms => new Promise(resolve => setTimeout(resolve, ms));
     const smKey  = value => String(value || '').trim().toLowerCase();
 
-    // Same rules as the old standalone bulk script: BOM, quotes, and ; , or tab, whichever the first line uses most.
+    // Reads pasted or CSV rows: BOM, quotes, and ; , or tab, whichever the first line uses most.
     function smParseRows(text) {
         text = String(text || '').replace(/^﻿/, '');
         const firstLine = text.split(/\r?\n/)[0] || '';
@@ -43090,8 +42921,7 @@ Version 1.16:
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
-        // Waits until the toolbar had the chance to import a saved name.
-        dtWhenMigrationSettled(() => {
+        dtWhenStarted(() => {
             if (!GM_getValue('toolkit_username', '')) setTimeout(() => showUsernamePromptModal(), 800);
         });
 
@@ -43123,23 +42953,16 @@ Version 1.16:
             registerTicketAssignmentTool();
             registerURLListEditor();
         }
-        // Netskope tenant pages only, as in the standalone scripts. The support portal does not need these tools.
+        // Netskope tenant pages only. The support portal does not need these tools.
         if (/\.goskope\.com$/.test(location.hostname)) {
             registerNetskopePolicyToolkit();
         }
-        dtAutoMigrate();
+        dtStart();
     }
-    // The floating toolbar only shows on ServiceNow and Netskope, like the old Toolbar script.
+    // The floating toolbar only shows on ServiceNow and Netskope.
     // Elsewhere only General Web Toolkit runs (its ticket number button works on any site).
     function startSuite() {
         if (dtToolRunsHere('toolbar')) initToolbar();
-        else if (!document.getElementById('custom-toolbar-suite-marker')) {
-            // Tells the old separate scripts that the suite is installed, so they stay quiet.
-            const marker = document.createElement('div');
-            marker.id = 'custom-toolbar-suite-marker';
-            marker.style.display = 'none';
-            document.body.appendChild(marker);
-        }
         doRegisterAllTools();
     }
     if (document.readyState === 'loading') {

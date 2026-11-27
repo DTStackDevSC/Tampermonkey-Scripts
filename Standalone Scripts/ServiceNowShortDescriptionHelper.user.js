@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.13.1
+// @version      4.13.2
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,13 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.13.1';
-    const CHANGELOG = `Version 4.13.1:
+    const SCRIPT_VERSION = '4.13.2';
+    const CHANGELOG = `Version 4.13.2:
+- ⚙ Suite no longer has Import from old scripts, and Ticket Helpers no longer asks to bring in data from the separate helper scripts used before the suite. Export everything and Import everything work as before.
+- Choose your tools and ⚙ Suite > Tools no longer show the old name of renamed helpers.
+- Short Description Builder, Response Templates, SLA Alert Banner and Support Case Subject Builder: their first setup opens without waiting for a check of the old separate scripts.
+
+Version 4.13.1:
 - Response Templates: new variable button @Mention Requested For mentions the person the request is for. The variable buttons now go in this order: @Mention Opened By, Opened By Email, @Mention Requested For, Requested For Email, Page Type, Ticket Number, My Name, Today, Short Description, Tenant.
 
 Version 4.13.0:
@@ -197,55 +202,49 @@ Version 4.0.0:
 
     /* ==========================================================
      *  DATA TRANSFER
-     *  Moves tool data between the suite, the old separate tool
-     *  scripts and backup files.
+     *  Tool data registry, backup files and which tools run.
      * ==========================================================*/
 
     // Which tool owns each stored key. The suite entry is listed first so its exact keys win.
-    // pages are the @match rules of each tool's old separate script: it only runs there.
+    // pages are the @match rules of each tool: it only runs there.
     const DATA_REGISTRY = [
-        { id: 'suite', name: 'Ticket Helpers', site: 'all', script: '|| Ticket Helpers ||',
+        { id: 'suite', name: 'Ticket Helpers', site: 'all',
           pages: ['https://*.service-now.com/*', 'https://*.goskope.com/*', 'https://*.netskope.com/*'],
           exact: ['shortDescTeam'], prefixes: ['ticketHelpers', 'tenantURL_'] },
-        { id: 'shortDescription', name: 'Short Description Builder', site: 'servicenow', script: '|| Ticket Helpers ||',
+        { id: 'shortDescription', name: 'Short Description Builder', site: 'servicenow',
           description: 'Builds the short description in the team format, with tenant, member firm and complexity.',
           category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'your team',
           whenToUse: 'On every new ticket, before working it.',
-          formerly: 'Short Description Helper',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*'],
           exact: [], prefixes: ['shortDesc'], setupKeys: ['shortDescTeam'] },
-        { id: 'ticketResponse', name: 'Response Templates', site: 'servicenow', script: 'Ticket Response Helper',
+        { id: 'ticketResponse', name: 'Response Templates', site: 'servicenow',
           description: 'Inserts team reply templates into comments or work notes, with the requester @mentioned.',
           category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: 'your team',
           whenToUse: 'When you reply to the requester or close a ticket.',
-          formerly: 'Ticket Response Helper',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*', 'https://*.service-now.com/sc_task.do*'],
           exact: [], prefixes: ['ticketResponse'], setupKeys: ['ticketResponseCustomResponses', 'ticketResponsePinned', 'ticketResponseFooterText'] },
-        { id: 'formattedText', name: 'Formatted Text Editor', site: 'servicenow', script: 'Formatted Text Helper',
+        { id: 'formattedText', name: 'Formatted Text Editor', site: 'servicenow',
           description: 'Writes comments and work notes with colors, tables, links and pasted images.',
           category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: '',
           whenToUse: 'When a reply needs a table, a screenshot or highlighted steps.',
-          formerly: 'Formatted Text Helper',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*'],
           exact: [], prefixes: ['formattedTextHelper'] },
-        { id: 'slaBanner', name: 'SLA Alert Banner', site: 'servicenow', script: 'ServiceNow SLA Alert Banner',
+        { id: 'slaBanner', name: 'SLA Alert Banner', site: 'servicenow',
           description: 'Shows a colored banner on the ticket when its SLA due date is close.',
           category: 'servicenow', where: 'Appears on: ServiceNow ticket', setup: '',
           whenToUse: 'Nothing to do: it appears by itself on open tickets.',
           pages: ['https://*.service-now.com/sc_req_item.do*', 'https://*.service-now.com/incident.do*'],
           exact: [], prefixes: ['sla_banner_'], setupKeys: ['sla_banner_date_format'] },
-        { id: 'policyNaming', name: 'Policy Name Builder', site: 'netskope', script: 'Real-time Protection Policy Naming Helper',
+        { id: 'policyNaming', name: 'Policy Name Builder', site: 'netskope',
           description: 'Builds Netskope policy names in the team format, with saved presets.',
           category: 'netskope', where: 'Appears on: Netskope console', setup: '',
           whenToUse: 'When you create or rename a Real-time Protection or DLP policy.',
-          formerly: 'Policy Naming Helper',
           pages: ['https://*.goskope.com/*', 'https://*.netskope.com/*'],
           exact: ['netskopePresets'], prefixes: ['netskopeHelper'], setupKeys: ['netskopePresets'] },
-        { id: 'ticketSubject', name: 'Support Case Subject Builder', site: 'support', script: 'Netskope Ticket Subject Helper',
+        { id: 'ticketSubject', name: 'Support Case Subject Builder', site: 'support',
           description: 'Builds the subject line of a Netskope support case in the team format.',
           category: 'netskope', where: 'Appears on: Netskope support portal', setup: '',
           whenToUse: 'When you open a case on support.netskope.com.',
-          formerly: 'Ticket Subject Helper',
           pages: ['https://support.netskope.com/*'],
           exact: [], prefixes: ['nsTkt', 'nsTenant'] }
     ];
@@ -273,25 +272,6 @@ Version 4.0.0:
         return '';
     }
 
-    // Copies the old scripts' team and tenant URLs into the shared keys, only where those are empty.
-    // Returns a note for the user when the old team differs from the one already saved.
-    function dtMapShared(values) {
-        let note = '';
-        if (values.ticketResponseTeam) {
-            const current = GM_getValue('shortDescTeam', null);
-            if (!current) GM_setValue('shortDescTeam', values.ticketResponseTeam);
-            else if (current !== values.ticketResponseTeam) note = 'Response Templates used another team. Your Short Description Builder team is kept: change it in ⚙ Suite if needed.';
-        }
-        const map = { nsTenantEMA: 'tenantURL_EMA', nsTenantEU: 'tenantURL_EU', nsTenantCE: 'tenantURL_CE', nsTenantAPA: 'tenantURL_APA', nsTenantAME: 'tenantURL_AME' };
-        for (const [from, to] of Object.entries(map)) {
-            if (values[from] && !GM_getValue(to, '')) {
-                const v = String(values[from]).trim();
-                GM_setValue(to, /^https?:\/\//i.test(v) ? v : 'https://' + v);   // shared URLs are kept with https://
-            }
-        }
-        return note;
-    }
-
     // Does a tool run? Each tool section asks this before doing anything.
     function isToolEnabled(id) {
         const choices = dtChoices();
@@ -304,7 +284,8 @@ Version 4.0.0:
         return Array.isArray(detected) && detected.includes(id);
     }
 
-    function dtMigrationSite() {
+    // The site the suite is on: the picker and the "New helper added" window only open there.
+    function dtSuiteSite() {
         const host = location.hostname;
         if (host === 'deloitteglobal.service-now.com' || /\.service-now\.com$/.test(host)) return 'servicenow';
         if (host === 'support.netskope.com') return 'support';
@@ -313,9 +294,9 @@ Version 4.0.0:
     }
 
 
-    const DT_MIGRATED_KEY = 'ticketHelpersMigratedTools';
-    const DT_DECLINED_KEY = 'ticketHelpersMigrationDeclined';
-    const DT_PRIVATE_KEYS = [DT_MIGRATED_KEY, DT_DECLINED_KEY, 'ticketHelpersDetectedTools', 'ticketHelpersPickerLater', 'ticketHelpersKnownTools', 'ticketHelpersAnnounceLater'];
+    // Left in storage by older versions and no longer read: removed so they never land in a backup.
+    ['ticketHelpersMigratedTools', 'ticketHelpersMigrationDeclined'].forEach(key => GM_deleteValue(key));
+    const DT_PRIVATE_KEYS = ['ticketHelpersDetectedTools', 'ticketHelpersPickerLater', 'ticketHelpersKnownTools', 'ticketHelpersAnnounceLater'];
     // Version and "changelog seen" keys are written on every load, so they never count as data.
     const DT_META_RE = /(version|changelog[-_]?seen)$/i;
 
@@ -324,7 +305,7 @@ Version 4.0.0:
     function dtOwnerOf(key) { return DATA_REGISTRY.find(t => dtOwns(t, key)) || null; }
     function dtIsPlainObject(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
 
-    // Keeps only the keys the tool owns. Bookkeeping keys of the migration are never accepted.
+    // Keeps only the keys the tool owns. Private bookkeeping keys are never accepted.
     function dtFilterValues(tool, values) {
         const kept = {}, dropped = [];
         for (const [key, value] of Object.entries(values)) {
@@ -370,7 +351,7 @@ Version 4.0.0:
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    /* Tool activation: which tools run, and the Change Tracker beta code. */
+    /* Tool activation: which tools run. */
     const DT_CHOICES_KEY      = 'ticketHelpersToolChoices';
     const DT_INSTALL_KIND_KEY = 'ticketHelpersInstallKind';
     const DT_DETECTED_KEY     = 'ticketHelpersDetectedTools';
@@ -536,7 +517,7 @@ Version 4.0.0:
     }
 
     // Writes each entry and reports the result. Returns the ids that were written and that failed.
-    function dtApply(entries, title, options) {
+    function dtApply(entries, title) {
         const doneIds = [], failedIds = [];
         for (const entry of entries) {
             try {
@@ -548,16 +529,9 @@ Version 4.0.0:
         }
         const names = ids => ids.map(id => dtTool(id).name).join(', ');
         const lines = [];
-        // Team and tenant URLs of the old scripts go to the shared settings when those are empty.
-        const sharedNote = entries.filter(e => doneIds.includes(e.tool.id)).map(e => dtMapShared(e.values)).filter(Boolean)[0] || '';
         if (doneIds.length) lines.push('Imported: ' + names(doneIds) + '.');
         if (failedIds.length) lines.push('Could not import: ' + names(failedIds) + '. Try again later.');
-        if (sharedNote) lines.push(sharedNote);
         if (doneIds.length) lines.push('Reload the page to apply it.');
-        if (doneIds.length && options && options.uninstallHint) {
-            lines.push('You can now uninstall these old scripts in Tampermonkey: ' +
-                doneIds.map(id => dtTool(id).script).join(', ') + '.');
-        }
         dtDialog(title, lines, doneIds.length
             ? [{ label: 'Reload now', primary: true, onClick: () => location.reload() }, { label: 'Close' }]
             : [{ label: 'Close', primary: true }]);
@@ -619,140 +593,26 @@ Version 4.0.0:
         return link;
     }
 
-    const DT_WAIT_MS = 2000;
     const DT_START_DELAY_MS = 2000;
 
-    function dtMigrated() {
-        const v = GM_getValue(DT_MIGRATED_KEY, []);
-        return Array.isArray(v) ? v : [];
-    }
-    function dtMarkMigrated(ids) {
-        if (ids.length) GM_setValue(DT_MIGRATED_KEY, [...new Set([...dtMigrated(), ...ids])]);
-    }
-
-    // Asks the old separate scripts on this page for their data and calls done(answers)
-    // after DT_WAIT_MS. Only answers to this request, from known tools, are kept, and only
-    // with the keys that tool owns.
-    function dtRequestOldData(done) {
-        const requestId = Math.random().toString(36).slice(2) + Date.now().toString(36);
-        const answers = new Map();
-        const payloads = new Map();
-        // Each old script answers once. Two different answers for one tool mean something
-        // else on the page is answering too, so that tool is not trusted. Answers whose data
-        // does not have the expected shape are not trusted either.
-        const conflicts = new Set();
-        const onAnswer = (e) => {
-            const d = e.detail;
-            if (!d || d.requestId !== requestId || d.protocol !== 1 || typeof d.payload !== 'string') return;
-            const tool = dtTool(d.toolId);
-            if (!tool || tool.id === 'suite') return;
-            if (payloads.has(tool.id)) {
-                if (payloads.get(tool.id) !== d.payload) conflicts.add(tool.id);
-                return;
-            }
-            payloads.set(tool.id, d.payload);
-            let values;
-            try { values = JSON.parse(d.payload); } catch (err) { return; }
-            if (!dtIsPlainObject(values)) return;
-            const filtered = dtFilterValues(tool, values);
-            if (dtCheckValues(tool, filtered.values)) { conflicts.add(tool.id); return; }
-            answers.set(tool.id, { tool, ...filtered });
-        };
-        document.addEventListener('ticketHelpersDataResponse', onAnswer);
-        document.dispatchEvent(new CustomEvent('ticketHelpersDataRequest', { detail: { requestId } }));
-        setTimeout(() => {
-            document.removeEventListener('ticketHelpersDataResponse', onAnswer);
-            done([...answers.values()].filter(a => !conflicts.has(a.tool.id)), [...conflicts].map(id => dtTool(id)));
-        }, DT_WAIT_MS);
+    // First setups that open by themselves wait until every helper has run its start code, so they
+    // never open before the page is ready for them.
+    let dtStarted = false;
+    const dtStartWaiters = [];
+    function dtWhenStarted(fn) {
+        if (dtStarted) fn(); else dtStartWaiters.push(fn);
     }
 
-    function dtRunMigration(manual) {
-        if (!dtMigrationSite()) {
-            if (manual) dtDialog('Import from old scripts', ['Open a ServiceNow page or a Netskope tenant page, then try again from there.'], [{ label: 'Close', primary: true }]);
-            return;
-        }
-        if (!manual && GM_getValue(DT_DECLINED_KEY, '') === dtToday()) { dtSettle(); dtMaybeShowPicker(); return; }
-        dtRequestOldData((answers, refused) => {
-            const conflicts = manual ? refused : refused.filter(tool => !dtMigrated().includes(tool.id));
-            // A refused tool is still one the user had: it is offered in the picker, and the
-            // warning is shown once. ⚙ Suite > Import from old scripts can try it again.
-            dtMarkDetected([...answers, ...conflicts.map(tool => ({ tool }))].map(a => a.tool.id));
-            if (!manual) dtMarkMigrated(conflicts.map(tool => tool.id));
-            const conflictNames = conflicts.map(tool => tool.name).join(', ');
-            const migrated = dtMigrated();
-            const fresh = manual ? answers : answers.filter(a => !migrated.includes(a.tool.id));
-            const hasValues = a => Object.keys(a.values).length > 0;
-            const empty = fresh.filter(a => !hasValues(a));
-            // Automatic runs never replace what the user set up in the suite. From ⚙ Suite,
-            // the user may choose to replace it, and the prompt says so.
-            const kept  = manual ? [] : fresh.filter(a => hasValues(a) && dtSuiteHasData(a.tool));
-            const todo  = fresh.filter(a => hasValues(a) && (manual || !dtSuiteHasData(a.tool)));
-            dtMarkMigrated([...empty, ...kept].map(a => a.tool.id));
-
-            if (!todo.length) {
-                dtSettle();
-                if (conflicts.length) {
-                    dtDialog('Import from old scripts', ['Not imported, because the data received did not look right: ' +
-                        conflictNames + '. Use a backup file instead.'],
-                        [{ label: 'Close', primary: true }], () => { if (!manual) dtMaybeShowPicker(); });
-                } else if (!manual) {
-                    dtMaybeShowPicker();
-                } else {
-                    dtDialog('Import from old scripts', [
-                        fresh.length
-                            ? 'Nothing to import: the old scripts on this page have no new data for Ticket Helpers.'
-                            : 'No old scripts answered on this page. Open a ServiceNow ticket, a Netskope tenant or the Netskope support portal where they ran, then try again.'
-                    ], [{ label: 'Close', primary: true }]);
-                }
-                return;
-            }
-
-            const lines = ['Data found from your previous scripts:'];
-            for (const a of todo) lines.push('• ' + a.tool.name +
-                (manual && dtSuiteHasData(a.tool) ? ' (replaces what you set up in Ticket Helpers)' : ''));
-            if (conflicts.length) lines.push('Not imported, because the data received did not look right: ' + conflictNames + '.');
-            const savedTeam = GM_getValue('shortDescTeam', '');
-            if (todo.some(a => a.values.ticketResponseTeam && savedTeam && a.values.ticketResponseTeam !== savedTeam)) {
-                lines.push('Team: Response Templates used another team. The Short Description Builder team is kept.');
-            }
-            if (kept.length) lines.push('Already set up in Ticket Helpers, left as they are: ' + kept.map(a => a.tool.name).join(', ') + '.');
-            lines.push('Import it into Ticket Helpers?');
-            dtDialog('Bring your data into Ticket Helpers', lines, [
-                { label: 'Import', primary: true, onClick: () => {
-                    const result = dtApply(todo, 'Bring your data into Ticket Helpers', { uninstallHint: true });
-                    dtMarkMigrated(result.done);
-                } },
-                { label: 'Not now', onClick: () => { GM_setValue(DT_DECLINED_KEY, dtToday()); dtMaybeShowPicker(); } }
-            ], dtSettle);
-        });
-    }
-
-    // First setups that open by themselves wait until the old scripts had their chance to
-    // hand over data on this page, then check again whether they are still needed.
-    let dtSettled = false;
-    const dtSettleWaiters = [];
-    function dtSettle() {
-        if (dtSettled) return;
-        dtSettled = true;
-        for (const fn of dtSettleWaiters.splice(0)) {
+    // Called once per page load after every helper started: runs the waiting first setups,
+    // then offers the tool picker on ServiceNow, Netskope tenant and support pages.
+    function dtStart() {
+        if (dtStarted) return;
+        dtStarted = true;
+        for (const fn of dtStartWaiters.splice(0)) {
             try { fn(); } catch (e) { console.error('Ticket Helpers first setup:', e); }
         }
+        if (dtSuiteSite()) setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS);
     }
-    function dtWhenMigrationSettled(fn) {
-        if (dtSettled) fn(); else dtSettleWaiters.push(fn);
-    }
-
-    // Started once per page load on ServiceNow and Netskope tenant pages, while some tool
-    // of that site is not migrated yet.
-    function dtAutoMigrate() {
-        const site = dtMigrationSite();
-        if (!site) { dtSettle(); return; }
-        const migrated = dtMigrated();
-        const pending = DATA_REGISTRY.some(t => t.id !== 'suite' && t.site === site && !migrated.includes(t.id));
-        if (!pending) { dtSettle(); setTimeout(dtMaybeShowPicker, DT_START_DELAY_MS); return; }
-        setTimeout(() => dtRunMigration(false), DT_START_DELAY_MS);
-    }
-
 
     // Sections of the tool list: the platform each tool works on, not the page it runs on.
     const DT_CATEGORIES = [{ id: 'servicenow', label: 'ServiceNow' }, { id: 'netskope', label: 'Netskope' }];
@@ -819,12 +679,6 @@ Version 4.0.0:
                 const name = document.createElement('strong');
                 name.textContent = tool.name;
                 text.appendChild(name);
-                if (tool.formerly) {
-                    const was = document.createElement('span');
-                    was.textContent = ` (formerly ${tool.formerly})`;
-                    Object.assign(was.style, { color: '#999', fontSize: '11px' });
-                    text.appendChild(was);
-                }
                 const desc = document.createElement('span');
                 desc.textContent = tool.description;
                 Object.assign(desc.style, { display: 'block', color: '#555', fontSize: '12px' });
@@ -857,7 +711,7 @@ Version 4.0.0:
                 }
                 section.appendChild(card);
                 boxes.set(tool.id, cb);
-                rows.push({ card, text: [tool.name, tool.formerly, tool.description, tool.whenToUse, (tool.includes || []).join(' ')].join(' ').toLowerCase() });
+                rows.push({ card, text: [tool.name, tool.description, tool.whenToUse, (tool.includes || []).join(' ')].join(' ').toLowerCase() });
             }
             groups.push({ section, rows });
             wrap.appendChild(section);
@@ -938,12 +792,6 @@ Version 4.0.0:
                   location.reload();
               } }
         ]);
-    }
-
-    function dtMarkDetected(ids) {
-        if (!ids.length) return;
-        const current = GM_getValue(DT_DETECTED_KEY, []);
-        GM_setValue(DT_DETECTED_KEY, [...new Set([...(Array.isArray(current) ? current : []), ...ids])]);
     }
 
 
@@ -1058,7 +906,7 @@ Version 4.0.0:
     }
 
     function dtMaybeShowPicker() {
-        const site = dtMigrationSite();
+        const site = dtSuiteSite();
         if (!site || document.getElementById('ticketHelpersDataHost')) return;
         const choices = dtChoices();
         const all = DATA_REGISTRY.filter(t => t.id !== 'suite' && !dtIsNewTool(t.id));
@@ -1160,7 +1008,7 @@ Version 4.0.0:
         }
         const dataRow = document.createElement('div');
         Object.assign(dataRow.style, { display: 'flex', gap: '6px', flexWrap: 'wrap' });
-        [['Export everything', dtExportEverything], ['Import everything', dtImportEverything], ['Import from old scripts', () => dtRunMigration(true)]].forEach(([label, fn]) => {
+        [['Export everything', dtExportEverything], ['Import everything', dtImportEverything]].forEach(([label, fn]) => {
             const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
             Object.assign(b.style, { padding: '6px 10px', border: '1px solid #ccc', borderRadius: '5px', background: '#f3f4f6', color: '#333', cursor: 'pointer', fontSize: '12px' });
             b.onclick = (e) => { if (e.isTrusted) fn(); };
@@ -2353,8 +2201,13 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.13.1';
-    const CHANGELOG = `Version 4.13.1:
+    const SCRIPT_VERSION = '4.13.2';
+    const CHANGELOG = `Version 4.13.2:
+- ⚙ Suite no longer has Import from old scripts, and Ticket Helpers no longer asks to bring in data from the separate helper scripts used before the suite. Export everything and Import everything work as before.
+- Choose your tools and ⚙ Suite > Tools no longer show the old name of renamed helpers.
+- Short Description Builder, Response Templates, SLA Alert Banner and Support Case Subject Builder: their first setup opens without waiting for a check of the old separate scripts.
+
+Version 4.13.1:
 - Response Templates: new variable button @Mention Requested For mentions the person the request is for. The variable buttons now go in this order: @Mention Opened By, Opened By Email, @Mention Requested For, Requested For Email, Page Type, Ticket Number, My Name, Today, Short Description, Tenant.
 
 Version 4.13.0:
@@ -5508,8 +5361,7 @@ Version 3.0.8.1:
 
     function startScript() {
         if (!areTenantURLsConfigured() || !getCurrentTeam()) {
-            // Waits until the import had its chance to bring the team and tenant URLs.
-            dtWhenMigrationSettled(() => {
+            dtWhenStarted(() => {
                 if (!areTenantURLsConfigured()) {
                     showTenantURLSetup(() => { if (!getCurrentTeam()) showTeamSelector(); else initializePanel(); });
                 } else if (!getCurrentTeam()) {
@@ -5546,9 +5398,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.24.1';
+    const SCRIPT_VERSION = '2.24.2';
 
-    const CHANGELOG = `Version 2.24.1:
+    const CHANGELOG = `Version 2.24.2:
+- The team selector on first use opens without waiting for a check of the old separate scripts.
+
+Version 2.24.1:
 - New variable button @Mention Requested For mentions the person the request is for (on incidents: the caller). It replaces the plain Requested For button.
 - The variable buttons now go in this order: @Mention Opened By, Opened By Email, @Mention Requested For, Requested For Email, Page Type, Ticket Number, My Name, Today, Short Description, Tenant.
 
@@ -9666,8 +9521,7 @@ Regards.`,
 
         const teamKey = getCurrentTeamKey();
         if (!teamKey) {
-            // Waits until the import had its chance to bring the team.
-            dtWhenMigrationSettled(() => { if (getCurrentTeamKey()) initializeDropdown(); else showTeamSelector(); });
+            dtWhenStarted(() => { if (getCurrentTeamKey()) initializeDropdown(); else showTeamSelector(); });
         } else {
             initializeDropdown();
         }
@@ -13049,10 +12903,13 @@ Version 1.0.3:
         if (!isToolEnabled('slaBanner') || !dtToolRunsHere('slaBanner')) return;
 
 
-    const SCRIPT_VERSION = '1.4.6';
+    const SCRIPT_VERSION = '1.4.7';
 
 
-    const CHANGELOG = `Version 1.4.6:
+    const CHANGELOG = `Version 1.4.7:
+- The date format setup on first use opens without waiting for a check of the old separate scripts.
+
+Version 1.4.6:
 - The Feature Guide is drawn with the same pieces as every other guide, so its pictures look the same everywhere. What it says has not changed.
 
 Version 1.4.5:
@@ -13730,8 +13587,7 @@ Version 1.3:
         if (savedFormat && DATE_FORMATS[savedFormat]) {
             monitorDueDate(savedFormat);
         } else {
-            // Waits until the import had its chance to bring the saved date format.
-            dtWhenMigrationSettled(() => {
+            dtWhenStarted(() => {
                 const imported = GM_getValue(DATE_FORMAT_KEY, null);
                 if (imported && DATE_FORMATS[imported]) monitorDueDate(imported);
                 else showFormatPicker(false, formatKey => monitorDueDate(formatKey));
@@ -16289,9 +16145,12 @@ Version 1.2.0:
      *  VERSION CONTROL
      * ========================================================== */
 
-    const SCRIPT_VERSION = '1.1.6';
+    const SCRIPT_VERSION = '1.1.7';
 
-    const CHANGELOG = `Version 1.1.6:
+    const CHANGELOG = `Version 1.1.7:
+- The tenant setup on first use opens without waiting for a check of the old separate scripts.
+
+Version 1.1.6:
 - The buttons at the top of the panel (Tenant URLs, ? Help, ⚙ Suite and the close button) keep their own size and look on the Netskope support portal, and the rest of the panel keeps its look too.
 
 Version 1.1.5:
@@ -17500,8 +17359,7 @@ Version 1.0.0:
 
     function boot() {
         if (!tenantsConfigured()) {
-            // Waits until the import had its chance to bring the tenant URLs.
-            dtWhenMigrationSettled(() => {
+            dtWhenStarted(() => {
                 if (tenantsConfigured()) { initPanel(); startInjection(); }
                 else showTenantSetup(() => { initPanel(); startInjection(); });
             });
@@ -17521,12 +17379,6 @@ Version 1.0.0:
      * ==========================================================*/
 
     // Tools ran their own start code above (the suite runs at document idle).
-    // Now the migration check and the picker start, on ServiceNow and Netskope pages only.
-    if (document.body && !document.getElementById('ticket-helpers-suite-marker')) {
-        const marker = document.createElement('div');
-        marker.id = 'ticket-helpers-suite-marker';
-        marker.style.display = 'none';
-        document.body.appendChild(marker);
-    }
-    dtAutoMigrate();
+    // Now the waiting first setups and the picker start (the picker on ServiceNow and Netskope pages only).
+    dtStart();
 })();
