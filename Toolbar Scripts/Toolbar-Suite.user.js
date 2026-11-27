@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Toolbar%20Scripts/Toolbar-Suite.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      2.59.0
+// @version      2.60.0
 // @description  Floating toolbar for ServiceNow tickets and the Netskope console: change log, ticket assignment, Destination Profiles, domain checks and console bulk tools
 // @author       J.R.
 // @match        *://*/*
@@ -52,8 +52,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-   const SCRIPT_VERSION = '2.59.0';
-    const CHANGELOG = `Version 2.59.0:
+   const SCRIPT_VERSION = '2.60.0';
+    const CHANGELOG = `Version 2.60.0:
+- Netskope Console Toolkit: new "↕ Reorder" button on the Steering Configuration and Client Configuration lists. Tick one or more configurations, move them to an exact position, to the top or to the bottom, check the new order and save it with a second click. No more dragging rows many times. Netskope applies the order at once, ↩ Undo last save puts back the order from before.
+
+Version 2.59.0:
 - The suite is now called Toolbox Suite. Tampermonkey lists it as || Toolbox Suite || after this update, and the Feature Guide, What's New, Settings and Copy diagnostics use the new name. It is the same script: your tools, settings and saved data stay as they are, and updates keep arriving on their own.
 
 Version 2.58.4:
@@ -1437,7 +1440,7 @@ Version 1.0.0:
         { id: 'nsDlpToolkit', pages: ['https://*.goskope.com/*'], name: 'Netskope Console Toolkit', description: 'Adds copy buttons, change logs, bulk tools and exports to the Netskope console.',
           category: 'netskope', where: 'Appears on: Netskope console', setup: 'your name for log lines',
           whenToUse: 'Keep it on in the console. Open its bulk tools when a change touches many policies or steering configurations, and its exports for audits or troubleshooting.',
-          includes: ['Policy tools', 'Steering Exception tools', 'Copy policy', 'SSL Decryption export', 'Transaction Events export', 'Source tools', 'copy, open and log buttons'],
+          includes: ['Policy tools', 'Steering Exception tools', 'Copy policy', 'SSL Decryption export', 'Transaction Events export', 'Reorder Steering and Client Configurations', 'Source tools', 'copy, open and log buttons'],
           formerly: 'NS Policies Toolkit', site: 'netskope', script: '|Toolbar| Netskope Policies Toolkit',
           exact: [], prefixes: ['toolkit_'], setupKeys: ['toolkit_username'] }
     ];
@@ -29049,6 +29052,7 @@ Version 1.0:
         bulkGroupAdd:    'toolkit_bulkGroupAdd',
         sslExport:       'toolkit_sslExport',
         txExport:        'toolkit_txExport',
+        configReorder:   'toolkit_configReorder',
     };
 
     function getSetting(key)        { return GM_getValue(SETTING_KEYS[key], true); }
@@ -29058,9 +29062,12 @@ Version 1.0:
     // VERSION CONTROL & CHANGELOG
     // ─────────────────────────────────────────────────────────────
 
-    const SCRIPT_VERSION = '1.49.8';
+    const SCRIPT_VERSION = '1.50.0';
 
-    const CHANGELOG = `Version 1.49.8:
+    const CHANGELOG = `Version 1.50.0:
+- New "↕ Reorder" button on the Steering Configuration and Client Configuration lists. Tick one or more configurations (Shift+click for a range, filter by name or group), then move them to the top, the bottom, one place up or down, or to an exact position. The list shows the new order and where each one was before anything is saved. 💾 Save order asks for a second click, because Netskope applies the order at once, and then checks the result. If the order changed meanwhile nothing is sent. ↩ Undo last save shows the order from before so you can save it back. Turn it off in Settings with "↕ Reorder configurations".
+
+Version 1.49.8:
 - Bulk Constraint Tools: in the new side panel the three buttons sit in their own row under the header, so a long profile name no longer pushes Save out of view.
 
 Version 1.49.7:
@@ -29456,6 +29463,11 @@ Version 1.16:
             label:       '📥 Transaction Events export',
             description: 'On Skope IT Transaction Events, adds an "Export to CSV" button next to the refresh button: it downloads the events matching the time range and filters of the page, with those criteria written at the top of the file. Nothing is changed in Netskope.',
         },
+        {
+            key:         'configReorder',
+            label:       '↕ Reorder configurations',
+            description: 'On the Steering Configuration and Client Configuration lists, adds a "Reorder" button: tick one or more configurations, move them to an exact position, to the top or to the bottom, check the new order and save it. Netskope applies the order at once.',
+        },
     ];
 
     function buildSettingsModal() {
@@ -29705,6 +29717,7 @@ Version 1.16:
                     if (key === 'bulkGroupAdd') cleanupBulkGroups();
                     if (key === 'sslExport') cleanupSslExport();
                     if (key === 'txExport') cleanupTxExport();
+                    if (key === 'configReorder') cleanupConfigReorder();
                     if (key === 'dlpCharCounter') {
                         removeAll('.char-counter');
                         document.querySelectorAll('[data-counter-added]').forEach(el => {
@@ -29756,7 +29769,7 @@ Version 1.16:
         }
 
         /* ── Standalone feature rows ── */
-        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd', 'sslExport', 'txExport'];
+        const STANDALONE_KEYS = ['copyButtons', 'openButtons', 'refOpenButtons', 'smtpAutofill', 'saveReminder', 'dlpCharCounter', 'bulkConstraints', 'steeringRemover', 'sourceManager', 'policyCopy', 'bulkGroupAdd', 'sslExport', 'txExport', 'configReorder'];
         FEATURES.filter(f => STANDALONE_KEYS.includes(f.key)).forEach(f => {
             scrollBody.appendChild(buildFeatureRow(f, false));
         });
@@ -30967,6 +30980,59 @@ Version 1.16:
                 },
             },
             {
+                icon: '↕',
+                title: 'Reorder configurations',
+                buildContent(body) {
+                    lead(body, 'On the Steering Configuration and Client Configuration lists, put the configurations in an exact order without dragging.');
+                    body.appendChild(hrow([
+                        chip('🧹 Bulk remove', '#fff', { color: '#c62828', border: '1px solid #ccc' }),
+                        chip('➕ Bulk add', '#fff', { color: '#26890d', border: '1px solid #ccc' }),
+                        chip('↕ Reorder', '#fff', { color: '#4f5bd5', border: '1px solid #667eea' }),
+                    ], { marginBottom: '6px' }));
+                    caption(body, 'On Steering Configuration the button sits with the steering tools under the search box. On Client Configuration it sits next to the search box.');
+                    const tools = document.createElement('div');
+                    Object.assign(tools.style, { display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', background: '#fafaff',
+                        border: '1px solid #e5e7eb', borderRadius: '6px 6px 0 0', padding: '8px 10px', margin: '10px 0 0 0' });
+                    const gray = t => chip(t, '#fff', { color: '#444', border: '1px solid #ccc' });
+                    [gray('☑ Tick shown'), gray('⤒ Top'), gray('↑ Up'), gray('↓ Down'), gray('⤓ Bottom'),
+                        span('Move to position', { fontSize: '12px', color: '#555' }), gray('3'), gray('Move')].forEach(c => tools.appendChild(c));
+                    body.appendChild(tools);
+                    const list = document.createElement('div');
+                    Object.assign(list.style, { border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 6px 6px', marginBottom: '6px' });
+                    [
+                        ['1', 'Test - DTTL - Enablement', '', false, false],
+                        ['2', 'US - ODC - Steering Config', '', false, false],
+                        ['3', 'Test - UK - VDI - Steering Config', 'was 5', true, true],
+                        ['4', 'Test - US - Steering Config', 'was 3', false, true],
+                        ['', 'Default tenant config', 'always last, fixed by Netskope', false, false],
+                    ].forEach(([pos, name, tag, picked, moved]) => {
+                        const r = hrow([
+                            span(picked ? '☑' : pos ? '☐' : '', { width: '16px', color: '#667eea' }),
+                            span(pos, { width: '22px', textAlign: 'right', fontWeight: 'bold', color: moved ? '#b45309' : '#667eea' }),
+                            span(name, { flex: '1', fontSize: '12px', fontWeight: 'bold', color: pos ? '#333' : '#888' }),
+                            tag ? chip(tag, pos ? '#fff4e5' : '#eef2ff', { color: pos ? '#b45309' : '#555', border: pos ? '1px solid #f5d0a0' : '1px solid #d0d0f0' }) : span(''),
+                        ], { flexWrap: 'nowrap', margin: '0', padding: '5px 10px', borderBottom: '1px solid #f0f0f0', background: picked ? '#e8edff' : '#fff' });
+                        list.appendChild(r);
+                    });
+                    body.appendChild(list);
+                    caption(body, 'The list shows the new order before anything is saved. Moved configurations show where they were.');
+                    body.appendChild(hrow([
+                        chip('↩ Undo last save', '#fff', { color: '#444', border: '1px solid #ccc' }),
+                        chip('↺ Reset', '#fff', { color: '#444', border: '1px solid #ccc' }),
+                        chip('💾 Save order (1 move)', '#667eea'),
+                        chip('Click again to save 1 move', '#c62828'),
+                    ], { margin: '10px 0 0 0' }));
+                    bullets(body, [
+                        'Tick one or more rows (Shift+click ticks a range, the filter narrows the list), then use Top, Up, Down, Bottom or Move to position. Several ticked configurations move together and keep their order.',
+                        'Save order needs a second click, because Netskope applies the new order at once: there is no Apply Changes.',
+                        'It sends one move per configuration, the same request as a drag in the console, then reads the list again to check the result.',
+                        'If someone changed the order meanwhile, nothing is sent and the window shows the current order.',
+                        '↩ Undo last save shows the order from before your last save; save it to put it back. ↺ Reset drops the moves not saved yet.',
+                        'Closing after a save reloads the page so the console shows the new order. The default configuration always stays last.',
+                    ]);
+                },
+            },
+            {
                 icon: '⚙️',
                 title: 'Settings',
                 buildContent(body) {
@@ -31031,6 +31097,7 @@ Version 1.16:
                     togglesWrap.appendChild(toggle('📋 Copy Policy', true, 'Copy a Real-time Protection policy as readable text for a support case.'));
                     togglesWrap.appendChild(toggle('📥 SSL Decryption export', true, 'Download every SSL Decryption policy as an Excel file.'));
                     togglesWrap.appendChild(toggle('📥 Transaction Events export', true, 'Download the Skope IT Transaction Events of the page as a CSV file, with its time range and filters.'));
+                    togglesWrap.appendChild(toggle('↕ Reorder configurations', true, 'Put Steering and Client Configurations in an exact order: tick, move to a position, top or bottom, then save.'));
 
                     const logGroup = document.createElement('div');
                     Object.assign(logGroup.style, {
@@ -34409,7 +34476,7 @@ Version 1.16:
 
     // Must run before the console app starts so its first requests are seen
     if (getSetting('steeringRemover') || getSetting('sourceManager') || getSetting('policyCopy') || getSetting('bulkGroupAdd') ||
-        getSetting('txExport') || isToolEnabled('changeTracker')) nsInstallSniffer();
+        getSetting('txExport') || getSetting('configReorder') || isToolEnabled('changeTracker')) nsInstallSniffer();
 
     /* ── API calls ── */
 
@@ -37899,6 +37966,711 @@ Version 1.16:
         tx.timer = null;
         removeAll(`#${TX_BUTTON_ID}, #${TX_HOST_ID}`);
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // CONFIGURATION REORDER
+    // Puts Steering Configurations and Client Configurations in an exact order
+    // without dragging. Repeats the console's own move request (captured
+    // 2026-11-27, docs/netskope-api/netskope_config_reorder_capture.md): one
+    // request per moved configuration, exactly like a drag in the console.
+    // Netskope applies a new order at once, there is no Apply Changes.
+    // ─────────────────────────────────────────────────────────────
+
+    const RO_BUTTON_ID = 'nstk-reorder-btn';
+    const RO_HOST_ID   = 'nstk-reorder-host';
+    const RO_UNDO_KEY  = 'toolkit_configReorderUndo';
+    const RO_LABEL     = '↕ Reorder';
+    const RO_ARM_MS    = 6000;
+    const RO_KINDS = {
+        steering: {
+            title: 'Steering Configurations',
+            listPath: '/settings/steering_config/getSteeringList',
+            listBody: { searchOu: '' },
+            movePath: '/settings/steering_config/moveSteeringConfig',
+            resource: 'settings.steering-configuration',
+            clientPrefix: () => se.clientIdPrefix || 'L3NldHRpbmdzL3N0ZWVyaW5nLWNvbmZpZytzdGVlcmlu',
+            // The console sends the move with no resource header
+            moveHeaders: false,
+            row: r => ({ key: String(r.config_id), name: String(r.config_name || ''), sub: String(r.ou_or_group_name || ''),
+                priority: Number(r.priority), off: String(r.disabled) === '1' }),
+            // The ids in the new order; the default configuration is never sent
+            configList: (items) => items.map(i => i.key),
+        },
+        client: {
+            title: 'Client Configurations',
+            listPath: '/settings/clientConfiguration/getOUClientList',
+            listBody: { searchConfig: '' },
+            movePath: '/settings/clientConfiguration/moveClientConfig',
+            resource: 'settings',
+            clientPrefix: () => 'L3NldHRpbmdzK2NsaWVudENvbmZpZ3VyYXRpb24=',
+            moveHeaders: true,
+            row: r => ({ key: String(r.id), name: String(r.name || ''), sub: String(r.ou_or_group_name || ''),
+                priority: Number(r.priority), off: false }),
+            // The names exactly as Netskope sent them, the default configuration last
+            configList: (items, fixed) => items.map(i => i.name).concat(fixed.map(i => i.name)),
+        },
+    };
+    const ro = { timer: null, busy: false };
+
+    function roKindHere() {
+        const hash = window.location.hash || '';
+        if (/clientConfiguration/i.test(hash)) return 'client';
+        // Steering: the configuration list (its search box), not the inside of one configuration
+        if (/steering/i.test(hash) && seFindSearchBox() && !seFindAddFilter()) return 'steering';
+        return null;
+    }
+
+    async function roPost(kind, path, payload, appHeaders) {
+        const k = RO_KINDS[kind];
+        if (!se.token) throw new Error('The page has not sent its session token yet. Wait a few seconds and try again, or reload the page.');
+        const headers = { 'Accept': 'application/json, text/plain, */*', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
+        if (appHeaders) {
+            const reqId = seRandomId();
+            headers.resource = k.resource;
+            headers['Netskope-req-id'] = reqId;
+            headers['X-Netskope-Client-Request-Id'] = k.clientPrefix() + '.' + reqId;
+        }
+        const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers,
+            body: JSON.stringify(Object.assign({}, payload, { token: se.token })) });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error(`Netskope answered ${res.status}. Your session may have ended: reload the page and try again.` +
+                (text ? ` Netskope's answer: ${seAnswerText(text)}` : ''));
+        }
+        let json;
+        try { json = await res.json(); } catch (e) { throw new Error('Netskope sent an unexpected answer.', { cause: e }); }
+        if (!json || json.status !== 'success') {
+            throw new Error(json && json.msg ? `Netskope refused it: ${json.msg}` : `Netskope refused it without saying why. Its answer: ${seAnswerText(json)}`);
+        }
+        return json;
+    }
+
+    // The configurations in Netskope's order: the movable ones, and the fixed default one(s) apart
+    async function roRead(kind) {
+        const k = RO_KINDS[kind];
+        const json = await roPost(kind, k.listPath, k.listBody, true);
+        if (!Array.isArray(json.data)) throw new Error('Netskope sent an unexpected list.');
+        const all = json.data.map(k.row);
+        const items = all.filter(i => i.priority >= 0).sort((a, b) => a.priority - b.priority);
+        const fixed = all.filter(i => !(i.priority >= 0));
+        return { items, fixed };
+    }
+
+    // The single moves (like one drag each) that turn `cur` into `target`, both lists of keys.
+    // Configurations already in the right relative order never move; among them, those the user
+    // did not move (`moved` lacks them) stay first, so the moves sent are the ones the user made.
+    function roPlanMoves(cur, target, moved) {
+        const pos = new Map(target.map((key, i) => [key, i]));
+        const seq = cur.map(key => pos.get(key));
+        const weight = i => (moved && moved.has(cur[i]) ? 1 : 1000);
+        // Heaviest increasing run of target positions
+        const best = seq.map((v, i) => weight(i)), prev = new Array(seq.length).fill(-1);
+        for (let i = 0; i < seq.length; i++) {
+            for (let j = 0; j < i; j++) {
+                if (seq[j] < seq[i] && best[j] + weight(i) > best[i]) { best[i] = best[j] + weight(i); prev[i] = j; }
+            }
+        }
+        let end = -1;
+        best.forEach((v, i) => { if (end < 0 || v > best[end]) end = i; });
+        const stay = new Set();
+        for (let i = end; i >= 0; i = prev[i]) stay.add(cur[i]);
+        const list = cur.slice(), moves = [];
+        target.forEach((key, ti) => {
+            if (stay.has(key)) return;
+            const from = list.indexOf(key);
+            list.splice(from, 1);
+            const to = ti === 0 ? 0 : list.indexOf(target[ti - 1]) + 1;
+            list.splice(to, 0, key);
+            if (from !== to) moves.push({ key, from, to, order: list.slice() });
+        });
+        return moves;
+    }
+
+    function roUndoGet(kind) {
+        const all = GM_getValue(RO_UNDO_KEY, null) || {};
+        return all[location.host + '|' + kind] || null;
+    }
+
+    function roUndoSet(kind, entry) {
+        const all = GM_getValue(RO_UNDO_KEY, null) || {};
+        all[location.host + '|' + kind] = entry;
+        GM_setValue(RO_UNDO_KEY, all);
+    }
+
+    /* ── The window (native modal <dialog> in a shadow root; it only calls Netskope, it never writes into the page) ── */
+
+    function roOpen(kind) {
+        if (document.getElementById(RO_HOST_ID)) return;
+        const k = RO_KINDS[kind];
+        const host = document.createElement('div');
+        host.id = RO_HOST_ID;
+        host.dataset.kind = kind;
+        const shadow = host.attachShadow({ mode: 'open' });
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(`
+            :host { all: initial; }
+            dialog { border: none; border-radius: 10px; padding: 0; width: 760px; max-width: 94vw; max-height: 90vh;
+                color: #333; background: #fff; font: 13px/1.45 Arial, sans-serif; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+            dialog:modal { overscroll-behavior: contain; }
+            dialog::backdrop { background: rgba(0,0,0,.35); overflow: hidden; overscroll-behavior: contain; }
+            .wrap { display: flex; flex-direction: column; max-height: 90vh; }
+            header { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-bottom: 2px solid #667eea; }
+            h1 { margin: 0; font-size: 16px; color: #333; }
+            .x { background: none; border: none; font-size: 18px; color: #999; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+            .x:hover { background: #f0f0f0; }
+            .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 18px; border-bottom: 1px solid #eee; background: #fafaff; }
+            .tools .sep { width: 1px; height: 22px; background: #e5e7eb; margin: 0 2px; }
+            input[type=search], input[type=number] { padding: 5px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; color: #333; font: inherit; }
+            input[type=search] { flex: 1 1 180px; min-width: 140px; }
+            input[type=number] { width: 64px; }
+            .sel { font-size: 12px; color: #555; white-space: nowrap; }
+            .hint { padding: 6px 18px 0; font-size: 12px; color: #555; }
+            .hint b { color: #667eea; }
+            .listbox { position: relative; margin: 8px 18px 0; border: 1px solid #e5e7eb; border-radius: 6px; overflow-y: auto; min-height: 120px; max-height: 52vh; }
+            ol { list-style: none; margin: 0; padding: 0; }
+            li { display: grid; grid-template-columns: 22px 44px 1fr auto; align-items: center; gap: 8px; padding: 5px 10px;
+                border-bottom: 1px solid #f0f0f0; cursor: pointer; user-select: none; content-visibility: auto; contain-intrinsic-size: auto 34px; }
+            li:hover { background: #f5f6ff; }
+            li.picked { background: #e8edff; }
+            li.moved .pos { color: #b45309; }
+            li.flash { box-shadow: inset 3px 0 0 #667eea; }
+            li.fixed { cursor: default; color: #888; background: #fafafa; }
+            li[hidden] { display: none; }
+            .pos { font-weight: bold; color: #667eea; text-align: right; font-variant-numeric: tabular-nums; }
+            .nm { overflow: hidden; }
+            .nm b { display: block; font-weight: bold; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+            .nm small { display: block; color: #888; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tags { display: inline-flex; gap: 4px; }
+            .tag { font-size: 11px; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+            .tag.was { background: #fff4e5; color: #b45309; border: 1px solid #f5d0a0; }
+            .tag.off { background: #f3f4f6; color: #666; border: 1px solid #ddd; }
+            .tag.fix { background: #eef2ff; color: #555; border: 1px solid #d0d0f0; }
+            .summary { padding: 8px 18px 0; font-size: 12px; color: #555; min-height: 18px; }
+            .status { min-height: 18px; margin: 6px 18px 0; font-size: 12px; }
+            .status.ok { color: #26890d; } .status.err { color: #c62828; } .status.info { color: #005587; }
+            footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 18px; border-top: 1px solid #eee; margin-top: 10px; }
+            footer .grow { flex: 1; }
+            button.b { padding: 6px 12px; border-radius: 5px; font-weight: bold; font-size: 12px; cursor: pointer; border: 1px solid #ccc;
+                background: #fff; color: #444; white-space: nowrap; }
+            button.b:hover:not(:disabled) { background: #f3f4f6; }
+            button.primary { background: #667eea; border-color: #667eea; color: #fff; font-size: 13px; padding: 8px 16px; }
+            button.primary:hover:not(:disabled) { background: #5568d3; }
+            button.armed { background: #c62828; border-color: #c62828; }
+            button.armed:hover:not(:disabled) { background: #a61f1f; }
+            footer button.b:not(.primary) { font-size: 13px; padding: 8px 14px; }
+            button:disabled { opacity: .55; cursor: not-allowed; }
+            .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+            [hidden] { display: none !important; }
+        `);
+        shadow.adoptedStyleSheets = [sheet];
+        shadow.innerHTML = `
+            <dialog aria-labelledby="ro-title"><div class="wrap">
+                <header><h1 id="ro-title">↕ Reorder ${k.title}</h1>
+                    <button type="button" class="x" data-ro="x" aria-label="Close">✕</button></header>
+                <div class="tools" data-ro="tools">
+                    <input type="search" data-ro="search" placeholder="Filter by name or group" aria-label="Filter the list">
+                    <button type="button" class="b" data-ro="pick-shown" title="Tick every configuration the filter shows">☑ Tick shown</button>
+                    <button type="button" class="b" data-ro="clear">Clear</button>
+                    <span class="sel" data-ro="sel">0 ticked</span>
+                    <span class="sep"></span>
+                    <button type="button" class="b" data-ro="top" data-move>⤒ Top</button>
+                    <button type="button" class="b" data-ro="up" data-move>↑ Up</button>
+                    <button type="button" class="b" data-ro="down" data-move>↓ Down</button>
+                    <button type="button" class="b" data-ro="bottom" data-move>⤓ Bottom</button>
+                    <span class="sep"></span>
+                    <label class="sel" for="ro-to">Move to position</label>
+                    <input type="number" id="ro-to" data-ro="to" min="1" step="1">
+                    <button type="button" class="b" data-ro="go" data-move>Move</button>
+                </div>
+                <p class="hint">Tick the configurations to move (click a row, Shift+click for a range), then move them. Nothing changes in Netskope until you click <b>💾 Save order</b>.</p>
+                <div class="listbox" data-ro="box"><ol data-ro="list" aria-label="${k.title} in their new order"></ol></div>
+                <div class="summary" data-ro="summary"></div>
+                <p class="status" data-ro="status" role="status" aria-live="polite"></p>
+                <p class="vh" data-ro="announce" role="status"></p>
+                <footer>
+                    <button type="button" class="b" data-ro="undo" hidden>↩ Undo last save</button>
+                    <button type="button" class="b" data-ro="reset" disabled title="Nothing moved yet">↺ Reset</button>
+                    <span class="grow"></span>
+                    <button type="button" class="b" data-ro="close">Close</button>
+                    <button type="button" class="b primary" data-ro="save" disabled title="Move at least one configuration first">💾 Save order</button>
+                </footer>
+            </div></dialog>`;
+        const $ = n => shadow.querySelector(`[data-ro="${n}"]`);
+        const dlg = shadow.querySelector('dialog');
+        const listEl = $('list');
+        const st = {
+            base: [],        // keys in Netskope's order when the list was read
+            order: [],       // keys in the order being prepared
+            items: new Map(),// key → { key, name, sub, off }
+            fixed: [],       // the default configuration(s), never moved
+            picked: new Set(),
+            touched: new Set(), // keys the user moved since the list was read
+            lastClick: null,
+            saved: false,    // a save went through: the page reloads on close to show it
+            armTimer: null,
+            closeArmed: false,
+            rows: new Map(), // key → <li>
+        };
+
+        const status = (text, kind2) => { $('status').textContent = text; $('status').className = 'status ' + (kind2 || ''); };
+        const announce = text => { $('announce').textContent = text; };
+        const changed = () => st.order.some((key, i) => key !== st.base[i]);
+
+        function disarm() {
+            clearTimeout(st.armTimer);
+            st.armTimer = null;
+            $('save').classList.remove('armed');
+        }
+
+        function buildRow(item, fixed) {
+            const li = document.createElement('li');
+            li.dataset.key = item.key;
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.tabIndex = -1;
+            box.setAttribute('aria-label', 'Tick ' + item.name);
+            const pos = document.createElement('span');
+            pos.className = 'pos';
+            const nm = document.createElement('span');
+            nm.className = 'nm';
+            const b = document.createElement('b');
+            b.textContent = item.name;
+            const small = document.createElement('small');
+            small.textContent = item.sub || '';
+            nm.append(b, small);
+            const tags = document.createElement('span');
+            tags.className = 'tags';
+            if (item.off) { const t = document.createElement('span'); t.className = 'tag off'; t.textContent = 'disabled'; tags.appendChild(t); }
+            const was = document.createElement('span');
+            was.className = 'tag was';
+            was.hidden = true;
+            tags.appendChild(was);
+            if (fixed) {
+                li.className = 'fixed';
+                box.disabled = true;
+                box.style.visibility = 'hidden';
+                pos.textContent = '';
+                const t = document.createElement('span');
+                t.className = 'tag fix';
+                t.textContent = 'always last, fixed by Netskope';
+                tags.appendChild(t);
+            }
+            li.append(box, pos, nm, tags);
+            if (!fixed) li.addEventListener('click', e => onRowClick(item.key, e));
+            return li;
+        }
+
+        // Moves the existing rows into the new order (no redraw), then refreshes numbers and marks
+        function render(flashKeys) {
+            const nodes = st.order.map(key => st.rows.get(key)).concat(st.fixed.map(f => st.rows.get('fixed:' + f.key)));
+            const apply = () => {
+                const move = Object.hasOwn(Element.prototype, 'moveBefore')
+                    ? n => { try { listEl.moveBefore(n, null); } catch (e) { listEl.append(n); } }
+                    : n => listEl.append(n);
+                nodes.forEach(move);
+            };
+            apply();
+            const basePos = new Map(st.base.map((key, i) => [key, i]));
+            st.order.forEach((key, i) => {
+                const li = st.rows.get(key);
+                li.querySelector('.pos').textContent = String(i + 1);
+                const moved = basePos.get(key) !== i;
+                li.classList.toggle('moved', moved);
+                const was = li.querySelector('.tag.was');
+                was.hidden = !moved;
+                was.textContent = moved ? `was ${basePos.get(key) + 1}` : '';
+                const on = st.picked.has(key);
+                li.classList.toggle('picked', on);
+                li.querySelector('input').checked = on;
+                li.classList.toggle('flash', !!flashKeys && flashKeys.includes(key));
+            });
+            refreshControls();
+        }
+
+        function refreshControls() {
+            const n = st.picked.size;
+            $('sel').textContent = `${n} ticked`;
+            shadow.querySelectorAll('[data-move]').forEach(btn => {
+                btn.disabled = ro.busy || !n;
+                btn.title = !n ? 'Tick one or more configurations first' : '';
+            });
+            $('to').max = String(st.order.length || 1);
+            const moves = changed() ? roPlanMoves(st.base, st.order, st.touched) : [];
+            $('save').disabled = ro.busy || !moves.length;
+            $('save').title = moves.length ? `Sends ${moves.length} move${moves.length === 1 ? '' : 's'} to Netskope, one per configuration, like a drag in the console` : 'Move at least one configuration first';
+            $('reset').disabled = ro.busy || !moves.length;
+            $('reset').title = moves.length ? 'Go back to the order Netskope has now' : 'Nothing moved yet';
+            if (!st.armTimer) $('save').textContent = moves.length ? `💾 Save order (${moves.length} move${moves.length === 1 ? '' : 's'})` : '💾 Save order';
+            const undo = roUndoGet(kind);
+            $('undo').hidden = !undo;
+            $('undo').disabled = ro.busy;
+            if (undo) $('undo').title = `Put back the order from before the last save (${new Date(undo.at).toLocaleString()}). You still see it first and save it yourself.`;
+            const names = moves.map(m => st.items.get(m.key).name);
+            $('summary').textContent = moves.length
+                ? `Saving moves ${names.length === 1 ? names[0] : `${names.length} configurations: ${names.slice(0, 3).join(', ')}${names.length > 3 ? ', …' : ''}`}. The others keep their order and shift to make room.`
+                : (st.base.length ? `${st.base.length} configurations in Netskope's order.` : '');
+            if (!moves.length) disarm();
+        }
+
+        function onRowClick(key, e) {
+            if (ro.busy) return;
+            if (e.shiftKey && st.lastClick && st.order.includes(st.lastClick)) {
+                const a = st.order.indexOf(st.lastClick), b2 = st.order.indexOf(key);
+                const [lo, hi] = a < b2 ? [a, b2] : [b2, a];
+                for (let i = lo; i <= hi; i++) if (!st.rows.get(st.order[i]).hidden) st.picked.add(st.order[i]);
+            } else if (st.picked.has(key)) st.picked.delete(key);
+            else st.picked.add(key);
+            st.lastClick = key;
+            render();
+        }
+
+        function applyFilter() {
+            const q = $('search').value.trim().toLowerCase();
+            st.rows.forEach((li, key) => {
+                if (key.startsWith('fixed:')) { li.hidden = !!q; return; }
+                const it = st.items.get(key);
+                li.hidden = !!q && !(it.name.toLowerCase().includes(q) || it.sub.toLowerCase().includes(q));
+            });
+        }
+
+        // Moves the ticked configurations, keeping their order among themselves
+        function moveTicked(how) {
+            if (ro.busy || !st.picked.size) return;
+            const picked = st.order.filter(key => st.picked.has(key));
+            let order = st.order.slice();
+            if (how === 'up' || how === 'down') {
+                // Each ticked one swaps with its unticked neighbour; a ticked block at the edge stays
+                const on = key => st.picked.has(key);
+                if (how === 'up') {
+                    for (let i = 1; i < order.length; i++) {
+                        if (on(order[i]) && !on(order[i - 1])) [order[i - 1], order[i]] = [order[i], order[i - 1]];
+                    }
+                } else {
+                    for (let i = order.length - 2; i >= 0; i--) {
+                        if (on(order[i]) && !on(order[i + 1])) [order[i + 1], order[i]] = [order[i], order[i + 1]];
+                    }
+                }
+            } else {
+                const rest = order.filter(key => !st.picked.has(key));
+                let at;
+                if (how === 'top') at = 0;
+                else if (how === 'bottom') at = rest.length;
+                else {
+                    const n = Math.floor(Number($('to').value));
+                    if (!(n >= 1 && n <= order.length)) {
+                        status(`⚠️ Write a position from 1 to ${order.length}.`, 'err');
+                        $('to').focus();
+                        return;
+                    }
+                    at = Math.min(n - 1, rest.length);
+                }
+                rest.splice(at, 0, ...picked);
+                order = rest;
+            }
+            if (order.every((key, i) => key === st.order[i])) {
+                status('ℹ️ Already there: nothing moved.', 'info');
+                return;
+            }
+            st.order = order;
+            picked.forEach(key => st.touched.add(key));
+            disarm();
+            render(picked);
+            const first = st.rows.get(picked[0]);
+            first?.scrollIntoView({ block: 'nearest' });
+            const p = st.order.indexOf(picked[0]) + 1;
+            const text = picked.length === 1 ? `Moved “${st.items.get(picked[0]).name}” to position ${p}. Not saved yet.`
+                : `Moved ${picked.length} configurations, starting at position ${p}. Not saved yet.`;
+            status('↕ ' + text, 'info');
+            announce(text);
+        }
+
+        async function load(note) {
+            const busy = suiteBusyStart($('box'), 'Loading configurations…');
+            status('🔄 Reading the list from Netskope…', 'info');
+            try {
+                // The token arrives with the page's first requests
+                for (let i = 0; !se.token && i < 40; i++) await new Promise(r => setTimeout(r, 250));
+                const { items, fixed } = await roRead(kind);
+                st.items = new Map(items.map(i => [i.key, i]));
+                st.base = items.map(i => i.key);
+                st.order = st.base.slice();
+                st.fixed = fixed;
+                st.picked.clear();
+                st.touched.clear();
+                st.lastClick = null;
+                st.rows = new Map();
+                listEl.replaceChildren();
+                items.forEach(i => { const li = buildRow(i, false); st.rows.set(i.key, li); listEl.appendChild(li); });
+                fixed.forEach(f => { const li = buildRow(f, true); st.rows.set('fixed:' + f.key, li); listEl.appendChild(li); });
+                applyFilter();
+                render();
+                if (!items.length) status('ℹ️ There is no configuration to reorder here.', 'info');
+                else status(note || `✅ ${items.length} configurations loaded in Netskope's order.`, 'ok');
+                return true;
+            } catch (err) {
+                console.error('[NS Toolkit] Reorder: reading the list:', err);
+                status('❌ Could not read the list: ' + err.message, 'err');
+                return false;
+            } finally {
+                busy.stop();
+            }
+        }
+
+        async function save() {
+            if (ro.busy) return;
+            const target = st.order.slice();
+            let moves = roPlanMoves(st.base, target, st.touched);
+            if (!moves.length) return;
+            // Two steps: the new order applies in Netskope at once
+            if (!st.armTimer) {
+                $('save').classList.add('armed');
+                $('save').textContent = `Click again to save ${moves.length} move${moves.length === 1 ? '' : 's'}`;
+                status(`⚠️ Netskope applies the new order at once, there is no Apply Changes. Click the red button again to save.`, 'info');
+                st.armTimer = setTimeout(() => { disarm(); refreshControls(); }, RO_ARM_MS);
+                return;
+            }
+            disarm();
+            ro.busy = true;
+            refreshControls();
+            roSetButton('⏳ Saving order…');
+            $('save').textContent = '⏳ Saving…';
+            const busy = suiteBusyStart($('box'), 'Checking the order in Netskope…');
+            const toolsBusy = suiteBusyStart($('tools'), '');
+            let done = 0;
+            try {
+                // Someone may have changed the order since the list was read: never send moves made for an old list
+                status('🔄 Checking that the order in Netskope has not changed…', 'info');
+                const fresh = await roRead(kind);
+                const freshKeys = fresh.items.map(i => i.key);
+                if (freshKeys.length !== st.base.length || freshKeys.some((key, i) => key !== st.base[i])) {
+                    busy.stop(); toolsBusy.stop();
+                    ro.busy = false;
+                    await load();
+                    status('⚠️ The order in Netskope changed since this window read it (someone else, or another tab). Nothing was sent. The list now shows the current order: make your moves again.', 'err');
+                    roSetButton('⚠️ Order changed', 'Nothing was sent: the order in Netskope changed meanwhile.');
+                    return;
+                }
+                const byKey = new Map(fresh.items.map(i => [i.key, i]));
+                const before = { at: Date.now(), order: st.base.slice(), names: st.base.map(key => byKey.get(key).name) };
+                roUndoSet(kind, before);
+                moves = roPlanMoves(st.base, target, st.touched);
+                for (const m of moves) {
+                    const label = `Moving ${done + 1} of ${moves.length}: ${byKey.get(m.key).name}`;
+                    busy.setLabel(label + '…');
+                    status('🔄 ' + label + '…', 'info');
+                    const list = RO_KINDS[kind].configList(m.order.map(key => byKey.get(key)), fresh.fixed);
+                    await roPost(kind, RO_KINDS[kind].movePath,
+                        { configList: list, movedIndexes: { previousIndex: m.from, currentIndex: m.to } }, RO_KINDS[kind].moveHeaders);
+                    done++;
+                    st.saved = true;
+                }
+                busy.setLabel('Reading the new order…');
+                const after = await roRead(kind);
+                const afterKeys = after.items.map(i => i.key);
+                const ok = afterKeys.length === target.length && afterKeys.every((key, i) => key === target[i]);
+                busy.stop(); toolsBusy.stop();
+                ro.busy = false;
+                await load();
+                if (ok) {
+                    status(`✅ Order saved in Netskope (${moves.length} move${moves.length === 1 ? '' : 's'}). It applies now. Close this window to see it on the page.`, 'ok');
+                    roSetButton('✓ Order saved', 'The new order is saved in Netskope.');
+                    announce('Order saved');
+                } else {
+                    status('⚠️ The moves were sent, but Netskope now shows a different order than planned. The list shows what Netskope has now: check it, and use ↩ Undo last save if needed.', 'err');
+                    roSetButton('⚠️ Check the order', 'Netskope shows a different order than planned.');
+                }
+            } catch (err) {
+                console.error('[NS Toolkit] Reorder: saving:', err);
+                busy.stop(); toolsBusy.stop();
+                ro.busy = false;
+                const msg = err.message;
+                await load();
+                status(done
+                    ? `❌ Stopped after ${done} of ${moves.length} moves: ${msg} The list shows the order Netskope has now. ↩ Undo last save puts back the order from before.`
+                    : `❌ Nothing was moved: ${msg}`, 'err');
+                roSetButton('✗ Save failed', msg);
+            } finally {
+                busy.stop(); toolsBusy.stop();
+                ro.busy = false;
+                refreshControls();
+                setTimeout(() => { if (!ro.busy) roSetButton(RO_LABEL, null); }, 4000);
+            }
+        }
+
+        function undo() {
+            const u = roUndoGet(kind);
+            if (!u || ro.busy) return;
+            const now = new Set(st.base);
+            const keep = u.order.filter(key => now.has(key));
+            const missing = u.order.length - keep.length;
+            // Configurations created since keep their current place relative to the others
+            const extra = st.base.filter(key => !u.order.includes(key));
+            let order = keep.slice();
+            extra.forEach(key => { const at = Math.min(st.base.indexOf(key), order.length); order.splice(at, 0, key); });
+            if (order.every((key, i) => key === st.order[i])) {
+                status('ℹ️ The list already has the order from before the last save.', 'info');
+                return;
+            }
+            st.order = order;
+            st.picked.clear();
+            st.touched.clear();
+            disarm();
+            render(order.filter((key, i) => key !== st.base[i]));
+            status(`↩ The order from before the last save is shown${missing ? ` (${missing} configuration${missing === 1 ? '' : 's'} no longer exist${missing === 1 ? 's' : ''})` : ''}. Click 💾 Save order to put it back in Netskope.`, 'info');
+        }
+
+        const close = () => {
+            if (ro.busy) { status('⏳ Still saving. Wait until it ends.', 'info'); return; }
+            if (changed() && !st.closeArmed) {
+                st.closeArmed = true;
+                $('close').textContent = 'Click again to drop the moves';
+                status('⚠️ Your moves are not saved. Click Close again to drop them, or 💾 Save order.', 'info');
+                setTimeout(() => { st.closeArmed = false; if ($('close').isConnected) $('close').textContent = 'Close'; }, RO_ARM_MS);
+                return;
+            }
+            disarm();
+            if (dlg.open) dlg.close();
+            host.remove();
+            // The console still shows the old order: reload it so the page matches Netskope
+            if (st.saved) { roSetButton('🔄 Reloading…', 'Reloading the page to show the new order.'); location.reload(); }
+        };
+
+        dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
+        $('x').addEventListener('click', close);
+        $('close').addEventListener('click', close);
+        $('search').addEventListener('input', applyFilter);
+        $('pick-shown').addEventListener('click', () => {
+            st.order.forEach(key => { if (!st.rows.get(key).hidden) st.picked.add(key); });
+            render();
+        });
+        $('clear').addEventListener('click', () => { st.picked.clear(); render(); });
+        $('top').addEventListener('click', () => moveTicked('top'));
+        $('up').addEventListener('click', () => moveTicked('up'));
+        $('down').addEventListener('click', () => moveTicked('down'));
+        $('bottom').addEventListener('click', () => moveTicked('bottom'));
+        $('go').addEventListener('click', () => moveTicked('to'));
+        $('to').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); moveTicked('to'); } });
+        $('reset').addEventListener('click', () => {
+            st.order = st.base.slice();
+            st.touched.clear();
+            disarm();
+            render();
+            status('↺ Back to the order Netskope has now.', 'info');
+        });
+        $('undo').addEventListener('click', undo);
+        $('save').addEventListener('click', save);
+
+        document.body.appendChild(host);
+        try { dlg.showModal(); } catch (e) { dlg.setAttribute('open', ''); }
+        refreshControls();
+        $('search').focus();
+        load();
+    }
+
+    /* ── The button: on the Steering Configuration list next to the steering tools, on Client Configuration next to its search ── */
+
+    function roSetButton(text, title) {
+        const b = document.getElementById(RO_BUTTON_ID);
+        if (!b) return;
+        b.textContent = text;
+        b.title = title || b.dataset.tip || '';
+    }
+
+    function roMakeButton(kind) {
+        const btn = document.createElement('button');
+        btn.id = RO_BUTTON_ID;
+        btn.type = 'button';
+        btn.dataset.kind = kind;
+        btn.textContent = RO_LABEL;
+        btn.dataset.tip = `Put the ${RO_KINDS[kind].title} in an exact order: tick them, move them to a position, top or bottom, check the new order and save it (Netskope Console Toolkit)`;
+        btn.title = btn.dataset.tip;
+        // !important, so the console's own layered rules cannot bend it
+        const look = { 'white-space': 'nowrap', cursor: 'pointer', 'font-weight': 'bold', 'font-size': '13px', 'line-height': '1.4',
+            padding: '4px 10px', border: '1px solid #667eea', 'border-radius': '4px', background: '#fff', color: '#4f5bd5',
+            'vertical-align': 'middle', 'flex-shrink': '0', margin: '0' };
+        for (const [k2, v] of Object.entries(look)) btn.style.setProperty(k2, v, 'important');
+        btn.addEventListener('mouseenter', () => btn.style.setProperty('background', '#eef0ff', 'important'));
+        btn.addEventListener('mouseleave', () => btn.style.setProperty('background', '#fff', 'important'));
+        btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); roOpen(kind); });
+        return btn;
+    }
+
+    // Client Configuration: the page's search box, else its New Configuration button
+    function roFindClientAnchor() {
+        const vis = el => !!el && el.offsetParent !== null;
+        const input = [...document.querySelectorAll('input[placeholder], input[type="search"]')].find(i =>
+            vis(i) && /search/i.test(i.placeholder || i.getAttribute('aria-label') || ''));
+        if (input) return { el: input.closest('.ns-icon-input-container, .search-container, .input-group') || input, where: 'afterend' };
+        const btn = [...document.querySelectorAll('button')].find(b => vis(b) && b.id !== RO_BUTTON_ID &&
+            /^\s*\+?\s*(new|add)\b.*configuration/i.test(b.textContent || ''));
+        if (btn) return { el: btn, where: 'beforebegin' };
+        return null;
+    }
+
+    function roSyncButton() {
+        const kind = roKindHere();
+        let btn = document.getElementById(RO_BUTTON_ID);
+        if (!kind) { btn?.remove(); document.getElementById(RO_BUTTON_ID + '-row')?.remove(); return; }
+        if (btn && btn.dataset.kind !== kind) { btn.remove(); btn = null; }
+        if (kind === 'steering') {
+            // In the steering tools' row when it is there, else in its own row under the search box
+            const group = document.getElementById(SE_GROUP_ID);
+            if (group) {
+                if (btn && btn.parentElement === group) return;
+                btn?.remove();
+                document.getElementById(RO_BUTTON_ID + '-row')?.remove();
+                group.appendChild(roMakeButton(kind));
+                return;
+            }
+            const anchor = seFindSearchBox();
+            const row = document.getElementById(RO_BUTTON_ID + '-row');
+            if (btn && row && btn.parentElement === row && row.previousElementSibling === anchor) return;
+            btn?.remove();
+            row?.remove();
+            const r = document.createElement('span');
+            r.id = RO_BUTTON_ID + '-row';
+            r.className = 'ns-margin-bottom';
+            Object.assign(r.style, { display: 'flex', alignItems: 'center', gap: '8px' });
+            r.appendChild(roMakeButton(kind));
+            anchor.insertAdjacentElement('afterend', r);
+            return;
+        }
+        const anchor = roFindClientAnchor();
+        if (anchor) {
+            const ok = btn && !btn.dataset.floating &&
+                (anchor.where === 'afterend' ? anchor.el.nextElementSibling === btn : anchor.el.previousElementSibling === btn);
+            if (ok) return;
+            btn?.remove();
+            btn = roMakeButton(kind);
+            btn.style.setProperty('margin', anchor.where === 'afterend' ? '0 0 0 8px' : '0 8px 0 0', 'important');
+            anchor.el.insertAdjacentElement(anchor.where, btn);
+            return;
+        }
+        // Page not drawn the way we know: a small floating button keeps the tool reachable
+        if (btn && btn.dataset.floating) return;
+        btn?.remove();
+        btn = roMakeButton(kind);
+        btn.dataset.floating = '1';
+        for (const [k2, v] of Object.entries({ position: 'fixed', top: '72px', right: '24px', 'z-index': '9999', 'box-shadow': '0 2px 8px rgba(0,0,0,.2)' })) {
+            btn.style.setProperty(k2, v, 'important');
+        }
+        document.body.appendChild(btn);
+    }
+
+    function initConfigReorder() {
+        if (!getSetting('configReorder') || ro.timer) return;
+        ro.timer = suiteWhileVisible(roSyncButton, 1000);
+        roSyncButton();
+    }
+
+    function cleanupConfigReorder() {
+        clearInterval(ro.timer);
+        ro.timer = null;
+        removeAll(`#${RO_BUTTON_ID}, #${RO_BUTTON_ID}-row, #${RO_HOST_ID}`);
+    }
+
+    // Test hook: the move planner
+    try { (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__nstkReorderPlan = roPlanMoves; } catch (e) { /* ignore */ }
 
     // ─────────────────────────────────────────────────────────────
     // SOURCE MANAGER
@@ -42294,6 +43066,7 @@ Version 1.16:
         initBulkGroups();
         initSslExport();
         initTxExport();
+        initConfigReorder();
         // A ↗ reference button in another tab may have asked this tab to open an item
         setTimeout(consumePendingRefOpen, 1500);
 
