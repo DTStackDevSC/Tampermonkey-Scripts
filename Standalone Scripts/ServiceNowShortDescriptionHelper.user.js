@@ -3,7 +3,7 @@
 // @downloadURL  https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @updateURL    https://raw.githubusercontent.com/DTStackDevSC/Tampermonkey-Scripts/refs/heads/main/Standalone%20Scripts/ServiceNowShortDescriptionHelper.user.js
 // @namespace    https://github.com/DTStackDevSC/Tampermonkey-Scripts
-// @version      4.11.0
+// @version      4.12.0
 // @description  Helpers inside ServiceNow tickets and Netskope pages: short description, reply templates, formatted text, SLA banner, policy names and support case subjects
 // @author       J.R.
 // @match        https://*.service-now.com/*
@@ -44,8 +44,11 @@
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.11.0';
-    const CHANGELOG = `Version 4.11.0:
+    const SCRIPT_VERSION = '4.12.0';
+    const CHANGELOG = `Version 4.12.0:
+- Response Templates: new variable {{openedByEmail}} puts the email of the person who opened the ticket into a response. When ServiceNow has no email for that person it shows [opened by email].
+
+Version 4.11.0:
 - Short Description Builder: the comment counts that set the auto complexity are now set per team. EMEA, AME and APAC start with the same values as before: 0 to 15 comments is Complexity 1, 16 to 25 is Complexity 2, 26 or more is Complexity 3.
 - Short Description Builder: new Auto complexity block in Settings to change those limits for your team, with Save and a Team default button to go back. The panel uses the new limits at once, and the comment counter shows the ranges when you point at it.
 
@@ -1608,8 +1611,46 @@ Version 4.0.0:
         return '';
     }
 
+    // Who opened the ticket, with the email ServiceNow has for that person: { name, email, sysId }.
+    // The name is read from the form like helpersReadOpenedBy. The email comes from one Table API read of the
+    // ticket itself (opened_by, or caller_id when the ticket has no opener), with the user's own session.
+    // Answers are kept per ticket, so a ticket is read once. email and sysId are '' when ServiceNow gives none.
+    const helpersOpenedByCache = new Map();
+    async function helpersOpenedBy() {
+        const w = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
+        const name = helpersReadOpenedBy();
+        const gf = w.g_form;
+        let table = '', id = '';
+        try { table = (gf && gf.getTableName && gf.getTableName()) || ''; id = (gf && gf.getUniqueValue && gf.getUniqueValue()) || ''; }
+        catch (e) { /* no form */ }
+        const empty = { name, email: '', sysId: '' };
+        if (!table || !id || !/^[a-z0-9_]+$/.test(table) || !w.g_ck) return empty;
+        const key = `${table}/${id}`;
+        if (!helpersOpenedByCache.has(key)) {
+            helpersOpenedByCache.set(key, (async () => {
+                try {
+                    const fields = ['opened_by', 'opened_by.email', 'caller_id', 'caller_id.email'].join(',');
+                    const r = await fetch(`/api/now/table/${table}/${encodeURIComponent(id)}?sysparm_fields=${fields}&sysparm_exclude_reference_link=true`,
+                        { headers: { Accept: 'application/json', 'X-UserToken': w.g_ck }, credentials: 'same-origin' });
+                    if (!r.ok) { console.warn('[Ticket Helpers] Opened by email: HTTP', r.status); return null; }
+                    const res = ((await r.json()) || {}).result || {};
+                    const val = v => String((v && typeof v === 'object' ? v.value : v) || '').trim();
+                    for (const f of ['opened_by', 'caller_id']) {
+                        const sysId = val(res[f]);
+                        if (sysId) return { email: val(res[`${f}.email`]), sysId };
+                    }
+                } catch (e) { console.warn('[Ticket Helpers] Opened by email:', e); }
+                return null;
+            })());
+        }
+        const found = await helpersOpenedByCache.get(key);
+        // A failed read is tried again next time
+        if (!found) { helpersOpenedByCache.delete(key); return empty; }
+        return { name, email: found.email, sysId: found.sysId };
+    }
+
     // Test only: the automated tests switch this on in their own storage
-    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersMention = { triggerMentionPicker, helpersWriteWithMentions, helpersReadOpenedBy };
+    if (GM_getValue('ticketHelpersTestHooks', false) === true) (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__helpersMention = { triggerMentionPicker, helpersWriteWithMentions, helpersReadOpenedBy, helpersOpenedBy };
 
     appendStyleWhenReady(darkModeStyle);
 
@@ -2276,8 +2317,11 @@ Version 4.0.0:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '4.11.0';
-    const CHANGELOG = `Version 4.11.0:
+    const SCRIPT_VERSION = '4.12.0';
+    const CHANGELOG = `Version 4.12.0:
+- Response Templates: new variable {{openedByEmail}} puts the email of the person who opened the ticket into a response. When ServiceNow has no email for that person it shows [opened by email].
+
+Version 4.11.0:
 - Short Description Builder: the comment counts that set the auto complexity are now set per team. EMEA, AME and APAC start with the same values as before: 0 to 15 comments is Complexity 1, 16 to 25 is Complexity 2, 26 or more is Complexity 3.
 - Short Description Builder: new Auto complexity block in Settings to change those limits for your team, with Save and a Team default button to go back. The panel uses the new limits at once, and the comment counter shows the ranges when you point at it.
 
@@ -5459,9 +5503,12 @@ Version 3.0.8.1:
      *  VERSION CONTROL
      * ==========================================================*/
 
-    const SCRIPT_VERSION = '2.22.6';
+    const SCRIPT_VERSION = '2.23.0';
 
-    const CHANGELOG = `Version 2.22.6:
+    const CHANGELOG = `Version 2.23.0:
+- New variable {{openedByEmail}} (button Opened By Email) inserts the email of the person who opened the ticket. When ServiceNow has no email for that person it shows [opened by email].
+
+Version 2.22.6:
 - The Auto-update date on insert setting now also covers messages from the Formatted Text Editor.
 
 Version 2.22.5:
@@ -7092,6 +7139,7 @@ Regards.`,
     const RESPONSE_VARIABLES = [
         { key: 'ticketNumber',     label: 'ticket number',     button: 'Ticket Number',     tooltip: 'The ticket number, such as RITM0123456' },
         { key: 'requestedForName', label: 'requested for',     button: 'Requested For',     tooltip: 'The person the request is for (on incidents: the caller)' },
+        { key: 'openedByEmail',    label: 'opened by email',   button: 'Opened By Email',   tooltip: 'The email of the person who opened the ticket' },
         { key: 'myName',           label: 'your name',         button: 'My Name',           tooltip: 'Your own name, as ServiceNow knows it' },
         { key: 'today',            label: 'today',             button: 'Today',             tooltip: 'Today\'s date, such as 2026-11-23' },
         { key: 'shortDescription', label: 'short description', button: 'Short Description', tooltip: 'The short description (title) of the ticket' },
@@ -7160,6 +7208,7 @@ Regards.`,
             try { vars.ticketNumber = String(form.gf.getValue('number') || '').trim(); } catch (e) { /* no number */ }
             try { vars.shortDescription = String(form.gf.getValue('short_description') || '').trim(); } catch (e) { /* no field */ }
             vars.requestedForName = await responseRequestedFor(form);
+            vars.openedByEmail = (await helpersOpenedBy()).email;
             const u = form.win.g_user;
             if (u) vars.myName = String((typeof u.getFullName === 'function' && u.getFullName()) || [u.firstName, u.lastName].filter(Boolean).join(' ') || '').trim();
         }
@@ -7889,7 +7938,7 @@ Regards.`,
 
             function updatePreview() {
                 const sampleVars = { openedByName: cachedOpenedByName || 'John Doe', pageType: getPageType(),
-                    ticketNumber: 'RITM0123456', requestedForName: 'Jane Smith', myName: 'Alex Garcia', today: '2026-11-23',
+                    ticketNumber: 'RITM0123456', requestedForName: 'Jane Smith', openedByEmail: 'john.doe@example.com', myName: 'Alex Garcia', today: '2026-11-23',
                     shortDescription: 'Allow access to example.com', tenant: 'EMA' };
                 previewBox.textContent = resolveCustomResponseText(bodyTextarea.value, sampleVars) || '(empty)';
             }
@@ -8188,7 +8237,7 @@ Regards.`,
                             span('Insert variable:', { fontSize: '11px', color: '#666' }),
                             chip('@Mention Opened By', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
                             chip('Page Type', '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }),
-                            ...['Ticket Number', 'Requested For', 'My Name', 'Today', 'Short Description', 'Tenant'].map(l => chip(l, '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }))
+                            ...['Ticket Number', 'Requested For', 'Opened By Email', 'My Name', 'Today', 'Short Description', 'Tenant'].map(l => chip(l, '#fff', { color: '#667eea', border: '1px solid #c0c8f0', weight: 'normal' }))
                         ], { margin: '0 0 4px 0', gap: '6px', flexWrap: 'wrap' }),
                         span('Hi @[{{openedByName}}], your {{pageType}} has been escalated.', { display: 'block', fontSize: '11px', fontFamily: 'monospace', border: '1px solid #ccc', borderRadius: '4px', padding: '6px 8px', color: '#333' })
                     ]));
